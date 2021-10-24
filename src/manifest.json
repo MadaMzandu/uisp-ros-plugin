@@ -1,0 +1,30 @@
+{
+  "version": "1",
+  "information": {
+    "name": "ros-plugin",
+    "displayName": "Router OS Plugin",
+    "description": "Real time provisioning for ROS",
+    "url": "",
+    "version": "1.8.0",
+    "ucrmVersionCompliancy": {
+      "min": "2.14.0-beta4",
+      "max": null
+    },
+    "unmsVersionCompliancy": {
+      "min": "1.0.0-dev.1",
+      "max": null
+    },
+    "author": "Madalitso Mzandu"
+  },
+  "menu": [
+        {
+            "key": "Ros Plugin",
+            "label": "Panel",
+            "type" : "admin",
+            "target": "iframe",
+            "parameters":{
+                "page": "panel"
+            }
+        }
+    ]
+}
