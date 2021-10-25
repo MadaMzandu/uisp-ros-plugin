@@ -12,6 +12,9 @@ class MT_Queue extends MT {
     }
 
     public function insert() {
+        if($this->exists()){ // edit if matching queue exists
+            return $this->edit();
+        }
         if (!$this->pq->set(1)) {
             $this->set_error($this->pq->error());
             return false;
@@ -71,9 +74,9 @@ class MT_Queue extends MT {
             return $savedId;
         }
         if ($this->exists()) { // for old installations
-            $saveId = $this->search[0]['.id'];
+            $this->insertId = $saveId = $this->search[0]['.id'];
             $db->updateColumnById('queueId', $saveId, $id);
-            return $savedId;
+            return $saveId;
         }
     }
 

@@ -67,7 +67,7 @@ class MT extends Device {
             $api = new Routerosapi();
             $api->timeout = 3;
             $api->attempts = 1;
-            // $api->debug = true;
+            //$api->debug = true;
             if ($api->connect($d->ip, $d->user, $d->password)) {
                 return $api;
             }
@@ -97,7 +97,7 @@ class MT extends Device {
             $item = $this->read[$i];
             [$id] = explode(',', $item['comment']);
             if ($id == $this->{$this->data->actionObj}->id) {
-                array_push($this->search, $item);
+                $this->search[] = $item;
             }
         }
     }

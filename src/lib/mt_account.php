@@ -35,8 +35,8 @@ class MT_Account extends MT {
     }
 
     public function insert() {
-        if($this->data->utilFlag){
-            return $this->util_insert();
+        if(isset($this->data->utilFlag) && $this->data->utilFlag){
+            return $this->util_exec();
         }
         if (!$this->ip_get($this->pool_device())) {
             return false;
@@ -58,36 +58,48 @@ class MT_Account extends MT {
         return true;
     }
     
-    private function util_insert(){
-        if($this->exists()){
-            $account = $this->search[0];
-            $q = [];
-            if(isset($account['mac-address'])){
-                $this->q->exists();
-                $q = $this->q->search[0];
-            }
-            $this->util_save($account, $q);
-            $this->set_message('Account was found on router.Cache has been updated');
-            return true ;
+    private function util_exec(){
+        if(!$this->exists()){
+            $this->data->utilFlag = false ; //normal insert if exists
+            return $this->insert() ;
         }
-       return false ;
+        $account = $this->search[0];
+        $this->data->ip = isset($account['address']) 
+                ? $account['address']:$account['remote-address'];
+        $q = $this->util_queue_check($account);
+        $this->util_save($account, $q);
+        $this->set_message('Account was found on router.Cache has been updated');
+        return true ;
     }
     
+    private function util_queue_check($account){
+        $id = false ; //q id
+        if(isset($account['mac-address'])){ //if dhcp
+            $id = $this->q->exists() 
+                    ? $this->q->search[0]['.id']: false;
+            
+            if(!$id){
+               $id = $this->set_profile(1) 
+                      ?  $this->data->queueId: false ; //create q if not exists
+            }
+        }
+        
+        return $id;
+    }
+    
+    
     private function util_save($account,$q){
-        $ip = isset($account['address']) 
-                ? $account['address']:$account['remote-address'];
-        $qid = isset($q['.id']) ? $q['.id']: false ;
         $data = (object) array(
                     'id' => $this->entity->id,
                     'planId' => $this->entity->servicePlanId,
                     'clientId' => $this->entity->clientId,
                     'mtId' => $account['.id'],
-                    'address' => $ip,
+                    'address' => $this->data->ip,
                     'status' => $this->entity->status,
                     'device' => $this->device_id(),
         );
-        if($qid){
-            $data->queueId = $qid ;
+        if($q){
+            $data->queueId = $q ;
         }
         return (new CS_SQLite())->insert($data) 
                 ? :(new CS_SQLite())->edit($data);
@@ -168,7 +180,6 @@ class MT_Account extends MT {
         if ($this->q->insertId()) {
             $data->queueId = $this->q->insertId();
         }
-        error_log(json_encode($data));
         return $data;
     }
 
@@ -231,9 +242,10 @@ class MT_Account extends MT {
     private function set_dhcp_queue($int) {
         if ($int > 0) {
             if (!$this->q->insert($int)) {
+                $this->set_error($this->q->error());
                 return false;
             }
-            $this->data->queueId = $this->q->read();
+            $this->data->queueId = $this->q->insertId();
         } else {
             if (!$this->q->delete()) {
                 $this->set_error($this->q->error());

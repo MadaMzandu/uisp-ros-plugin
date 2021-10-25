@@ -79,7 +79,7 @@ class CS_Router {
         $response = [
             'status' =>$status,
             'message' => isset($this->status->message) 
-               ? $this->status->message :'Error message not available',
+               ? $this->status->message :'Unknown error',
             'data' => $this->result,
         ];
         if(property_exists($this->status,'session')){

@@ -17,8 +17,8 @@ class CS_UISP {
             $this->has_data = true;
             $this->url = $data->path ;
             $this->post = (array) $data->post;
-            $this->result = [];
         }
+        $this->result = [];
         $this->status = (object)[
                 'error' => false,
                 'message' => 'ok',
@@ -40,11 +40,14 @@ class CS_UISP {
         $this->result = $this->exec();
     }
 
-    public function request($url, $method = 'GET', $post = []) {
-        $this->method = strtolower($method);
-        $this->post = $post;
-        $this->url = $url;
-        return $this->exec();
+    public function request($url='', $method = 'GET', $post = []) {
+        if(!$this->has_data){
+            $this->method = strtolower($method);
+            $this->post = $post;
+            $this->url = $url;
+        }
+        $this->result = $this->exec();
+        return $this->result ;
     }
     
     private function exec() {

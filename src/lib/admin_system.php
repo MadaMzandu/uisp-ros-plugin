@@ -14,7 +14,6 @@ class System extends Admin{
         $services = $api->request('/clients/services');
         $count = 0;
         $d = (object)[];
-        (new Backup($d))->backup();
         (new CS_SQLite)->deleteAll('services');
         foreach ($services as $item){
             if($this->is_valid($item)){
