@@ -23,7 +23,7 @@ If you have been using the previous api based version:
 1. After installation and configuration above disable the webhook for the previous api based version.
 2. Go to the settings tab > system and click rebuild to populate with accounts from previous api version.
 
-Please ensure that your mikrotik devices are added to the plugin and are online. The rebuild process is harmless and can be run any number of times.
+Please ensure that your mikrotik devices are added to the plugin and are online. The rebuild process is harmless and can be run any number of times. To verify if rebuild was successful go to the Devices tab and check the number of user accounts listed for each device.
 
 # Using
 The custom attributes in Configution (4) should be listed in the form when creating or editing a service.
