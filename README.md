@@ -25,6 +25,14 @@ If you have been using the previous api based version:
 
 Please ensure that your mikrotik devices are added to the plugin and are online. The rebuild process is harmless and can be run any number of times.
 
+# Using
+The custom attributes in Configution (4) should be listed in the form when creating or editing a service.
+1. Fill the device name to specify the router for the clients account
+2. PPPoE username and Password to provision PPPoE.
+3. Mac address to provision DHCP instead.
+4. IP address to bypass the pool
+
+
 
 
 
