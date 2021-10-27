@@ -12,7 +12,7 @@ So it finally came to be, a simple to install plugin replacement for the previou
 
 1. After enabling the plugin a menu icon will be installed for the plugin. Click on the icon and go to panel.
 2. In the devices tab add your mikrotik devices
-3. In the plans tab set the contention ratios for your plans or leave as 1:1 if not selling contention.
+3. In the plans tab set the contention ratios for your plans or leave as 1:1 if not selling contention. If no plans are defined yet, define your plans in Uisp > Settings > Service Plans & Products
 4. In the settings tab go to the attributes tab and define the attributes that you want to use. You will need device name and mac address for dhcp, pppoe username,password and device name for pppoe. You can also set an ip address attribute if you wish to manually assign ip addresses for some accounts. You can also enable all the attributes if you are using both pppoe and dhcp.
 5. If using pppoe, in the Settings > General tab select if you want to use one pool for all your routers and specify the pool, or you want to use per router pool specified in the device.
 6. Thats it your are done.
