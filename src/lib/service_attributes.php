@@ -11,6 +11,7 @@ class Service_Attributes extends Service_Base {
     public $exists = true;
     public $unsuspend = false ;
     public $disabled = false ;
+    protected $rec ;
     
 
     
@@ -18,15 +19,22 @@ class Service_Attributes extends Service_Base {
     protected function init() {
         parent::init();
         $this->set_shortcuts();
-        $this->load_record();
-        $this->load_device();
         $this->set_attributes();
         $this->set_status();
         $this->check_attributes();
+        $this->load_record();
         $this->set_action();
     }
     
+    public function record(){
+        return $this->rec ;
+    }
     
+    protected function load_record(){
+        $id = isset($this->before->id) ? $this->before->id : $this->entity->id;
+        $this->rec = $this->db->selectServiceById($id);
+        $this->exists = (array)$this->rec ? true : false ;
+    }
     
     
     protected function set_status(){

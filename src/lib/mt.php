@@ -7,7 +7,6 @@ class MT {
     protected $svc ;
     protected $path ;
     protected $insertId ;
-    protected $queueId ;
     protected $result ;
     protected $status ;
     protected $read ;
@@ -125,7 +124,6 @@ class MT {
         $this->search = [];
         for ($i = 0; $i < $e; $i++) {
             $item = $this->read[$i];
-            var_dump($item);
             [$id] = explode(',', $item['comment']);
             if ($id == $this->svc->id()) {
                 $this->insertId = $item['.id'];
@@ -134,6 +132,16 @@ class MT {
         }
     }
     
+    protected function findId(){
+        if($this->exists()){
+            return $this->insertId;
+        }
+        return false ;
+    }
+
+
+
+
     protected function comment() {
         return $this->svc->id() . ", "
                 . $this->svc->client_id() . " - "

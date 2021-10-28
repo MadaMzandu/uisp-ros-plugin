@@ -1,6 +1,6 @@
 <?php
 
-include_once 'app_sqlite.php';
+include_once 'api_sqlite.php';
 $conf = (new API_SQLite())->readConfig();
 
 class Device_Template {

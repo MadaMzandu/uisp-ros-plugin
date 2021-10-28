@@ -1,8 +1,8 @@
 <?php
 
 include_once 'admin.php';
-include_once 'app_routes.php';
-include_once 'api_service.php';
+include_once 'api_routes.php';
+include_once 'service.php';
 
 $debug_log = [];
 
@@ -33,11 +33,11 @@ class API_Router {
             return;
         }
         $service = new Service($this->data);
-        if(!$service->valid){
+        if(!$service->ready){
             $this->status = $service->status();
             return ;
         }
-        $route = new Routes($service); //execute
+        $route = new API_Routes($service); //execute
         $this->status = $route->status();
     }
 
