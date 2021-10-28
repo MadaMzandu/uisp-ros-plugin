@@ -9,7 +9,7 @@ class Plans extends Admin {
 
     public function __construct(&$data) {
         parent::__construct($data);
-        $this->uisp = new CS_UISP();
+        $this->uisp = new API_Unms();
         $this->ids = [];
     }
 
@@ -26,7 +26,7 @@ class Plans extends Admin {
 
     
     public function edit() {
-        $db = new CS_SQLite();
+        $db = new API_SQLite();
         $id = $this->data->id ;
         if (!$db->edit($this->data,'plans')) {
             $this->set_error('failed to update contention ratio for service plan');
@@ -52,7 +52,7 @@ class Plans extends Admin {
         $cachedKeys = array_keys($this->result);
         $relevantKeys = ['id', 'name', 'downloadSpeed', 'uploadSpeed',
             'downloadBurst', 'uploadBurst', 'dataUsageLimit'];
-        $db = new CS_SQLite();
+        $db = new API_SQLite();
         foreach ($this->plans as $plan) {
             $isNew = false;
             $this->ids[] = $plan->id; // save for removing orphans
@@ -72,7 +72,7 @@ class Plans extends Admin {
 
     private function pruneCache() { //remove orphans from cache
         $keys = array_keys($this->result);
-        $db = new CS_SQLite();
+        $db = new API_SQLite();
         foreach ($keys as $key) {
             if (!in_array($key, $this->ids)) {
                 unset($this->result[$key]);
@@ -87,7 +87,7 @@ class Plans extends Admin {
     }
 
     private function readCache() {
-        $db = new CS_SQLite();
+        $db = new API_SQLite();
         $plans = $db->selectAllFromTable('plans') ?? [];
         $this->result = [];
         foreach ($plans as $plan) {

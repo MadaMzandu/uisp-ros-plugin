@@ -9,12 +9,12 @@ class System extends Admin{
     private function read(){
         $this->result = [];
         $read = [];
-        $api = new CS_UISP();
+        $api = new API_Unms();
         $api->assoc = true;
         $services = $api->request('/clients/services');
         $count = 0;
         $d = (object)[];
-        (new CS_SQLite)->deleteAll('services');
+        (new API_SQLite)->deleteAll('services');
         foreach ($services as $item){
             if($this->is_valid($item)){
                 $url = '/clients/services/'.$item['id'];

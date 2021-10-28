@@ -67,7 +67,7 @@ class Admin {
             'plans' => 'Plans',
             'validation' => 'Validation',
             'users' => 'Users',
-            'unms' => 'CS_UISP',
+            'unms' => 'API_Unms',
             'system' => 'System',
             'backup' => 'Backup',
         );

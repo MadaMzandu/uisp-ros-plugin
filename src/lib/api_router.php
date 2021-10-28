@@ -2,12 +2,12 @@
 
 include_once 'admin.php';
 include_once 'app_routes.php';
-include_once 'app_data_sanitize.php';
-include_once 'app_data_validate.php';
+include_once 'api_service.php';
+
 $debug_log = [];
 
 
-class CS_Router {
+class API_Router {
 
     private $data;
     private $status;
@@ -24,19 +24,20 @@ class CS_Router {
     }
 
     public function route() {
+        
         if (!$this->is_valid_request()) { // check validity before system tasks
             return;
         }
+        
         if ($this->is_admin_request()) { // admin requests end here
             return;
         }
-        $d = new Data_Validate($this->data);
-        if(!$d->validate()) {  // check if attribute values are valid
-            $this->status = $d->status();
-            return;
+        $service = new Service($this->data);
+        if(!$service->valid){
+            $this->status = $service->status();
+            return ;
         }
-        (new Data_Sanitize($this->data))->sanitize(); // sanitize data
-        $route = new Routes($this->data); //execute
+        $route = new Routes($service); //execute
         $this->status = $route->status();
     }
 

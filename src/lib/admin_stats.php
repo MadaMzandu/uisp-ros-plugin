@@ -12,7 +12,7 @@ class Stats extends Admin {
     }
 
     private function countServices() {
-        $db = new CS_SQLite();
+        $db = new API_SQLite();
         $this->result->active = $db->countServices();
         $this->result->suspended = $db->countSuspendedServices();
     }

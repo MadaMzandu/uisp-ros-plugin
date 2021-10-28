@@ -1,6 +1,6 @@
 <?php
 
-class CS_Mysql {
+class API_Mysql {
 
     private $result;
     private $device; // mysql host information

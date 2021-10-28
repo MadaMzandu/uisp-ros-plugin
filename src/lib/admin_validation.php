@@ -44,7 +44,7 @@ class Validation extends Admin {
         if (!in_array($field, $this->keys) ){  
             return true;
         }
-        $db = new CS_SQLite();
+        $db = new API_SQLite();
         if($this->data->id > 0){
             $device = $db->selectDeviceById($this->data->id);
             if(strtolower($device->name) == strtolower($this->data->name)){
@@ -93,7 +93,7 @@ class Validation extends Admin {
         global $conf;
         $savedToken = $conf->{$field};
         $conf->{$field} = $this->data->{$field};
-        $u = new CS_UISP();
+        $u = new API_Unms();
         $test = $u->request('/service-plans');
         if (!$test) {
             $this->setFieldError($field, 'token may be invalid - services plans not found using token');

@@ -1,10 +1,9 @@
 <?php
 
-include_once 'device_base.php';
-include_once 'app_ipv4.php';
-include_once 'app_uisp.php';
+//include_once 'app_ipv4.php';
+//include_once 'app_uisp.php';
 
-class Device_Account extends Device_Base {
+class Device_Account extends Device_Template {
 
     protected function init() {
         global $conf;
@@ -20,21 +19,61 @@ class Device_Account extends Device_Base {
         }
     }
 
+    protected function fix() {
+        global $conf;
+        $clientId = $this->data->extraData->entity->clientId;
+        $id = $this->data->entityId;
+        $this->trim();  // trim after aquiring data
+        $u = new API_Unms();
+        if ($u->request('/clients/services/' . $id . '/end', 'PATCH')) {//end service
+            $u->request('/clients/services/' . $id, 'DELETE'); //delete service
+            sleep($conf->unsuspend_fix_wait);
+            $u->request('/clients/' . $clientId . '/services', 'POST', $this->entity); //recreate service
+        }
+    }
+
+    protected function trim() {
+        $vars = $this->trim_fields();
+        foreach ($vars as $var) {
+            unset($this->entity->$var);
+        }
+        $this->trim_attrbs();
+    }
+
+    protected function trim_fields() {
+        global $conf;
+        return ['id', 'clientId', 'status', 'servicePlanId', 'invoicingStart',
+            'hasIndividualPrice', 'totalPrice', 'currencyCode', 'servicePlanName',
+            'servicePlanPrice', 'servicePlanType', 'downloadSpeed', 'uploadSpeed',
+            'hasOutage', 'lastInvoicedDate', 'suspensionReasonId', 'serviceChangeRequestId',
+            'downloadSpeedOverride', 'uploadSpeedOverride', 'trafficShapingOverrideEnd',
+            'trafficShapingOverrideEnabled', $conf->mac_addr_attr, $conf->device_name_attr,
+            $conf->pppoe_user_attr, $conf->pppoe_pass_attr, 'unmsClientSiteId',
+            $conf->ip_addr_attr, 'clientName'];
+    }
+
+    protected function trim_attrbs() {
+        $vars = ["id", "serviceId", "name", "key", "clientZoneVisible"];
+        foreach ($this->entity->attributes as $attrb) {
+            foreach ($vars as $var) {
+                unset($attrb->$var);
+            }
+        }
+    }
+
     protected function ip_get($device = false) {
         global $conf;
         $addr = false;
-        if (isset($this->data->extraData->entity->{$conf->ip_addr_attr})) {
-            $addr = $this->data->extraData->entity->{$conf->ip_addr_attr};
-            if(filter_var($addr,FILTER_VALIDATE_IP)){
-                $this->data->ip = $addr ;
-                return true ;
-            }
+        if (property_exists($this->data->extraData->entity, $conf->ip_addr_attr)) {
+            if ($this->data->extraData->entity->{$conf->ip_addr_attr}) {
+                $addr = $this->data->extraData->entity->{$conf->ip_addr_attr};
+            } //user provided address
         }
         if (in_array($this->data->changeType, ['insert', 'move', 'upgrade'])) {
-            $ip = new CS_IPv4();
+            $ip = new API_IPv4();
             $addr = $ip->assign($device);  // acquire new address
         } else {
-            $db = new CS_SQLite();
+            $db = new API_SQLite();
             $addr = $db->selectIpAddressByServiceId($this->before->id); //reuse old address
         }
         if (!$addr) {
@@ -47,12 +86,12 @@ class Device_Account extends Device_Base {
 
     protected function save() {
         $data = $this->save_data();
-        $db = new CS_SQLite();
+        $db = new API_SQLite();
         return $db->{$this->data->changeType}($data);
     }
 
     protected function clear() {
-        $db = new CS_SQLite();
+        $db = new API_SQLite();
         $db->delete($this->{$this->data->actionObj}->id);
     }
 
@@ -71,7 +110,7 @@ class Device_Account extends Device_Base {
     protected function device_id() {
         global $conf;
         $name = $this->entity->{$conf->device_name_attr};
-        $db = new CS_SQLite();
+        $db = new API_SQLite();
         return $db->selectDeviceIdByDeviceName($name);
     }
 

@@ -1,16 +1,5 @@
 /src/vendor/
 /src/data/
 /nbproject/
-/test.php
-/src/lib/_temp.php
+/src/test.php
 /src/test.json
-/.idea/
-/src/composer.lock
-.phpunit.result.cache
-/src/data/
-/bak/
-/data/
-ros-plugin.zip
-src/data
-src/test1.json
-src/test_class.php

@@ -9,7 +9,7 @@ class Radius_Account extends Device {
     public function __construct(&$data) {
         parent::__construct($data);
         $this->getDevice();
-        $this->db = new CS_Mysql($this->device);
+        $this->db = new API_Mysql($this->device);
     }
   
     public function suspend() {
