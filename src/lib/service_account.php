@@ -1,6 +1,6 @@
 <?php
 include_once 'service_plan.php';
-include_once 'app_ipv4.php';
+include_once 'api_ipv4.php';
 include_once '_temp.php';
 
 class Service_Account extends Service_Plan {
@@ -8,19 +8,12 @@ class Service_Account extends Service_Plan {
     public $move = false ;
     public $ip ; 
     protected $client ;
-    protected $rec ;
     protected $dev; //device parameters
     
     public function __construct(&$data) {
         parent::__construct($data);
         $this->load_device();
         $this->load_client();
-        $this->load_record();
-        $this->load_record();
-    }
-    
-    public function record(){
-        return $this->rec ;
     }
     
     public function device(){
@@ -41,12 +34,6 @@ class Service_Account extends Service_Plan {
         $name = $this->$entity->{$this->conf->device_name_attr};
         $this->dev = $this->db->selectDeviceByDeviceName($name);
         (array) $this->dev ?: $this->setErr('Device specified was not found');
-    }
-    
-    protected function load_record(){
-        $id = isset($this->before->id) ? $this->before->id : $this->entity->id;
-        $this->rec = $this->db->selectServiceById($id);
-        $this->exists = (array)$this->rec ? true : false ;
     }
     
     public function id(){

@@ -15,8 +15,8 @@ class MT_Account extends MT {
     }
 
     public function edit() {
-        
-        $data = $this->svc->data();
+
+        $data = $this->data();
         if ($this->write($data, 'set')) {
             $this->disconnect();
             if (!$this->save()) {
@@ -29,11 +29,8 @@ class MT_Account extends MT {
     }
 
     public function insert() {
-        //if($this->svc->fix){
-            //return $this->util_exec();
-        //}
-        
-        $this->svc->count = 1 ;
+
+        $this->svc->count = 1;
         if (!$this->set_profile()) {
             return false;
         }
@@ -50,49 +47,46 @@ class MT_Account extends MT {
         $this->set_message('service has been added');
         return true;
     }
-    
-    public function insert_fix(){ // attempt to rebuild orphans
-        if(!$this->exists() && !$this->q->exists()){
-            $this->svc->fix = false ; //normal insert if not fount
-            return $this->insert() ;
+
+    public function insert_fix() { // attempt to rebuild orphans
+        if (!$this->exists()) {
+            return $this->insert(); //normal insert if not fount
         }
-        $this->insertId = $this->search[0]['.id'];
-        $this->queueId = $this->q->read()[0]['.id'];
+        $account = $this->search[0] ;
+        $q = $this->fix_queue_id();
         
-        var_dump($this->q->insertId());
-        exit();
-        $q = $this->fix_queue_check($account);
-        $this->fix_save($account);
-        $this->set_message('Account was found on router.Cache has been updated');
-        return true ;
-    }
-    
-    private function fix_queue_check($account){
-        $id = false ; //q id
-        if(isset($account['mac-address'])){ //if dhcp
-            $id = $this->q->exists() ;
-            $this->queueId = $id  ? $this->q->search[0]['.id']: null;
+        if ($this->fix_save($account, $q)) {
+            $this->set_message('ccount was successfully repaired');
+            return true ;
         }
-        return $id ? : $this->set_profile();
+        $this->set_error('failed to repair the account');
+        return false;
     }
-    
-    
-    private function fix_save($account){
-        $data['address'] = isset($account['address']) 
-                           ? $account['address'] : $account['remote-address'];
-        $data['mtId'] = $this->insertId;
-        $data['queueId'] = $this->queueId;
-        return $this->svc->save((object)$data);
+
+    private function fix_queue_id() {
+        if ($this->svc->pppoe) { //if dhcp
+            return null;
+        }
+        $q = $this->q->findId();
+        $this->svc->count = 1;
+        return $q ? $q : ($this->set_profile() ? $this->q->insertId() : false);
+    }
+
+    private function fix_save($account, $q) {
+        $data['address'] = isset($account['address']) ? $account['address'] : $account['remote-address'];
+        $data['mtId'] = $account['.id'] ?? null;
+        $data['queueId'] = $q ?? null;
+        return $this->svc->save((object) $data);
     }
 
     public function suspend() {
         global $conf;
-        $id = $this->entity->id;
+        $id = $this->svc->id();
         if ($this->edit()) {
-            if ($this->data->unsuspendFlag && $conf->unsuspend_date_fix) {
-                $this->fix();
+            if ($this->svc->unsuspend && $conf->unsuspend_date_fix) {
+                //$this->fix();
             }
-            $action = $this->data->unsuspendFlag ? 'unsuspended' : 'suspended';
+            $action = $this->svc->unsuspend ? 'unsuspended' : 'suspended';
             $this->set_message('service id:' . $id . ' was ' . $action);
             return true;
         }
@@ -100,12 +94,12 @@ class MT_Account extends MT {
     }
 
     public function move() {
-        $this->svc->move = true ;
+        $this->svc->move = true;
         if (!$this->delete()) {
             $this->set_error('unable to delete old service');
             return false;
         }
-        $this->svc->move = false ;
+        $this->svc->move = false;
         if (!$this->insert()) {
             $this->set_error('unable to create service on new device');
             return false;
@@ -131,31 +125,14 @@ class MT_Account extends MT {
 
     protected function addr_list() {
         global $conf;
-        return $this->svc->disabled 
-                ? $conf->disabled_list 
-                : $conf->active_list;
+        return $this->svc->disabled ? $conf->disabled_list : $conf->active_list;
     }
 
-    protected function savedId() {
-        $savedId = $this->svc->mt_account_id();
-        if ($savedId) {
-            return $savedId;
-        }
-        if ($this->exists()) { // for old installations
-            $saveId = $this->search[0]['.id'];
-            return $saveId;
-        }
-    }
-    
     protected function save() {
-        $data = (object)[];
-        if ($this->insertId()) {
-            $data->mtId = $this->insertId();
-        }
-        if ($this->q->insertId()) {
-            $data->queueId = $this->q->insertId();
-        }
-        return $this->svc->save($data);
+        $data = [];
+        $data['mtId'] = $this->insertId ?? null;
+        $data['queueId'] = $this->q->insertId() ?? null;
+        return $this->svc->save((object)$data);
     }
 
     protected function path() {
@@ -164,15 +141,6 @@ class MT_Account extends MT {
 
     protected function data() {
         return $this->svc->pppoe ? $this->pppoe_data() : $this->dhcp_data();
-    }
-
-    private function pool_device() {
-        global $conf;
-        $obj = $this->{$this->data->actionObj};
-        if ($conf->router_ppp_pool || $obj->{$conf->mac_addr_attr}) {
-            return $this->{$this->data->actionObj}->{$conf->device_name_attr};
-        }
-        return false;
     }
 
     private function dhcp_data() {
@@ -189,7 +157,7 @@ class MT_Account extends MT {
     private function pppoe_data() {
         global $conf;
         $profile = $this->svc->disabled 
-                ? $conf->disabled_profile
+                ? $conf->disabled_profile 
                 : $this->svc->plan_name();
         return (object) array(
                     'remote-address' => $this->svc->ip(),
@@ -201,9 +169,7 @@ class MT_Account extends MT {
     }
 
     private function set_profile() {
-        return $this->svc->pppoe 
-                ? $this->set_ppp_profile() 
-                : $this->set_dhcp_queue();
+        return $this->svc->pppoe ? $this->set_ppp_profile() : $this->set_dhcp_queue();
     }
 
     private function set_ppp_profile() {
@@ -231,8 +197,8 @@ class MT_Account extends MT {
     }
 
     private function disconnect() {
-        if(!$this->svc->pppoe){
-            return ;
+        if (!$this->svc->pppoe) {
+            return;
         }
         if ($this->read('?comment')) {
             $this->findByComment();

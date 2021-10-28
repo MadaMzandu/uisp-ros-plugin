@@ -1,7 +1,7 @@
 <?php
 
-//include_once 'app_ipv4.php';
-//include_once 'app_uisp.php';
+//include_once 'api_ipv4.php';
+//include_once 'api_uisp.php';
 
 class Device_Account extends Device_Template {
 

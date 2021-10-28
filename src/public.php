@@ -36,7 +36,7 @@ $json = file_get_contents('php://input') ?? false;
 
 if ($json) { // api mode
     $data = json_decode($json);
-    $api = new CS_Router($data);
+    $api = new API_Router($data);
     $api->route();
     echo $api->http_response();
     exit();

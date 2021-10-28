@@ -33,10 +33,10 @@ class API_Unms {
     private function exec() {
         $response = curl_exec($this->ch);
         if (curl_errno($this->ch) !== 0) {
-            echo sprintf('Curl error: %s', curl_error($this->ch)) . PHP_EOL;
+            //echo sprintf('Curl error: %s', curl_error($this->ch)) . PHP_EOL;
         }
         if (curl_getinfo($this->ch, CURLINFO_HTTP_CODE) >= 400) {
-            echo sprintf('API error: %s', $response) . PHP_EOL;
+            // echo sprintf('API error: %s', $response) . PHP_EOL;
             $response = false;
         }
         curl_close($this->ch);
