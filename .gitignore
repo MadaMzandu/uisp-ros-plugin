@@ -2,3 +2,5 @@
 /src/data/
 /nbproject/
 /test.php
+/src/lib/_temp.php
+/src/test.json

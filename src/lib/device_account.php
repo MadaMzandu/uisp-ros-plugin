@@ -64,10 +64,12 @@ class Device_Account extends Device_Template {
     protected function ip_get($device = false) {
         global $conf;
         $addr = false;
-        if (property_exists($this->data->extraData->entity, $conf->ip_addr_attr)) {
-            if ($this->data->extraData->entity->{$conf->ip_addr_attr}) {
-                $addr = $this->data->extraData->entity->{$conf->ip_addr_attr};
-            } //user provided address
+        if (isset($this->data->extraData->entity->{$conf->ip_addr_attr})) {
+            $addr = $this->data->extraData->entity->{$conf->ip_addr_attr};
+            if(filter_var($addr,FILTER_VALIDATE_IP)){
+                $this->data->ip = $addr ;
+                return true ;
+            }
         }
         if (in_array($this->data->changeType, ['insert', 'move', 'upgrade'])) {
             $ip = new CS_IPv4();
