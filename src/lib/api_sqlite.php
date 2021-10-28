@@ -1,10 +1,11 @@
 <?php
 
-class CS_SQLite {
+class API_SQLite {
 
     private $path;
-    private $read ;
-    public $db;
+    public $ready = false ;
+    private $read;
+    private $db;
     private $data;
     private $table;
     private $id;
@@ -15,9 +16,11 @@ class CS_SQLite {
         } else {
             $this->path = 'data/data.db';
         }
-        $this->db = new SQLite3($this->path);
+
+            $this->db = new SQLite3($this->path);
+       
     }
-    
+
     public function selectAllFromTable($table = 'services') {
         $sql = 'select * from ' . $table;
         $res = $this->db->query($sql);
@@ -37,8 +40,8 @@ class CS_SQLite {
     public function upgrade($data, $table = 'services') {
         return $this->insert($data, $table);
     }
-    
-    public function suspend($data,$table='services'){
+
+    public function suspend($data, $table = 'services') {
         return $this->edit($data, $table);
     }
 
@@ -77,11 +80,9 @@ class CS_SQLite {
         return $this->db->querySingle($sql);
     }
 
-    public function countDeviceServicesByPlanId($planId, $deviceName) {
+    public function countDeviceServicesByPlanId($planId, $deviceId) {
         $sql = "select count(services.id) from services "
-                . "left join devices on services.device=devices.id "
-                . "where planId=" . $planId . " and devices.name='" . $deviceName
-                . "' collate nocase";
+                . "where planId=" . $planId . " and device=" . $deviceId;
         return $this->db->querySingle($sql);
     }
 
@@ -111,23 +112,19 @@ class CS_SQLite {
         return $this->db->querySingle($sql);
     }
 
-    public function selectUserByUsername($username) {
-        $sql = "select * from users where username='" . $username . "'";
-        return $this->db->querySingle($sql, true);
+    public function selectServiceById($id) {
+        $sql = "select services.*,devices.name as deviceName from services left join devices "
+                . "on services.device=devices.id where services.id=" . $id;
+        return (object) $this->db->querySingle($sql, true);
     }
 
-    public function selectUserBySession($session) {
-        $sql = "select * from users where session='" . $session . "'";
-        return $this->db->querySingle($sql, true);
-    }
-    
     public function selectDeviceByDeviceName($name) {
         $sql = "select * from devices where name='" . $name . "' collate nocase";
         return (object) $this->db->querySingle($sql, true);
     }
-  
+
     public function selectDeviceById($id) {
-        $sql = "select * from devices where id=" . $id ;
+        $sql = "select * from devices where id=" . $id;
         return (object) $this->db->querySingle($sql, true);
     }
 
@@ -175,27 +172,25 @@ class CS_SQLite {
         foreach ($this->read as $row) {
             $return[$row['key']] = $this->fixBoolValue($row['value']);
         }
-        return (object) $return ;
+        return (object) $return;
     }
-    
-    public function saveConfig($data){
-        $keys = array_keys((array)$data);
-        foreach($keys as $key){
+
+    public function saveConfig($data) {
+        $keys = array_keys((array) $data);
+        foreach ($keys as $key) {
             $val = $data->{$key};
-            $value = is_bool($val) ? ($val ? 'true' : 'false' ): $val ;
-            $sql = "update config set value='".$value
-                    ."' where key='".$key."'";
-            if(!$this->db->exec($sql)){
+            $value = is_bool($val) ? ($val ? 'true' : 'false' ) : $val;
+            $sql = "update config set value='" . $value
+                    . "' where key='" . $key . "'";
+            if (!$this->db->exec($sql)) {
                 return false;
             }
         }
-        return true ;
+        return true;
     }
-    
-    private function fixBoolValue($value){
-      return ($value == 'true' || $value == 'false') 
-        ? ($value == 'true' ? true : false) 
-        : $value ?? '';
+
+    private function fixBoolValue($value) {
+        return ($value == 'true' || $value == 'false') ? ($value == 'true' ? true : false) : $value ?? '';
     }
 
     private function prepareUpdate() {

@@ -42,7 +42,7 @@ class Users extends Admin {
                     'id' => $this->user['id'],
                     'password' => password_hash($this->data->newPassword, 1),
         ];
-        $db = new CS_SQLite();
+        $db = new API_SQLite();
         if ($db->edit($data, 'users')) {
             $this->set_message('password for ' . $this->user['username'] . ' has been changed');
             return true;
@@ -52,7 +52,7 @@ class Users extends Admin {
     }
 
     public function insert() {
-        $db = new CS_SQLite();
+        $db = new API_SQLite();
         if (!$this->checkUsername()) {
             return false;
         }
@@ -66,7 +66,7 @@ class Users extends Admin {
     }
 
     private function checkUsername() {
-        $db = new CS_SQLite();
+        $db = new API_SQLite();
         if ($db->ifUsernameExists($this->data->username)) {
             $this->set_error('the username provided already exists');
             return false;
@@ -92,7 +92,7 @@ class Users extends Admin {
     }
 
     private function read() {
-        $db = new CS_SQLite();
+        $db = new API_SQLite();
         if (is_object($this->data)) {
             if (property_exists($this->data, 'session')) {
                 $this->user = $db->selectUserBySession($this->data->session) ?? [];
@@ -118,7 +118,7 @@ class Users extends Admin {
     }
 
     private function updateSession() {
-        $db = new CS_SQLite();
+        $db = new API_SQLite();
         $data = (object) [
                     'id' => $this->user['id'],
                     'session' => $this->status->session,

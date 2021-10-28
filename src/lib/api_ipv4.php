@@ -2,19 +2,19 @@
 
 include_once 'app_sqlite.php';
 
-Class CS_IPv4 {
+Class API_IPv4 {
 
     private $addr; //assign
     private $prefix;
     private $len;
-    private $device; // device with pool
     private $pool; // active configured pool
 
     public function assign($device = false) {
-        $this->device = strtolower($device);
+        global $conf ;
         $pool = $device 
-                ? $this->getDevicePool() 
-                : $this->getPppPool() ;
+                ? $device->pool  
+                : $conf->ppp_pool ;
+        $pool .= ','; // just in case
         if ($pool) {
             $this->pool = explode(',', $pool);
             return $this->findUnused() ? $this->addr : false ;
@@ -29,21 +29,6 @@ Class CS_IPv4 {
                 :[] ;
     }
     
-    private function getPppPool() {
-        global $conf;
-        $pool = [];
-        if ($conf->ppp_pool) {
-            $pool = $conf->ppp_pool;
-        }
-        return $pool;
-    }
-
-    private function getDevicePool() {
-        $db = new CS_SQLite();
-        $device = $db->selectDeviceByDeviceName($this->device);
-        return (array)$device ? $device->pool : false ;
-    }
-
     private function findUnused() {
         foreach ($this->pool as $range) {
             [$this->prefix, $this->len] = explode('/', $range);
@@ -85,7 +70,7 @@ Class CS_IPv4 {
     private function iteratePool() {
         $hosts = $this->hosts();
         $net = ip2long($this->network()); //net_number2dec
-        $db = new CS_SQLite();
+        $db = new API_SQLite();
         $exclusions = $this->exclusions();
         for ($i = $net + 1; $i < $net + $hosts - 1; $i++) {
             if (in_array($i, $exclusions)) {  //skip if listed as exclusion

@@ -24,7 +24,7 @@ Class Data_Sanitize {
     private function set_client() {
         $id = $this->data->extraData->entity->clientId;
         $name = 'client' . $id;
-        $client = (array) (new CS_UISP())->request('/clients/' . $id);
+        $client = (array) (new API_Unms())->request('/clients/' . $id);
         if ($client) {
             $name = $client['firstName'] . ' ' . $client['lastName'];
             if (isset($client['companyName'])) {
@@ -63,7 +63,7 @@ Class Data_Sanitize {
     }
 
     private function check_exists() {
-        $db = new CS_SQLite();
+        $db = new API_SQLite();
         $this->data->utilFlag = false ;
         if (!$db->ifServiceIdExists($this->data->entityId)) {
             $this->data->changeType = 'insert';
@@ -85,7 +85,7 @@ Class Data_Sanitize {
     }
 
     private function getSavedDeviceName() {
-        $db = new CS_SQLite();
+        $db = new API_SQLite();
         $id = $this->data->entityId;
         return $db->selectDeviceNameByServiceId($id);
     }

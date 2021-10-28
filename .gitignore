@@ -1,4 +1,5 @@
 /src/vendor/
 /src/data/
 /nbproject/
-/test.php
+/src/test.php
+/src/test.json

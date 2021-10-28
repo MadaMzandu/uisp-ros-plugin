@@ -2,10 +2,40 @@
 
 include_once 'routeros_api.class.php';
 
-class MT extends Device {
+class MT {
 
+    protected $svc ;
     protected $path ;
     protected $insertId ;
+    protected $queueId ;
+    protected $result ;
+    protected $status ;
+    protected $read ;
+    protected $search;
+
+
+    public function __construct(Service &$svc) {
+        $this->svc = $svc;
+        $this->init();
+    }
+    
+    public function status() {
+        return $this->status;
+    }
+    
+    public function result() {
+        return $this->result;
+    }
+    
+    protected function init(){
+        $this->status = (object) [];
+        $this->status->session = false;
+        $this->status->error = false;
+    }
+    
+     protected function rate(){
+         return $this->svc->rate();
+     }
 
     protected function read($filter = false) {  //implements mikrotik print
         $api = $this->connect();
@@ -33,6 +63,9 @@ class MT extends Device {
     }
 
     protected function write($data, $action = 'set') {
+        if($action == 'add'){
+            unset($data->{'.id'});
+        }
         $api = $this->connect();
         if (!$api) {
             return false;
@@ -59,15 +92,12 @@ class MT extends Device {
     }
 
     private function connect() {
-        $d = $this->get_device();
-        if (!$d) {
-            return false;
-        }
+        $d = $this->svc->device();
         try {
             $api = new Routerosapi();
             $api->timeout = 3;
             $api->attempts = 1;
-            //$api->debug = true;
+            // $api->debug = true;
             if ($api->connect($d->ip, $d->user, $d->password)) {
                 return $api;
             }
@@ -95,17 +125,40 @@ class MT extends Device {
         $this->search = [];
         for ($i = 0; $i < $e; $i++) {
             $item = $this->read[$i];
+            var_dump($item);
             [$id] = explode(',', $item['comment']);
-            if ($id == $this->{$this->data->actionObj}->id) {
+            if ($id == $this->svc->id()) {
+                $this->insertId = $item['.id'];
                 $this->search[] = $item;
             }
         }
     }
-
-    protected function get_device() {
-        global $conf;
-        $name = $this->{$this->data->actionObj}->{$conf->device_name_attr};
-        return (new CS_SQLite())->selectDeviceByDeviceName($name);
+    
+    protected function comment() {
+        return $this->svc->id() . ", "
+                . $this->svc->client_id() . " - "
+                . $this->svc->client_name();
     }
+    
+    
+    protected function error(){
+        return $this->status->message ;
+    }
+
+
+    protected function set_message($msg) {
+        $this->status->error = false;
+        $this->status->message = $msg;
+    }
+
+    protected function set_error($msg, $obj = false) {
+        $this->status->error = true;
+        if ($obj) {
+            $this->status->message = $this->read['!trap'][0]['message'];
+        } else {
+            $this->status->message = $msg;
+        }
+    }
+   
 
 }

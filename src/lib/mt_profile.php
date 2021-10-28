@@ -6,65 +6,30 @@ class MT_Profile extends MT {
     private $count;
     private $is_nas = false;
 
-    public function __construct(&$data) {
-        parent::__construct($data);
+    public function __construct(Service &$svc) {
+        parent::__construct($svc);
         $this->path = '/ppp/profile/';
-        $this->pq = new MT_Parent_Queue($data);
+        $this->pq = new MT_Parent_Queue($svc);
     }
 
-    public function set($count = 0) {
-        $this->count = $count;
-        if ($count > 0 && !$this->exists()) {
+    public function set() {
+        if ($this->svc->count > 0 && !$this->exists()) {
             return $this->insert();
         }
-        if ($count < 0 && !$this->has_children()) {
+        if ($this->svc->count < 0 && !$this->has_children()) {
             return $this->deleteProfile();
         }
-        if (!$this->pq->set($count)) {
+        if (!$this->pq->set($this->svc->count)) {
             $this->set_error($this->pq->error());
             return false;
         }
         return true;
     }
 
-    public function set_nas($list) {
-        global $conf;
-        $this->is_nas = true;
-        foreach ($list as $nas) {
-            $this->make_device($nas);
-            if (!$this->exists()) {
-                $this->write($this->profile(), 'add');
-            }
-            if (!$this->exists($conf->disabled_profile)) {
-                $this->write($this->profile($conf->disabled_profile), 'add');
-            }
-        }
-    }
-
-    private function make_device($nas) {
-        global $conf;
-        $this->device = (object) [
-                    'name' => 'nas',
-                    'ip' => $nas,
-                    'user' => $conf->nas_user,
-                    'password' => $conf->nas_password,
-        ];
-    }
-
-    protected function get_device(){
-        if ($this->is_nas) {
-            return $this->device;
-        }
-            return parent::get_device();
-    }
-
     private function deleteProfile() {
-        if (!$this->pq->set(-1)) {
-            $this->set_error($this->pq->error());
-            return false;
-        }
-        $data = (object) array('.id' => $this->name());
-        return $this->write($data, 'remove');
+        $data['.id'] = $this->data()->name;
+        return !$this->pq->set(-1) 
+                ? : $this->write((object)$data, 'remove');
     }
     
     private function has_children(){
@@ -72,31 +37,52 @@ class MT_Profile extends MT {
         $read = $this->read('?profile='.$this->name()) ?? [];
         $this->path = '/ppp/profile/';
         $count = $read ? sizeof($read): 0;
-        $count += $this->is_disabled() ? 0 : -1 ; // do not deduct if account is disabled
+        $count += $this->svc->disabled ? 0 : -1 ; // do not deduct if account is disabled
         return $count ? : false ;
     }
 
     private function insert() {
-        if (!$this->pq->set(1)) {
-            $this->set_error($this->pq->error());
-            return false;
-        }
-        return $this->write($this->profile(), 'add');
+        return !$this->pq->set(1) 
+                ? : $this->write($this->data(), 'add');
     }
-
-    private function profile($profile = false) {
-        global $conf;
-        $name = $profile ? $profile : $this->name();
-        $fwlist = ($profile == $conf->disabled_profile) ? $conf->disabled_list : $conf->active_list;
-        $rate = ($profile == $conf->disabled_profile) ? $conf->disabled_rate.'M' : $this->rate() ;
+    
+    protected function data() {
         return (object) [
-                    'name' => $name,
+                    'name' => $this->name(),
                     'local-address' => $this->local_addr(),
-                    'rate-limit' => $rate ,
-                    'parent-queue' => $this->is_nas ? 'none' : $this->pq->name(),
-                    'address-list' => $fwlist,
+                    'rate-limit' => $this->rate()->text ,
+                    'parent-queue' => $this->pq->name(),
+                    'address-list' => $this->addr_list(),
         ];
     }
+    
+    protected function addr_list(){
+        global $conf ;
+        return $this->svc->disabled 
+                ? $conf->active_list 
+                : $conf->disabled_list ;
+    }
+
+
+    protected function name(){
+        global $conf ;
+        return $this->svc->disabled 
+                ? $conf->disabled_profile
+                : $this->svc->plan_name();
+    }
+    
+    protected function rate() {
+        $rate = parent::rate();
+        global $conf ;
+        $r = $conf->disabled_rate;
+        $disabled = (object)[
+            'text' => $r.'M/'.$r.'M',
+            'upload' => $r,
+            'download' => $r,
+        ];
+        return $this->svc->disabled ? $disabled: $rate ;
+    }
+
 
     private function local_addr() { // get one address for profile local address
         $savedPath = $this->path;
@@ -113,12 +99,6 @@ class MT_Profile extends MT {
         }
         $this->path = $savedPath;
         return false;
-    }
-
-    private function name() {
-        $planId = $this->{$this->data->actionObj}->servicePlanId ;
-        $plan = (new Plans($planId))->list()[$planId];
-        return $plan['name'];
     }
 
     protected function exists($profile = false) {

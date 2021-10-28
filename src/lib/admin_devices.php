@@ -61,7 +61,7 @@ class Devices extends Admin {
     }
 
     private function setUsers() {
-        $db = new CS_SQLite();
+        $db = new API_SQLite();
         foreach ($this->read as &$device) {
             $device['users'] = $db->countServicesByDeviceId($device['id']);
         }
@@ -128,7 +128,7 @@ class Devices extends Admin {
     }
 
     private function connect() {
-        return new CS_SQLite();
+        return new API_SQLite();
     }
 
 }

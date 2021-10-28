@@ -1,7 +1,7 @@
 <?php
 
-include_once 'app_ipv4.php';
-include_once 'app_uisp.php';
+//include_once 'app_ipv4.php';
+//include_once 'app_uisp.php';
 
 class Device_Account extends Device_Template {
 
@@ -24,7 +24,7 @@ class Device_Account extends Device_Template {
         $clientId = $this->data->extraData->entity->clientId;
         $id = $this->data->entityId;
         $this->trim();  // trim after aquiring data
-        $u = new CS_UISP();
+        $u = new API_Unms();
         if ($u->request('/clients/services/' . $id . '/end', 'PATCH')) {//end service
             $u->request('/clients/services/' . $id, 'DELETE'); //delete service
             sleep($conf->unsuspend_fix_wait);
@@ -70,10 +70,10 @@ class Device_Account extends Device_Template {
             } //user provided address
         }
         if (in_array($this->data->changeType, ['insert', 'move', 'upgrade'])) {
-            $ip = new CS_IPv4();
+            $ip = new API_IPv4();
             $addr = $ip->assign($device);  // acquire new address
         } else {
-            $db = new CS_SQLite();
+            $db = new API_SQLite();
             $addr = $db->selectIpAddressByServiceId($this->before->id); //reuse old address
         }
         if (!$addr) {
@@ -86,12 +86,12 @@ class Device_Account extends Device_Template {
 
     protected function save() {
         $data = $this->save_data();
-        $db = new CS_SQLite();
+        $db = new API_SQLite();
         return $db->{$this->data->changeType}($data);
     }
 
     protected function clear() {
-        $db = new CS_SQLite();
+        $db = new API_SQLite();
         $db->delete($this->{$this->data->actionObj}->id);
     }
 
@@ -110,7 +110,7 @@ class Device_Account extends Device_Template {
     protected function device_id() {
         global $conf;
         $name = $this->entity->{$conf->device_name_attr};
-        $db = new CS_SQLite();
+        $db = new API_SQLite();
         return $db->selectDeviceIdByDeviceName($name);
     }
 

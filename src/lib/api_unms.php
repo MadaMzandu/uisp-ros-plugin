@@ -2,7 +2,7 @@
 
 use Ubnt\UcrmPluginSdk\Service\UcrmApi;
 
-class CS_UISP {
+class API_Unms {
 
     private $method;
     private $has_data = false ;
