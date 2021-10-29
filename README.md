@@ -2,6 +2,19 @@
 
 So it finally came to be, a simple to install plugin replacement for the previous api based version.
 
+# New Features
+
+1. All new graphical interface for adding devices and managing settings
+2. One click installation via uisp plugin interface
+3. Contention ratios - the plugin will now create and manage parent queues to apply contention per router device.
+4. Automatic ppp profile creation - ppp profiles for service plans are now created/removed automatically
+5. Rebuild utility - the plugin can now re-sync itself and router devices against uisp. A new router can now be repopulated with accounts in minutes.
+
+## Other features
+1. Real time provisioning, editing, suspending, unsuspending of accounts
+2. Real time migration of accounts between devices
+3. Supports both dhcp and pppoe and other ppp variants
+
 # Installation
 
 1. Download the zip file in the src directory and upload into your Uisp > Settings > Plugins.
