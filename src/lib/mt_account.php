@@ -7,7 +7,7 @@ class MT_Account extends MT {
     private $profile;
     private $q;
 
-    public function __construct(&$svc) {
+    public function __construct(Service &$svc) {
         parent::__construct($svc);
         $this->path = $this->path();
         $this->profile = new MT_Profile($svc);
@@ -15,14 +15,14 @@ class MT_Account extends MT {
     }
 
     public function edit() {
-
-        $data = $this->data();
+        $data = (object)$this->data();
         if ($this->write($data, 'set')) {
             $this->disconnect();
             if (!$this->save()) {
                 return false;
             }
-            $this->set_message('service was updated');
+            $this->set_message('service for '
+                    .$this->svc->client_name().' was updated');
             return true;
         }
         return false;
@@ -37,14 +37,12 @@ class MT_Account extends MT {
         if (!$this->write($this->data(), 'add')) {
             return false;
         }
-        $this->insertId = $this->read;
-        if (!$this->insertId) {
-            return false;
-        }
+        $this->save['mtId'] = $this->read ;
         if (!$this->save()) {
             return false;
         }
-        $this->set_message('service has been added');
+        $this->set_message('service for '
+                .$this->svc->client_name().' has been added');
         return true;
     }
 
@@ -52,14 +50,16 @@ class MT_Account extends MT {
         if (!$this->exists()) {
             return $this->insert(); //normal insert if not fount
         }
-        $account = $this->search[0] ;
+        $account = $this->search[0];
         $q = $this->fix_queue_id();
-        
+
         if ($this->fix_save($account, $q)) {
-            $this->set_message('ccount was successfully repaired');
-            return true ;
+            $this->set_message('account for '
+                    .$this->svc->client_name().' was successfully repaired');
+            return true;
         }
-        $this->set_error('failed to repair the account');
+        $this->set_error('failed to repair account for '
+                .$this->svc->client_name());
         return false;
     }
 
@@ -73,21 +73,28 @@ class MT_Account extends MT {
     }
 
     private function fix_save($account, $q) {
-        $data['address'] = isset($account['address']) ? $account['address'] : $account['remote-address'];
-        $data['mtId'] = $account['.id'] ?? null;
-        $data['queueId'] = $q ?? null;
-        return $this->svc->save((object) $data);
+        $this->save['address'] = isset($account['address']) 
+                ? $account['address'] : $account['remote-address'];
+        $this->save['mtId'] = $account['.id'] ?? null;
+        $this->save['queueId'] = $q ?? null;
+        return $this->save();
     }
 
     public function suspend() {
         global $conf;
-        $id = $this->svc->id();
+        $name = $this->svc->client_name();
+        if ($this->svc->pppoe) {
+            $this->svc->count = 1;
+            if(!$this->set_ppp_profile()){
+                return false;
+            }
+        }
         if ($this->edit()) {
             if ($this->svc->unsuspend && $conf->unsuspend_date_fix) {
-                //$this->fix();
+                $this->date_fix();
             }
             $action = $this->svc->unsuspend ? 'unsuspended' : 'suspended';
-            $this->set_message('service id:' . $id . ' was ' . $action);
+            $this->set_message('service for ' . $name . ' was ' . $action);
             return true;
         }
         return false;
@@ -127,14 +134,7 @@ class MT_Account extends MT {
         global $conf;
         return $this->svc->disabled ? $conf->disabled_list : $conf->active_list;
     }
-
-    protected function save() {
-        $data = [];
-        $data['mtId'] = $this->insertId ?? null;
-        $data['queueId'] = $this->q->insertId() ?? null;
-        return $this->svc->save((object)$data);
-    }
-
+    
     protected function path() {
         return $this->svc->pppoe ? '/ppp/secret/' : '/ip/dhcp-server/lease/';
     }
@@ -144,30 +144,30 @@ class MT_Account extends MT {
     }
 
     private function dhcp_data() {
-        $data = (object) array(
+        return [
                     'address' => $this->svc->ip(),
                     'mac-address' => $this->svc->mac(),
                     'insert-queue-before' => 'bottom',
                     'address-lists' => $this->addr_list(),
                     'comment' => $this->comment(),
-        );
-        return $data;
+                    '.id' => $this->svc->mt_account_id(),
+        ];
     }
 
     private function pppoe_data() {
         global $conf;
         $profile = $this->svc->disabled 
-                ? $conf->disabled_profile 
-                : $this->svc->plan_name();
-        return (object) array(
+                ? $conf->disabled_profile : $this->svc->plan_name();
+        return [
                     'remote-address' => $this->svc->ip(),
                     'name' => $this->svc->username(),
                     'password' => $this->svc->password(),
                     'profile' => $profile,
                     'comment' => $this->comment(),
-        );
+                    '.id' => $this->svc->mt_account_id(),
+        ];
     }
-
+    
     private function set_profile() {
         return $this->svc->pppoe ? $this->set_ppp_profile() : $this->set_dhcp_queue();
     }
@@ -186,7 +186,7 @@ class MT_Account extends MT {
                 $this->set_error($this->q->error());
                 return false;
             }
-            $this->queueId = $this->q->insertId();
+            $this->save['queueId'] = $this->q->insertId();
         } else {
             if (!$this->q->delete()) {
                 $this->set_error($this->q->error());

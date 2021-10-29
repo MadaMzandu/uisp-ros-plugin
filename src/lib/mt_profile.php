@@ -66,9 +66,10 @@ class MT_Profile extends MT {
 
     protected function name(){
         global $conf ;
-        return $this->svc->disabled 
+        $name = $this->svc->disabled 
                 ? $conf->disabled_profile
                 : $this->svc->plan_name();
+        return $name ;
     }
     
     protected function rate() {

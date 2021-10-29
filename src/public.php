@@ -28,7 +28,7 @@ if(!bak_is_ok()){ // create automatic backup
     create_backup();
 }
 
-include_once('lib/app_router.php');
+include_once('lib/api_router.php');
 require_once 'vendor/autoload.php';
 
 
