@@ -63,8 +63,9 @@ class Service_Account extends Service_Plan {
     }
     
     public function save($data){
-        $rec = $this->data($data);
-        return $this->db->insert($rec) ? : $this->db->edit($rec);
+        $save = $this->data($data);
+        $edit = in_array($this->data->changeType,['edit','suspend']);
+        return $edit ? $this->db->edit((object)$save) : $this->db->insert((object)$save);
     }
     
     public function delete(){
@@ -97,18 +98,18 @@ class Service_Account extends Service_Plan {
     }
     
     protected function data($data) {
-        $rec = (object) array(
+        $save = [
                     'id' => $this->entity->id,
                     'planId' => $this->entity->servicePlanId,
                     'clientId' => $this->entity->clientId,
                     'address' => $this->ip(),
                     'status' => $this->entity->status,
                     'device' => $this->dev->id,
-        );
-        foreach(array_keys((array)$data) as $key){
-            $rec->$key = $data->{$key} ;
+        ];
+        foreach(array_keys($data) as $key){
+            $save[$key] = $data[$key] ?? null;
         }
-        return $rec ;
+        return $save ;
     }
 
     protected function assign_ip() {

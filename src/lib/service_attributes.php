@@ -84,7 +84,7 @@ class Service_Attributes extends Service_Base {
     
     protected function set_action(){
         $change = 'set_'.$this->data->changeType;
-        if(in_array($this->data->changeType,['end','insert','edit'])){
+        if(in_array($this->data->changeType,['end','insert','edit','unsuspend'])){
             $this->$change();
         }
         $this->action = $this->data->changeType ;

@@ -18,7 +18,7 @@ if(!file_exists('data/data.db')){
     if(!$done) exit();
 }
 
-include_once('lib/app_router.php');
+include_once('lib/api_router.php');
 require_once 'vendor/autoload.php';
 
 $json = file_get_contents('php://input') ?? false;

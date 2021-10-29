@@ -5,7 +5,7 @@ class Service_Base {
     
     public $ready = true ;
     protected $status ;
-    protected $_data;
+    protected $data;
     protected $entity;
     protected $before;
     protected $conf;
@@ -22,6 +22,10 @@ class Service_Base {
     
     public function error(){
         return $this->status->message ;
+    }
+    
+    public function entity(){
+        return $this->data->extraData->entity;
     }
     
     protected function init() {

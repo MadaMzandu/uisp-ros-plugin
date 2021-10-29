@@ -1,41 +1,17 @@
 <?php
 
 include_once 'routeros_api.class.php';
+include_once 'device.php';
 
-class MT {
+class MT extends Device {
 
     protected $svc ;
     protected $path ;
     protected $insertId ;
-    protected $result ;
-    protected $status ;
-    protected $read ;
     protected $search;
-
-
-    public function __construct(Service &$svc) {
-        $this->svc = $svc;
-        $this->init();
-    }
     
-    public function status() {
-        return $this->status;
-    }
     
-    public function result() {
-        return $this->result;
-    }
-    
-    protected function init(){
-        $this->status = (object) [];
-        $this->status->session = false;
-        $this->status->error = false;
-    }
-    
-     protected function rate(){
-         return $this->svc->rate();
-     }
-
+   
     protected function read($filter = false) {  //implements mikrotik print
         $api = $this->connect();
         if (!$api) {
@@ -139,26 +115,7 @@ class MT {
         return false ;
     }
 
-
-
-
-    protected function comment() {
-        return $this->svc->id() . ", "
-                . $this->svc->client_id() . " - "
-                . $this->svc->client_name();
-    }
-    
-    
-    protected function error(){
-        return $this->status->message ;
-    }
-
-
-    protected function set_message($msg) {
-        $this->status->error = false;
-        $this->status->message = $msg;
-    }
-
+   
     protected function set_error($msg, $obj = false) {
         $this->status->error = true;
         if ($obj) {
