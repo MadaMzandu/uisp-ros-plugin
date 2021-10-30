@@ -1,18 +1,12 @@
 <?php
 
-include_once 'mt.php';
 include_once 'mt_account.php';
-include_once 'mt_queue.php';
-include_once 'mt_profile.php';
-include_once 'mt_parent_queue.php';
 
 class API_Routes {
 
     private $status;
     private $service ;
     private $module;
-    private $entity ;
-    private $before ;
 
     public function __construct(&$service) {
         $this->service = $service;
@@ -21,19 +15,17 @@ class API_Routes {
             'message' => '',
             'error' => false,
         ];
-        $module = $this->device_selector();
-        
+        $this->exec();
+    }
+
+    private function exec() {
+        $module = $this->select_device();
         if(!$module){
             $this->status->error = true ;
             $this->status->message = 'Could not find module for provided device';
             return ;
         }
-        
         $this->module = new $module($this->service);
-        $this->exec();
-    }
-
-    private function exec() {
         $action = $this->service->action;
         $this->module->$action();
         $this->status = $this->module->status();
@@ -43,7 +35,7 @@ class API_Routes {
         return $this->status;
     }
 
-    private function device_selector() {
+    private function select_device() {
         $map = [
             'radius' => 'Radius_Account',
             'mikrotik' => 'MT_Account',

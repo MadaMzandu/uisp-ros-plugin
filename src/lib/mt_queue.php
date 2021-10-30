@@ -40,6 +40,9 @@ class MT_Queue extends MT {
     }
 
     public function edit() {
+        if($this->svc->count != 0){
+            $this->pq->set();
+        }
         $data = $this->data();
         return $this->write($data, 'set');
     }

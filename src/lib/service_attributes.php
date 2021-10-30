@@ -14,7 +14,9 @@ class Service_Attributes extends Service_Base {
     protected $rec ;
     
 
-    
+    public function change_type($value){
+        $this->data->changeType = $value ;
+    }
 
     protected function init() {
         parent::init();
