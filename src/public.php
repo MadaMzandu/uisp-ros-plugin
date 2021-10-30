@@ -6,16 +6,14 @@ header('Access-Control-Max-Age: 1000');
 header('Access-Control-Allow-Headers: Content-Type, Content-Range, Content-Disposition, Content-Description');
 chdir(__DIR__);
 
-// restore default config if no config is found
-if(!file_exists('data/data.db')){
-    $db = new SQLite3('data/data.db');
-    $schema = file_get_contents('includes/schema.sql');
-    $done = false ;
-    if($db->exec($schema)){
-        $conf = file_get_contents('includes/conf.sql');
-        $done = $db->exec($conf);
-    }
-    if(!$done) exit();
+include_once 'includes/updates.php';
+
+if(!db_is_ok()){ //restore db with defaults
+    if(!create_db()){exit();}
+}
+
+if(!version_is_ok()){ //apply updates
+    apply_updates();
 }
 
 include_once('lib/app_router.php');

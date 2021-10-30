@@ -29,9 +29,16 @@ class CS_SQLite {
     }
 
     public function insert($data, $table = 'services') {
-        $this->data = $data;
+        $this->data = is_array($data) ? (object) $data: $data ;
         $this->table = $table;
         return $this->db->exec($this->prepareInsert());
+    }
+    
+    public function insertMultiple($data, $table = 'services') {
+        $this->data = $data ;
+        $this->table = $table;
+        var_dump($this->prepareMultipleInsert());
+        return $this->db->exec($this->prepareMultipleInsert());
     }
 
     public function upgrade($data, $table = 'services') {
@@ -207,6 +214,22 @@ class CS_SQLite {
             $fields .= $key . "='" . $this->data->{$key} . "',";
         }
         return $sql . substr($fields, 0, -1) . " where id=" . $this->id;
+    }
+    
+    private function prepareMultipleInsert(){
+        $sql = 'insert into ' . $this->table . " (";
+        $keys = array_keys($this->data[0]);
+        $keys[] = 'created';
+        $sql .= implode(',', $keys) .') values ';
+        foreach($this->data as $row){
+            $row['created'] = $this->getTime();
+            if(is_bool($row['value'])){ //convert booleans
+                $row['value'] = $row['value'] ? 'true' : 'false';
+            }
+   
+            $sql .= "('". implode("','", array_values((array)$row)) ."'),";
+        }
+        return substr($sql,0,-1);
     }
 
     private function prepareInsert() {
