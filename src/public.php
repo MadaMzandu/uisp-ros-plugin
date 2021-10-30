@@ -29,7 +29,8 @@ if ($json) { // api mode
     exit();
 }
 
-if ($_SERVER['REQUEST_METHOD'] == 'OPTIONS') { //skip redirect for options 
+if (isset($_SERVER['REQUEST_METHOD']) 
+        && $_SERVER['REQUEST_METHOD'] == 'OPTIONS') { //skip redirect for options 
     exit();
 }
 

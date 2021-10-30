@@ -37,7 +37,6 @@ class CS_SQLite {
     public function insertMultiple($data, $table = 'services') {
         $this->data = $data ;
         $this->table = $table;
-        var_dump($this->prepareMultipleInsert());
         return $this->db->exec($this->prepareMultipleInsert());
     }
 
