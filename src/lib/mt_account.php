@@ -108,6 +108,11 @@ class MT_Account extends MT {
     public function suspend() {
         global $conf;
         $id = $this->entity->id;
+        $count = $this->data->unsuspendFlag ? 0 : 1;
+        
+        if($this->is_pppoe()){
+            $this->set_ppp_profile($count);
+        }
         if ($this->edit()) {
             if ($this->data->unsuspendFlag && $conf->unsuspend_date_fix) {
                 $this->fix();
@@ -214,10 +219,9 @@ class MT_Account extends MT {
 
     private function pppoe_data() {
         global $conf;
-        $profile = $this->entity->servicePlanName;
-        if (!in_array($this->entity->status, [1])) {
-            $profile = $conf->disabled_profile;
-        }
+        $profile = $this->entity->status == 1 
+                ? $this->entity->servicePlanName 
+                : $conf->disabled_profile ;
         return (object) array(
                     'remote-address' => $this->data->ip,
                     'name' => $this->entity->{$conf->pppoe_user_attr},

@@ -84,18 +84,28 @@ class MT_Profile extends MT {
         return $this->write($this->profile(), 'add');
     }
 
-    private function profile($profile = false) {
-        global $conf;
-        $name = $profile ? $profile : $this->name();
-        $fwlist = ($profile == $conf->disabled_profile) ? $conf->disabled_list : $conf->active_list;
-        $rate = ($profile == $conf->disabled_profile) ? $conf->disabled_rate.'M' : $this->rate() ;
+    private function profile() {
         return (object) [
-                    'name' => $name,
+                    'name' => $this->name(),
                     'local-address' => $this->local_addr(),
-                    'rate-limit' => $rate ,
+                    'rate-limit' => $this->rate(),
                     'parent-queue' => $this->is_nas ? 'none' : $this->pq->name(),
-                    'address-list' => $fwlist,
+                    'address-list' => $this->fwlist(),
         ];
+    }
+    
+    protected function fwlist() {
+        global $conf ;
+        return $this->is_disabled() 
+                ? $conf->disabled_list : $conf->active_list;
+    }
+    
+    protected function rate(){
+        global $conf ;
+        $rate = parent::rate();
+        $disabled_limit = $conf->disabled_rate ?? null;
+        $disabled_rate = $disabled_limit.'M/'.$disabled_limit.'M';
+        return $this->is_disabled() ? $disabled_rate : $rate ;
     }
 
     private function local_addr() { // get one address for profile local address
@@ -116,9 +126,10 @@ class MT_Profile extends MT {
     }
 
     private function name() {
-        $planId = $this->{$this->data->actionObj}->servicePlanId ;
-        $plan = (new Plans($planId))->list()[$planId];
-        return $plan['name'];
+        global $conf ;
+        return $this->is_disabled() 
+                ? $conf->disabled_profile 
+                : $this->entity->servicePlanName ;
     }
 
     protected function exists($profile = false) {
