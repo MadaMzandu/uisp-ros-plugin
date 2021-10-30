@@ -1,6 +1,9 @@
 <?php
 
 include_once 'mt.php';
+include_once 'mt_queue.php';
+include_once 'mt_profile.php';
+include_once 'mt_parent_queue.php';
 
 class MT_Account extends MT {
 
@@ -34,7 +37,7 @@ class MT_Account extends MT {
         if (!$this->set_profile()) {
             return false;
         }
-        if (!$this->write($this->data(), 'add')) {
+        if (!$this->write((object)$this->data(), 'add')) {
             return false;
         }
         $this->save['mtId'] = $this->read ;
@@ -58,17 +61,18 @@ class MT_Account extends MT {
                     .$this->svc->client_name().' was successfully repaired');
             return true;
         }
-        $this->set_error('failed to repair account for '
-                .$this->svc->client_name());
+        //$this->set_error('failed to repair account for '
+          //      .$this->svc->client_name());
         return false;
     }
 
     private function fix_queue_id() {
+        $this->svc->count = 1;
+        $this->set_profile();
         if ($this->svc->pppoe) { //if dhcp
             return null;
         }
         $q = $this->q->findId();
-        $this->svc->count = 1;
         return $q ? $q : ($this->set_profile() ? $this->q->insertId() : false);
     }
 
@@ -77,7 +81,9 @@ class MT_Account extends MT {
                 ? $account['address'] : $account['remote-address'];
         $this->save['mtId'] = $account['.id'] ?? null;
         $this->save['queueId'] = $q ?? null;
-        return $this->save();
+        $data = $this->data();
+        $data['.id'] = $account['.id'];
+        return $this->write((object)$data) ? $this->save() : false;
     }
 
     public function suspend() {
@@ -115,13 +121,15 @@ class MT_Account extends MT {
     }
 
     public function delete() {
-        if (!$this->set_profile(-1)) {
+        $this->svc->count = -1 ;
+        if (!$this->set_profile()) {
             return false;
         }
-        $data = (object) ['.id' => $this->svc->record()->mtId];
+        $data = (object) ['.id' => $this->svc->mt_account_id()];
         if ($this->write($data, 'remove')) {
             $this->disconnect();
-            $this->set_message('service was deleted');
+            $this->set_message('service for '
+                    .$this->svc->client_name(). ' was deleted');
             if (in_array($this->svc->action, ['delete', 'move', 'upgrade'])) {
                 $this->svc->delete();
             }
