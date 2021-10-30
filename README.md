@@ -39,11 +39,20 @@ If you have been using the previous api based version:
 Please ensure that your mikrotik devices are added to the plugin and are online. The rebuild process is harmless and can be run any number of times. To verify if rebuild was successful go to the Devices tab and check the number of user accounts listed for each device.
 
 # Using
-The custom attributes in Configution (4) should be listed in the form when creating or editing a service.
+
+The custom attributes in Configution (4) should be listed in the form when creating or editing a service in Uisp.
 1. Fill the device name to specify the router for the clients account
 2. PPPoE username and Password to provision PPPoE.
 3. Mac address to provision DHCP instead.
 4. IP address to bypass the pool
+
+## Handling account suspension and unsuspension
+
+The plugin provides four mikrotik parameters that allow customizing how disabled accounts are handled. These are:
+1. required : disabled profile - the name of a ppp profile to assign suspended accounts. Created automatically if missing.
+2. required : disabled address list - the name of firewall address list to assign suspended accounts. Firewall rules for the the list must be manually configured by admin. The rules can be nat rules to redirect and filter rules to drop.
+3. required : disabled rate - the rate limit to apply to disabled accounts. Automatically applied to ppp profile or dhcp queue. 
+4. optional : active address list - extra address list to apply to active accounts. Firewall rules must be manually configured by admin.
 
 
 
