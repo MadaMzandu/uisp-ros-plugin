@@ -5,4 +5,5 @@
 /src/lib/_temp.php
 /src/test.json
 /.idea/
+/src/composer.lock
 .phpunit.result.cache
