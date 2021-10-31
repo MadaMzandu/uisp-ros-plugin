@@ -18,8 +18,6 @@ class Backup extends Admin {
         $last_backup = $count > 6 ? 0 : $count; // zero on 7 counts
         $backup = 'public/backup-' . ++$last_backup;
         $main = 'data/data.db';
-        //$main = new SQLite3('data/data.db');
-        //$copy = new SQLite3($backup);
         if (copy($main,$backup)) {
             $now = new DateTime();
             file_put_contents('data/.last_backup',
@@ -27,7 +25,6 @@ class Backup extends Admin {
             $this->set_message('backup has been created');
             return true;
         }
-        $this->set_error($e->getMessage());
         return false;
     }
 
@@ -67,8 +64,6 @@ class Backup extends Admin {
             $this->set_error('backup file was not found');
             return false ;
         }
-        //$main = new SQLite3('data/data.db');
-        //$copy = new SQLite3($name);
         if (!copy($name,'data/data.db')) {
             $this->set_error('failed to restore backup');
             return false;

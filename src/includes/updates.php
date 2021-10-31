@@ -1,43 +1,66 @@
 <?php
-include_once 'lib/app_sqlite.php';
 
-$version = '1.8.1';
+include_once 'lib/app_sqlite.php';
+include_once 'lib/admin.php';
+include_once 'lib/admin_backup.php';
+
+$version = '1.8.0';
 $conf = (new CS_SQLite())->readConfig();
 
-$conf_updates  = [ //defaults
-    'version' => '1.8.1',  
+$conf_updates = [//defaults
+    'version' => '1.8.0',
     'disabled_rate' => 1,
 ];
 
-function create_db(){
+function create_db() {
     $db = new SQLite3('data/data.db');
     $schema = file_get_contents('includes/schema.sql');
-    if($db->exec($schema)){
+    if ($db->exec($schema)) {
         $default_conf = file_get_contents('includes/conf.sql');
         return $db->exec($default_conf);
     }
-    return false ;
+    return false;
 }
 
-function apply_updates(){
-    global $conf,$conf_updates;
-    $data=[];
-    foreach(array_keys($conf_updates) as $key){
-        if(isset($conf->$key)){continue;}
+function apply_updates() {
+    global $conf, $conf_updates;
+    $data = [];
+    foreach (array_keys($conf_updates) as $key) {
+        if (isset($conf->$key)) {
+            continue;
+        }
         $data[] = ['key' => $key, 'value' => $conf_updates[$key]];
     }
-    return (new CS_SQLite())->insertMultiple($data,'config');
+    return (new CS_SQLite())->insertMultiple($data, 'config');
 }
 
-function db_is_ok(){
-    return file_exists('data/data.db');
+function create_backup(){
+    $data = false;
+    return (new Backup($data))->backup();
 }
 
-function version_is_ok(){
-    global $version,$conf;
-    if(!isset($conf->version) || $version > $conf->version){
-        return false ;
+function bak_is_ok() {
+    if(!file_exists('data/.last_backup')){return false;}
+    $file = file_get_contents('data/.last_backup');
+    $date = $file ? explode(',', $file . ",2000-01-01 00:00:00")[1] : '2000-01-01 00:00:00';
+    $last = new DateTime($date);
+    $now = new DateTime();
+    $interval = new DateInterval('P1D');
+    $last->add($interval);
+    if ($last < $now) {
+       return false ;
     }
     return true ;
 }
 
+function db_is_ok() {
+    return file_exists('data/data.db');
+}
+
+function version_is_ok() {
+    global $version, $conf;
+    if (!isset($conf->version) || $version > $conf->version) {
+        return false;
+    }
+    return true;
+}

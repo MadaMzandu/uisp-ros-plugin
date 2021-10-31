@@ -15,9 +15,14 @@ if(!db_is_ok()){ //restore db with defaults
 if(!version_is_ok()){ //apply updates
     apply_updates();
 }
+if(!bak_is_ok()){ // create automatic backup
+    create_backup();
+}
 
 include_once('lib/app_router.php');
 require_once 'vendor/autoload.php';
+
+
 
 $json = file_get_contents('php://input') ?? false;
 
