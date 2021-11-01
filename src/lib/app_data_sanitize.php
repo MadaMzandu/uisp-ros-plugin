@@ -45,9 +45,13 @@ Class Data_Sanitize {
     }
 
     private function sanitize_edit() {
-        if ($this->check_exists()) {
-            $this->check_device_move();
-        }
+       if(!$this->has_record()){
+           $this->data->changeType = 'insert_fix';
+           return;
+       }
+       if($this->has_moved()){
+           $this->data->changeType = 'move';
+       }
     }
 
     private function sanitize_unsuspend() {
@@ -62,32 +66,21 @@ Class Data_Sanitize {
         }
     }
 
-    private function check_exists() {
-        $db = new CS_SQLite();
-        $this->data->utilFlag = false ;
-        if (!$db->ifServiceIdExists($this->data->entityId)) {
-            $this->data->changeType = 'insert';
-            $this->data->utilFlag = true ;
-            return false;
-        }
-        return true;
+    private function has_record() {
+       return (new CS_SQLite())->ifServiceIdExists($this->entity->id);
     }
 
-    private function check_device_move() {
+    private function has_moved() {
         global $conf;
-        $savedName = $this->getSavedDeviceName(); // use saved name because of uisp bug
+        $savedName = (new CS_SQLite())
+            ->selectDeviceNameByServiceId($this->entity->id);// use saved name because of uisp bug
         $thisName = strtolower(
                 $this->entity->{$conf->device_name_attr});
-        if ($thisName != strtolower($savedName) ) {
+        if ($thisName!= strtolower($savedName) ) {
             $this->before->{$conf->device_name_attr} = $savedName; // correct before entity
-            $this->data->changeType = 'move';
+            return true ;
         }
-    }
-
-    private function getSavedDeviceName() {
-        $db = new CS_SQLite();
-        $id = $this->data->entityId;
-        return $db->selectDeviceNameByServiceId($id);
+        false ;
     }
 
     private function set_custom_attr() {
