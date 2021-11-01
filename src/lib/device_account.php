@@ -1,9 +1,10 @@
 <?php
 
+include_once 'device_base.php';
 include_once 'app_ipv4.php';
-include_once 'app_uisp.php';
+include_once '_temp.php';
 
-class Device_Account extends Device_Template {
+class Device_Account extends Device_Base {
 
     protected function init() {
         global $conf;
@@ -15,48 +16,6 @@ class Device_Account extends Device_Template {
                 if (!property_exists($obj, $attribute)) { // create unused attributes with null values
                     $obj->{$attribute} = null;
                 }
-            }
-        }
-    }
-
-    protected function fix() {
-        global $conf;
-        $clientId = $this->data->extraData->entity->clientId;
-        $id = $this->data->entityId;
-        $this->trim();  // trim after aquiring data
-        $u = new CS_UISP();
-        if ($u->request('/clients/services/' . $id . '/end', 'PATCH')) {//end service
-            $u->request('/clients/services/' . $id, 'DELETE'); //delete service
-            sleep($conf->unsuspend_fix_wait);
-            $u->request('/clients/' . $clientId . '/services', 'POST', $this->entity); //recreate service
-        }
-    }
-
-    protected function trim() {
-        $vars = $this->trim_fields();
-        foreach ($vars as $var) {
-            unset($this->entity->$var);
-        }
-        $this->trim_attrbs();
-    }
-
-    protected function trim_fields() {
-        global $conf;
-        return ['id', 'clientId', 'status', 'servicePlanId', 'invoicingStart',
-            'hasIndividualPrice', 'totalPrice', 'currencyCode', 'servicePlanName',
-            'servicePlanPrice', 'servicePlanType', 'downloadSpeed', 'uploadSpeed',
-            'hasOutage', 'lastInvoicedDate', 'suspensionReasonId', 'serviceChangeRequestId',
-            'downloadSpeedOverride', 'uploadSpeedOverride', 'trafficShapingOverrideEnd',
-            'trafficShapingOverrideEnabled', $conf->mac_addr_attr, $conf->device_name_attr,
-            $conf->pppoe_user_attr, $conf->pppoe_pass_attr, 'unmsClientSiteId',
-            $conf->ip_addr_attr, 'clientName'];
-    }
-
-    protected function trim_attrbs() {
-        $vars = ["id", "serviceId", "name", "key", "clientZoneVisible"];
-        foreach ($this->entity->attributes as $attrb) {
-            foreach ($vars as $var) {
-                unset($attrb->$var);
             }
         }
     }

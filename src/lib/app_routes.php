@@ -1,6 +1,6 @@
 <?php
 
-include_once 'device_template.php';
+include_once 'device_base.php';
 include_once 'device_account.php';
 include_once 'device.php';
 include_once 'mt.php';

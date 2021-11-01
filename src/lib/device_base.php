@@ -3,7 +3,7 @@
 include_once 'app_sqlite.php';
 $conf = (new CS_SQLite())->readConfig();
 
-class Device_Template {
+class Device_Base {
 
     protected $data; // request data object
     protected $entity; // shortcut to data->extraData->entity
