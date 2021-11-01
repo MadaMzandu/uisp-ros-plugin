@@ -41,9 +41,8 @@ class MT_Queue extends MT {
     }
 
     public function edit() {
-        // figure we don't touch the parent
+        $this->pq->set(1);
         $data = $this->data();
-        unset($data->parent); // since we are not editing parent
         $data->{'.id'} = $this->savedId();
         return $this->write($data, 'set');
     }

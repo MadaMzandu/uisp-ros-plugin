@@ -6,6 +6,7 @@ class MT extends Device {
 
     protected $path ;
     protected $insertId ;
+    protected $search;
 
     protected function read($filter = false) {  //implements mikrotik print
         $api = $this->connect();
