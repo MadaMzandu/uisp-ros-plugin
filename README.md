@@ -9,6 +9,7 @@ So it finally came to be, a simple to install plugin replacement for the previou
 3. Contention ratios - the plugin will now create and manage parent queues to apply contention per router device.
 4. Automatic ppp profile creation - ppp profiles for service plans are now created/removed automatically
 5. Rebuild utility - the plugin can now re-sync itself and router devices against uisp. A new router can now be repopulated with accounts in minutes.
+6. Automatic backup - although the plugin can resync itself with uisp and managed routers, there is a now backup feature for added redundancy.
 
 ## Other features
 1. Real time provisioning, editing, suspending, unsuspending of accounts
