@@ -24,6 +24,10 @@ function apply_updates() {
     return (new CS_SQLite())->insertMultiple($data, 'config');
 }
 
+function create_backup(){
+    return (new Backup())->backup();
+}
+
 function bak_is_ok() {
     if(!file_exists('data/.last_backup')){return false;}
     $file = file_get_contents('data/.last_backup');
