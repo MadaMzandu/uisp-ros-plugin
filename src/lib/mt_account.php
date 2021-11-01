@@ -124,7 +124,7 @@ class MT_Account extends MT {
 
     public function delete(): bool {
         if (!$this->set_profile(-1)) {
-            return false;
+            // return false;
         }
         $id = $this->{$this->data->actionObj}->id;
         $data = (object) ['.id' => $this->savedId()];

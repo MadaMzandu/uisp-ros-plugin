@@ -9,3 +9,4 @@
 .phpunit.result.cache
 /src/data
 data/data.db
+ros-plugin.zip
