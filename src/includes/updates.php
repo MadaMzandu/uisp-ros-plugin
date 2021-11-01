@@ -25,7 +25,8 @@ function apply_updates() {
 }
 
 function create_backup(){
-    return (new Backup())->backup();
+    $data = false ;
+    return (new Backup($data))->backup();
 }
 
 function bak_is_ok() {
