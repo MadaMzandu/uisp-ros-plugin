@@ -7,15 +7,26 @@ header('Access-Control-Allow-Headers: Content-Type, Content-Range, Content-Dispo
 chdir(__DIR__);
 
 // restore default config if no config is found
-if(!file_exists('data/data.db')){
+if(!file_exists('data/data.db')){ //check db
     $db = new SQLite3('data/data.db');
-    $schema = file_get_contents('includes/schema.sql');
-    $done = false ;
-    if($db->exec($schema)){
-        $conf = file_get_contents('includes/conf.sql');
-        $done = $db->exec($conf);
+    $schema = file_get_contents('includes/schema.sql') ?? null;
+    $done = false;
+    if ($db->exec($schema)) {
+        $default_conf = file_get_contents('includes/conf.sql');
+        $done = $db->exec($default_conf);
     }
-    if(!$done) exit();
+    if(!$done){exit();}
+}
+// valid db required to proceed
+
+include_once 'includes/updates.php';
+
+if(!version_is_ok()){ //apply updates
+    apply_updates();
+}
+
+if(!bak_is_ok()){ // create automatic backup
+    create_backup();
 }
 
 include_once('lib/api_router.php');

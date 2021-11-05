@@ -1,42 +1,72 @@
 <?php
 
-class Device_Base {
+class Device_Base
+{
 
     protected $svc; // service data object
     protected $status; // execution status and errors
     protected $result; // output
     protected $read; // temporary reads for processing
+    protected $conf;
 
-    public function __construct(&$svc) {
+    public function __construct(&$svc)
+    {
         $this->svc = $svc;
         $this->init();
     }
 
-    public function status() {
-        return $this->status;
-    }
-    
-    public function result() {
-        return $this->result;
+    protected function init():void
+    {
+        $this->load_config();
+        $this->status = (object)[];
+        $this->status->error = false;
+        $this->status->message = 'ok';
     }
 
-    protected function error() {
-        return $this->status->message;
-    }
-    
-    protected function init() {
-        $this->status = (object) [];
-        $this->status->session = false;
-        $this->status->error = false;
+    protected function load_config()
+    {
+        $this->conf = $this->db()->readConfig();
+        if (!(array)$this->conf) {
+            $this->setErr('failed to read plugin configuration');
+        }
     }
 
-    protected function set_message($msg) {
-        $this->status->error = false;
+    protected function db()
+    {
+        try {
+            return new API_SQLite();
+        } catch (Exception $e) {
+            $this->setErr($e->getMessage());
+            return null;
+        }
+
+
+    }
+
+    protected function setErr($msg)
+    {
+        $this->status->error = true;
         $this->status->message = $msg;
     }
 
-    protected function set_error($msg) {
-        $this->status->error = true;
+    public function status()
+    {
+        return $this->status;
+    }
+
+    public function result()
+    {
+        return $this->result;
+    }
+
+    protected function error()
+    {
+        return $this->status->message;
+    }
+
+    protected function setMess($msg)
+    {
+        $this->status->error = false;
         $this->status->message = $msg;
     }
 

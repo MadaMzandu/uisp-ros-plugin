@@ -1,69 +1,102 @@
 <?php
 
-class MT_Queue extends MT {
+class MT_Queue extends MT
+{
 
     private $pq; //parent queue object
-    
-    public function __construct(&$svc) {
-        parent::__construct($svc);
+    private $id ;
+
+    protected function init(): void
+    {
+        parent::init();
         $this->path = '/queue/simple/';
-        $this->pq = new MT_Parent_Queue($svc);
+        $this->findId();
+        $this->exists = (bool) $this->insertId ;
+        $this->pq = new MT_Parent_Queue($this->svc);
     }
 
-    public function insert() {
-        $this->svc->count = 1;
-        if($this->exists()){ // edit if matching queue exists
-            return $this->edit();
+    public function set(){
+        $tmp = $this->svc->contention < 0;
+        if($this->svc->contention < 0 ){
+            return $this->delete();
         }
+        if($this->svc->contention > 0 && !$this->exists){
+            return $this->insert();
+        }
+        return $this->edit();
+    }
+
+    public function insert()
+    {
         if (!$this->pq->set()) {
-            $this->set_error($this->pq->error());
+            $this->setErr($this->pq->error());
             return false;
         }
-        if ($this->write($this->data(), 'add')) {
-            $this->insertId = $this->read;
-            return true;
-        }
-        return false;
+        $this->insertId = $this->write($this->data(), 'add');
+        return (bool) $this->insertId;
     }
 
-    public function delete() {
-        $this->svc->count = -1;
-        $del['.id'] = $this->data()->{'.id'}; 
-        if ($this->write((object)$del, 'remove')) {
-            if (!$this->pq->set(-1)) {  // edit or delete parent
-                $this->set_error($this->pq->error());
-                return false;
-            }
-            return true;
-        }
-        return false;
+    public function edit()
+    {
+        $orphanId = $this->orphaned();
+        $action = $this->exists ? 'set' : 'add';
+        $p =  $orphanId
+            ?($this->pq->reset($orphanId))
+            :($this->pq->set()) ;
+        $ret = $this->write($this->data(), $action);
+        $this->insertId = is_string($ret) ? $ret : $this->queue_id();
+        return $p && (bool) $ret;
     }
 
-    public function edit() {
-        if($this->svc->count != 0){
-            $this->pq->set();
+    private function orphaned():string
+    {
+        if(!$this->exists()){
+            return false;
         }
-        $data = $this->data();
-        return $this->write($data, 'set');
+        $queue = $this->search[0];
+        return substr($queue['parent'],0,1) == '*'
+            ? $queue['parent'] : false ;
     }
-    
-    protected function data() {
-        return (object) array(
-                    'name' => $this->name(),
-                    'target' => $this->svc->ip(),
-                    'max-limit' => $this->svc->rate()->text,
-                    'limit-at' => $this->svc->rate()->text,
-                    'parent' => $this->pq->name(),
-                    'comment' => $this->comment(),
-                    '.id' => $this->svc->record()->queueId ?? $this->name(),
+
+    protected function data()
+    {
+        return (object)array(
+            'name' => $this->name(),
+            'target' => $this->svc->ip(),
+            'max-limit' => $this->svc->rate()->text,
+            'limit-at' => $this->svc->rate()->text,
+            'parent' => $this->pq->name(),
+            'comment' => $this->comment(),
+            '.id' => $this->queue_id(),
         );
     }
-    
-    protected function name() {
-        return $this->svc->client_id() . " - "
-                . $this->svc->client_name() . " - "
-                . $this->svc->id();
+
+    protected function name()
+    {
+        return $this->svc->client_id() . "-"
+            . $this->svc->client_name() . "-"
+            . $this->svc->id();
     }
-   
-   
+
+    private function queue_id()
+    {
+        return $this->insertId
+            ?? $this->svc->mt_queue_id();
+    }
+
+    public function delete()
+    {
+        $del['.id'] = $this->data()->{'.id'};
+        if ($this->exists &&
+            !$this->write((object)$del, 'remove')) {
+            return false;
+        }
+        if (!$this->pq->set()) {  // edit or delete parent
+            $this->setErr($this->pq->error());
+            return false;
+        }
+        return true;
+    }
+
+
 }

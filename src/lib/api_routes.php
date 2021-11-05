@@ -2,15 +2,17 @@
 
 include_once 'mt_account.php';
 
-class API_Routes {
+class API_Routes
+{
 
     private $status;
-    private $service ;
+    private $service;
     private $module;
 
-    public function __construct(&$service) {
+    public function __construct($service)
+    {
         $this->service = $service;
-        $this->status = (object) [
+        $this->status = (object)[
             'status' => 'ok',
             'message' => '',
             'error' => false,
@@ -18,12 +20,13 @@ class API_Routes {
         $this->exec();
     }
 
-    private function exec() {
+    private function exec():void
+    {
         $module = $this->select_device();
-        if(!$module){
-            $this->status->error = true ;
+        if (!$module) {
+            $this->status->error = true;
             $this->status->message = 'Could not find module for provided device';
-            return ;
+            return;
         }
         $this->module = new $module($this->service);
         $action = $this->service->action;
@@ -31,18 +34,20 @@ class API_Routes {
         $this->status = $this->module->status();
     }
 
-    public function status() {
-        return $this->status;
-    }
-
-    private function select_device() {
+    private function select_device(): ?String
+    {
         $map = [
             'radius' => 'Radius_Account',
             'mikrotik' => 'MT_Account',
         ];
-        $type = $this->service->device_type() ;
-        return $type ? $map[$type] : false;
+        $type = $this->service->device()->type;
+        return $type ? $map[$type] : null;
     }
-  
+
+    public function status():?stdClass
+    {
+        return $this->status;
+    }
+
 
 }

@@ -5,51 +5,14 @@ include_once 'mt_queue.php';
 include_once 'mt_profile.php';
 include_once 'mt_parent_queue.php';
 
-class MT_Account extends MT {
+class MT_Account extends MT
+{
 
     private $profile;
     private $q;
 
-    public function __construct(Service &$svc) {
-        parent::__construct($svc);
-        $this->path = $this->path();
-        $this->profile = new MT_Profile($svc);
-        $this->q = new MT_Queue($svc);
-    }
-
-    public function edit() {
-        $data = (object)$this->data();
-        if ($this->write($data, 'set')) {
-            $this->disconnect();
-            if (!$this->save()) {
-                return false;
-            }
-            $this->set_message('service for '
-                    .$this->svc->client_name().' was updated');
-            return true;
-        }
-        return false;
-    }
-
-    public function insert() {
-
-        $this->svc->count = 1;
-        if (!$this->set_profile()) {
-            return false;
-        }
-        if (!$this->write((object)$this->data(), 'add')) {
-            return false;
-        }
-        $this->save['mtId'] = $this->read ;
-        if (!$this->save()) {
-            return false;
-        }
-        $this->set_message('service for '
-                .$this->svc->client_name().' has been added');
-        return true;
-    }
-
-    public function insert_fix() { // attempt to rebuild orphans
+    /*public function insert_fix()
+    { // attempt to rebuild orphans
         if (!$this->exists()) {
             return $this->insert(); //normal insert if not fount
         }
@@ -57,162 +20,200 @@ class MT_Account extends MT {
         $q = $this->fix_queue_id();
 
         if ($this->fix_save($account, $q)) {
-            $this->set_message('account for '
-                    .$this->svc->client_name().' was successfully repaired');
+            $this->setMess('account for '
+                . $this->svc->client_name() . ' was successfully repaired');
             return true;
         }
-        //$this->set_error('failed to repair account for '
-          //      .$this->svc->client_name());
+        $this->setErr('failed to repair account for '
+            . $this->svc->client_name());
+        return false;
+    }*/
+
+    public function insert()
+    {
+        if($this->exists){
+            return $this->edit();
+        }
+        $this->svc->contention = +1;
+        if($this->set_profile()
+            && $this->write($this->data(), 'add')
+            && $this->save()){
+            $this->setMess('service for '
+                . $this->svc->client_name() . ' has been added');
+            return true;
+        }
+        $this->findErr();
         return false;
     }
 
-    private function fix_queue_id() {
-        $this->svc->count = 1;
-        $this->set_profile();
-        if ($this->svc->pppoe) { //if dhcp
-            return null;
-        }
-        $q = $this->q->findId();
-        return $q ? $q : ($this->set_profile() ? $this->q->insertId() : false);
-    }
-
-    private function fix_save($account, $q) {
-        $this->save['address'] = isset($account['address']) 
-                ? $account['address'] : $account['remote-address'];
-        $this->save['mtId'] = $account['.id'] ?? null;
-        $this->save['queueId'] = $q ?? null;
-        $data = $this->data();
-        $data['.id'] = $account['.id'];
-        return $this->write((object)$data) ? $this->save() : false;
-    }
-
-    public function suspend() {
-        global $conf;
-        $name = $this->svc->client_name();
-        if ($this->svc->pppoe) {
-            $this->svc->count = 1;
-            if(!$this->set_ppp_profile()){
-                return false;
-            }
-        }
-        if ($this->edit()) {
-            if ($this->svc->unsuspend && $conf->unsuspend_date_fix) {
-                $this->date_fix();
-            }
-            $action = $this->svc->unsuspend ? 'unsuspended' : 'suspended';
-            $this->set_message('service for ' . $name . ' was ' . $action);
-            return true;
-        }
-        return false;
-    }
-
-    public function move() {
-        $this->svc->move = true;
-        if (!$this->delete()) {
-            $this->set_error('unable to delete old service');
-            return false;
-        }
-        $this->svc->move = false;
-        if (!$this->insert()) {
-            $this->set_error('unable to create service on new device');
-            return false;
-        }
-        return true;
-    }
-
-    public function delete() {
-        $this->svc->count = -1 ;
-        if (!$this->set_profile()) {
-            return false;
-        }
-        $data = (object) ['.id' => $this->svc->mt_account_id()];
-        if ($this->write($data, 'remove')) {
-            $this->disconnect();
-            $this->set_message('service for '
-                    .$this->svc->client_name(). ' was deleted');
-            if (in_array($this->svc->action, ['delete', 'move', 'upgrade'])) {
-                $this->svc->delete();
-            }
-            return true;
-        }
-        return false;
-    }
-
-    protected function addr_list() {
-        global $conf;
-        return $this->svc->disabled ? $conf->disabled_list : $conf->active_list;
-    }
-    
-    protected function path() {
-        return $this->svc->pppoe ? '/ppp/secret/' : '/ip/dhcp-server/lease/';
-    }
-
-    protected function data() {
-        return $this->svc->pppoe ? $this->pppoe_data() : $this->dhcp_data();
-    }
-
-    private function dhcp_data() {
-        return [
-                    'address' => $this->svc->ip(),
-                    'mac-address' => $this->svc->mac(),
-                    'insert-queue-before' => 'bottom',
-                    'address-lists' => $this->addr_list(),
-                    'comment' => $this->comment(),
-                    '.id' => $this->svc->mt_account_id(),
-        ];
-    }
-
-    private function pppoe_data() {
-        global $conf;
-        $profile = $this->svc->disabled 
-                ? $conf->disabled_profile : $this->svc->plan_name();
-        return [
-                    'remote-address' => $this->svc->ip(),
-                    'name' => $this->svc->username(),
-                    'password' => $this->svc->password(),
-                    'profile' => $profile,
-                    'comment' => $this->comment(),
-                    '.id' => $this->svc->mt_account_id(),
-        ];
-    }
-    
-    private function set_profile() {
+    private function set_profile()
+    {
         return $this->svc->pppoe ? $this->set_ppp_profile() : $this->set_dhcp_queue();
     }
 
-    private function set_ppp_profile() {
+    private function set_ppp_profile()
+    {
         if (!$this->profile->set()) { //or set profile
-            $this->set_error($this->profile->error());
+            $this->setErr($this->profile->error());
             return false;
         }
         return true;
     }
 
-    private function set_dhcp_queue() {
-        if ($this->svc->count > 0) {
-            if (!$this->q->insert()) {
-                $this->set_error($this->q->error());
-                return false;
+    private function set_dhcp_queue()
+    {
+        return $this->q->set();
+    }
+
+    protected function data()
+    {
+        return $this->svc->pppoe ? $this->pppoe_data() : $this->dhcp_data();
+    }
+
+    private function pppoe_data():object
+    {
+        return (object)[
+            'remote-address' => $this->svc->ip(),
+            'name' => $this->svc->username(),
+            'password' => $this->svc->password(),
+            'profile' => $this->profile(),
+            'comment' => $this->comment(),
+            '.id' => $this->mt_id(),
+        ];
+    }
+
+    private function profile():string
+    {
+        return $this->svc->disabled
+            ? $this->conf->disabled_profile : $this->svc->plan_name();
+    }
+
+    private function mt_id()
+    {
+        return $this->insertId ?? $this->svc->mt_account_id();
+    }
+
+    private function dhcp_data():object
+    {
+        return (object)[
+            'address' => $this->svc->ip(),
+            'mac-address' => $this->svc->mac(),
+            'insert-queue-before' => 'bottom',
+            'address-lists' => $this->addr_list(),
+            'comment' => $this->comment(),
+            '.id' => $this->mt_id(),
+        ];
+    }
+
+    protected function addr_list()
+    {
+        return $this->svc->disabled ? $this->conf->disabled_list : $this->conf->active_list;
+    }
+
+    public function suspend()
+    {
+        $name = $this->svc->client_name();
+        if ($this->set_profile() && $this->edit()) {
+            if ($this->svc->unsuspend && $this->conf->unsuspend_date_fix) {
+                $this->date_fix();
             }
-            $this->save['queueId'] = $this->q->insertId();
-        } else {
-            if (!$this->q->delete()) {
-                $this->set_error($this->q->error());
-                return false;
+            $action = $this->svc->unsuspend ? 'unsuspended' : 'suspended';
+            $this->setMess('service for ' . $name . ' was ' . $action);
+            return true;
+        }
+        return false;
+    }
+
+    public function edit()
+    {
+        $this->svc->contention = $this->exists ? 0 :1;
+        $action = $this->exists ? 'set' : 'add';
+        $message = $this->exists ? 'updated' : 'added';
+        if($this->set_profile()
+            && $this->write($this->data(),$action)
+            && $this->save()
+            && $this->disconnect()){
+            $this->setMess('service for '
+                . $this->svc->client_name() . ' was '.$message);
+            return true ;
+        }
+        $this->findErr();
+        return false;
+    }
+
+    private function disconnect()
+    {
+        if (!$this->svc->pppoe) {
+            return true;
+        }
+        if ($this->read('?name='.$this->svc->username())) {
+            $this->findByComment();
+            foreach ($this->search as $item) {
             }
+        }
+        return true ;
+    }
+
+    public function move()
+    {
+        $this->svc->move = true;
+        $this->init(); // switch device
+        if (!$this->delete()) {
+            $this->setErr('unable to delete old service');
+            return false;
+        }
+        $this->svc->move = false;
+        $this->init(); // restore device
+        if (!$this->insert()) {
+            $this->setErr('unable to create service on new device');
+            return false;
         }
         return true;
     }
 
-    private function disconnect() {
-        if (!$this->svc->pppoe) {
-            return;
+    public function delete()
+    {
+        if(!$this->exists){
+            $this->setErr('Account was not found on specified device');
+            return false;
         }
-        if ($this->read('?comment')) {
-            $this->findByComment();
-            foreach ($this->search as $item) {
-                
-            }
+        $this->svc->contention = -1;
+        if (!$this->set_profile()) {
+            return false;
+        }
+        $data = (object)['.id' => $this->mt_id()];
+        if($this->write($data, 'remove')
+            && $this->svc->delete() && $this->disconnect()){
+            $this->setMess('service for '
+                . $this->svc->client_name() . ' was deleted');
+            return true ;
+        }
+        $this->findErr();
+        return false;
+    }
+
+    protected function init():void
+    {
+        parent::init();
+        $this->path = $this->path();
+        $this->findId();
+        $this->exists = (bool) $this->insertId;
+        $this->profile = new MT_Profile($this->svc);
+        $this->q = new MT_Queue($this->svc);
+    }
+
+    protected function path()
+    {
+        return $this->svc->pppoe ? '/ppp/secret/' : '/ip/dhcp-server/lease/';
+    }
+
+    protected function findErr()
+    {
+        if($this->profile->status()->error){
+            $this->status = $this->profile->status();
+        }
+        if($this->q->status()->error){
+            $this->status = $this->q->status();
         }
     }
 
