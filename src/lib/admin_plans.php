@@ -1,44 +1,38 @@
 <?php
 
-class Plans extends Admin {
+class Plans extends Admin
+{
 
     private $plans; // imported service plans
     private $ids; // array of imported service plan ids
     private $uisp; //uisp http query object
-    private $devices ;
+    private $devices;
 
-    public function __construct(&$data) {
+    public function __construct(&$data)
+    {
         parent::__construct($data);
         $this->uisp = new API_Unms();
         $this->ids = [];
     }
 
-    public function get() {
+    public function get()
+    {
         $this->readCache();
         $this->updateCache();
-    }
-    
-     public function list() {
-        $this->readCache();
-        $this->updateCache();
-        return $this->result ?? [];
     }
 
-    
-    public function edit() {
+    private function readCache()
+    {
         $db = new API_SQLite();
-        $id = $this->data->id ;
-        if (!$db->edit($this->data,'plans')) {
-            $this->set_error('failed to update contention ratio for service plan');
-            return false ;
+        $plans = $db->selectAllFromTable('plans') ?? [];
+        $this->result = [];
+        foreach ($plans as $plan) {
+            $this->result[$plan['id']] = $plan;
         }
-        $data = $id;
-        (new MT_Parent_Queue($data))->update($id);
-        $this->set_message('Contention ratio has been updated and applied');
-        return true ;
     }
-    
-    private function updateCache() { //updating cache with uisp import
+
+    private function updateCache()
+    { //updating cache with uisp import
         if (!$this->readUisp()) {
             $this->set_message('failed to read plans from uisp.using cached entries');
             return false;
@@ -48,7 +42,14 @@ class Plans extends Admin {
         return true;
     }
 
-    private function mergeCache() { // merge import into cache
+    private function readUisp()
+    {
+        $this->plans = (array)$this->uisp->request('/service-plans') ?? [];
+        return $this->plans ? true : false;
+    }
+
+    private function mergeCache()
+    { // merge import into cache
         $cachedKeys = array_keys($this->result);
         $relevantKeys = ['id', 'name', 'downloadSpeed', 'uploadSpeed',
             'downloadBurst', 'uploadBurst', 'dataUsageLimit'];
@@ -65,12 +66,13 @@ class Plans extends Admin {
                 $this->result[$plan->id][$key] = $plan->{$key} ?? 0;
             }
             if ($isNew) {
-                $db->insert((object) $this->result[$plan->id], 'plans');
+                $db->insert((object)$this->result[$plan->id], 'plans');
             }
         }
     }
 
-    private function pruneCache() { //remove orphans from cache
+    private function pruneCache()
+    { //remove orphans from cache
         $keys = array_keys($this->result);
         $db = new API_SQLite();
         foreach ($keys as $key) {
@@ -81,18 +83,25 @@ class Plans extends Admin {
         }
     }
 
-    private function readUisp() {
-        $this->plans = (array) $this->uisp->request('/service-plans') ?? [];
-        return $this->plans ? true : false ;
+    public function list()
+    {
+        $this->readCache();
+        $this->updateCache();
+        return $this->result ?? [];
     }
 
-    private function readCache() {
+    public function edit()
+    {
         $db = new API_SQLite();
-        $plans = $db->selectAllFromTable('plans') ?? [];
-        $this->result = [];
-        foreach ($plans as $plan) {
-            $this->result[$plan['id']] = $plan;
+        $id = $this->data->id;
+        if (!$db->edit($this->data, 'plans')) {
+            $this->set_error('failed to update contention ratio for service plan');
+            return false;
         }
+        $data = $id;
+        (new MT_Parent_Queue($data))->update($id);
+        $this->set_message('Contention ratio has been updated and applied');
+        return true;
     }
 
 }

@@ -9,7 +9,8 @@ include_once 'admin_users.php';
 include_once 'admin_backup.php';
 include_once 'admin_system.php';
 
-class Admin {
+class Admin
+{
 
     protected $status;
     protected $data;
@@ -17,12 +18,14 @@ class Admin {
     protected $user;
     protected $read;
 
-    public function __construct(&$data) {
+    public function __construct(&$data)
+    {
         $this->data = $data;
         $this->init();
     }
 
-    protected function init() {
+    protected function init()
+    {
         $this->status = new stdClass();
         $this->result = new stdClass();
         $this->status->authenticated = false;
@@ -30,7 +33,8 @@ class Admin {
         $this->status->message = 'ok';
     }
 
-    public function exec() {
+    public function exec()
+    {
         $target = $this->target($this->data->target);
         $this->setSession();
         $exec = new $target($this->data->data);
@@ -39,27 +43,8 @@ class Admin {
         $this->result = $exec->result();
     }
 
-    private function setSession() {
-        if (property_exists($this->data, 'session')) {
-            $this->data->data->session = $this->data->session; //add session token before exec
-        }
-    }
-
-    protected function doAuthentication() {
-        $user = new Users($this->data);
-        if (!$user->authenticate()) {
-            $this->status = $user->status();
-            $this->status->session = 'none';
-            return false;
-        }
-        $this->user = $user->result();
-        $this->status = $user->status();
-        $this->status->session = $this->data->session;
-        unset($this->data->session);
-        return true;
-    }
-
-    private function target($target) {
+    private function target($target)
+    {
         $map = array(
             'config' => 'Settings',
             'devices' => 'Devices',
@@ -74,20 +59,46 @@ class Admin {
         return $map[$target];
     }
 
-    public function result() {
+    private function setSession()
+    {
+        if (property_exists($this->data, 'session')) {
+            $this->data->data->session = $this->data->session; //add session token before exec
+        }
+    }
+
+    public function result()
+    {
         return $this->result;
     }
 
-    public function status() {
+    public function status()
+    {
         return $this->status;
     }
 
-    protected function set_message($msg) {
+    protected function doAuthentication()
+    {
+        $user = new Users($this->data);
+        if (!$user->authenticate()) {
+            $this->status = $user->status();
+            $this->status->session = 'none';
+            return false;
+        }
+        $this->user = $user->result();
+        $this->status = $user->status();
+        $this->status->session = $this->data->session;
+        unset($this->data->session);
+        return true;
+    }
+
+    protected function set_message($msg)
+    {
         $this->status->error = false;
         $this->status->message = $msg;
     }
 
-    protected function set_error($msg) {
+    protected function set_error($msg)
+    {
         $this->status->error = true;
         $this->status->message = $msg;
     }
