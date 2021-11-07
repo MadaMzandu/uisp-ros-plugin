@@ -10,6 +10,7 @@ class Service_Base
     protected $entity;
     protected $before;
     protected $conf;
+
     //protected $db; //database object ;
 
     public function __construct(&$data)
