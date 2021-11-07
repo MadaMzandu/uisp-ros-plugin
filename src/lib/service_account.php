@@ -105,7 +105,8 @@ class Service_Account extends Service_Plan
 
     public function id()
     {
-        return $this->entity->id;
+        $entity = $this->move ? 'before' : 'entity';
+        return $this->$entity->id;
     }
 
     protected function assign_ip()
