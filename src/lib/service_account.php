@@ -1,7 +1,7 @@
 <?php
 include_once 'service_plan.php';
 include_once 'api_ipv4.php';
-include_once '_temp.php';
+include_once 'api_unms.php';
 
 class Service_Account extends Service_Plan
 {
@@ -27,25 +27,25 @@ class Service_Account extends Service_Plan
         return $dev;
     }
 
-    public function username():?string
+    public function username(): ?string
     {
-        $entity = $this->move ? 'before':'entity';
+        $entity = $this->move ? 'before' : 'entity';
         return $this->pppoe
             ? $this->$entity->{$this->conf->pppoe_user_attr}
             : null;
     }
 
-    public function password():?string
+    public function password(): ?string
     {
-        $entity = $this->move ? 'before':'entity';
+        $entity = $this->move ? 'before' : 'entity';
         return $this->pppoe
             ? $this->$entity->{$this->conf->pppoe_pass_attr}
             : null;
     }
 
-    public function mac():?string
+    public function mac(): ?string
     {
-        $entity = $this->move ? 'before':'entity';
+        $entity = $this->move ? 'before' : 'entity';
         return !$this->pppoe
             ? $this->$entity->{$this->conf->mac_addr_attr}
             : null;
@@ -69,7 +69,7 @@ class Service_Account extends Service_Plan
         $done = $this->exists
             ? $this->db()->edit((object)$save)
             : $this->db()->insert((object)$save);
-        if(!$done){
+        if (!$done) {
             $this->setErr('failed to write changes to cache');
         }
         return $done;
@@ -138,7 +138,7 @@ class Service_Account extends Service_Plan
         return $name;
     }
 
-    protected function get_client():?object
+    protected function get_client(): ?object
     {
         if (!(array)$this->client) {
             $this->client = (new API_Unms())->request('/clients/' . $this->client_id());
