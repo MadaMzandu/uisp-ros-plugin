@@ -36,7 +36,6 @@ class Admin
     public function exec()
     {
         $target = $this->target($this->data->target);
-        $this->setSession();
         $exec = new $target($this->data->data);
         $exec->{$this->data->action}();
         $this->status = $exec->status();
@@ -59,36 +58,14 @@ class Admin
         return $map[$target];
     }
 
-    private function setSession()
-    {
-        if (property_exists($this->data, 'session')) {
-            $this->data->data->session = $this->data->session; //add session token before exec
-        }
-    }
-
-    public function result()
-    {
-        return $this->result;
-    }
-
     public function status()
     {
         return $this->status;
     }
 
-    protected function doAuthentication()
+    public function result()
     {
-        $user = new Users($this->data);
-        if (!$user->authenticate()) {
-            $this->status = $user->status();
-            $this->status->session = 'none';
-            return false;
-        }
-        $this->user = $user->result();
-        $this->status = $user->status();
-        $this->status->session = $this->data->session;
-        unset($this->data->session);
-        return true;
+        return $this->result;
     }
 
     protected function set_message($msg)
