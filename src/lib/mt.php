@@ -8,9 +8,9 @@ class MT extends Device
 
     protected $insertId;
     protected $search;
-    protected $exists = false ;
-    protected $path ;
-    protected $entity ;
+    protected $exists = false;
+    protected $path;
+    protected $entity;
 
     protected function insertId()
     {
@@ -76,11 +76,11 @@ class MT extends Device
         }
     }
 
-    protected function init():void
+    protected function init(): void
     {
         parent::init();
-        $this->insertId = null ;
-        $this->exists = false ;
+        $this->insertId = null;
+        $this->exists = false;
     }
 
     protected function comment()
@@ -90,7 +90,7 @@ class MT extends Device
             . $this->svc->client_name();
     }
 
-    protected function exists():bool
+    protected function exists(): bool
     {
         $this->read('?comment');
         if ($this->read) {
@@ -121,16 +121,16 @@ class MT extends Device
         }
     }
 
-    protected function findByComment():void
+    protected function findByComment(): void
     {
         $id = (string)$this->svc->id();
         foreach ($this->read as $item) {
             $comment = $item['comment'];
-            if (substr($comment,0,strlen($id)) == $id) {
-                $this->insertId = $item['.id'] ;
-                $this->search[] = $item ;
-                $this->entity = $item ;
-                return ;
+            if (substr($comment, 0, strlen($id)) == $id) {
+                $this->insertId = $item['.id'];
+                $this->search[] = $item;
+                $this->entity = $item;
+                return;
             }
         }
     }
