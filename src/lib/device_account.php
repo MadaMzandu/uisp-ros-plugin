@@ -18,13 +18,6 @@ class Device_Account extends Device_Base
         return $this->svc->save($this->save);
     }
 
-    protected function comment()
-    {
-        return $this->svc->id() . ", "
-            . $this->svc->client_id() . " - "
-            . $this->svc->client_name();
-    }
-
     protected function rate()
     {
         return $this->svc->rate();
