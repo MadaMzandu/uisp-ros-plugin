@@ -5,14 +5,7 @@ class MT_Parent_Queue extends MT
 
     private $devices;
 
-    protected function init(): void
-    {
-        parent::init();
-        $this->path = '/queue/simple/';
-        $this->exists = $this->exists();
-    }
-
-    public function set():bool
+    public function set(): bool
     {
         if ($this->svc->contention < 0 && !$this->children()) {
             return $this->delete();
@@ -23,34 +16,20 @@ class MT_Parent_Queue extends MT
         return $this->edit();
     }
 
-
-
-    protected function exists():bool
+    protected function children(): int
     {
-        $this->read('?name=' . $this->name());
-        $this->entity = $this->read[0] ?? null;
-        $this->insertId = $this->read[0]['.id'] ?? null ;
-        return (bool)$this->insertId;
+        return $this->svc->plan_children() ?? 0;
     }
 
-    public function name():string
+    private function delete(): bool
     {
-        return $this->prefix() . "-parent";
+        $data['.id'] = $this->data()->{'.id'};
+        $child['.id'] = $this->child()->{'.id'};
+        return $this->write((object)$child, 'remove') &&
+            $this->write((object)$data, 'remove');
     }
 
-    protected function prefix():string
-    {
-        return "servicePlan-" . $this->svc->plan_id();
-    }
-
-    private function insert():bool
-    {
-        $this->insertId = $this->write($this->data(), 'add');
-        return $this->insertId
-            && $this->write($this->child(),'add');
-    }
-
-    protected function data():object
+    protected function data(): object
     {
         return (object)array(
             'name' => $this->name(),
@@ -68,12 +47,12 @@ class MT_Parent_Queue extends MT
         return $this->svc->plan_rate();
     }
 
-    protected function comment():string
+    protected function comment(): string
     {
         return 'do not delete';
     }
 
-    private function child():object
+    private function child(): object
     {
         return (object)array(
             'name' => $this->prefix() . '-child',
@@ -86,40 +65,34 @@ class MT_Parent_Queue extends MT
         );
     }
 
-    public function reset($orphanId=false):bool
+    private function insert(): bool
+    {
+        $this->insertId = $this->write($this->data(), 'add');
+        return $this->insertId
+            && $this->write($this->child(), 'add');
+    }
+
+    private function edit(): bool
+    {
+        return $this->write($this->child()) &&
+            $this->write($this->data());
+    }
+
+    public function reset($orphanId = false): bool
     { //recreates a parent queue
         $this->svc->contention = 0;
         $this->delete();
-        $insert = $this->insert() ?? false ;
-        if($orphanId && $insert){ //update orphan children
-            $orphans = $this->read('?parent='.$orphanId);
-            foreach ($orphans as $item){
+        $insert = $this->insert() ?? false;
+        if ($orphanId && $insert) { //update orphan children
+            $orphans = $this->read('?parent=' . $orphanId);
+            foreach ($orphans as $item) {
                 $data = (object)['parent' => $this->name(), '.id' => $item['.id']];
-                if(!$this->write($data)){
-                    return false ;
+                if (!$this->write($data)) {
+                    return false;
                 }
             }
         }
         return $insert;
-    }
-
-    protected function children():int
-    {
-        return $this->svc->plan_children() ?? 0;
-    }
-
-    private function delete():bool
-    {
-        $data['.id'] = $this->data()->{'.id'};
-        $child['.id'] = $this->child()->{'.id'};
-        return $this->write((object)$child,'remove') &&
-            $this->write((object)$data, 'remove');
-    }
-
-    private function edit():bool
-    {
-        return $this->write($this->child()) &&
-        $this->write($this->data());
     }
 
     public function update_old($id)
@@ -140,6 +113,31 @@ class MT_Parent_Queue extends MT
             }
             $this->editQueue();
         }
+    }
+
+    protected function init(): void
+    {
+        parent::init();
+        $this->path = '/queue/simple/';
+        $this->exists = $this->exists();
+    }
+
+    protected function exists(): bool
+    {
+        $this->read('?name=' . $this->name());
+        $this->entity = $this->read[0] ?? null;
+        $this->insertId = $this->read[0]['.id'] ?? null;
+        return (bool)$this->insertId;
+    }
+
+    public function name(): string
+    {
+        return $this->prefix() . "-parent";
+    }
+
+    protected function prefix(): string
+    {
+        return "servicePlan-" . $this->svc->plan_id();
     }
 
 }
