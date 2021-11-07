@@ -15,7 +15,7 @@ class Device_Base
         $this->init();
     }
 
-    protected function init():void
+    protected function init(): void
     {
         $this->load_config();
         $this->status = (object)[];
