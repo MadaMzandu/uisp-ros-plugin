@@ -10,17 +10,19 @@ class Service_Plan extends Service_Attributes
 
     public function plan_name()
     {
-        return $this->entity->servicePlanName;
+        $entity = $this->move ? 'before' : 'entity';
+        return $this->$entity->servicePlanName;
     }
 
     public function plan_id()
     {
-        return $this->entity->servicePlanId;
+        $entity = $this->move ? 'before' : 'entity';
+        return $this->$entity->servicePlanId;
     }
 
     public function plan_rate()
     {
-        $shares = $this->shares();
+        $shares = max($this->shares(), 1);
         $u = $this->rate()->upload * $shares;
         $d = $this->rate()->download * $shares;
         return (object)[
@@ -35,14 +37,12 @@ class Service_Plan extends Service_Attributes
         $ratio = $this->get_plan()['ratio'];
         $children = $this->plan_children();
         $shares = intdiv($children, $ratio);
-        return ($children % $ratio) > 0 ? ++$shares : $shares; // go figure :-)
+        $tmp=  ($children % $ratio) > 0 ? ++$shares : $shares; // go figure :-)
+        return $tmp;
     }
 
     protected function get_plan()
     {
-        if ($this->plan) {
-            return $this->plan;
-        }
         $entity = $this->move ? 'before' : 'entity';
         $planId = $this->$entity->servicePlanId;
         $this->plan = (new Plans($planId))->list()[$planId] ?? [];
