@@ -10,13 +10,11 @@ class MT_Queue extends MT
     {
         parent::init();
         $this->path = '/queue/simple/';
-        $this->findId();
-        $this->exists = (bool) $this->insertId ;
+        $this->exists = $this->exists();
         $this->pq = new MT_Parent_Queue($this->svc);
     }
 
     public function set(){
-        $tmp = $this->svc->contention < 0;
         if($this->svc->contention < 0 ){
             return $this->delete();
         }
@@ -44,7 +42,7 @@ class MT_Queue extends MT
             ?($this->pq->reset($orphanId))
             :($this->pq->set()) ;
         $ret = $this->write($this->data(), $action);
-        $this->insertId = is_string($ret) ? $ret : $this->queue_id();
+        $this->insertId = is_string($ret) ? $ret : $this->insertId;
         return $p && (bool) $ret;
     }
 
@@ -67,7 +65,7 @@ class MT_Queue extends MT
             'limit-at' => $this->svc->rate()->text,
             'parent' => $this->pq->name(),
             'comment' => $this->comment(),
-            '.id' => $this->queue_id(),
+            '.id' => $this->insertId ?? $this->name(),
         );
     }
 
@@ -78,15 +76,9 @@ class MT_Queue extends MT
             . $this->svc->id();
     }
 
-    private function queue_id()
-    {
-        return $this->insertId
-            ?? $this->svc->mt_queue_id();
-    }
-
     public function delete()
     {
-        $del['.id'] = $this->data()->{'.id'};
+        $del['.id'] = $this->insertId;
         if ($this->exists &&
             !$this->write((object)$del, 'remove')) {
             return false;

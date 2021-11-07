@@ -9,8 +9,7 @@ class MT_Parent_Queue extends MT
     {
         parent::init();
         $this->path = '/queue/simple/';
-        $this->findId();
-        $this->exists = (bool) $this->insertId;
+        $this->exists = $this->exists();
     }
 
     public function set():bool
