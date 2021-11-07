@@ -1,27 +1,44 @@
 <?php
 
-include_once 'lib/app_sqlite.php';
+include_once 'lib/api_sqlite.php';
 include_once 'lib/admin.php';
 include_once 'lib/admin_backup.php';
 
-$version = '1.8.0';
-$conf = (new CS_SQLite())->readConfig();
+$version = '1.8.1';
+$conf = db()->readConfig();
 
-$conf_updates = [//defaults
-    'version' => '1.8.0',
-    'disabled_rate' => 1,
-];
+$conf_updates = json_decode(
+    file_get_contents('includes/conf_updates.json'),true);
 
 function apply_updates() {
-    global $conf, $conf_updates;
-    $data = [];
+   return table_updates() && conf_updates();
+}
+
+function conf_updates()
+{
+    global $conf, $conf_updates,$version;
     foreach (array_keys($conf_updates) as $key) {
-        if (isset($conf->$key)) {
-            continue;
+        if (!isset($conf->$key)) {
+            db()->insert((object)['key' => $key,
+                'value' => $conf_updates[$key]],'config');
         }
-        $data[] = ['key' => $key, 'value' => $conf_updates[$key]];
     }
-    return (new CS_SQLite())->insertMultiple($data, 'config');
+    $conf->version = $version;
+    db()->saveConfig($conf);
+}
+
+function table_updates(){
+    $file = file_get_contents('includes/tables.sql');
+    return db()->exec($file);
+}
+
+function db():?API_SQLite
+{
+    try{
+        return new API_SQLite();
+    }catch (Exception $e){
+        return null;
+    }
 }
 
 function create_backup(){
@@ -32,15 +49,11 @@ function create_backup(){
 function bak_is_ok() {
     if(!file_exists('data/.last_backup')){return false;}
     $file = file_get_contents('data/.last_backup');
-    $date = $file ? explode(',', $file . ",2000-01-01 00:00:00")[1] : '2000-01-01 00:00:00';
-    $last = new DateTime($date);
+    $last = explode(',', $file . ",2000-01-01 00:00:00")[1] ;
     $now = new DateTime();
     $interval = new DateInterval('P1D');
-    $last->add($interval);
-    if ($last < $now) {
-       return false ;
-    }
-    return true ;
+    $next = (new DateTime($last))->add($interval);
+    return $next > $now ;
 }
 
 function version_is_ok() {
