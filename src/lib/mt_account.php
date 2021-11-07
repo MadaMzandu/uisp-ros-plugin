@@ -29,20 +29,17 @@ class MT_Account extends MT
         return false;
     }*/
 
-    public function insert()
+    public function suspend()
     {
-        if($this->exists){
-            return $this->edit();
-        }
-        $this->svc->contention = +1;
-        if($this->set_profile()
-            && $this->write($this->data(), 'add')
-            && $this->save()){
-            $this->setMess('service for '
-                . $this->svc->client_name() . ' has been added');
+        $name = $this->svc->client_name();
+        if ($this->set_profile() && $this->edit()) {
+            if ($this->svc->unsuspend && $this->conf->unsuspend_date_fix) {
+                $this->date_fix();
+            }
+            $action = $this->svc->unsuspend ? 'unsuspended' : 'suspended';
+            $this->setMess('service for ' . $name . ' was ' . $action);
             return true;
         }
-        $this->findErr();
         return false;
     }
 
@@ -65,12 +62,29 @@ class MT_Account extends MT
         return $this->q->set();
     }
 
+    public function edit()
+    {
+        $this->svc->contention = $this->exists ? 0 : 1;
+        $action = $this->exists ? 'set' : 'add';
+        $message = $this->exists ? 'updated' : 'added';
+        if ($this->set_profile()
+            && $this->write($this->data(), $action)
+            && $this->save()
+            && $this->disconnect()) {
+            $this->setMess('service for '
+                . $this->svc->client_name() . ' was ' . $message);
+            return true;
+        }
+        $this->findErr();
+        return false;
+    }
+
     protected function data()
     {
         return $this->svc->pppoe ? $this->pppoe_data() : $this->dhcp_data();
     }
 
-    private function pppoe_data():object
+    private function pppoe_data(): object
     {
         return (object)[
             'remote-address' => $this->svc->ip(),
@@ -82,13 +96,13 @@ class MT_Account extends MT
         ];
     }
 
-    private function profile():string
+    private function profile(): string
     {
         return $this->svc->disabled
             ? $this->conf->disabled_profile : $this->svc->plan_name();
     }
 
-    private function dhcp_data():object
+    private function dhcp_data(): object
     {
         return (object)[
             'address' => $this->svc->ip(),
@@ -105,48 +119,27 @@ class MT_Account extends MT
         return $this->svc->disabled ? $this->conf->disabled_list : $this->conf->active_list;
     }
 
-    public function suspend()
-    {
-        $name = $this->svc->client_name();
-        if ($this->set_profile() && $this->edit()) {
-            if ($this->svc->unsuspend && $this->conf->unsuspend_date_fix) {
-                $this->date_fix();
-            }
-            $action = $this->svc->unsuspend ? 'unsuspended' : 'suspended';
-            $this->setMess('service for ' . $name . ' was ' . $action);
-            return true;
-        }
-        return false;
-    }
-
-    public function edit()
-    {
-        $this->svc->contention = $this->exists ? 0 :1;
-        $action = $this->exists ? 'set' : 'add';
-        $message = $this->exists ? 'updated' : 'added';
-        if($this->set_profile()
-            && $this->write($this->data(),$action)
-            && $this->save()
-            && $this->disconnect()){
-            $this->setMess('service for '
-                . $this->svc->client_name() . ' was '.$message);
-            return true ;
-        }
-        $this->findErr();
-        return false;
-    }
-
     private function disconnect()
     {
         if (!$this->svc->pppoe) {
             return true;
         }
-        if ($this->read('?name='.$this->svc->username())) {
+        if ($this->read('?name=' . $this->svc->username())) {
             $this->findByComment();
             foreach ($this->search as $item) {
             }
         }
-        return true ;
+        return true;
+    }
+
+    protected function findErr()
+    {
+        if ($this->profile->status()->error) {
+            $this->status = $this->profile->status();
+        }
+        if ($this->q->status()->error) {
+            $this->status = $this->q->status();
+        }
     }
 
     public function move()
@@ -166,28 +159,7 @@ class MT_Account extends MT
         return true;
     }
 
-    public function delete()
-    {
-        if(!$this->exists){
-            $this->setErr('Account was not found on specified device');
-            return false;
-        }
-        $this->svc->contention = -1;
-        if (!$this->set_profile()) {
-            return false;
-        }
-        $data = (object)['.id' => $this->insertId];
-        if($this->write($data, 'remove')
-            && $this->svc->delete() && $this->disconnect()){
-            $this->setMess('service for '
-                . $this->svc->client_name() . ' was deleted');
-            return true ;
-        }
-        $this->findErr();
-        return false;
-    }
-
-    protected function init():void
+    protected function init(): void
     {
         parent::init();
         $this->path = $this->path();
@@ -201,14 +173,42 @@ class MT_Account extends MT
         return $this->svc->pppoe ? '/ppp/secret/' : '/ip/dhcp-server/lease/';
     }
 
-    protected function findErr()
+    public function delete()
     {
-        if($this->profile->status()->error){
-            $this->status = $this->profile->status();
+        if (!$this->exists) {
+            $this->setErr('Account was not found on specified device');
+            return false;
         }
-        if($this->q->status()->error){
-            $this->status = $this->q->status();
+        $this->svc->contention = -1;
+        if (!$this->set_profile()) {
+            return false;
         }
+        $data = (object)['.id' => $this->insertId];
+        if ($this->write($data, 'remove')
+            && $this->svc->delete() && $this->disconnect()) {
+            $this->setMess('service for '
+                . $this->svc->client_name() . ' was deleted');
+            return true;
+        }
+        $this->findErr();
+        return false;
+    }
+
+    public function insert()
+    {
+        if ($this->exists) {
+            return $this->edit();
+        }
+        $this->svc->contention = +1;
+        if ($this->set_profile()
+            && $this->write($this->data(), 'add')
+            && $this->save()) {
+            $this->setMess('service for '
+                . $this->svc->client_name() . ' has been added');
+            return true;
+        }
+        $this->findErr();
+        return false;
     }
 
 }
