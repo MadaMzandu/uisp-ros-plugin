@@ -7,7 +7,7 @@ class Device_Account extends Device_Base
 
     protected $save; //data for save
 
-    protected function init():void
+    protected function init(): void
     {
         parent::init();
         $this->save = [];
