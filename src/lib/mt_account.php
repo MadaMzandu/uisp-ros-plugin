@@ -78,7 +78,7 @@ class MT_Account extends MT
             'password' => $this->svc->password(),
             'profile' => $this->profile(),
             'comment' => $this->comment(),
-            '.id' => $this->mt_id(),
+            '.id' => $this->insertId,
         ];
     }
 
@@ -86,11 +86,6 @@ class MT_Account extends MT
     {
         return $this->svc->disabled
             ? $this->conf->disabled_profile : $this->svc->plan_name();
-    }
-
-    private function mt_id()
-    {
-        return $this->insertId ?? $this->svc->mt_account_id();
     }
 
     private function dhcp_data():object
@@ -101,7 +96,7 @@ class MT_Account extends MT
             'insert-queue-before' => 'bottom',
             'address-lists' => $this->addr_list(),
             'comment' => $this->comment(),
-            '.id' => $this->mt_id(),
+            '.id' => $this->insertId,
         ];
     }
 
@@ -181,7 +176,7 @@ class MT_Account extends MT
         if (!$this->set_profile()) {
             return false;
         }
-        $data = (object)['.id' => $this->mt_id()];
+        $data = (object)['.id' => $this->insertId];
         if($this->write($data, 'remove')
             && $this->svc->delete() && $this->disconnect()){
             $this->setMess('service for '
@@ -196,8 +191,7 @@ class MT_Account extends MT
     {
         parent::init();
         $this->path = $this->path();
-        $this->findId();
-        $this->exists = (bool) $this->insertId;
+        $this->exists = $this->exists();
         $this->profile = new MT_Profile($this->svc);
         $this->q = new MT_Queue($this->svc);
     }
