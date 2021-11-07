@@ -16,28 +16,28 @@ class API_IPv4
         $this->conf = (new API_SQLite())->readConfig();
     }
 
-    public function assign($device = false):?String
+    public function assign($device = false): ?string
     {
         $pool = $device
             ? $device->pool
             : $this->conf->ppp_pool;
         if ($pool) {
-            $this->pool = explode(',', $pool.',');
-            $this->findUnused() ;
+            $this->pool = explode(',', $pool . ',');
+            $this->findUnused();
         }
-        return $this->addr ;
+        return $this->addr;
     }
 
-    private function findUnused():void
+    private function findUnused(): void
     {
         foreach ($this->pool as $range) {
-            if(empty($range)) continue;
+            if (empty($range)) continue;
             [$this->prefix, $this->len] = explode('/', $range);
             $this->iteratePool();
         }
     }
 
-    private function iteratePool():void
+    private function iteratePool(): void
     {
         $hosts = $this->hosts();
         $net = ip2long($this->network()); //net_number2dec
@@ -55,22 +55,18 @@ class API_IPv4
                 continue;
             }
             $this->addr = $addr;
-            return ;
+            return;
         }
     }
 
-    private function db(){
-        return new API_SQLite();
-    }
-
-    private function hosts():float
+    private function hosts(): float
     {
         $host_len = 32 - $this->len;
         $base = 2;
         return pow($base, $host_len);
     }
 
-    private function network():String
+    private function network(): string
     { //ok here we go
         $ip = decbin(ip2long($this->prefix)); //ip2bin
         $mask = decbin(ip2long(long2ip(-1 << (32 - $this->len)))); //len2netmask2bin
@@ -78,7 +74,7 @@ class API_IPv4
         return long2ip(bindec($net)); //back2ip
     }
 
-    private function exclusions():array
+    private function exclusions(): array
     {
         $read = $this->readExclusions();
         $exclusions = [];
@@ -97,14 +93,14 @@ class API_IPv4
         return $exclusions;
     }
 
-    private function readExclusions():array
+    private function readExclusions(): array
     {
         return $this->conf->excl_addr
             ? explode(',', $this->conf->excl_addr . ',')
             : [];
     }
 
-    private function explodeRange($start, $end):array
+    private function explodeRange($start, $end): array
     {
         $addresses = [];
         $s = ip2long($start);
@@ -113,6 +109,11 @@ class API_IPv4
             $addresses[] = $i;
         }
         return $addresses;
+    }
+
+    private function db()
+    {
+        return new API_SQLite();
     }
 
 }

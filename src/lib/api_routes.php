@@ -20,7 +20,7 @@ class API_Routes
         $this->exec();
     }
 
-    private function exec():void
+    private function exec(): void
     {
         $module = $this->select_device();
         if (!$module) {
@@ -34,7 +34,7 @@ class API_Routes
         $this->status = $this->module->status();
     }
 
-    private function select_device(): ?String
+    private function select_device(): ?string
     {
         $map = [
             'radius' => 'Radius_Account',
@@ -44,7 +44,7 @@ class API_Routes
         return $type ? $map[$type] : null;
     }
 
-    public function status():?stdClass
+    public function status(): ?stdClass
     {
         return $this->status;
     }

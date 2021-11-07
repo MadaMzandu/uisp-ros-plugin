@@ -23,12 +23,12 @@ class API_Router
         $this->status = (object)['status' => 'ok', 'message' => '', 'session' => false];
     }
 
-    public function status():?stdClass
+    public function status(): ?stdClass
     { //only for testing
         return $this->status;
     }
 
-    public function route():void
+    public function route(): void
     {
         if (!$this->is_valid_request()) { // check validity before system tasks
             return;
@@ -46,7 +46,7 @@ class API_Router
         $this->status = $route->status();
     }
 
-    private function is_valid_request():bool
+    private function is_valid_request(): bool
     {
         if (!$this->data) {
             $this->set_message('No request data sent');
@@ -65,13 +65,13 @@ class API_Router
         return true;
     }
 
-    private function set_message($msg):void
+    private function set_message($msg): void
     {
         $this->status->error = false;
         $this->status->message = $msg;
     }
 
-    private function is_admin_request():bool
+    private function is_admin_request(): bool
     {
         if ($this->data->changeType != 'admin') {
             return false;
@@ -83,7 +83,7 @@ class API_Router
         return true;
     }
 
-    public function http_response():?String
+    public function http_response(): ?string
     {
         header('content-type: application/json');
         $status = 'ok';
