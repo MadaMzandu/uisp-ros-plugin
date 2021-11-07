@@ -83,7 +83,6 @@ class Service_Attributes extends Service_Base
             && !isset($this->entity->{$this->conf->ip_addr_attr}))
         {
             $this->staticIPClear = true ;
-            echo 1;
         }
     }
 
