@@ -32,13 +32,12 @@ class Service_Plan extends Service_Attributes
         ];
     }
 
-    protected function shares()
+    protected function shares():int
     { // calculates the number of contention shares
         $ratio = $this->get_plan()['ratio'];
         $children = $this->plan_children();
         $shares = intdiv($children, $ratio);
-        $tmp=  ($children % $ratio) > 0 ? ++$shares : $shares; // go figure :-)
-        return $tmp;
+        return ($children % $ratio) > 0 ? ++$shares : $shares; // go figure :-)
     }
 
     protected function get_plan()
