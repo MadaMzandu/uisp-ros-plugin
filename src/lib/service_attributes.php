@@ -79,15 +79,15 @@ class Service_Attributes extends Service_Base
 
     protected function check_ip_clear()
     {
-        if(isset($this->before->{$this->conf->ip_addr_attr})
-            && !isset($this->entity->{$this->conf->ip_addr_attr}))
-        {
-            $this->staticIPClear = true ;
+        if (isset($this->before->{$this->conf->ip_addr_attr})
+            && !isset($this->entity->{$this->conf->ip_addr_attr})) {
+            $this->staticIPClear = true;
         }
     }
 
-    protected function check_exists(){
-        $this->exists = (bool) $this->db()
+    protected function check_exists()
+    {
+        $this->exists = (bool)$this->db()
             ->ifServiceIdExists($this->entity->id);
     }
 
@@ -102,11 +102,6 @@ class Service_Attributes extends Service_Base
 
     protected function set_edit()
     {
-       /* if (!$this->exists) {
-            $this->data->changeType = 'insert_fix';
-            //$this->fix = true ;
-            return;
-        }*/
         $lastDevice = strtolower($this->entity->{$this->conf->device_name_attr});
         $thisDevice = strtolower($this->before->{$this->conf->device_name_attr});
         if ($lastDevice != $thisDevice) {
