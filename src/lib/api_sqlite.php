@@ -51,6 +51,30 @@ class API_SQLite
         return (new DateTime())->format('Y-m-d H:i:s');
     }
 
+    public function insertMultiple($data, $table = 'services')
+    {
+        $this->data = $data;
+        $this->table = $table;
+        return $this->db->exec($this->prepareMultipleInsert());
+    }
+
+    private function prepareMultipleInsert()
+    {
+        $sql = 'insert into ' . $this->table . " (";
+        $keys = array_keys($this->data[0]);
+        $keys[] = 'created';
+        $sql .= implode(',', $keys) . ') values ';
+        foreach ($this->data as $row) {
+            $row['created'] = $this->getTime();
+            if (is_bool($row['value'])) { //convert booleans
+                $row['value'] = $row['value'] ? 'true' : 'false';
+            }
+
+            $sql .= "('" . implode("','", array_values((array)$row)) . "'),";
+        }
+        return substr($sql, 0, -1);
+    }
+
     public function suspend($data, $table = 'services')
     {
         return $this->edit($data, $table);
@@ -63,6 +87,11 @@ class API_SQLite
         $this->data = $data;
         $this->table = $table;
         return $this->db->exec($this->prepareUpdate());
+    }
+
+    public function exec($sql)
+    {
+        return $this->db->exec($sql);
     }
 
     private function prepareUpdate()
