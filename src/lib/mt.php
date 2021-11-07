@@ -17,7 +17,7 @@ class MT extends Device
         return $this->insertId;
     }
 
-    protected function write($data, $action = 'set',$filter=false)
+    protected function write($data, $action = 'set')
     {
         if ($action == 'add') {
             unset($data->{'.id'});
@@ -31,9 +31,6 @@ class MT extends Device
             foreach (array_keys((array)$data) as $key) {
                 $api->write('=' . $key . '=' . $data->$key, false);
             }
-            if($filter){
-                $api->write($filter,false);
-            }
             $api->write(';'); // trailing semi-colon works
             $this->read = $api->read();
             $api->disconnect();
@@ -45,7 +42,7 @@ class MT extends Device
             return false;
         } catch (Exception $e) {
             $api->disconnect;
-            $this->setErr($e);
+            $this->setErr($e->getMessage());
             return false;
         }
     }
@@ -79,16 +76,18 @@ class MT extends Device
         }
     }
 
-    protected function findId():?String
-    {
-        return $this->exists() ? $this->insertId : false;
-    }
-
     protected function init():void
     {
         parent::init();
         $this->insertId = null ;
         $this->exists = false ;
+    }
+
+    protected function comment()
+    {
+        return $this->svc->id() . ", "
+            . $this->svc->client_id() . " - "
+            . $this->svc->client_name();
     }
 
     protected function exists():bool
@@ -112,28 +111,26 @@ class MT extends Device
                 $api->write($filter, false);
             }
             $api->write(";");
-            $this->read = $api->read();
+            $this->read = $api->read() ?? [];
             $api->disconnect();
             return $this->read;
         } catch (Exception $e) {
             $api->disconnect();
-            $this->setErr($e);
+            $this->setErr($e->getMessage());
             return false;
         }
     }
 
-    protected function findByComment()
+    protected function findByComment():void
     {
-        $e = sizeof($this->read);
-        $this->search = [];
-        $this->insertId = null ;
-        for ($i = 0; $i < $e; $i++) {
-            $item = $this->read[$i];
-            [$id] = explode(',', $item['comment'] . ',');
-            if (is_numeric($id) && $id == $this->svc->id()) {
+        $id = (string)$this->svc->id();
+        foreach ($this->read as $item) {
+            $comment = $item['comment'];
+            if (substr($comment,0,strlen($id)) == $id) {
                 $this->insertId = $item['.id'] ;
                 $this->search[] = $item ;
                 $this->entity = $item ;
+                return ;
             }
         }
     }
