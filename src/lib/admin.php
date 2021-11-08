@@ -17,6 +17,7 @@ class Admin
     protected $result;
     protected $user;
     protected $read;
+    protected $conf;
 
     public function __construct(&$data)
     {
@@ -26,6 +27,7 @@ class Admin
 
     protected function init()
     {
+        $this->conf = $this->db()->readConfig();
         $this->status = new stdClass();
         $this->result = new stdClass();
         $this->status->authenticated = false;
@@ -61,6 +63,27 @@ class Admin
     public function status()
     {
         return $this->status;
+    }
+
+    protected function db()
+    {
+        try {
+            return new API_SQLite();
+        } catch (Exception $e) {
+            return null;
+        }
+    }
+
+    protected function service_blank(){
+        return (object)[
+            'changeType' =>'none',
+            'extraData' => (object)[
+                'entity' => (object)[
+                    'id' => 0,
+                    'status' => 0,
+                ],
+            ]
+        ];
     }
 
     public function result()
