@@ -6,6 +6,17 @@ class Devices extends Admin
     protected $devices;
     private $device_name;
 
+    public function service_list(){
+        $services = $this->get_map('clients/services');
+        $clients =  $this->get_map();
+        $ids = $this->get_service_ids();
+        $this->result = [];
+        foreach($ids as $id){
+            $this->result[$id] = $services[$id];
+            $this->result[$id]['client'] = $clients[$services[$id]['clientId']];
+        }
+    }
+
     public function delete()
     {
 
@@ -50,7 +61,6 @@ class Devices extends Admin
 
     public function get()
     {
-
         if (!$this->read()) {
             $this->set_error('unable to retrieve list of devices');
             return false;
@@ -62,43 +72,34 @@ class Devices extends Admin
         return true;
     }
 
+    private function get_map($type='clients')
+    {
+        $api = new API_Unms();
+        $api->assoc = true ;
+        $array = $api->request('/'.$type);
+        $map = [];
+        foreach($array as $item){
+            $map[$item['id']] = $item ;
+        }
+        return $map ;
+    }
+
+    private function get_service_ids(): array
+    {
+        $id = $this->data->id;
+        $ids = [];
+        $services = $this->db()->selectServicesOnDevice($id);
+        foreach ($services as $service){
+            $ids[]= $service['id'];
+        }
+        return $ids ;
+    }
+
     private function read()
     {
         $db = $this->connect();
         $this->read = $db->selectAllFromTable('devices');
-        if ($this->read) {
-            return true;
-        }
-        return $this->read_file();
-    }
-
-    private function read_file()
-    {
-        if (!file_exists('json/devices.json')) {
-            return false;
-        }
-        global $conf;
-        $db = $this->connect();
-        $file = json_decode(
-            file_get_contents($conf->devices_file), true);
-        if (!$file) {
-            return false;
-        }
-        foreach ($file as &$item) {
-            $item['pool'] = implode(',', $item['pool']);
-            $item['user'] = $conf->api_user;
-            $item['password'] = $conf->api_pass;
-            if (!$db->insert((object)$item, 'devices')) { //update database
-                continue;
-            }
-            $id = $db->selectDeviceIdByDeviceName($item['name']);
-            $db->replaceServiceDeviceNameWithId($id, $item['name']);
-            $item['id'] = $id;
-            array_push($this->read, $item);
-            //unset($item);
-        }
-        file_put_contents(json_encode($file, 128), $conf->devices_file);
-        return true;
+        return (bool) (array)$this->read;
     }
 
     private function setStatus()
