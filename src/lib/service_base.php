@@ -44,8 +44,6 @@ class Service_Base
             $this->setErr($e->getMessage());
             return null;
         }
-
-
     }
 
     protected function setErr($err)

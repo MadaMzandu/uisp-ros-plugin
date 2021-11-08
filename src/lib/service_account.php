@@ -1,7 +1,7 @@
 <?php
 include_once 'service_plan.php';
 include_once 'api_ipv4.php';
-include_once 'api_unms.php';
+include_once '_temp.php';
 
 class Service_Account extends Service_Plan
 {
@@ -9,10 +9,13 @@ class Service_Account extends Service_Plan
     public $move = false;
     public $ip;
     protected $client;
+    public $device_index = 0; // for iterating devices
 
     public function device()
     {
-        return $this->get_device();
+        return $this->ready
+            ? $this->get_device()
+            : $this->get_next_device();
     }
 
     protected function get_device()
@@ -25,6 +28,19 @@ class Service_Account extends Service_Plan
             return false;
         }
         return $dev;
+    }
+
+    protected function get_next_device()
+    {
+        $devices = $this->db()->selectAllFromTable('devices') ?? [];
+        $length = sizeof($devices);
+        if($this->device_index < $length){
+            $device = $devices[$this->device_index++];
+            if($this->device_index >= $length){
+                $this->device_index = -1;
+            }
+            return (object) $device;
+        }
     }
 
     public function username(): ?string
@@ -144,7 +160,7 @@ class Service_Account extends Service_Plan
             $this->client = (new API_Unms())->request('/clients/' . $this->client_id());
         }
 
-        return $this->client ?? null;
+        return $this->client ;
     }
 
     public function client_id()

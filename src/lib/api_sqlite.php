@@ -174,6 +174,17 @@ class API_SQLite
         return $this->db->querySingle($sql);
     }
 
+    public function selectServicesOnDevice($device_id)
+    {
+        $sql = "select * from services where device=" . $device_id;
+        $res = $this->db->query($sql);
+        $return = [];
+        while ($row = $res->fetchArray(SQLITE3_ASSOC)) {
+            $return[] = $row;
+        }
+        return $return;
+    }
+
     public function selectServiceMikrotikIdByServiceId($id)
     {
         $sql = "select mtId from services where id=" . $id;
