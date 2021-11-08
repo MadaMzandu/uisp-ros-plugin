@@ -6,7 +6,9 @@ class Service_Plan extends Service_Attributes
 {
 
     public $contention;
+    public $plan_id = 0;
     protected $plan;
+
 
     public function plan_name()
     {

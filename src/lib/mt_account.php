@@ -11,24 +11,6 @@ class MT_Account extends MT
     private $profile;
     private $q;
 
-    /*public function insert_fix()
-    { // attempt to rebuild orphans
-        if (!$this->exists()) {
-            return $this->insert(); //normal insert if not fount
-        }
-        $account = $this->search[0];
-        $q = $this->fix_queue_id();
-
-        if ($this->fix_save($account, $q)) {
-            $this->setMess('account for '
-                . $this->svc->client_name() . ' was successfully repaired');
-            return true;
-        }
-        $this->setErr('failed to repair account for '
-            . $this->svc->client_name());
-        return false;
-    }*/
-
     public function suspend()
     {
         $name = $this->svc->client_name();
@@ -64,7 +46,7 @@ class MT_Account extends MT
 
     public function edit()
     {
-        $this->svc->contention = $this->exists ? 0 : 1;
+        $this->svc->contention = $this->svc->exists ? 0 : 1;
         $action = $this->exists ? 'set' : 'add';
         $message = $this->exists ? 'updated' : 'added';
         if ($this->set_profile()

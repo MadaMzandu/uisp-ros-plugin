@@ -5,41 +5,41 @@ class System extends Admin
 
     public function test()
     {
-        $this->read();
+        $this->send_triggers();
     }
 
-    private function read()
+    private function send_triggers():void
     {
         $this->result = [];
-        $read = [];
         $api = new API_Unms();
         $api->assoc = true;
-        $services = $api->request('/clients/services');
-        $count = 0;
-        $d = (object)[];
-        (new API_SQLite)->deleteAll('services');
+        $services = $api->request('/clients/services') ?? [];
+        $this->clear_cache();
+        $url = '/clients/services/';
         foreach ($services as $item) {
             if ($this->is_valid($item)) {
-                $url = '/clients/services/' . $item['id'];
-                $data = ['name' => $item['name']];
-                $ret = $api->request($url, 'PATCH', $data);
+                $data = ['note' => $item['note']];
+                $api->request($url.$item['id'], 'PATCH', $data);
             }
         }
-        //$this->result = $read ;
     }
 
-    private function is_valid($item)
+    private function clear_cache():bool
+    {
+        return $this->db()->deleteAll('services');
+    }
+
+    private function is_valid($item): bool
     {
         if ($item['status'] > 5) {
             return false;
         }
-        global $conf;
         $map = [];
         foreach ($item['attributes'] as $a) {
             $map[$a['key']] = $a['value'] ?? null;
         }
-        return isset($map[$conf->device_name_attr])
-        && (isset($map[$conf->pppoe_user_attr])
-            || isset($map[$conf->mac_addr_attr])) ? true : false;
+        return isset($map[$this->conf->device_name_attr])
+        && (isset($map[$this->conf->pppoe_user_attr])
+            || isset($map[$this->conf->mac_addr_attr]));
     }
 }

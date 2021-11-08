@@ -81,9 +81,11 @@ class MT_Parent_Queue extends MT
     public function reset($orphanId = false): bool
     { //recreates a parent queue
         $this->svc->contention = 0;
-        $this->delete();
-        $insert = $this->insert() ?? false;
-        if ($orphanId && $insert) { //update orphan children
+        if(!$this->exists) {
+            //$this->delete();
+            $this->insertId = $this->insert() ?? false;
+        }
+        if ($orphanId && $this->insertId) { //update orphan children
             $orphans = $this->read('?parent=' . $orphanId);
             foreach ($orphans as $item) {
                 $data = (object)['parent' => $this->name(), '.id' => $item['.id']];
@@ -92,34 +94,46 @@ class MT_Parent_Queue extends MT
                 }
             }
         }
-        return $insert;
+        return true;
     }
 
-    public function update_old($id)
+    public function update($planId): void
     {
-        $devices = $this->db()->selectAllFromTable('devices');
-        if (!$devices) {
-            $this->setErr('parent queue module failed to read devices');
-            return;
-        }
-        $this->data = (object)[];
-        $this->data->actionObj = 'entity';
-        $this->entity = (object)[];
-        $this->entity->servicePlanId = $id;
-        foreach ($this->devices as $device) {
-            $this->entity->{$this->conf->device_name_attr} = $device['name'];
-            if (!$this->children()) {
-                continue;
+        $count = 0 ;
+        while ($this->svc->device_index > -1){
+            $device = $this->svc->device();
+            $data = $this->contention_data($planId,$device->id);
+            if($data) {
+                $this->svc->device_index = $count; //restore index for write
+                $this->write($data);
             }
-            $this->editQueue();
+            $count++;
         }
+    }
+
+    private function contention_data($planId,$deviceId): ?object
+    {
+        $children = $this->db()->countDeviceServicesByPlanId($planId, $deviceId);
+        if(!$children){return null;}
+        $plan = (new Plans($planId))->list()[$planId];
+        $ratio = $plan['ratio'];
+        $shares = intdiv($children, $ratio);
+        if(($children % $ratio) > 0){$shares++ ;}
+        $ul = $plan['uploadSpeed'] * $shares;
+        $dl = $plan['downloadSpeed'] * $shares;
+        $rate = $ul . "M/". $dl."M" ;
+        return (object)[
+            '.id' => 'servicePlan-'.$planId.'-parent',
+            'max-limit' => $rate,
+            'limit-at' => $rate,
+        ];
     }
 
     protected function init(): void
     {
         parent::init();
         $this->path = '/queue/simple/';
-        $this->exists = $this->exists();
+        $this->exists = $this->svc->ready && $this->exists();
     }
 
     protected function exists(): bool
