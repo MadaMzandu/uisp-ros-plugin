@@ -92,13 +92,13 @@ class Plans extends Admin
 
     public function edit()
     {
-        $db = new API_SQLite();
         $id = $this->data->id;
-        if (!$db->edit($this->data, 'plans')) {
+        if (!$this->db()->edit($this->data, 'plans')) {
             $this->set_error('failed to update contention ratio for service plan');
             return false;
         }
-        $data = $id;
+        $blank = $this->service_blank();
+        $data = new Service($blank);
         (new MT_Parent_Queue($data))->update($id);
         $this->set_message('Contention ratio has been updated and applied');
         return true;
