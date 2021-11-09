@@ -1,28 +1,27 @@
 <?php
 
-include_once 'service_attributes.php';
+include_once 'service_base.php';
 
-class Service_Plan extends Service_Attributes
+class Service_Plan extends Service_Base
 {
 
     public $contention;
-    public $plan_id = 0;
+    public $id = 0;
     protected $plan;
 
-
-    public function plan_name()
+    public function name()
     {
         $entity = $this->move ? 'before' : 'entity';
         return $this->$entity->servicePlanName;
     }
 
-    public function plan_id()
+    public function id()
     {
         $entity = $this->move ? 'before' : 'entity';
         return $this->$entity->servicePlanId;
     }
 
-    public function plan_rate()
+    public function total()
     {
         $shares = max($this->shares(), 1);
         $u = $this->rate()->upload * $shares;
@@ -36,13 +35,13 @@ class Service_Plan extends Service_Attributes
 
     protected function shares():int
     { // calculates the number of contention shares
-        $ratio = $this->get_plan()['ratio'];
-        $children = $this->plan_children();
+        $ratio = $this->get()['ratio'];
+        $children = $this->children();
         $shares = intdiv($children, $ratio);
         return ($children % $ratio) > 0 ? ++$shares : $shares; // go figure :-)
     }
 
-    protected function get_plan()
+    protected function get()
     {
         $entity = $this->move ? 'before' : 'entity';
         $planId = $this->$entity->servicePlanId;
@@ -50,7 +49,7 @@ class Service_Plan extends Service_Attributes
         return $this->plan;
     }
 
-    public function plan_children()
+    public function children()
     {
         $entity = $this->move ? 'before' : 'entity';
         $device = $this->$entity->{$this->conf->device_name_attr};
@@ -71,5 +70,6 @@ class Service_Plan extends Service_Attributes
             'upload' => $u,
         ];
     }
+
 
 }

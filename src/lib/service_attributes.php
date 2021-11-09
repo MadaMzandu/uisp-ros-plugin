@@ -22,7 +22,6 @@ class Service_Attributes extends Service_Base
     protected function init()
     {
         parent::init();
-        $this->set_shortcuts();
         $this->set_attributes();
         $this->set_status();
         $this->check_attributes();
@@ -31,11 +30,7 @@ class Service_Attributes extends Service_Base
         $this->set_action();
     }
 
-    protected function set_shortcuts()
-    {
-        $this->entity = $this->data->extraData->entity ?? (object)[];
-        $this->before = $this->data->extraData->entityBeforeEdit ?? (object)[];
-    }
+
 
     protected function set_attributes()
     {
