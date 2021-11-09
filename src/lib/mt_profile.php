@@ -7,16 +7,13 @@ class MT_Profile extends MT
 
     public function set(): bool
     {
-        if ($this->svc->contention < 0 && !$this->has_children()) {
+        if ($this->svc->contention < 0 && !$this->children()) {
             return $this->delete();
         }
-        if (!$this->exists()) {
-            return $this->insert();
-        }
-        return $this->edit();
+        return $this->exec();
     }
 
-    private function has_children()
+    private function children()
     {
         $this->path = '/ppp/secret/';
         $read = $this->read('?profile=' . $this->name()) ?? [];
@@ -42,14 +39,9 @@ class MT_Profile extends MT
 
     private function delete(): bool
     {
-        $this->svc->contention = -1;
-        $data['.id'] = $this->data()->name;
-        if ($this->pq->set()
-            && $this->write((object)$data, 'remove')) {
-            return true;
-        }
-        $this->findErr();
-        return false;
+        $id['.id'] = $this->data()->name;
+        return $this->pq->set()
+            && $this->write((object)$id, 'remove');
     }
 
     protected function data(): object
@@ -101,32 +93,24 @@ class MT_Profile extends MT
         }
     }
 
-    private function insert(): bool
+    private function exec(): bool
     {
-        $this->svc->contention = +1;
-        if ($this->pq->set() && $this->write($this->data(), 'add')) {
-            return true;
-        }
-        $this->findErr();
-        return false;
-    }
-
-    private function edit(): bool
-    {
+        $action = $this->exists ? 'set' : 'add';
         $orphanId = $this->orphaned();
-        return $orphanId
-            ? ($this->pq->reset($orphanId) && $this->write($this->data()))
-            : ($this->pq->set() && $this->write($this->data()));
+        $pq = $orphanId
+            ? $this->pq->reset($orphanId)
+            : $this->pq->set();
+        return $pq && $this->write($this->data(),$action);
     }
 
-    private function orphaned(): string
+    private function orphaned(): ?string
     {
         if (!$this->exists()) {
             return false;
         }
         $profile = $this->entity;
         return substr($profile['parent-queue'], 0, 1) == '*'
-            ? $profile['parent-queue'] : false;
+            ? $profile['parent-queue'] : null;
     }
 
     protected function init(): void
@@ -137,19 +121,16 @@ class MT_Profile extends MT
         $this->pq = new MT_Parent_Queue($this->svc);
     }
 
-    protected function exists(): bool
+    protected function filter(): string
     {
-        $this->read('?name=' . $this->name());
-        $this->entity = $this->read[0] ?? null;
-        $this->insertId = $this->read[0]['.id'] ?? null;
-        return (bool)$this->insertId;
+        return '?name=' . $this->name();
     }
 
     protected function name()
     {
         return $this->svc->disabled
             ? $this->conf->disabled_profile
-            : $this->svc->plan_name();
+            : $this->svc->plan->name();
     }
 
 }

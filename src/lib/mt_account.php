@@ -13,7 +13,7 @@ class MT_Account extends MT
 
     public function suspend()
     {
-        $name = $this->svc->client_name();
+        $name = $this->svc->client->name();
         if ($this->set_profile() && $this->edit()) {
             if ($this->svc->unsuspend && $this->conf->unsuspend_date_fix) {
                 $this->date_fix();
@@ -54,7 +54,7 @@ class MT_Account extends MT
             && $this->save()
             && $this->disconnect()) {
             $this->setMess('service for '
-                . $this->svc->client_name() . ' was ' . $message);
+                . $this->svc->client->name() . ' was ' . $message);
             return true;
         }
         $this->findErr();
@@ -114,6 +114,14 @@ class MT_Account extends MT
         return true;
     }
 
+
+    protected function filter():string
+    {
+        return $this->svc->pppoe
+            ? '?name='. $this->svc->username()
+            : '?mac-address=' . $this->svc->mac();
+    }
+
     protected function findErr()
     {
         if ($this->profile->status()->error) {
@@ -169,7 +177,7 @@ class MT_Account extends MT
         if ($this->write($data, 'remove')
             && $this->svc->delete() && $this->disconnect()) {
             $this->setMess('service for '
-                . $this->svc->client_name() . ' was deleted');
+                . $this->svc->client->name() . ' was deleted');
             return true;
         }
         $this->findErr();
@@ -186,7 +194,7 @@ class MT_Account extends MT
             && $this->write($this->data(), 'add')
             && $this->save()) {
             $this->setMess('service for '
-                . $this->svc->client_name() . ' has been added');
+                . $this->svc->client->name() . ' has been added');
             return true;
         }
         $this->findErr();
