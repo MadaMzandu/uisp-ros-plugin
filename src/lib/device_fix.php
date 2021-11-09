@@ -63,7 +63,7 @@ class Device_Fix extends Device_Account
     private function apply_fix()
     {
         global $conf;
-        $clientId = $this->svc->client_id();
+        $clientId = $this->svc->client->id();
         $id = $this->svc->id();
         $u = new API_Unms();
         if ($u->request('/clients/services/' . $id . '/end', 'PATCH')) {//end service

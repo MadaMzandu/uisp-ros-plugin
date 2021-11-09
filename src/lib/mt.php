@@ -85,18 +85,22 @@ class MT extends Device
 
     protected function comment()
     {
-        return $this->svc->id() . ", "
-            . $this->svc->client_id() . " - "
-            . $this->svc->client_name();
+        return $this->svc->client->id() . " - "
+            . $this->svc->client->name() . " - "
+            . $this->svc->id();
     }
 
     protected function exists(): bool
     {
-        $this->read('?comment');
-        if ($this->read) {
-            $this->findByComment();
-        }
+        $this->read($this->filter());
+        $this->entity = $this->read[0] ?? null;
+        $this->insertId = $this->read[0]['.id'] ?? null;
         return (bool)$this->insertId;
+    }
+
+    protected function filter(): string
+    {
+        return '?comment='.$this->comment();
     }
 
     protected function read($filter = false)
@@ -120,20 +124,5 @@ class MT extends Device
             return false;
         }
     }
-
-    protected function findByComment(): void
-    {
-        $id = (string)$this->svc->id();
-        foreach ($this->read as $item) {
-            $comment = $item['comment'];
-            if (substr($comment, 0, strlen($id)) == $id) {
-                $this->insertId = $item['.id'];
-                $this->search[] = $item;
-                $this->entity = $item;
-                return;
-            }
-        }
-    }
-
 
 }

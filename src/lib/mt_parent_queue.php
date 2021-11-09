@@ -10,15 +10,12 @@ class MT_Parent_Queue extends MT
         if ($this->svc->contention < 0 && !$this->children()) {
             return $this->delete();
         }
-        if (!$this->exists) {
-            return $this->insert();
-        }
-        return $this->edit();
+        return $this->exec();
     }
 
     protected function children(): int
     {
-        return $this->svc->plan_children() ?? 0;
+        return $this->svc->plan->children() ?? 0;
     }
 
     private function delete(): bool
@@ -44,7 +41,7 @@ class MT_Parent_Queue extends MT
 
     protected function rate()
     {
-        return $this->svc->plan_rate();
+        return $this->svc->plan->total();
     }
 
     protected function comment(): string
@@ -65,27 +62,20 @@ class MT_Parent_Queue extends MT
         );
     }
 
-    private function insert(): bool
+    private function exec(): bool
     {
-        $this->insertId = $this->write($this->data(), 'add');
-        return $this->insertId
-            && $this->write($this->child(), 'add');
-    }
-
-    private function edit(): bool
-    {
-        return $this->write($this->child()) &&
-            $this->write($this->data());
+        $set = $this->exists ? 'set' : 'add';
+        $parent = $this->write($this->data(),$set);
+        $set = $this->child_exists() ? 'set' : 'add';
+        return $parent
+            && $this->write($this->child(),$set);
     }
 
     public function reset($orphanId = false): bool
     { //recreates a parent queue
         $this->svc->contention = 0;
-        if(!$this->exists) {
-            //$this->delete();
-            $this->insertId = $this->insert() ?? false;
-        }
-        if ($orphanId && $this->insertId) { //update orphan children
+        $this->exec();
+        if ($orphanId) { //update orphan children
             $orphans = $this->read('?parent=' . $orphanId);
             foreach ($orphans as $item) {
                 $data = (object)['parent' => $this->name(), '.id' => $item['.id']];
@@ -109,6 +99,12 @@ class MT_Parent_Queue extends MT
             }
             $count++;
         }
+    }
+
+    private function child_exists(): bool
+    {
+        return (bool)
+            $this->read('?name='.$this->prefix() . '-child');
     }
 
     private function contention_data($planId,$deviceId): ?object
@@ -136,12 +132,9 @@ class MT_Parent_Queue extends MT
         $this->exists = $this->svc->ready && $this->exists();
     }
 
-    protected function exists(): bool
+    protected function filter(): string
     {
-        $this->read('?name=' . $this->name());
-        $this->entity = $this->read[0] ?? null;
-        $this->insertId = $this->read[0]['.id'] ?? null;
-        return (bool)$this->insertId;
+        return '?name=' . $this->name();
     }
 
     public function name(): string
@@ -151,7 +144,7 @@ class MT_Parent_Queue extends MT
 
     protected function prefix(): string
     {
-        return "servicePlan-" . $this->svc->plan_id();
+        return "servicePlan-" . $this->svc->plan->id();
     }
 
 }
