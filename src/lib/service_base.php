@@ -5,11 +5,13 @@ class Service_Base
 {
 
     public $ready = true;
+    public $move = false;
     protected $status;
     protected $data;
     protected $entity;
     protected $before;
     protected $conf;
+
 
     //protected $db; //database object ;
 
@@ -25,6 +27,13 @@ class Service_Base
         $this->status->error = false;
         $this->status->message = 'service:ok';
         $this->load_config();
+        $this->set_shortcuts();
+    }
+
+    protected function set_shortcuts()
+    {
+        $this->entity = $this->data->extraData->entity ?? (object)[];
+        $this->before = $this->data->extraData->entityBeforeEdit ?? (object)[];
     }
 
     protected function load_config()

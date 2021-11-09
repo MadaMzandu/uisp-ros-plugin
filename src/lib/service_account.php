@@ -1,15 +1,25 @@
 <?php
 include_once 'service_plan.php';
+include_once 'service_attributes.php';
+include_once 'service_client.php';
 include_once 'api_ipv4.php';
 include_once '_temp.php';
 
-class Service_Account extends Service_Plan
+class Service_Account extends Service_Attributes
 {
 
-    public $move = false;
+    public $plan ;
+    public $client ;
     public $ip;
-    protected $client;
+
     public $device_index = 0; // for iterating devices
+
+    protected function init()
+    {
+        parent::init();
+        $this->plan = new Service_Plan($this->data);
+        $this->client = new Service_Client($this->data);
+    }
 
     public function device()
     {
@@ -141,32 +151,10 @@ class Service_Account extends Service_Plan
         return $this->db()->delete($id);
     }
 
-    public function client_name()
-    {
-        $name = 'Client Id:' . $this->entity->clientId;
-        $client = $this->get_client();
-        if ((array)$client) {
-            $name = $client->firstName . ' ' . $client->lastName;
-            if (isset($client->companyName)) {
-                $name = $client->companyName;
-            }
-        }
-        return $name;
-    }
 
-    protected function get_client(): ?object
-    {
-        if (!(array)$this->client) {
-            $this->client = (new API_Unms())->request('/clients/' . $this->client_id());
-        }
 
-        return $this->client ;
-    }
 
-    public function client_id()
-    {
-        return $this->entity->clientId;
-    }
+
 
 
 }
