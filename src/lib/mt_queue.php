@@ -16,9 +16,12 @@ class MT_Queue extends MT
 
     private function delete(): bool
     {
-        $id['.id'] = $this->insertId;
-        return $this->write((object)$id, 'remove')
+        if($this->exists) {
+            $id['.id'] = $this->insertId;
+            return $this->write((object)$id, 'remove')
                 && $this->pq->set();
+        }
+        return true;
     }
 
     private function exec(): bool
