@@ -14,7 +14,7 @@ class Service_Account extends Service_Attributes
 
     public $device_index = 0; // for iterating devices
 
-    protected function init()
+    protected function init(): void
     {
         parent::init();
         $this->plan = new Service_Plan($this->data);

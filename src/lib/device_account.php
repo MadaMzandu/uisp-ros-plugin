@@ -20,7 +20,7 @@ class Device_Account extends Device_Base
 
     protected function rate()
     {
-        return $this->svc->rate();
+        return $this->svc->plan->rate();
     }
 
 }
