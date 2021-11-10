@@ -15,15 +15,21 @@ class MT_Parent_Queue extends MT
 
     protected function children(): int
     {
-        return $this->svc->plan->children() ?? 0;
+        return $this->svc->plan->children() ;
     }
 
     private function delete(): bool
     {
         $data['.id'] = $this->data()->{'.id'};
         $child['.id'] = $this->child()->{'.id'};
-        return $this->write((object)$child, 'remove') &&
-            $this->write((object)$data, 'remove');
+        $done = true ;
+        if($this->child_exists()){
+            $done = $this->write((object)$child, 'remove');
+        }
+        if($this->exists){
+            $done = $this->write((object)$data, 'remove');
+        }
+        return $done ;
     }
 
     protected function data(): object

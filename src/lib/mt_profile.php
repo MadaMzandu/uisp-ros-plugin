@@ -39,9 +39,12 @@ class MT_Profile extends MT
 
     private function delete(): bool
     {
-        $id['.id'] = $this->data()->name;
-        return $this->pq->set()
-            && $this->write((object)$id, 'remove');
+        if($this->exists) {
+            $id['.id'] = $this->data()->name;
+            return $this->pq->set()
+                && $this->write((object)$id, 'remove');
+        }
+        return true;
     }
 
     protected function data(): object
