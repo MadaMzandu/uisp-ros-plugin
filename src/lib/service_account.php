@@ -148,7 +148,8 @@ class Service_Account extends Service_Attributes
     public function delete()
     {
         $id = $this->move ? $this->before->id : $this->entity->id;
-        return $this->db()->delete($id);
+        $this->db()->delete($id);
+        return true;
     }
 
 
