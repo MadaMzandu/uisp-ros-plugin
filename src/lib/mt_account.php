@@ -25,30 +25,22 @@ class MT_Account extends MT
         return false;
     }
 
-    private function set_profile()
+    private function set_profile(): bool
     {
-        return $this->svc->pppoe ? $this->set_ppp_profile() : $this->set_dhcp_queue();
+        return $this->svc->pppoe
+            ? $this->profile->set()
+            : $this->q->set();
     }
 
-    private function set_ppp_profile()
+    private function set_account(): bool
     {
-        if (!$this->profile->set()) { //or set profile
-            $this->setErr($this->profile->error());
-            return false;
-        }
-        return true;
-    }
 
-    private function set_dhcp_queue()
-    {
-        return $this->q->set();
-    }
-
-    public function edit()
-    {
-        $this->svc->contention = $this->svc->exists ? 0 : 1;
         $action = $this->exists ? 'set' : 'add';
         $message = $this->exists ? 'updated' : 'added';
+        if($this->svc->plan->contention < 0){
+            $action = 'remove';
+            $message = 'deleted';
+        }
         if ($this->set_profile()
             && $this->write($this->data(), $action)
             && $this->save()
@@ -103,12 +95,10 @@ class MT_Account extends MT
 
     private function disconnect()
     {
-        if (!$this->svc->pppoe) {
-            return true;
-        }
-        if ($this->read('?name=' . $this->svc->username())) {
-            $this->findByComment();
-            foreach ($this->search as $item) {
+        if ($this->svc->pppoe) {
+            if ($this->read('?name=' . $this->svc->username())) {
+                foreach ($this->read as $item) {
+                }
             }
         }
         return true;
@@ -158,47 +148,25 @@ class MT_Account extends MT
         $this->q = new MT_Queue($this->svc);
     }
 
-    protected function path()
+    protected function path(): string
     {
         return $this->svc->pppoe ? '/ppp/secret/' : '/ip/dhcp-server/lease/';
     }
 
-    public function delete()
+    public function delete(): bool
     {
-        if (!$this->exists) {
-            $this->setErr('Account was not found on specified device');
-            return false;
-        }
-        $this->svc->contention = -1;
-        if (!$this->set_profile()) {
-            return false;
-        }
-        $data = (object)['.id' => $this->insertId];
-        if ($this->write($data, 'remove')
-            && $this->svc->delete() && $this->disconnect()) {
-            $this->setMess('service for '
-                . $this->svc->client->name() . ' was deleted');
-            return true;
-        }
-        $this->findErr();
-        return false;
+        $this->svc->plan->contention = -1;
+        return $this->set_account();
     }
 
-    public function insert()
+    public function insert(): bool
     {
-        if ($this->exists) {
-            return $this->edit();
-        }
-        $this->svc->contention = +1;
-        if ($this->set_profile()
-            && $this->write($this->data(), 'add')
-            && $this->save()) {
-            $this->setMess('service for '
-                . $this->svc->client->name() . ' has been added');
-            return true;
-        }
-        $this->findErr();
-        return false;
+        return $this->set_account();
+    }
+
+    public function edit(): bool
+    {
+        return $this->set_account();
     }
 
 }

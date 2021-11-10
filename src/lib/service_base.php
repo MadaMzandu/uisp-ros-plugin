@@ -6,6 +6,7 @@ class Service_Base
 
     public $ready = true;
     public $move = false;
+    public $exists = false;
     protected $status;
     protected $data;
     protected $entity;

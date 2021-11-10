@@ -7,7 +7,7 @@ class MT_Parent_Queue extends MT
 
     public function set(): bool
     {
-        if ($this->svc->contention < 0 && !$this->children()) {
+        if ($this->svc->plan->contention < 0 && !$this->children()) {
             return $this->delete();
         }
         return $this->exec();
@@ -73,7 +73,6 @@ class MT_Parent_Queue extends MT
 
     public function reset($orphanId = false): bool
     { //recreates a parent queue
-        $this->svc->contention = 0;
         $this->exec();
         if ($orphanId) { //update orphan children
             $orphans = $this->read('?parent=' . $orphanId);

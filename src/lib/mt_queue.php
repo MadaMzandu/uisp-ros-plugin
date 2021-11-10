@@ -8,7 +8,7 @@ class MT_Queue extends MT
 
     public function set()
     {
-        if ($this->svc->contention < 0) {
+        if ($this->svc->plan->contention < 0) {
             return $this->delete();
         }
         return $this->exec();
