@@ -81,7 +81,7 @@ class MT_Account extends MT
     private function profile(): string
     {
         return $this->svc->disabled
-            ? $this->conf->disabled_profile : $this->svc->plan_name();
+            ? $this->conf->disabled_profile : $this->svc->plan->name();
     }
 
     private function dhcp_data(): object

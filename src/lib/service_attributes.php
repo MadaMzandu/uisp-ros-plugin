@@ -19,7 +19,7 @@ class Service_Attributes extends Service_Base
         $this->data->changeType = $value;
     }
 
-    protected function init()
+    protected function init(): void
     {
         parent::init();
         $this->set_attributes();
@@ -72,7 +72,7 @@ class Service_Attributes extends Service_Base
         $this->setErr('No valid pppoe username or dhcp mac address were provided');
     }
 
-    protected function check_ip_clear()
+    protected function check_ip_clear(): void
     {
         if (isset($this->before->{$this->conf->ip_addr_attr})
             && !isset($this->entity->{$this->conf->ip_addr_attr})) {
@@ -80,13 +80,32 @@ class Service_Attributes extends Service_Base
         }
     }
 
-    protected function check_exists()
+    protected function check_username_change(): void
+    {
+        if(isset($this->entity->{$this->conf->mac_addr_attr})
+            && isset($this->before->{$this->conf->mac_addr_attr})){
+            if($this->entity->{$this->conf->mac_addr_attr}
+                != $this->before->{$this->conf->mac_addr_attr}){
+                $this->data->changeType = 'move';
+                return;
+            }
+        }
+        if(isset($this->entity->{$this->conf->pppoe_user_attr})
+            && isset($this->before->{$this->conf->pppoe_user_attr})){
+            if($this->entity->{$this->conf->pppoe_user_attr}
+                != $this->before->{$this->conf->pppoe_user_attr}){
+                $this->data->changeType = 'move';
+            }
+        }
+    }
+
+    protected function check_exists(): void
     {
         $this->exists = (bool)$this->db()
             ->ifServiceIdExists($this->entity->id);
     }
 
-    protected function set_action()
+    protected function set_action(): void
     {
         $change = 'set_' . $this->data->changeType;
         if (in_array($this->data->changeType, ['end', 'insert', 'edit', 'unsuspend'])) {
@@ -95,28 +114,30 @@ class Service_Attributes extends Service_Base
         $this->action = $this->data->changeType;
     }
 
-    protected function set_edit()
+    protected function set_edit(): void
     {
         $lastDevice = strtolower($this->entity->{$this->conf->device_name_attr});
         $thisDevice = strtolower($this->before->{$this->conf->device_name_attr});
         if ($lastDevice != $thisDevice) {
             $this->data->changeType = 'move';
+            return ;
         }
+        $this->check_username_change();
     }
 
-    protected function set_insert()
+    protected function set_insert(): void
     {
         if (isset($this->data->extraData->entityBeforeEdit)) {
             $this->data->changeType = 'move';
         }
     }
 
-    protected function set_end()
+    protected function set_end(): void
     {
         $this->data->changeType = 'delete';
     }
 
-    protected function set_unsuspend()
+    protected function set_unsuspend(): void
     {
         $this->data->changeType = 'suspend';
         $this->unsuspend = true;

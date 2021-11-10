@@ -21,7 +21,7 @@ class Service_Base
         $this->init();
     }
 
-    protected function init()
+    protected function init(): void
     {
         $this->status = (object)[];
         $this->status->error = false;
