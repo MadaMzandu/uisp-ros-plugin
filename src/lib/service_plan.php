@@ -9,6 +9,12 @@ class Service_Plan extends Service_Base
     public $id = 0;
     protected $plan;
 
+    protected function init(): void
+    {
+        parent::init();
+        $this->contention = $this->exists ? 0 :1;
+    }
+
     public function name()
     {
         $entity = $this->move ? 'before' : 'entity';

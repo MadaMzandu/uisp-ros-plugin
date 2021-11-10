@@ -7,7 +7,7 @@ class MT_Profile extends MT
 
     public function set(): bool
     {
-        if ($this->svc->contention < 0 && !$this->children()) {
+        if ($this->svc->plan->contention < 0 && !$this->children()) {
             return $this->delete();
         }
         return $this->exec();

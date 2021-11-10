@@ -7,7 +7,6 @@ class Service_Attributes extends Service_Base
 
     public $action = 'edit';
     public $pppoe = true;
-    public $exists = false;
     public $unsuspend = false;
     public $disabled = false;
     public $move = false;
