@@ -6,7 +6,6 @@ class Service_Base
 
     public $ready = true;
     public $move = false;
-    public $exists = false;
     protected $status;
     protected $data;
     protected $entity;
@@ -29,6 +28,12 @@ class Service_Base
         $this->status->message = 'service:ok';
         $this->load_config();
         $this->set_shortcuts();
+    }
+
+    public function exists(): bool
+    {
+       return (bool)$this->db()
+            ->ifServiceIdExists($this->entity->id);
     }
 
     protected function set_shortcuts()

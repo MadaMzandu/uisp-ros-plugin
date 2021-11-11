@@ -25,7 +25,6 @@ class Service_Attributes extends Service_Base
         $this->set_status();
         $this->check_attributes();
         $this->check_ip_clear();
-        $this->check_exists();
         $this->set_action();
     }
 
@@ -96,12 +95,6 @@ class Service_Attributes extends Service_Base
                 $this->data->changeType = 'move';
             }
         }
-    }
-
-    protected function check_exists(): void
-    {
-        $this->exists = (bool)$this->db()
-            ->ifServiceIdExists($this->entity->id);
     }
 
     protected function set_action(): void
