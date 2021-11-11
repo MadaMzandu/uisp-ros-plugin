@@ -3,11 +3,11 @@
 class MT_Parent_Queue extends MT
 {
 
-    private $devices;
-
     public function set(): bool
     {
-        if ($this->svc->plan->contention < 0 && !$this->children()) {
+        $device = $this->svc->device();
+        $child = $this->children();
+        if ($this->svc->plan->contention < 0 && !$child) {
             return $this->delete();
         }
         return $this->exec();
@@ -45,7 +45,7 @@ class MT_Parent_Queue extends MT
         );
     }
 
-    protected function rate()
+    protected function rate():object
     {
         return $this->svc->plan->total();
     }
@@ -79,7 +79,7 @@ class MT_Parent_Queue extends MT
 
     public function reset($orphanId = false): bool
     { //recreates a parent queue
-        $this->exec();
+        $ret = $this->exec();
         if ($orphanId) { //update orphan children
             $orphans = $this->read('?parent=' . $orphanId);
             foreach ($orphans as $item) {
