@@ -7,7 +7,6 @@ class MT extends Device
 {
 
     protected $insertId;
-    protected $search;
     protected $exists = false;
     protected $path;
     protected $entity;
