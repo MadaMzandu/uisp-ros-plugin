@@ -12,7 +12,7 @@ class Service_Plan extends Service_Base
     protected function init(): void
     {
         parent::init();
-        $this->contention = $this->exists ? 0 :1;
+        $this->contention = $this->exists() ? 0 :1;
     }
 
     public function name()
