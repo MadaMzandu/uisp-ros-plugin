@@ -13,12 +13,7 @@ class Device_Account extends Device_Base
         $this->save = [];
     }
 
-    protected function save()
-    {
-        return $this->svc->save($this->save);
-    }
-
-    protected function rate()
+    protected function rate(): object
     {
         return $this->svc->plan->rate();
     }
