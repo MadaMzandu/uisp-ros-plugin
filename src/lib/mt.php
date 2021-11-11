@@ -7,14 +7,9 @@ class MT extends Device
 {
 
     protected $insertId;
-    protected $exists = false;
+    protected $exists ;
     protected $path;
     protected $entity;
-
-    protected function insertId()
-    {
-        return $this->insertId;
-    }
 
     protected function write($data, $action = 'set')
     {
@@ -34,8 +29,9 @@ class MT extends Device
             $this->read = $api->read();
             $api->disconnect();
             if (!$this->read || is_string($this->read)) { //don't care what's inside the string?
-                $this->setMess('rosapi write:ok');
-                return is_string($this->read) ? $this->read : true;
+                return is_string($this->read)
+                    ? $this->read
+                    :!(bool) $this->read;
             }
             $this->setErr('rosapi write:failed', true);
             return false;
