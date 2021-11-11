@@ -4,16 +4,13 @@ include_once 'api_sqlite.php';
 class Service_Base
 {
 
-    public $ready = true;
-    public $move = false;
+    public $ready ;
+    public $move ;
     protected $status;
     protected $data;
     protected $entity;
     protected $before;
     protected $conf;
-
-
-    //protected $db; //database object ;
 
     public function __construct(&$data)
     {
@@ -23,10 +20,12 @@ class Service_Base
 
     protected function init(): void
     {
+        $this->ready = true ;
         $this->status = (object)[];
+        $this->status->ready = &$this->ready;
         $this->status->error = false;
-        $this->status->message = 'service:ok';
-        $this->load_config();
+        $this->status->message = 'ok';
+        $this->get_config();
         $this->set_shortcuts();
     }
 
@@ -42,7 +41,7 @@ class Service_Base
         $this->before = $this->data->extraData->entityBeforeEdit ?? (object)[];
     }
 
-    protected function load_config()
+    protected function get_config()
     {
         $this->conf = $this->db()->readConfig();
         if (!(array)$this->conf) {
@@ -55,7 +54,6 @@ class Service_Base
         try {
             return new API_SQLite();
         } catch (Exception $e) {
-            $this->ready = false;
             $this->setErr($e->getMessage());
             return null;
         }
