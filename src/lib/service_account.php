@@ -28,6 +28,12 @@ class Service_Account extends Service_Attributes
             : $this->get_next_device();
     }
 
+    public function move($bool): void
+    {
+        $this->move = $bool;
+        $this->plan->move = $bool;
+    }
+
     protected function get_device()
     {
         $entity = $this->move ? 'before' : 'entity';
@@ -89,21 +95,16 @@ class Service_Account extends Service_Attributes
         return $this->db()->selectQueueMikrotikIdByServiceId($id);
     }
 
-    public function save($data)
+    public function save()
     {
-        $save = $this->data($data);
-        $done = $this->exists
-            ? $this->db()->edit((object)$save)
-            : $this->db()->insert((object)$save);
-        if (!$done) {
-            $this->setErr('failed to write changes to cache');
-        }
-        return $done;
+        return $this->exists()
+            ? $this->db()->edit($this->data())
+            : $this->db()->insert($this->data());
     }
 
-    protected function data($data)
+    protected function data(): stdClass
     {
-        $save = [
+        return (object) [
             'id' => $this->entity->id,
             'planId' => $this->entity->servicePlanId,
             'clientId' => $this->entity->clientId,
@@ -111,10 +112,6 @@ class Service_Account extends Service_Attributes
             'status' => $this->entity->status,
             'device' => $this->get_device()->id
         ];
-        foreach (array_keys($data) as $key) {
-            $save[$key] = $data[$key] ?? null;
-        }
-        return $save;
     }
 
     public function ip()
@@ -149,7 +146,7 @@ class Service_Account extends Service_Attributes
     {
         $id = $this->move ? $this->before->id : $this->entity->id;
         $this->db()->delete($id);
-        return true;
+        return true ;
     }
 
 
