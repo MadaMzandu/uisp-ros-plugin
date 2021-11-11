@@ -104,9 +104,9 @@ class Service_Attributes extends Service_Base
 
     protected function set_edit(): void
     {
-        $lastDevice = strtolower($this->entity->{$this->conf->device_name_attr});
-        $thisDevice = strtolower($this->before->{$this->conf->device_name_attr});
-        if ($lastDevice != $thisDevice) {
+        $device = $this->attribute($this->conf->device_name_attr);
+        $old_device = $this->attribute($this->conf->device_name_attr,'before');
+        if ($old_device && strtolower($device) != strtolower($old_device)) {
             $this->data->changeType = 'move';
             return ;
         }
