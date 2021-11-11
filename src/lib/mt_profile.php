@@ -10,7 +10,7 @@ class MT_Profile extends MT
         if ($this->svc->plan->contention < 0 && !$this->children()) {
             return $this->delete();
         }
-        return $this->exec();
+        return $this->set_account();
     }
 
     private function children()
@@ -40,9 +40,9 @@ class MT_Profile extends MT
     private function delete(): bool
     {
         if($this->exists) {
-            $id['.id'] = $this->data()->name;
+            $id['.id'] = $this->insertId ?? $this->name();
             return $this->pq->set()
-                && $this->write((object)$id, 'remove');
+            && $this->write((object)$id, 'remove');
         }
         return true;
     }
@@ -96,14 +96,17 @@ class MT_Profile extends MT
         }
     }
 
-    private function exec(): bool
+    private function set_account(): bool
     {
         $action = $this->exists ? 'set' : 'add';
         $orphanId = $this->orphaned();
-        $pq = $orphanId
+        $p = $orphanId
             ? $this->pq->reset($orphanId)
             : $this->pq->set();
-        return $pq && $this->write($this->data(),$action);
+        $m = $this->svc->move ;
+        $d = $this->data();
+        $w = $this->write($d,$action);
+        return $p && $w ;
     }
 
     private function orphaned(): ?string
