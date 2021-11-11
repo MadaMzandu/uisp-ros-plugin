@@ -10,7 +10,7 @@ class Service_Account extends Service_Attributes
 
     public $plan ;
     public $client ;
-    public $ip;
+    public $ip; //ip address assignment
 
     public $device_index = 0; // for iterating devices
 
@@ -62,37 +62,19 @@ class Service_Account extends Service_Attributes
     public function username(): ?string
     {
         $entity = $this->move ? 'before' : 'entity';
-        return $this->pppoe
-            ? $this->$entity->{$this->conf->pppoe_user_attr}
-            : null;
+        return $this->attribute($this->conf->pppoe_user_attr,$entity);
     }
 
     public function password(): ?string
     {
         $entity = $this->move ? 'before' : 'entity';
-        return $this->pppoe
-            ? $this->$entity->{$this->conf->pppoe_pass_attr}
-            : null;
+        return $this->attribute($this->conf->pppoe_pass_attr,$entity);
     }
 
     public function mac(): ?string
     {
         $entity = $this->move ? 'before' : 'entity';
-        return !$this->pppoe
-            ? $this->$entity->{$this->conf->mac_addr_attr}
-            : null;
-    }
-
-    public function mt_account_id()
-    {
-        $id = $this->move ? $this->before->id : $this->entity->id;
-        return $this->db()->selectServiceMikrotikIdByServiceId($id);
-    }
-
-    public function mt_queue_id()
-    {
-        $id = $this->move ? $this->before->id : $this->entity->id;
-        return $this->db()->selectQueueMikrotikIdByServiceId($id);
+        return $this->attribute($this->conf->mac_addr_attr,$entity);
     }
 
     public function save()
@@ -116,8 +98,9 @@ class Service_Account extends Service_Attributes
 
     public function ip()
     {
-        if (isset($this->entity->{$this->conf->ip_addr_attr})) {
-            return $this->entity->{$this->conf->ip_addr_attr};
+        $ip = $this->attribute($this->conf->ip_addr_attr);
+        if ($ip) {
+            return $ip;
         }
         $rec = $this->db()->selectServiceById($this->id());
         if ((array)$rec && !$this->staticIPClear) {
@@ -135,7 +118,7 @@ class Service_Account extends Service_Attributes
     protected function assign_ip()
     {
         $device = false;
-        if ($this->conf->router_ppp_pool || $this->pppoe) {
+        if ($this->conf->router_ppp_pool || !$this->pppoe) {
             $device = $this->get_device();
         }
         $this->ip = (new API_IPv4())->assign($device);
