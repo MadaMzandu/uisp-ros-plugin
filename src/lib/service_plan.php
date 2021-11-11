@@ -15,19 +15,19 @@ class Service_Plan extends Service_Base
         $this->contention = $this->exists() ? 0 :1;
     }
 
-    public function name()
+    public function name(): string
     {
         $entity = $this->move ? 'before' : 'entity';
         return $this->$entity->servicePlanName;
     }
 
-    public function id()
+    public function id(): int
     {
         $entity = $this->move ? 'before' : 'entity';
         return $this->$entity->servicePlanId;
     }
 
-    public function total()
+    public function total(): stdClass
     {
         $shares = max($this->shares(), 1);
         $u = $this->rate()->upload * $shares;
@@ -47,7 +47,7 @@ class Service_Plan extends Service_Base
         return ($children % $ratio) > 0 ? ++$shares : $shares; // go figure :-)
     }
 
-    protected function get()
+    protected function get(): array
     {
         $entity = $this->move ? 'before' : 'entity';
         $planId = $this->$entity->servicePlanId;
@@ -55,7 +55,7 @@ class Service_Plan extends Service_Base
         return $this->plan;
     }
 
-    public function children()
+    public function children(): int
     {
         $entity = $this->move ? 'before' : 'entity';
         $device = $this->$entity->{$this->conf->device_name_attr};
@@ -66,7 +66,7 @@ class Service_Plan extends Service_Base
         return max($children, 0);
     }
 
-    public function rate()
+    public function rate(): stdClass
     {
         $d = $this->entity->downloadSpeed;
         $u = $this->entity->uploadSpeed;
