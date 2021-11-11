@@ -32,18 +32,13 @@ class MT_Account extends MT
             : $this->q->set();
     }
 
-    private function set_account(): bool
+    private function set_account(): bool // add/edit account
     {
-
         $action = $this->exists ? 'set' : 'add';
         $message = $this->exists ? 'updated' : 'added';
-        if($this->svc->plan->contention < 0){
-            $action = 'remove';
-            $message = 'deleted';
-        }
         if ($this->set_profile()
             && $this->write($this->data(), $action)
-            && $this->save()
+            && $this->svc->save()
             && $this->disconnect()) {
             $this->setMess('service for '
                 . $this->svc->client->name() . ' was ' . $message);
@@ -58,7 +53,7 @@ class MT_Account extends MT
         return $this->svc->pppoe ? $this->pppoe_data() : $this->dhcp_data();
     }
 
-    private function pppoe_data(): object
+    private function pppoe_data(): stdClass
     {
         return (object)[
             'remote-address' => $this->svc->ip(),
@@ -76,7 +71,7 @@ class MT_Account extends MT
             ? $this->conf->disabled_profile : $this->svc->plan->name();
     }
 
-    private function dhcp_data(): object
+    private function dhcp_data(): stdClass
     {
         return (object)[
             'address' => $this->svc->ip(),
@@ -124,18 +119,20 @@ class MT_Account extends MT
 
     public function move()
     {
-        $this->svc->move = true;
+        $this->svc->move(true);
         $this->init(); // switch device
         if (!$this->delete()) {
             $this->setErr('unable to delete old service');
             return false;
         }
-        $this->svc->move = false;
+        $this->svc->move(false);
+        $this->svc->plan->contention = $this->svc->exists() ? 0 : 1;
         $this->init(); // restore device
         if (!$this->insert()) {
             $this->setErr('unable to create service on new device');
             return false;
         }
+        $this->setMess('account for '.$this->svc->client->name().' was updated');
         return true;
     }
 
@@ -156,7 +153,19 @@ class MT_Account extends MT
     public function delete(): bool
     {
         $this->svc->plan->contention = -1;
-        return $this->set_account();
+        if($this->exists) {
+            $data['.id'] = $this->insertId;
+            $done = $this->set_profile()
+             && $this->write((object)$data, 'remove')
+             && $this->svc->delete()
+             && $this->disconnect();
+            if(!$done){
+                return false;
+            }
+        }
+        $this->setMess('account for '
+            . $this->svc->client->name() .' has been deleted');
+        return true ;
     }
 
     public function insert(): bool
