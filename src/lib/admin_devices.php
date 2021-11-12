@@ -6,18 +6,39 @@ class Devices extends Admin
     protected $devices;
     private $device_name;
 
-    public function service_list(){
+    public function service_list(): void
+    {
         $services = $this->get_map('clients/services');
         $clients =  $this->get_map();
-        $ids = $this->get_service_ids();
+        $records = $this->get_service_records();
+        $ids = array_keys($records);
         $this->result = [];
         foreach($ids as $id){
             $this->result[$id] = $services[$id];
+            $this->result[$id]['attributes'] = $this->fix_attributes($services[$id]['attributes']);
             $this->result[$id]['client'] = $clients[$services[$id]['clientId']];
+            $this->result[$id]['record'] = $records[$id];
         }
     }
 
-    public function delete()
+    private function fix_attributes($attributes): array
+    {
+        $fixed = [];
+        $keys = [$this->conf->pppoe_user_attr => 'username',
+            $this->conf->mac_addr_attr => 'mac',
+            $this->conf->device_name_attr => 'device',
+            $this->conf->ip_addr_attr => 'ip'];
+        foreach (array_keys($keys) as $key) {
+            foreach ($attributes as $item) {
+                if ($item['key'] == $key){
+                    $fixed[$keys[$key]] = $item['value'];
+                }
+            }
+        }
+        return $fixed ;
+    }
+
+    public function delete(): bool
     {
 
         $db = $this->connect();
@@ -29,12 +50,12 @@ class Devices extends Admin
         return true;
     }
 
-    private function connect()
+    private function connect(): API_SQLite
     {
         return new API_SQLite();
     }
 
-    public function insert()
+    public function insert(): bool
     {
 
         $db = $this->connect();
@@ -47,7 +68,7 @@ class Devices extends Admin
         return true;
     }
 
-    public function edit()
+    public function edit(): bool
     {
 
         $db = $this->connect();
@@ -59,7 +80,7 @@ class Devices extends Admin
         return true;
     }
 
-    public function get()
+    public function get(): bool
     {
         if (!$this->read()) {
             $this->set_error('unable to retrieve list of devices');
@@ -72,7 +93,7 @@ class Devices extends Admin
         return true;
     }
 
-    private function get_map($type='clients')
+    private function get_map($type='clients'): array
     {
         $api = new API_Unms();
         $api->assoc = true ;
@@ -84,25 +105,25 @@ class Devices extends Admin
         return $map ;
     }
 
-    private function get_service_ids(): array
+    private function get_service_records(): array
     {
         $id = $this->data->id;
-        $ids = [];
+        $records = [];
         $services = $this->db()->selectServicesOnDevice($id);
         foreach ($services as $service){
-            $ids[]= $service['id'];
+            $records[$service['id']] = $service;
         }
-        return $ids ;
+        return $records ;
     }
 
-    private function read()
+    private function read(): bool
     {
         $db = $this->connect();
         $this->read = $db->selectAllFromTable('devices');
         return (bool) (array)$this->read;
     }
 
-    private function setStatus()
+    private function setStatus(): void
     {
         foreach ($this->read as &$device) {
             $conn = @fsockopen($device['ip'],
@@ -117,7 +138,7 @@ class Devices extends Admin
         }
     }
 
-    private function default_port($type)
+    private function default_port($type): int
     {
         $ports = array(
             'mikrotik' => 8728,
@@ -127,7 +148,7 @@ class Devices extends Admin
         return $ports[$type];
     }
 
-    private function setUsers()
+    private function setUsers(): void
     {
         $db = new API_SQLite();
         foreach ($this->read as &$device) {
@@ -135,7 +156,7 @@ class Devices extends Admin
         }
     }
 
-    private function exists()
+    private function exists(): bool
     {
         if (property_exists($this->devices, $this->device_name)) {
             return true;
