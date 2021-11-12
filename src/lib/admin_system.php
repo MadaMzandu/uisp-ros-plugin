@@ -3,7 +3,7 @@
 class System extends Admin
 {
 
-    public function test()
+    public function rebuild()
     {
         $this->send_triggers();
     }
