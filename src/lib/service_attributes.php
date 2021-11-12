@@ -6,7 +6,7 @@ class Service_Attributes extends Service_Base
 {
 
     public $action = 'edit';
-    public $pppoe = true;
+    public $pppoe ;
     public $unsuspend = false;
     public $disabled = false;
     public $move = false;
@@ -55,6 +55,9 @@ class Service_Attributes extends Service_Base
         if ($ip && !filter_var($ip, FILTER_VALIDATE_IP)) {
             $this->setErr('Invalid ip address was provided for the account');
             return;
+        }
+        if($username){
+            $this->pppoe = true ;
         }
         if ($mac && filter_var($mac, FILTER_VALIDATE_MAC)) {
             $this->pppoe = false;
