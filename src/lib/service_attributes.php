@@ -8,7 +8,6 @@ class Service_Attributes extends Service_Base
     public $action = 'edit';
     public $pppoe ;
     public $unsuspend = false;
-    public $disabled = false;
     public $move = false;
     public $staticIPClear = false;
 
@@ -39,7 +38,6 @@ class Service_Attributes extends Service_Base
     protected function set_status()
     {
         $id = $this->move ? $this->before->id : $this->entity->id;
-        $this->disabled = $this->entity->status != 1;
         $this->exists = (bool)$this->db()->ifServiceIdExists($id);
     }
 
@@ -136,9 +134,11 @@ class Service_Attributes extends Service_Base
 
     protected function attribute($key,$entity='entity'): ?string
     { //returns an attribute value
-        foreach($this->$entity->attributes as $attribute){
-            if($key == $attribute->key){
-                return $attribute->value;
+        if(isset($this->$entity->attributes)) {
+            foreach ($this->$entity->attributes as $attribute) {
+                if ($key == $attribute->key) {
+                    return $attribute->value;
+                }
             }
         }
         return null;
