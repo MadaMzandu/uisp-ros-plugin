@@ -40,7 +40,7 @@ class MT_Profile extends MT
     private function delete(): bool
     {
         if($this->exists) {
-            $id['.id'] = $this->insertId ?? $this->name();
+            $id['.id'] = $this->name();
             return $this->pq->set()
             && $this->write((object)$id, 'remove');
         }
@@ -53,10 +53,22 @@ class MT_Profile extends MT
             'name' => $this->name(),
             'local-address' => $this->local_addr(),
             'rate-limit' => $this->rate()->text,
-            'parent-queue' => $this->pq->name(),
-            'address-list' => $this->conf->active_list,
-            '.id' => $this->insertId ?? $this->name(),
+            'parent-queue' => $this->pq_name(),
+            'address-list' => $this->address_list(),
+            '.id' => $this->name(),
         ];
+    }
+
+    private function address_list():string
+    {
+        return $this->svc->disabled() ? $this->conf->disabled_list
+            : $this->conf->active_list ;
+    }
+
+    private function pq_name(): ?string
+    {
+        $plan = 'servicePlan-'.$this->svc->plan->id().'-parent';
+        return $this->svc->disabled() ? 'none': $plan;
     }
 
     private function local_addr()
@@ -86,7 +98,7 @@ class MT_Profile extends MT
             'upload' => $r,
             'download' => $r,
         ];
-        return $this->svc->disabled ? $disabled : $rate;
+        return $this->svc->disabled() ? $disabled : $rate;
     }
 
     protected function findErr()
@@ -134,7 +146,7 @@ class MT_Profile extends MT
 
     protected function name()
     {
-        return $this->svc->disabled
+        return $this->svc->disabled()
             ? $this->conf->disabled_profile
             : $this->svc->plan->name();
     }
