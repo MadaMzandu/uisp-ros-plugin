@@ -72,8 +72,8 @@ class Service_Plan extends Service_Base
         $u = $this->entity->uploadSpeed;
         return (object)[
             'text' => $u . 'M/' . $d . "M",
-            'download' => $d,
             'upload' => $u,
+            'download' => $d,
         ];
     }
 
