@@ -3,14 +3,11 @@
 class Devices extends Admin
 {
 
-    protected $devices;
-    private $device_name;
-
-    public function service_list(): void
+    public function services(): void
     {
         $services = $this->get_map('clients/services');
         $clients =  $this->get_map();
-        $records = $this->get_service_records();
+        $records = $this->service_records();
         $ids = array_keys($records);
         $this->result = [];
         foreach($ids as $id){
@@ -42,7 +39,7 @@ class Devices extends Admin
     {
 
         $db = $this->connect();
-        if (!$db->delete($this->data->id, $table = 'devices')) {
+        if (!$db->delete($this->data->id, 'devices')) {
             $this->set_error('database error');
             return false;
         }
@@ -60,7 +57,7 @@ class Devices extends Admin
 
         $db = $this->connect();
         unset($this->data->id);
-        if (!$db->insert($this->data, $table = 'devices')) {
+        if (!$db->insert($this->data, 'devices')) {
             $this->set_error('database error');
             return false;
         }
@@ -72,7 +69,7 @@ class Devices extends Admin
     {
 
         $db = $this->connect();
-        if (!$db->edit($this->data, $table = 'devices')) {
+        if (!$db->edit($this->data, 'devices')) {
             $this->set_error('database error');
             return false;
         }
@@ -105,7 +102,7 @@ class Devices extends Admin
         return $map ;
     }
 
-    private function get_service_records(): array
+    private function service_records(): array
     {
         $id = $this->data->id;
         $records = [];
@@ -120,7 +117,7 @@ class Devices extends Admin
     {
         $db = $this->connect();
         $this->read = $db->selectAllFromTable('devices');
-        return (bool) (array)$this->read;
+        return (bool) $this->read;
     }
 
     private function setStatus(): void
@@ -154,14 +151,6 @@ class Devices extends Admin
         foreach ($this->read as &$device) {
             $device['users'] = $db->countServicesByDeviceId($device['id']);
         }
-    }
-
-    private function exists(): bool
-    {
-        if (property_exists($this->devices, $this->device_name)) {
-            return true;
-        }
-        return false;
     }
 
 }
