@@ -14,7 +14,7 @@ class MT_Account extends MT
     public function suspend()
     {
         $name = $this->svc->client->name();
-        if ($this->set_profile() && $this->edit()) {
+        if ($this->move()) {
             if ($this->svc->unsuspend && $this->conf->unsuspend_date_fix) {
                 $this->date_fix();
             }
@@ -67,7 +67,7 @@ class MT_Account extends MT
 
     private function profile(): string
     {
-        return $this->svc->disabled
+        return $this->svc->disabled()
             ? $this->conf->disabled_profile : $this->svc->plan->name();
     }
 
@@ -85,7 +85,7 @@ class MT_Account extends MT
 
     protected function addr_list()
     {
-        return $this->svc->disabled ? $this->conf->disabled_list : $this->conf->active_list;
+        return $this->svc->disabled() ? $this->conf->disabled_list : $this->conf->active_list;
     }
 
     private function disconnect()
