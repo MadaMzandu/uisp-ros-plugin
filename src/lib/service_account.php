@@ -21,6 +21,12 @@ class Service_Account extends Service_Attributes
         $this->client = new Service_Client($this->data);
     }
 
+    public function disabled(): bool
+    {
+        $entity = $this->move ? 'before' : 'entity';
+        return $this->$entity->status != 1 ;
+    }
+
     public function device()
     {
         return $this->ready
@@ -37,7 +43,7 @@ class Service_Account extends Service_Attributes
     protected function get_device()
     {
         $entity = $this->move ? 'before' : 'entity';
-        $name = $this->$entity->{$this->conf->device_name_attr};
+        $name = $this->attribute($this->conf->device_name_attr,$entity);
         $dev = $this->db()->selectDeviceByDeviceName($name);
         if (!(array)$dev) {
             $this->setErr('the specified device was not found');
