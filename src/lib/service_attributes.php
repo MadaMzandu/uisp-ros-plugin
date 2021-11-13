@@ -9,7 +9,6 @@ class Service_Attributes extends Service_Base
     public $pppoe ;
     public $unsuspend = false;
     public $move = false;
-    public $staticIPClear = false;
 
     protected function init(): void
     {
@@ -18,7 +17,6 @@ class Service_Attributes extends Service_Base
         $this->check_device();
         $this->set_status();
         $this->check_attributes();
-        $this->check_ip_clear();
         $this->set_action();
     }
 
@@ -62,14 +60,7 @@ class Service_Attributes extends Service_Base
         }
     }
 
-    protected function check_ip_clear(): void
-    {
-        $ip = $this->attribute($this->conf->ip_addr_attr);
-        $old_ip = $this->attribute($this->conf->ip_addr_attr,'before');
-        if ($old_ip && !$ip) {
-            $this->staticIPClear = true;
-        }
-    }
+
 
     protected function check_device(): void
     {

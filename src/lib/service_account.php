@@ -27,7 +27,7 @@ class Service_Account extends Service_Attributes
         return $this->$entity->status != 1 ;
     }
 
-    public function device()
+    public function device(): ?stdClass
     {
         return $this->ready
             ? $this->get_device()
@@ -40,29 +40,30 @@ class Service_Account extends Service_Attributes
         $this->plan->move = $bool;
     }
 
-    protected function get_device()
+    protected function get_device(): ?stdClass
     {
         $entity = $this->move ? 'before' : 'entity';
         $name = $this->attribute($this->conf->device_name_attr,$entity);
         $dev = $this->db()->selectDeviceByDeviceName($name);
         if (!(array)$dev) {
             $this->setErr('the specified device was not found');
-            return false;
+            return null;
         }
         return $dev;
     }
 
-    protected function get_next_device()
+    protected function get_next_device(): ?stdClass
     {
         $devices = $this->db()->selectAllFromTable('devices') ?? [];
         $length = sizeof($devices);
+        $device = null;
         if($this->device_index < $length){
-            $device = $devices[$this->device_index++];
-            if($this->device_index >= $length){
-                $this->device_index = -1;
-            }
-            return (object) $device;
+            $device = (object) $devices[$this->device_index];
         }
+        if(++$this->device_index >= $length){
+            $this->device_index = -1;
+        }
+        return $device;
     }
 
     public function username(): ?string
@@ -83,7 +84,7 @@ class Service_Account extends Service_Attributes
         return $this->attribute($this->conf->mac_addr_attr,$entity);
     }
 
-    public function save()
+    public function save(): bool
     {
         return $this->exists()
             ? $this->db()->edit($this->data())
@@ -102,26 +103,33 @@ class Service_Account extends Service_Attributes
         ];
     }
 
-    public function ip()
+    public function ip(): ?string
     {
         $ip = $this->attribute($this->conf->ip_addr_attr);
         if ($ip) {
             return $ip;
         }
         $rec = $this->db()->selectServiceById($this->id());
-        if ((array)$rec && !$this->staticIPClear) {
+        if ((array)$rec && !$this->ip_removed()) {
             return $rec->address;
         }
-        return $this->ip ? $this->ip : $this->assign_ip();
+        return $this->ip ?? $this->assign_ip();
     }
 
-    public function id()
+    protected function ip_removed(): bool
+    {
+        $ip = $this->attribute($this->conf->ip_addr_attr);
+        $old_ip = $this->attribute($this->conf->ip_addr_attr,'before');
+        return $old_ip && !$ip  ;
+    }
+
+    public function id(): int
     {
         $entity = $this->move ? 'before' : 'entity';
         return $this->$entity->id;
     }
 
-    protected function assign_ip()
+    protected function assign_ip(): ?string
     {
         $device = false;
         if ($this->conf->router_ppp_pool || !$this->pppoe) {
@@ -131,18 +139,12 @@ class Service_Account extends Service_Attributes
         return $this->ip;
     }
 
-    public function delete()
+    public function delete(): bool
     {
         $id = $this->move ? $this->before->id : $this->entity->id;
         $this->db()->delete($id);
         return true ;
     }
-
-
-
-
-
-
 
 }
     
