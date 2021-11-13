@@ -38,18 +38,13 @@ class MT_Parent_Queue extends MT
     {
         return (object)array(
             'name' => $this->name(),
-            'max-limit' => $this->rate()->text,
-            'limit-at' => $this->rate()->text,
+            'max-limit' => $this->svc->plan->total()->text,
+            'limit-at' => $this->svc->plan->total()->text,
             'queue' => 'pcq-upload-default/'
                 . 'pcq-download-default',
             'comment' => $this->comment(),
             '.id' => $this->insertId ?? $this->name(),
         );
-    }
-
-    protected function rate():object
-    {
-        return $this->svc->plan->total();
     }
 
     protected function comment(): string

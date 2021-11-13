@@ -89,18 +89,6 @@ class MT_Profile extends MT
         return false;
     }
 
-    protected function rate(): object
-    {
-        $rate = parent::rate();
-        $r = $this->conf->disabled_rate;
-        $disabled = (object)[
-            'text' => $r . 'M/' . $r . 'M',
-            'upload' => $r,
-            'download' => $r,
-        ];
-        return $this->svc->disabled() ? $disabled : $rate;
-    }
-
     protected function findErr()
     {
         if ($this->pq->status()->error) {
