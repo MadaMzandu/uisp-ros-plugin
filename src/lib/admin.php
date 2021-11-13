@@ -2,10 +2,8 @@
 
 include_once 'admin_settings.php';
 include_once 'admin_devices.php';
-include_once 'admin_stats.php';
 include_once 'admin_plans.php';
 include_once 'admin_validation.php';
-include_once 'admin_users.php';
 include_once 'admin_backup.php';
 include_once 'admin_system.php';
 
@@ -25,7 +23,7 @@ class Admin
         $this->init();
     }
 
-    protected function init()
+    protected function init(): void
     {
         $this->conf = $this->db()->readConfig();
         $this->status = new stdClass();
@@ -35,7 +33,7 @@ class Admin
         $this->status->message = 'ok';
     }
 
-    public function exec()
+    public function exec(): void
     {
         $target = $this->target($this->data->target);
         $exec = new $target($this->data->data);
@@ -44,7 +42,7 @@ class Admin
         $this->result = $exec->result();
     }
 
-    private function target($target)
+    private function target($target): ?string
     {
         $map = array(
             'config' => 'Settings',
@@ -57,15 +55,15 @@ class Admin
             'system' => 'System',
             'backup' => 'Backup',
         );
-        return $map[$target];
+        return $map[$target] ?? null;
     }
 
-    public function status()
+    public function status(): stdClass
     {
         return $this->status;
     }
 
-    protected function db()
+    protected function db(): ?API_SQLite
     {
         try {
             return new API_SQLite();
@@ -74,7 +72,8 @@ class Admin
         }
     }
 
-    protected function service_blank(){
+    protected function service_blank(): stdClass
+    {
         return (object)[
             'changeType' =>'none',
             'extraData' => (object)[
@@ -91,13 +90,13 @@ class Admin
         return $this->result;
     }
 
-    protected function set_message($msg)
+    protected function set_message($msg): void
     {
         $this->status->error = false;
         $this->status->message = $msg;
     }
 
-    protected function set_error($msg)
+    protected function set_error($msg): void
     {
         $this->status->error = true;
         $this->status->message = $msg;

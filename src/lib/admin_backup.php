@@ -3,12 +3,8 @@
 class Backup extends Admin
 {
 
-    public function __construct(&$data)
-    {
-        parent::__construct($data);
-    }
 
-    public function autoBackup()
+    public function autoBackup(): void
     {
         $file = file_get_contents('data/.last_backup');
         $date = $file
@@ -46,7 +42,7 @@ class Backup extends Admin
         return false;
     }
 
-    public function list()
+    public function list(): void
     {
         $dir = 'public/';
         $list = scandir($dir);
@@ -62,7 +58,7 @@ class Backup extends Admin
         }
     }
 
-    public function restore()
+    public function restore(): bool
     {
         $dir = 'public/';
         $name = $dir . $this->data->name;
