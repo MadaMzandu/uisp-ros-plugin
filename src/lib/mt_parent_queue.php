@@ -5,10 +5,12 @@ class MT_Parent_Queue extends MT
 
     public function set(): bool
     {
-        $device = $this->svc->device();
         $child = $this->children();
         if ($this->svc->plan->contention < 0 && !$child) {
             return $this->delete();
+        }
+        if($this->svc->disabled()){
+            $this->svc->plan->contention = 0;
         }
         return $this->exec();
     }
