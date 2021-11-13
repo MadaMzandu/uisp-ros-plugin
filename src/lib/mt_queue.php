@@ -6,7 +6,7 @@ class MT_Queue extends MT
     private $pq; //parent queue object
     private $id;
 
-    public function set()
+    public function set(): bool
     {
         if ($this->svc->plan->contention < 0) {
             return $this->delete();
@@ -34,17 +34,23 @@ class MT_Queue extends MT
         return $pq && $this->write($this->data(),$action);
     }
 
-    protected function data()
+    protected function data(): stdClass
     {
         return (object)array(
             'name' => $this->name(),
             'target' => $this->svc->ip(),
-            'max-limit' => $this->svc->plan->rate()->text,
-            'limit-at' => $this->svc->plan->rate()->text,
-            'parent' => $this->pq->name(),
+            'max-limit' => $this->rate()->text,
+            'limit-at' => $this->rate()->text,
+            'parent' => $this->pq_name(),
             'comment' => $this->comment(),
             '.id' => $this->insertId ?? $this->name(),
         );
+    }
+
+    protected function pq_name(): string
+    {
+        $plan = 'servicePlan-'.$this->svc->plan->id().'-parent';
+        return $this->svc->disabled() ? 'none': $plan;
     }
 
     protected function filter(): string
@@ -52,7 +58,7 @@ class MT_Queue extends MT
         return '?name=' . $this->name();
     }
 
-    protected function name()
+    protected function name(): string
     {
         return $this->svc->client->id() . "-"
             . $this->svc->client->name() . "-"

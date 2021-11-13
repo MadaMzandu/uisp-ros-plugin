@@ -13,9 +13,17 @@ class Device_Account extends Device_Base
         $this->save = [];
     }
 
-    protected function rate(): object
+    protected  function rate():stdClass
     {
-        return $this->svc->plan->rate();
+        $rate = $this->svc->plan->rate();
+        $dr = max($this->conf->disabled_rate ,1); //disabled rate
+        return $this->svc->disabled()
+            ? (object)[
+                'text' => $dr.'M/'.$dr.'M',
+                'upload' => $dr,
+                'download' => $dr,
+            ]
+            : $rate ;
     }
 
 }
