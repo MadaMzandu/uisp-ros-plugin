@@ -43,7 +43,7 @@ function db():?API_SQLite
 
 function create_backup(){
     $data = false ;
-    return (new Backup($data))->backup();
+    return (new Admin_Backup($data))->run();
 }
 
 function bak_is_ok() {
