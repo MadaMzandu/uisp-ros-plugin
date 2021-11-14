@@ -1,6 +1,6 @@
 <?php
 
-class System extends Admin
+class Admin_System extends Admin
 {
 
     public function rebuild()
@@ -14,12 +14,13 @@ class System extends Admin
         $api = new API_Unms();
         $api->assoc = true;
         $services = $api->request('/clients/services') ?? [];
-        $this->clear_cache();
-        $url = '/clients/services/';
-        foreach ($services as $item) {
-            if ($this->is_valid($item)) {
-                $data = ['note' => $item['note']];
-                $api->request($url.$item['id'], 'PATCH', $data);
+        if($this->clear_cache()) {
+            $url = '/clients/services/';
+            foreach ($services as $item) {
+                if ($this->is_valid($item)) {
+                    $data = ['note' => $item['note']];
+                    $api->request($url . $item['id'], 'PATCH', $data);
+                }
             }
         }
     }
@@ -34,12 +35,9 @@ class System extends Admin
         if ($item['status'] > 5) {
             return false;
         }
-        $map = [];
-        foreach ($item['attributes'] as $a) {
-            $map[$a['key']] = $a['value'] ?? null;
-        }
-        return isset($map[$this->conf->device_name_attr])
-        && (isset($map[$this->conf->pppoe_user_attr])
-            || isset($map[$this->conf->mac_addr_attr]));
+        $device = $this->get_attrib($this->conf->device_name_attr,$item);
+        $user = $this->get_attrib($this->conf->pppoe_user_attr,$item);
+        $mac = $this->get_attrib($this->conf->mac_addr_attr,$item);
+        return ($device && ($user || $mac));
     }
 }
