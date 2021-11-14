@@ -52,17 +52,17 @@ class Plans extends Admin
             'downloadBurst', 'uploadBurst', 'dataUsageLimit'];
         foreach ($this->plans as $plan) {
             $isNew = false;
-            $this->ids[] = $plan->id; // save for removing orphans
-            if (!in_array($plan->id, $cachedKeys)) { // new entry
+            $this->ids[] = $plan['id']; // save for removing orphans
+            if (!in_array($plan['id'], $cachedKeys)) { // new entry
                 $isNew = true;
-                $this->result[$plan->id] = [];
-                $this->result[$plan->id]['ratio'] = 1; //set default contention ratio
+                $this->result[$plan['id']] = [];
+                $this->result[$plan['id']]['ratio'] = 1; //set default contention ratio
             }
             foreach ($relevantKeys as $key) {
-                $this->result[$plan->id][$key] = $plan->{$key} ?? 0;
+                $this->result[$plan['id']][$key] = $plan[$key] ?? 0;
             }
             if ($isNew) {
-                $this->db()->insert((object)$this->result[$plan->id], 'plans');
+                $this->db()->insert($this->result['id'], 'plans');
             }
         }
     }
@@ -70,11 +70,10 @@ class Plans extends Admin
     private function pruneCache(): void
     { //remove orphans from cache
         $keys = array_keys($this->result);
-        $db = new API_SQLite();
         foreach ($keys as $key) {
             if (!in_array($key, $this->ids)) {
                 unset($this->result[$key]);
-                $db->delete($key, 'plans');
+                $this->db()->delete($key, 'plans');
             }
         }
     }
