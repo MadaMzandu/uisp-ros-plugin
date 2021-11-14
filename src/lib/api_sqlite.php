@@ -28,7 +28,10 @@ class API_SQLite
 
     public function insert($data, $table = 'services')
     {
-        $this->data = $data;
+        if(!(is_array($data) || is_object($data))){
+            return false;
+        }
+        $this->data = is_array($data) ? $data : (array) $data;
         $this->table = $table;
         return $this->db->exec($this->prepareInsert());
     }
@@ -36,43 +39,19 @@ class API_SQLite
     private function prepareInsert()
     {
         $sql = 'insert into ' . $this->table . " (";
-        $this->data->created = $this->getTime();
-        $keys = array_keys((array)$this->data);
-        $vals = array();
+        $this->data['created'] = $this->getTime();
+        $keys = array_keys($this->data);
+        $values = [];
         foreach ($keys as $key) {
-            $vals[] = "'" . $this->data->{$key} . "'";
+            $values[] = "'" . $this->data[$key] . "'";
         }
         return $sql . implode(',', $keys) . ") values (" .
-            implode(',', $vals) . ")";
+            implode(',', $values) . ")";
     }
 
     private function getTime()
     {
         return (new DateTime())->format('Y-m-d H:i:s');
-    }
-
-    public function insertMultiple($data, $table = 'services')
-    {
-        $this->data = $data;
-        $this->table = $table;
-        return $this->db->exec($this->prepareMultipleInsert());
-    }
-
-    private function prepareMultipleInsert()
-    {
-        $sql = 'insert into ' . $this->table . " (";
-        $keys = array_keys($this->data[0]);
-        $keys[] = 'created';
-        $sql .= implode(',', $keys) . ') values ';
-        foreach ($this->data as $row) {
-            $row['created'] = $this->getTime();
-            if (is_bool($row['value'])) { //convert booleans
-                $row['value'] = $row['value'] ? 'true' : 'false';
-            }
-
-            $sql .= "('" . implode("','", array_values((array)$row)) . "'),";
-        }
-        return substr($sql, 0, -1);
     }
 
     public function suspend($data, $table = 'services')
@@ -82,9 +61,12 @@ class API_SQLite
 
     public function edit($data, $table = 'services')
     {
-        $this->id = $data->id;
-        unset($data->id);
-        $this->data = $data;
+        if(!(is_array($data) || is_object($data))){
+            return false;
+        }
+        $this->data = is_array($data) ? $data : (array)$data;
+        $this->id = $this->data['id'];
+        unset($this->data['id']);
         $this->table = $table;
         return $this->db->exec($this->prepareUpdate());
     }
@@ -97,11 +79,11 @@ class API_SQLite
     private function prepareUpdate()
     {
         $sql = 'update ' . $this->table . " set ";
-        $this->data->last = $this->getTime();
-        $keys = array_keys((array)$this->data);
+        $this->data['last'] = $this->getTime();
+        $keys = array_keys($this->data);
         $fields = '';
         foreach ($keys as $key) {
-            $fields .= $key . "='" . $this->data->{$key} . "',";
+            $fields .= $key . "='" . $this->data[$key] . "',";
         }
         return $sql . substr($fields, 0, -1) . " where id=" . $this->id;
     }
@@ -268,7 +250,7 @@ class API_SQLite
         $res = $this->db->query($sql);
         $return = [];
         while ($row = $res->fetchArray(SQLITE3_ASSOC)) {
-            array_push($return, $row);
+            $return[] = $row;
         }
         return $return;
     }
