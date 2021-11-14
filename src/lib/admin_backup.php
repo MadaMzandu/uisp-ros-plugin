@@ -1,25 +1,9 @@
 <?php
 
-class Backup extends Admin
+class Admin_Backup extends Admin
 {
 
-
-    public function autoBackup(): void
-    {
-        $file = file_get_contents('data/.last_backup');
-        $date = $file
-            ? explode(',', $file . ",2000-01-01 00:00:00")[1]
-            : '2000-01-01 00:00:00';
-        $last = new DateTime($date);
-        $now = new DateTime();
-        $interval = new DateInterval('P1D');
-        $last->add($interval);
-        if ($last < $now) {
-            $this->backup();
-        }
-    }
-
-    public function backup()
+    public function run()
     {
         if (!file_exists('data/data.db')) {
             return false;
