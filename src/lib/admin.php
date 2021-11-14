@@ -52,8 +52,8 @@ class Admin
             'validation' => 'Validation',
             'users' => 'Users',
             'unms' => 'API_Unms',
-            'system' => 'System',
-            'backup' => 'Backup',
+            'system' => 'Admin_System',
+            'backup' => 'Admin_Backup',
         );
         return $map[$target] ?? null;
     }
@@ -88,6 +88,18 @@ class Admin
     public function result()
     {
         return $this->result;
+    }
+
+    protected function get_attrib($key,$data): ?string
+    { //returns an attribute value
+        if(isset($data['attributes'])) {
+            foreach ($data['attributes'] as $attribute) {
+                if ($key == $attribute['key']) {
+                    return $attribute['value'];
+                }
+            }
+        }
+        return null;
     }
 
     protected function set_message($msg): void
