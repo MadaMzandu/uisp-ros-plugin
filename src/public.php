@@ -9,7 +9,7 @@ chdir(__DIR__);
 // restore default config if no config is found
 if(!file_exists('data/data.db')){ //check db
     $db = new SQLite3('data/data.db');
-    $schema = file_get_contents('includes/schema.sql') ?? null;
+    $schema = file_get_contents('includes/schema.sql');
     $done = false;
     if ($db->exec($schema)) {
         $default_conf = file_get_contents('includes/conf.sql');
