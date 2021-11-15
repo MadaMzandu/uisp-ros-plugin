@@ -1,14 +1,45 @@
 <?php
 
-class Devices extends Admin {
+class Devices extends Admin
+{
 
-    protected $devices;
-    private $device_name;
+    public function services(): void
+    {
+        $services = $this->get_map('clients/services');
+        $clients =  $this->get_map();
+        $records = $this->service_records();
+        $ids = array_keys($records);
+        $this->result = [];
+        foreach($ids as $id){
+            $this->result[$id] = $services[$id];
+            $this->result[$id]['attributes'] = $this->fix_attributes($services[$id]['attributes']);
+            $this->result[$id]['client'] = $clients[$services[$id]['clientId']];
+            $this->result[$id]['record'] = $records[$id];
+        }
+    }
 
-    public function delete() {
-        
+    private function fix_attributes($attributes): array
+    {
+        $fixed = [];
+        $keys = [$this->conf->pppoe_user_attr => 'username',
+            $this->conf->mac_addr_attr => 'mac',
+            $this->conf->device_name_attr => 'device',
+            $this->conf->ip_addr_attr => 'ip'];
+        foreach (array_keys($keys) as $key) {
+            foreach ($attributes as $item) {
+                if ($item['key'] == $key){
+                    $fixed[$keys[$key]] = $item['value'];
+                }
+            }
+        }
+        return $fixed ;
+    }
+
+    public function delete(): bool
+    {
+
         $db = $this->connect();
-        if (!$db->delete($this->data->id, $table = 'devices')) {
+        if (!$db->delete($this->data->id, 'devices')) {
             $this->set_error('database error');
             return false;
         }
@@ -16,12 +47,17 @@ class Devices extends Admin {
         return true;
     }
 
-    
-    public function insert() {
-        
+    private function connect(): API_SQLite
+    {
+        return new API_SQLite();
+    }
+
+    public function insert(): bool
+    {
+
         $db = $this->connect();
         unset($this->data->id);
-        if (!$db->insert($this->data, $table = 'devices')) {
+        if (!$db->insert($this->data, 'devices')) {
             $this->set_error('database error');
             return false;
         }
@@ -29,17 +65,11 @@ class Devices extends Admin {
         return true;
     }
 
-    private function exists() {
-        if (property_exists($this->devices, $this->device_name)) {
-            return true;
-        }
-        return false;
-    }
+    public function edit(): bool
+    {
 
-    public function edit() {
-        
         $db = $this->connect();
-        if (!$db->edit($this->data, $table = 'devices')) {
+        if (!$db->edit($this->data, 'devices')) {
             $this->set_error('database error');
             return false;
         }
@@ -47,31 +77,55 @@ class Devices extends Admin {
         return true;
     }
 
-    public function get() {
-        
+    public function get(): bool
+    {
         if (!$this->read()) {
             $this->set_error('unable to retrieve list of devices');
             return false;
         }
         $this->setStatus();
         $this->setUsers();
-        $this->result = $this->read ;
+        $this->result = $this->read;
         $this->set_message('devices retrieved');
         return true;
     }
 
-    private function setUsers() {
-        $db = new CS_SQLite();
-        foreach ($this->read as &$device) {
-            $device['users'] = $db->countServicesByDeviceId($device['id']);
+    private function get_map($type='clients'): array
+    {
+        $api = new API_Unms();
+        $api->assoc = true ;
+        $array = $api->request('/'.$type);
+        $map = [];
+        foreach($array as $item){
+            $map[$item['id']] = $item ;
         }
+        return $map ;
     }
 
-    private function setStatus() {
+    private function service_records(): array
+    {
+        $id = $this->data->id;
+        $records = [];
+        $services = $this->db()->selectServicesOnDevice($id);
+        foreach ($services as $service){
+            $records[$service['id']] = $service;
+        }
+        return $records ;
+    }
+
+    private function read(): bool
+    {
+        $db = $this->connect();
+        $this->read = $db->selectAllFromTable('devices');
+        return (bool) $this->read;
+    }
+
+    private function setStatus(): void
+    {
         foreach ($this->read as &$device) {
             $conn = @fsockopen($device['ip'],
-                            $this->default_port($device['type']),
-                            $code, $err, 0.3);
+                $this->default_port($device['type']),
+                $code, $err, 0.3);
             if (!is_resource($conn)) {
                 $device['status'] = false;
                 continue;
@@ -81,7 +135,8 @@ class Devices extends Admin {
         }
     }
 
-    private function default_port($type) {
+    private function default_port($type): int
+    {
         $ports = array(
             'mikrotik' => 8728,
             'cisco' => 22,
@@ -90,45 +145,12 @@ class Devices extends Admin {
         return $ports[$type];
     }
 
-    private function read() {
-        $db = $this->connect();
-        $this->read = $db->selectAllFromTable('devices');
-        if ($this->read) {
-            return true;
+    private function setUsers(): void
+    {
+        $db = new API_SQLite();
+        foreach ($this->read as &$device) {
+            $device['users'] = $db->countServicesByDeviceId($device['id']);
         }
-        return $this->read_file();
-    }
-
-    private function read_file() {
-        if(!file_exists('json/devices.json')){
-            return false ;
-        }
-        global $conf;
-        $db = $this->connect();
-        $file = json_decode(
-                file_get_contents($conf->devices_file), true);
-        if (!$file) {
-            return false;
-        }
-        foreach ($file as &$item) {
-            $item['pool'] = implode(',', $item['pool']);
-            $item['user'] = $conf->api_user;
-            $item['password'] = $conf->api_pass;
-            if (!$db->insert((object) $item, 'devices')) { //update database
-                continue;
-            }
-            $id = $db->selectDeviceIdByDeviceName($item['name']);
-            $db->replaceServiceDeviceNameWithId($id, $item['name']);
-            $item['id'] = $id;
-            array_push($this->read, $item);
-            //unset($item);
-        }
-        file_put_contents(json_encode($file, 128), $conf->devices_file);
-        return true;
-    }
-
-    private function connect() {
-        return new CS_SQLite();
     }
 
 }

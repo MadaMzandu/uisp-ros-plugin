@@ -8,7 +8,7 @@ chdir(__DIR__);
 
 if(!file_exists('data/data.db')){ //check db
     $db = new SQLite3('data/data.db');
-    $schema = file_get_contents('includes/schema.sql') ?? null;
+    $schema = file_get_contents('includes/schema.sql');
     $done = false;
     if ($db->exec($schema)) {
         $default_conf = file_get_contents('includes/conf.sql');
@@ -28,7 +28,7 @@ if(!bak_is_ok()){ // create automatic backup
     create_backup();
 }
 
-include_once('lib/app_router.php');
+include_once('lib/api_router.php');
 require_once 'vendor/autoload.php';
 
 
@@ -36,7 +36,7 @@ $json = file_get_contents('php://input') ?? false;
 
 if ($json) { // api mode
     $data = json_decode($json);
-    $api = new CS_Router($data);
+    $api = new API_Router($data);
     $api->route();
     echo $api->http_response();
     exit();

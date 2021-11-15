@@ -1,114 +1,78 @@
 <?php
 
-class MT_Profile extends MT {
+class MT_Profile extends MT
+{
 
     private $pq; //parent queue object
-    private $count;
-    private $is_nas = false;
 
-    public function __construct(&$data) {
-        parent::__construct($data);
-        $this->path = '/ppp/profile/';
-        $this->pq = new MT_Parent_Queue($data);
+    public function set(): bool
+    {
+        if ($this->svc->plan->contention < 0 && !$this->children()) {
+            return $this->delete();
+        }
+        return $this->set_account();
     }
 
-    public function set($count = 0) {
-        $this->count = $count;
-        if ($count > 0 && !$this->exists()) {
-            return $this->insert();
+    private function children()
+    {
+        $this->path = '/ppp/secret/';
+        $read = $this->read('?profile=' . $this->name()) ?? [];
+        $disabled = $this->entity_disabled();
+        $this->path = '/ppp/profile/';
+        $count = sizeof($read) ?? 0;
+        $count += $disabled ? 0 : -1; // do not deduct if account is disabled
+        return (bool)max($count, 0);
+    }
+
+    private function entity_disabled(): bool
+    {
+        // $this->path = '/ppp/secret/'; path is already set by prev call
+        $read = $this->read('?comment');
+        $id = (string)$this->svc->id();
+        foreach ($read as $item) {
+            if (substr($item['comment'], 0, strlen($id)) == $id) {
+                return $item['profile'] == $this->conf->disabled_profile;
+            }
         }
-        if ($count < 0 && !$this->has_children()) {
-            return $this->deleteProfile();
-        }
-        if (!$this->pq->set($count)) {
-            $this->set_error($this->pq->error());
-            return false;
+        return false;
+    }
+
+    private function delete(): bool
+    {
+        if($this->exists) {
+            $id['.id'] = $this->name();
+            return $this->pq->set()
+            && $this->write((object)$id, 'remove');
         }
         return true;
     }
 
-    public function set_nas($list) {
-        global $conf;
-        $this->is_nas = true;
-        foreach ($list as $nas) {
-            $this->make_device($nas);
-            if (!$this->exists()) {
-                $this->write($this->profile(), 'add');
-            }
-            if (!$this->exists($conf->disabled_profile)) {
-                $this->write($this->profile($conf->disabled_profile), 'add');
-            }
-        }
-    }
-
-    private function make_device($nas) {
-        global $conf;
-        $this->device = (object) [
-                    'name' => 'nas',
-                    'ip' => $nas,
-                    'user' => $conf->nas_user,
-                    'password' => $conf->nas_password,
+    protected function data(): object
+    {
+        return (object)[
+            'name' => $this->name(),
+            'local-address' => $this->local_addr(),
+            'rate-limit' => $this->rate()->text,
+            'parent-queue' => $this->pq_name(),
+            'address-list' => $this->address_list(),
+            '.id' => $this->name(),
         ];
     }
 
-    protected function get_device(){
-        if ($this->is_nas) {
-            return $this->device;
-        }
-            return parent::get_device();
+    private function address_list():string
+    {
+        return $this->svc->disabled() ? $this->conf->disabled_list
+            : $this->conf->active_list ;
     }
 
-    private function deleteProfile() {
-        if (!$this->pq->set(-1)) {
-            $this->set_error($this->pq->error());
-            return false;
-        }
-        $data = (object) array('.id' => $this->name());
-        return $this->write($data, 'remove');
-    }
-    
-    private function has_children(){
-        $this->path = '/ppp/secret/';
-        $read = $this->read('?profile='.$this->name()) ?? [];
-        $this->path = '/ppp/profile/';
-        $count = $read ? sizeof($read): 0;
-        $count += $this->is_disabled() ? 0 : -1 ; // do not deduct if account is disabled
-        return $count ? : false ;
+    private function pq_name(): ?string
+    {
+        $plan = 'servicePlan-'.$this->svc->plan->id().'-parent';
+        return $this->svc->disabled() ? 'none': $plan;
     }
 
-    private function insert() {
-        if (!$this->pq->set(1)) {
-            $this->set_error($this->pq->error());
-            return false;
-        }
-        return $this->write($this->profile(), 'add');
-    }
-
-    private function profile() {
-        return (object) [
-                    'name' => $this->name(),
-                    'local-address' => $this->local_addr(),
-                    'rate-limit' => $this->rate(),
-                    'parent-queue' => $this->is_nas ? 'none' : $this->pq->name(),
-                    'address-list' => $this->fwlist(),
-        ];
-    }
-    
-    protected function fwlist() {
-        global $conf ;
-        return $this->is_disabled() 
-                ? $conf->disabled_list : $conf->active_list;
-    }
-    
-    protected function rate(){
-        global $conf ;
-        $rate = parent::rate();
-        $disabled_limit = $conf->disabled_rate ?? null;
-        $disabled_rate = $disabled_limit.'M/'.$disabled_limit.'M';
-        return $this->is_disabled() ? $disabled_rate : $rate ;
-    }
-
-    private function local_addr() { // get one address for profile local address
+    private function local_addr()
+    { // get one address for profile local address
         $savedPath = $this->path;
         $this->path = '/ip/address/';
         if ($this->read()) {
@@ -125,17 +89,54 @@ class MT_Profile extends MT {
         return false;
     }
 
-    private function name() {
-        global $conf ;
-        return $this->is_disabled() 
-                ? $conf->disabled_profile 
-                : $this->entity->servicePlanName ;
+    protected function findErr()
+    {
+        if ($this->pq->status()->error) {
+            $this->status = $this->pq->status();
+        }
     }
 
-    protected function exists($profile = false) {
-        $name = $profile ? $profile : $this->name();
-        return !$this->read('?name=' . $name) 
-                ? false : ($this->read ? true :false);
+    private function set_account(): bool
+    {
+        $action = $this->exists ? 'set' : 'add';
+        $orphanId = $this->orphaned();
+        $p = $orphanId
+            ? $this->pq->reset($orphanId)
+            : $this->pq->set();
+        $m = $this->svc->move ;
+        $d = $this->data();
+        $w = $this->write($d,$action);
+        return $p && $w ;
+    }
+
+    private function orphaned(): ?string
+    {
+        if (!$this->exists()) {
+            return false;
+        }
+        $profile = $this->entity;
+        return substr($profile['parent-queue'], 0, 1) == '*'
+            ? $profile['parent-queue'] : null;
+    }
+
+    protected function init(): void
+    {
+        parent::init();
+        $this->path = '/ppp/profile/';
+        $this->exists = $this->exists();
+        $this->pq = new MT_Parent_Queue($this->svc);
+    }
+
+    protected function filter(): string
+    {
+        return '?name=' . $this->name();
+    }
+
+    protected function name()
+    {
+        return $this->svc->disabled()
+            ? $this->conf->disabled_profile
+            : $this->svc->plan->name();
     }
 
 }

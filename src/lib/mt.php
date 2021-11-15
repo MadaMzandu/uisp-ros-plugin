@@ -1,14 +1,105 @@
 <?php
 
 include_once 'routeros_api.class.php';
+include_once 'device.php';
 
-class MT extends Device {
+class MT extends Device
+{
 
-    protected $path ;
-    protected $insertId ;
-    protected $search;
+    protected $insertId;
+    protected $exists ;
+    protected $path;
+    protected $entity;
 
-    protected function read($filter = false) {  //implements mikrotik print
+    protected function write($data, $action = 'set')
+    {
+        if ($action == 'add') {
+            unset($data->{'.id'});
+        }
+        $api = $this->connect();
+        if (!$api) {
+            return false;
+        }
+        try {
+            $api->write($this->path . $action, false);
+            foreach (array_keys((array)$data) as $key) {
+                $api->write('=' . $key . '=' . $data->$key, false);
+            }
+            $api->write(';'); // trailing semi-colon works
+            $this->read = $api->read();
+            $api->disconnect();
+            if (!$this->read || is_string($this->read)) { //don't care what's inside the string?
+                return is_string($this->read)
+                    ? $this->read
+                    :!(bool) $this->read;
+            }
+            $this->setErr('rosapi write:failed', true);
+            return false;
+        } catch (Exception $e) {
+            $api->disconnect;
+            $this->setErr($e->getMessage());
+            return false;
+        }
+    }
+
+    private function connect()
+    {
+        $d = $this->svc->device();
+        try {
+            $api = new Routerosapi();
+            $api->timeout = 3;
+            $api->attempts = 1;
+            // $api->debug = true;
+            if ($api->connect($d->ip, $d->user, $d->password)) {
+                return $api;
+            }
+            $this->setErr('rosapi:connect failed');
+            return false;
+        } catch (Exception $e) {
+            $this->setErr($e);
+            return false;
+        }
+    }
+
+    protected function setErr($msg, $obj = false)
+    {
+        $this->status->error = true;
+        if ($obj) {
+            $this->status->message = $this->read['!trap'][0]['message'];
+        } else {
+            $this->status->message = $msg;
+        }
+    }
+
+    protected function init(): void
+    {
+        parent::init();
+        $this->insertId = null;
+        $this->exists = false;
+    }
+
+    protected function comment()
+    {
+        return $this->svc->client->id() . " - "
+            . $this->svc->client->name() . " - "
+            . $this->svc->id();
+    }
+
+    protected function exists(): bool
+    {
+        $this->read($this->filter());
+        $this->entity = $this->read[0] ?? null;
+        $this->insertId = $this->read[0]['.id'] ?? null;
+        return (bool)$this->insertId;
+    }
+
+    protected function filter(): string
+    {
+        return '?comment='.$this->comment();
+    }
+
+    protected function read($filter = false)
+    {  //implements mikrotik print
         $api = $this->connect();
         if (!$api) {
             return false;
@@ -19,94 +110,14 @@ class MT extends Device {
                 $api->write($filter, false);
             }
             $api->write(";");
-            $this->read = $api->read();
+            $this->read = $api->read() ?? [];
             $api->disconnect();
-            return $this->read ;
+            return $this->read;
         } catch (Exception $e) {
             $api->disconnect();
-            $this->set_error($e);
+            $this->setErr($e->getMessage());
             return false;
         }
-    }
-    
-    protected function insertId() {
-        return $this->insertId;
-    }
-
-    protected function write($data, $action = 'set') {
-        $api = $this->connect();
-        if (!$api) {
-            return false;
-        }
-        try {
-            $api->write($this->path . $action, false);
-            foreach (array_keys((array) $data) as $key) {
-                $api->write('=' . $key . '=' . $data->$key, false);
-            }
-            $api->write(';'); // trailing semi-colon works
-            $this->read = $api->read();
-            $api->disconnect();            
-            if (!$this->read || is_string($this->read)) { //don't care what's inside the string?
-                $this->set_message('rosapi write:ok');
-                return is_string($this->read) ? $this->read : true ;
-            }
-            $this->set_error('rosapi write:failed', true);
-            return false;
-        } catch (Exception $e) {
-            $api->disconnect;
-            $this->set_error($e);
-            return false;
-        }
-    }
-
-    private function connect() {
-        $d = $this->get_device();
-        if (!$d) {
-            return false;
-        }
-        try {
-            $api = new Routerosapi();
-            $api->timeout = 3;
-            $api->attempts = 1;
-            // $api->debug = true;
-            if ($api->connect($d->ip, $d->user, $d->password)) {
-                return $api;
-            }
-            $this->set_error('rosapi:connect failed');
-            return false;
-        } catch (Exception $e) {
-            $this->set_error($e);
-            return false;
-        }
-    }
-    
-        protected function exists() {
-        $this->read('?comment');
-        if ($this->read) {
-            $this->findByComment();
-            if ($this->search) {
-                return true ;
-            }
-        }
-        return false;
-    }
-
-    protected function findByComment() {
-        $e = sizeof($this->read);
-        $this->search = [];
-        for ($i = 0; $i < $e; $i++) {
-            $item = $this->read[$i];
-            [$id] = explode(',', $item['comment']);
-            if ($id == $this->{$this->data->actionObj}->id) {
-                $this->search[] = $item;
-            }
-        }
-    }
-
-    protected function get_device() {
-        global $conf;
-        $name = $this->{$this->data->actionObj}->{$conf->device_name_attr};
-        return (new CS_SQLite())->selectDeviceByDeviceName($name);
     }
 
 }

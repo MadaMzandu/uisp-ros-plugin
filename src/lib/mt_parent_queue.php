@@ -1,161 +1,152 @@
 <?php
 
-class MT_Parent_Queue extends MT {
+class MT_Parent_Queue extends MT
+{
 
-    private $plan ;
-    private $count = 0; // +/- one child
-    private $devices ;
-
-    public function __construct(&$data) {
-        parent::__construct($data);
-        $this->path = '/queue/simple/';
-    }
-
-    public function set($count = 0) {
-        $this->count = $count;
-        if ($count >0 && !$this->exists()) {
-            return $this->create();
+    public function set(): bool
+    {
+        $child = $this->children();
+        if ($this->svc->plan->contention < 0 && !$child) {
+            return $this->delete();
         }
-        if ($count < 0 && !$this->has_children()) {
-            return $this->deleteQueue();
+        if($this->svc->disabled()){
+            $this->svc->plan->contention = 0;
         }
-        return $this->editQueue();
-    }
-    
-    public function update($id){
-        global $conf ;
-        if(!$this->read_devices()){
-            $this->set_error('parent queue module failed to read devices');
-            return;
-        }
-        $this->data = (object)[];
-        $this->data->actionObj = 'entity';
-        $this->entity = (object)[];
-        $this->entity->servicePlanId = $id;
-        foreach($this->devices as $device){
-            $this->entity->{$conf->device_name_attr} = $device['name'];
-            if(!$this->has_children()){
-                continue;
-            }
-            $this->editQueue();
-        }
-        
-    }
-    
-    private function read_devices(){
-        $this->devices = (new CS_SQLite())
-                ->selectAllFromTable('devices') ?? [];
-        return $this->devices ? true : false ;
+        return $this->exec();
     }
 
-    private function read_plan() {
-        $planId = $this->entity->servicePlanId ;
-        $this->plan = (new Plans($planId))->list()[$planId];
-        return $this->plan ? true : false ;
+    protected function children(): int
+    {
+        return $this->svc->plan->children() ;
     }
 
-    public function name() {
-        return $this->prefix() . "-parent";
-    }
-
-    private function prefix() {
-        return "servicePlan-" . $this->entity->servicePlanId;
-    }
-
-    private function editQueue() {
-        $rate = $this->rate();
-        if (!$rate || !$this->exists()) {
-            return false ;
+    private function delete(): bool
+    {
+        $data['.id'] = $this->data()->{'.id'};
+        $child['.id'] = $this->child()->{'.id'};
+        $done = true ;
+        if($this->child_exists()){
+            $done = $this->write((object)$child, 'remove');
         }
-        $data = (object) array(
-                    'max-limit' => $rate,
-                    'limit-at' => $rate,
-                    'name' => $this->name(),
-                    '.id' => $this->name(),
+        if($this->exists){
+            $done = $this->write((object)$data, 'remove');
+        }
+        return $done ;
+    }
+
+    protected function data(): object
+    {
+        return (object)array(
+            'name' => $this->name(),
+            'max-limit' => $this->svc->plan->total()->text,
+            'limit-at' => $this->svc->plan->total()->text,
+            'queue' => 'pcq-upload-default/'
+                . 'pcq-download-default',
+            'comment' => $this->comment(),
+            '.id' => $this->insertId ?? $this->name(),
         );
-        return $this->write($data);
     }
 
-    protected function rate() {
-        if (!$this->read_plan()) {
-            $this->set_error('not able to read service plans');
-            return false;
-        }
-        $shares = $this->shares();
-        $upload = $this->plan['uploadSpeed'] * $shares;
-        $download = $this->plan['downloadSpeed'] * $shares;
-        return $upload.'M/'.$download.'M';
-    }
-    
-    private function shares(){ // calculates the number of contention shares
-        $ratio = $this->plan['ratio'];
-        $children = $this->has_children();
-        $shares = intdiv($children,$ratio);
-        return ($children % $ratio) > 0 ? ++$shares : $shares ; // go figure :-)
-    }
-
-    private function deleteQueue() {
-        $data = (object) array('.id' => $this->name());
-        if ($this->child_delete()) {
-            return $this->write($data, 'remove');
-        }
-    }
-
-    private function has_children() {
-        global $conf ;
-        $planId = $this->entity->servicePlanId;
-        $deviceName = strtolower($this->entity->{$conf->device_name_attr});
-        $db = new CS_SQLite();
-        $children = $db->countDeviceServicesByPlanId($planId, $deviceName) ;
-        $children += $this->count;
-        return $children > 0 ? $children : false ;
-    }
-
-    private function create() {
-        $data = (object) array(
-                    'name' => $this->name(),
-                    'max-limit' => $this->rate(),
-                    'limit-at' => $this->rate(),
-                    'queue' => 'pcq-upload-default/'
-                    . 'pcq-download-default',
-                    'comment' => $this->comment(),
-        );
-        if ($this->write($data, 'add')) {
-            return $this->child_create();
-        }
-        return !$this->write($data,'add') ? : $this->child_create();
-    }
-
-    private function child_create() {
-        $data = (object) array(
-                    'name' => $this->prefix() . '-child',
-                    'packet-marks' => '1stchild',
-                    'parent' => $this->name(),
-                    'max-limit' => '1M/1M',
-                    'limit-at' => '1M/1M',
-                    'comment' => $this->comment(),
-        );
-        return $this->write($data, 'add') ;
-    }
-
-    private function child_delete() {
-        $data = (object) array(
-                    '.id' => $this->prefix() . '-child',
-        );
-        return $this->write($data, 'remove');
-    }
-
-    protected function comment() {
+    protected function comment(): string
+    {
         return 'do not delete';
     }
 
-    protected function exists() {
-        $this->read('?name=' . $this->name());
-        if ($this->read) {
-            return true;
-        }
-        return false;
+    private function child(): object
+    {
+        return (object)array(
+            'name' => $this->prefix() . '-child',
+            'packet-marks' => '1stchild',
+            'parent' => $this->name(),
+            'max-limit' => '1M/1M',
+            'limit-at' => '1M/1M',
+            'comment' => $this->comment(),
+            '.id' => $this->prefix() . '-child',
+        );
     }
-   
+
+    private function exec(): bool
+    {
+        $set = $this->exists ? 'set' : 'add';
+        $parent = $this->write($this->data(),$set);
+        $set = $this->child_exists() ? 'set' : 'add';
+        return $parent
+            && $this->write($this->child(),$set);
+    }
+
+    public function reset($orphanId = false): bool
+    { //recreates a parent queue
+        $ret = $this->exec();
+        if ($orphanId) { //update orphan children
+            $orphans = $this->read('?parent=' . $orphanId);
+            foreach ($orphans as $item) {
+                $data = (object)['parent' => $this->name(), '.id' => $item['.id']];
+                if (!$this->write($data)) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    public function update($planId): void
+    {
+        $count = 0 ;
+        while ($this->svc->device_index > -1){
+            $device = $this->svc->device();
+            $data = $this->contention_data($planId,$device->id);
+            if($data) {
+                $this->svc->device_index = $count; //restore index for write
+                $this->write($data);
+            }
+            $count++;
+        }
+    }
+
+    private function child_exists(): bool
+    {
+        return (bool)
+            $this->read('?name='.$this->prefix() . '-child');
+    }
+
+    private function contention_data($planId,$deviceId): ?object
+    {
+        $children = $this->db()->countDeviceServicesByPlanId($planId, $deviceId);
+        if(!$children){return null;}
+        $plan = (new Plans($planId))->list()[$planId];
+        $ratio = $plan['ratio'];
+        $shares = intdiv($children, $ratio);
+        if(($children % $ratio) > 0){$shares++ ;}
+        $ul = $plan['uploadSpeed'] * $shares;
+        $dl = $plan['downloadSpeed'] * $shares;
+        $rate = $ul . "M/". $dl."M" ;
+        return (object)[
+            '.id' => 'servicePlan-'.$planId.'-parent',
+            'max-limit' => $rate,
+            'limit-at' => $rate,
+        ];
+    }
+
+    protected function init(): void
+    {
+        parent::init();
+        $this->path = '/queue/simple/';
+        $this->exists = $this->svc->ready && $this->exists();
+    }
+
+    protected function filter(): string
+    {
+        return '?name=' . $this->name();
+    }
+
+    public function name(): string
+    {
+        return $this->prefix() . "-parent";
+    }
+
+    protected function prefix(): string
+    {
+        return "servicePlan-" . $this->svc->plan->id();
+    }
+
 }
-    

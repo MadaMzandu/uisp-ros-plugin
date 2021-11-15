@@ -1,40 +1,28 @@
 <?php
 
-class Settings extends Admin {
+class Settings extends Admin
+{
 
-    public function edit() {
-        $db = new CS_SQLite();
-        if($db->saveConfig($this->data)) {
+    public function edit(): bool
+    {
+        if ($this->db()->saveConfig($this->data)) {
             $this->set_message('configuration has been updated');
-            return true ;
+            return true;
         }
         $this->set_error('failed to update configuration');
-        return false ;
+        return false;
     }
-    
-    
-    public function get() {
-        
-        $this->read = (new CS_SQLite())->readConfig();
+
+
+    public function get(): bool
+    {
+        $this->read = $this->db()->readConfig();
         if (!$this->read) {
             $this->set_error('failed to read settings');
             return false;
         }
-        $this->result = $this->read ;
-        //$this->result->attributes = $this->get_attributes();
-        return true ;
-    }
-    
-    private function get_attributes(){
-        $u = new CS_UISP();
-        $u->assoc = true ;
-        $read = $u->request('/custom-attributes') ?? [];
-        $return = [];
-        foreach($read as $item){
-            if($item['attributeType'] != 'service') continue ;
-            $return[] = $item ;
-        }
-        return $return ?? [];
+        $this->result = $this->read;
+        return true;
     }
 
 }

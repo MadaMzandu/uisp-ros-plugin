@@ -1,7 +1,7 @@
 <?php
 
-include_once 'app_sqlite.php';
-$conf = (new CS_SQLite())->readConfig();
+include_once 'api_sqlite.php';
+$conf = (new API_SQLite())->readConfig();
 
 class Device_Base {
 
@@ -25,7 +25,7 @@ class Device_Base {
     protected function getDevice() {
         global $conf;
         $name = $this->{$this->data->actionObj}->{$conf->device_name_attr};
-        $db = new CS_SQLite();
+        $db = new API_SQLite();
         $this->device = $db->selectDeviceByDeviceName($name);
         if (!$this->device) {
             $this->set_error('could not find device configuration');

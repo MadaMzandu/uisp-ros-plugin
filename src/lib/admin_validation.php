@@ -3,19 +3,36 @@
 // a very lazy effort since we only have two object classes to validate
 // will probably move these to their respective object classes
 
-class Validation extends Admin {
+class Validation extends Admin
+{
 
     private $keys;
-    private $subnet ;
+    private $subnet;
 
-    public function __construct(&$data) {
+    public function __construct(&$data)
+    {
         parent::__construct($data);
-        $this->keys = array_keys((array) $this->data);
+        $this->keys = array_keys((array)$this->data);
         $this->setValidationFields();
     }
 
-    public function validate() {
-        
+    private function setValidationFields()
+    {
+        $newDevice = [];
+        $keys = array_keys((array)$this->data);
+        foreach ($keys as $key) {
+            $newDevice[$key] = [
+                'value' => $this->data->{$key} ?? '',
+                'error' => false,
+                'message' => '',
+            ];
+        }
+        $this->result = $newDevice;
+    }
+
+    public function validate()
+    {
+
         $checks = ['checkEmpty', 'checkName', 'checkIpAddress', 'checkIpPool', 'checkExclusions',
             'checkUisp', 'checkToken', 'checkFixWait'];
         foreach ($checks as $check) {
@@ -25,8 +42,8 @@ class Validation extends Admin {
         }
     }
 
-    
-    private function checkFixWait() {
+    private function checkFixWait()
+    {
         $field = 'unsuspend_fix_wait';
         if (!in_array($field, $this->keys)) {
             return true;
@@ -39,16 +56,27 @@ class Validation extends Admin {
         return true;
     }
 
-    private function checkName() {
+    private function setFieldError($field, $message)
+    {
+        $object = [
+            'value' => $this->data->{$field},
+            'error' => true,
+            'message' => $message,
+        ];
+        $this->result[$field] = $object;
+    }
+
+    private function checkName()
+    {
         $field = 'name';
-        if (!in_array($field, $this->keys) ){  
+        if (!in_array($field, $this->keys)) {
             return true;
         }
-        $db = new CS_SQLite();
-        if($this->data->id > 0){
+        $db = new API_SQLite();
+        if ($this->data->id > 0) {
             $device = $db->selectDeviceById($this->data->id);
-            if(strtolower($device->name) == strtolower($this->data->name)){
-                return true ;
+            if (strtolower($device->name) == strtolower($this->data->name)) {
+                return true;
             }
         }
         if ($db->ifDeviceNameIsUsed($this->data->{$field})) {
@@ -59,20 +87,8 @@ class Validation extends Admin {
         return true;
     }
 
-    private function setValidationFields() {
-        $newDevice = [];
-        $keys = array_keys((array) $this->data);
-        foreach ($keys as $key) {
-            $newDevice[$key] = [
-                'value' => $this->data->{$key} ?? '',
-                'error' => false,
-                'message' => '',
-            ];
-        }
-        $this->result = $newDevice;
-    }
-
-    private function checkUisp() {
+    private function checkUisp()
+    {
         $field = 'uisp_url';
         if (!in_array($field, $this->keys)) {
             return true;
@@ -85,7 +101,28 @@ class Validation extends Admin {
         return true;
     }
 
-    private function checkToken() {
+    private function checkServerStatus()
+    {
+        $h0 = explode('://', $this->data->uisp_url)[1];
+        $h1 = explode('/', $h0)[0];
+        $h1 .= ':';
+        [$host, $p0] = explode(':', $h1);
+        $port = 443;
+        if ($p0) {
+            $port = (int)$p0;
+        }
+        $conn = @fsockopen($host,
+            $port,
+            $code, $err, 0.3);
+        if (!is_resource($conn)) {
+            return false;
+        }
+        fclose($conn);
+        return true;
+    }
+
+    private function checkToken()
+    {
         $field = 'uisp_token';
         if (!in_array($field, $this->keys)) {
             return true;
@@ -93,7 +130,7 @@ class Validation extends Admin {
         global $conf;
         $savedToken = $conf->{$field};
         $conf->{$field} = $this->data->{$field};
-        $u = new CS_UISP();
+        $u = new API_Unms();
         $test = $u->request('/service-plans');
         if (!$test) {
             $this->setFieldError($field, 'token may be invalid - services plans not found using token');
@@ -105,26 +142,8 @@ class Validation extends Admin {
         return true;
     }
 
-    private function checkServerStatus() {
-        $h0 = explode('://', $this->data->uisp_url)[1];
-        $h1 = explode('/', $h0)[0];
-        $h1 .= ':';
-        [$host, $p0] = explode(':', $h1);
-        $port = 443;
-        if ($p0) {
-            $port = (int) $p0;
-        }
-        $conn = @fsockopen($host,
-                        $port,
-                        $code, $err, 0.3);
-        if (!is_resource($conn)) {
-            return false;
-        }
-        fclose($conn);
-        return true;
-    }
-
-    private function checkEmpty() {
+    private function checkEmpty()
+    {
         $fields = ['name', 'ip', 'user', 'uisp_url', 'uisp_token', 'disabled_list',
             'disabled_profile', 'pppoe_user_attr', 'pppoe_pass_attr', 'device_name_attr',
             'mac_addr_attr', 'ip_addr_attr'
@@ -142,7 +161,8 @@ class Validation extends Admin {
         return true;
     }
 
-    private function checkExclusions() {
+    private function checkExclusions()
+    {
         $field = 'excl_addr';
         if (!in_array($field, $this->keys) || empty($this->data->{$field})) {
             return true;
@@ -150,7 +170,8 @@ class Validation extends Admin {
         return $this->iterateExclusions();
     }
 
-    private function iterateExclusions() {
+    private function iterateExclusions()
+    {
         $field = 'excl_addr';
         $ranges = explode(',', $this->data->{$field});
         foreach ($ranges as $range) {
@@ -160,7 +181,7 @@ class Validation extends Admin {
                 $end = $start;
             }
             if ((!filter_var($start, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) ||
-                    (!filter_var($end, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4))) {
+                (!filter_var($end, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4))) {
                 $this->setFieldError($field, 'exclusions must contain valid ipv4 address ranges');
                 $this->set_error('failed:ip exclusion validation');
                 return false;
@@ -174,7 +195,8 @@ class Validation extends Admin {
         return true;
     }
 
-    private function checkIpPool() {
+    private function checkIpPool()
+    {
         $fields = ['pool', 'ppp_pool',];
         foreach ($fields as $field) {
             if (!in_array($field, $this->keys) || empty($this->data->{$field})) {
@@ -191,7 +213,8 @@ class Validation extends Admin {
         return true;
     }
 
-    private function iteratePool($field, $entries) {
+    private function iteratePool($field, $entries)
+    {
         foreach ($entries as $entry) {
             $entry .= '/';
             [$prefix, $mask] = explode('/', $entry);
@@ -205,21 +228,23 @@ class Validation extends Admin {
                 $this->set_error('failed:ip prefix length validation');
                 return false;
             }
-            if(!$this->netIsValid($prefix,$mask)){
-                $this->setFieldError($field, 'the correct subnet address should be '.$this->subnet.'/'.$mask);
+            if (!$this->netIsValid($prefix, $mask)) {
+                $this->setFieldError($field, 'the correct subnet address should be ' . $this->subnet . '/' . $mask);
                 $this->set_error('failed:ip prefix length validation');
                 return false;
             }
         }
         return true;
     }
-    
-    private function netIsValid($prefix,$len) { 
+
+    private function netIsValid($prefix, $len)
+    {
         $this->subnet = long2ip(ip2long($prefix) & (-1 << (32 - $len)));
-        return $this->subnet == $prefix ? true : false ;
+        return $this->subnet == $prefix ? true : false;
     }
 
-    private function checkIpAddress() {
+    private function checkIpAddress()
+    {
         $fields = ['ip'];
         foreach ($fields as $field) {
             if (!in_array($field, $this->keys)) {
@@ -232,15 +257,6 @@ class Validation extends Admin {
             }
         }
         return true;
-    }
-
-    private function setFieldError($field, $message) {
-        $object = [
-            'value' => $this->data->{$field},
-            'error' => true,
-            'message' => $message,
-        ];
-        $this->result[$field] = $object;
     }
 
 }
