@@ -12,3 +12,5 @@
 /data/
 ros-plugin.zip
 src/data
+src/test1.json
+src/test_class.php
