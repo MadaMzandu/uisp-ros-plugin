@@ -1,9 +1,10 @@
 <?php
-
+/*
 header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Methods: *');
 header('Access-Control-Max-Age: 1000');
 header('Access-Control-Allow-Headers: Content-Type, Content-Range, Content-Disposition, Content-Description');
+*/
 chdir(__DIR__);
 
 // restore default config if no config is found
@@ -47,6 +48,6 @@ if ($_SERVER['REQUEST_METHOD'] == 'OPTIONS') { //skip redirect for options
 }
 
 if (isset($_GET['page']) && $_GET['page'] == 'panel') { //config page
-    header('Location: public/panel/index.html');
+    include_once 'public/panel/index.php';
     exit();
-} 
+}
