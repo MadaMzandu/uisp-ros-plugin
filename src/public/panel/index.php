@@ -1,3 +1,13 @@
+<!--
+<?php
+use Ubnt\UcrmPluginSdk\Service\UcrmSecurity;
+$security = UcrmSecurity::create();
+    $user = $security->getUser();
+if (!$user || $user->isClient) {
+\App\Http::forbidden();
+exit();
+}
+?> -->
 <!DOCTYPE html>
 <html>
 <head>
@@ -11,6 +21,7 @@
     For more details:
     * https://developer.mozilla.org/en-US/docs/Web/HTML/Element/base
   -->
+  <!-- <base href="/"> -->
   <base href="/crm/_plugins/ros-plugin/public/panel/">
 
   <meta charset="UTF-8">
@@ -31,7 +42,7 @@
        application. For more information, see:
        https://developers.google.com/web/fundamentals/primers/service-workers -->
   <script>
-    var serviceWorkerVersion = '2759570754';
+    var serviceWorkerVersion = '29358577';
     var scriptLoaded = false;
     function loadMainDartJs() {
       if (scriptLoaded) {
