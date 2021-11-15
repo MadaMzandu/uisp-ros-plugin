@@ -2,52 +2,33 @@
 
 include_once 'device_account.php';
 
-class Device_Fix extends Device_Account{
+class Device_Fix extends Device_Account
+{
+
     private $request_obj;
 
-    protected function fix():bool {
+
+    public function date_fix()
+    {
         $this->load_object();
-        if(!$this->request_obj){
-            $this->set_error('failed to create service request object');
+        if (!$this->request_obj) {
+            $this->setErr('failed to create service request object');
             return false;
         }
-        $ret = $this->apply_fix();
-        return (bool) $ret;
+        return $this->apply_fix();
     }
 
-    private function apply_fix() {
-        global $conf;
-        $clientId = $this->entity->clientId;
-        $id = $this->entity->id;
-        $u = new CS_UISP();
-        if ($u->request('/clients/services/' . $id . '/end', 'PATCH')) {//end service
-            $u->request('/clients/services/' . $id, 'DELETE'); //delete service
-            sleep($conf->unsuspend_fix_wait);
-            return $u->request('/clients/' . $clientId . '/services',
-                'POST', $this->request_obj); //recreate service
-        }
-        return false;
-    }
-
-    private function load_object():void{
+    private function load_object()
+    {
         $this->request_obj = json_decode(
-            json_encode($this->entity),true) ;
+            json_encode($this->svc->entity()), true);
         $this->trim_object();
-        $this->trim_attributes();
+        $this->trim_attrbs();
     }
 
-    private function trim_attributes():void {
-        $keys = ["id", "serviceId", "name", "key", "clientZoneVisible"];
-        $e = sizeof($this->request_obj['attributes']);
-        for($i=0;$i<$e;$i++) {
-            foreach($keys as $key){
-                unset($this->request_obj['attributes'][$i][$key]);
-            }
-        }
-    }
-
-    private function trim_object() :void{
-        $valid_keys =  "name,fullAddress,street1,street2,city,countryId,"
+    private function trim_object()
+    {
+        $valid_keys = "name,fullAddress,street1,street2,city,countryId,"
             . "stateId,zipCode,note,addressGpsLat,addressGpsLon,"
             . "servicePlanPeriodId,price,invoiceLabel,contractId,"
             . "contractLengthType,minimumContractLengthMonths,activeFrom,"
@@ -64,7 +45,33 @@ class Device_Fix extends Device_Account{
         foreach ($keys as $key) {
             $temp[$key] = $this->request_obj[$key];
         }
-        $this->request_obj = $temp ;
+        $this->request_obj = $temp;
+    }
+
+    private function trim_attrbs()
+    {
+        $keys = ["id", "serviceId", "name", "key", "clientZoneVisible"];
+        $e = sizeof($this->request_obj['attributes']);
+        for ($i = 0; $i < $e; $i++) {
+            foreach ($keys as $key) {
+                unset($this->request_obj['attributes'][$i][$key]);
+            }
+        }
+    }
+
+    private function apply_fix(): array
+    {
+        $clientId = $this->svc->client->id();
+        $id = $this->svc->id();
+        $u = new API_Unms();
+        $u->assoc = true ;
+        if ($u->request('/clients/services/' . $id . '/end', 'PATCH')) {//end service
+            $u->request('/clients/services/' . $id, 'DELETE'); //delete service
+            sleep($this->conf->unsuspend_fix_wait);
+            return $u->request('/clients/' . $clientId . '/services',
+                'POST', $this->request_obj); //recreate service
+        }
+        return [];
     }
 
 }
