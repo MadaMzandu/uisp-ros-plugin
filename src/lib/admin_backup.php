@@ -14,7 +14,7 @@ class Admin_Backup extends Admin
             $count = $file ? (int)explode(',', $file)[0] : 0; // zero if empty
         }
         $last_backup = $count > 6 ? 0 : $count; // zero on 7 counts
-        $backup = 'public/backup-' . ++$last_backup;
+        $backup = 'data/backup-' . ++$last_backup;
         $main = 'data/data.db';
         if (copy($main, $backup)) {
             $now = new DateTime();
@@ -28,7 +28,7 @@ class Admin_Backup extends Admin
 
     public function list(): void
     {
-        $dir = 'public/';
+        $dir = 'data/';
         $list = scandir($dir);
         $this->result = [];
         foreach ($list as $item) {
@@ -44,7 +44,7 @@ class Admin_Backup extends Admin
 
     public function restore(): bool
     {
-        $dir = 'public/';
+        $dir = 'data/';
         $name = $dir . $this->data->name;
         if (!file_exists($name)) {
             $this->set_error('backup file was not found');
@@ -56,6 +56,27 @@ class Admin_Backup extends Admin
         }
         $this->set_message('backup has been restored');
         return true;
+    }
+
+    public function publish(): bool
+    {
+        $src = 'data/'. $this->data->name;
+        $dst = 'public/'.$this->data->name;
+        $copy = copy($src,$dst);
+        if(!$copy){
+            $this->set_error('failed to publish file for download');
+        }
+        return $copy;
+    }
+
+    public function unpublish(): bool
+    {
+        $file = 'public/'.$this->data->name;
+        $del = unlink($file);
+        if(!$del){
+            $this->set_error('failed to unpublish backup file');
+        }
+        return $del ;
     }
 
 
