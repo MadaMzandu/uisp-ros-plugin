@@ -43,6 +43,9 @@ class API_SQLite
         $keys = array_keys($this->data);
         $values = [];
         foreach ($keys as $key) {
+            if(is_null($this->data[$key])){
+                continue;
+            }
             $values[] = "'" . $this->data[$key] . "'";
         }
         return $sql . implode(',', $keys) . ") values (" .
@@ -83,6 +86,9 @@ class API_SQLite
         $keys = array_keys($this->data);
         $fields = '';
         foreach ($keys as $key) {
+            if(is_null($this->data[$key])){
+                continue;
+            }
             $fields .= $key . "='" . $this->data[$key] . "',";
         }
         return $sql . substr($fields, 0, -1) . " where id=" . $this->id;
