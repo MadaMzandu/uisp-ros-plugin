@@ -91,9 +91,9 @@ class Service_Account extends Service_Attributes
             : $this->db()->insert($this->data());
     }
 
-    protected function data(): stdClass
+    protected function data(): array
     {
-        return (object) [
+        return [
             'id' => $this->entity->id,
             'planId' => $this->entity->servicePlanId,
             'clientId' => $this->entity->clientId,
