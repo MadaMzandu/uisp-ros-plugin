@@ -10,6 +10,20 @@ class MT extends Device
     protected $exists ;
     protected $path;
     protected $entity;
+    protected $device ;
+
+    public function set()
+    {
+        $this->path = rtrim($this->data->path,'\/').'/';
+        return $this->write($this->data->data,$this->data->action);
+    }
+
+    public function get()
+    {
+        $this->path = rtrim($this->data->path,'\/').'/';
+        $filter = $this->data->filter ?? null;
+        return $this->read($filter);
+    }
 
     protected function write($data, $action = 'set')
     {
@@ -44,24 +58,47 @@ class MT extends Device
 
     private function connect()
     {
-        $d = $this->svc->device();
+       if(!$this->get_device()){
+           return false;
+       }
         try {
             $api = new Routerosapi();
             $api->timeout = 3;
             $api->attempts = 1;
             // $api->debug = true;
-            if ($api->connect($d->ip, $d->user, $d->password)) {
+            if ($api->connect($this->device->ip,
+                $this->device->user, $this->device->password)) {
                 return $api;
             }
-            $this->setErr('rosapi:connect failed');
+            $this->setErr('failed to connect to device');
             return false;
         } catch (Exception $e) {
-            $this->setErr($e);
+            $this->setErr($e->getMessage());
             return false;
         }
     }
 
-    protected function setErr($msg, $obj = false)
+    protected function get_device(): bool
+    {
+        if($this->svc){
+            $this->device = $this->svc->device();
+            return true;
+        }
+        if(isset($this->data->device_id))
+        {
+            $this->device = $this->db()->selectDeviceById($this->data->device_id);
+            return true ;
+        }
+        if(isset($this->data->device))
+        {
+            $this->device = $this->db()->selectDeviceByDeviceName($this->data->device);
+            return true ;
+        }
+        $this->setErr('device is not specified in the request');
+        return false;
+    }
+
+    protected function setErr($msg, $obj = false): void
     {
         $this->status->error = true;
         if ($obj) {
@@ -98,11 +135,11 @@ class MT extends Device
         return '?comment='.$this->comment();
     }
 
-    protected function read($filter = false)
+    protected function read($filter = false): ?array
     {  //implements mikrotik print
         $api = $this->connect();
         if (!$api) {
-            return false;
+            return null;
         }
         try {
             $api->write($this->path . 'print', false);
@@ -116,7 +153,7 @@ class MT extends Device
         } catch (Exception $e) {
             $api->disconnect();
             $this->setErr($e->getMessage());
-            return false;
+            return null;
         }
     }
 
