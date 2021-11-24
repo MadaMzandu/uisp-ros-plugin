@@ -4,14 +4,16 @@ class Device_Base
 {
 
     protected $svc; // service data object
+    protected $data ; // none service data object
     protected $status; // execution status and errors
     protected $result; // output
     protected $read; // temporary reads for processing
     protected $conf;
 
-    public function __construct(&$svc)
+    public function __construct(&$data,$service=true)
     {
-        $this->svc = $svc;
+        $this->svc = $service ? $data : [];
+        $this->data = $service ? [] : $data ;
         $this->init();
     }
 
@@ -23,7 +25,7 @@ class Device_Base
         $this->status->message = 'ok';
     }
 
-    protected function load_config()
+    protected function load_config(): void
     {
         $this->conf = $this->db()->readConfig();
         if (!(array)$this->conf) {
@@ -31,7 +33,7 @@ class Device_Base
         }
     }
 
-    protected function db()
+    protected function db(): ?API_SQLite
     {
         try {
             return new API_SQLite();
@@ -43,13 +45,13 @@ class Device_Base
 
     }
 
-    protected function setErr($msg)
+    protected function setErr($msg): void
     {
         $this->status->error = true;
         $this->status->message = $msg;
     }
 
-    public function status()
+    public function status(): stdClass
     {
         return $this->status;
     }
@@ -59,12 +61,12 @@ class Device_Base
         return $this->result;
     }
 
-    protected function error()
+    protected function error(): ?string
     {
         return $this->status->message;
     }
 
-    protected function setMess($msg)
+    protected function setMess($msg): void
     {
         $this->status->error = false;
         $this->status->message = $msg;

@@ -18,9 +18,18 @@ class API_Router
 
     public function __construct(&$data)
     {
-        $this->data = $data;
+        $this->data = $this->prep_data($data);
         $this->result = [];
         $this->status = (object)['status' => 'ok', 'message' => '', 'session' => false];
+    }
+
+    private function prep_data($data)
+    {
+        return !$data
+            ? (object)[]
+            :(is_array($data)
+                ? json_decode(json_encode($data))
+                : $data);
     }
 
     public function status(): ?stdClass

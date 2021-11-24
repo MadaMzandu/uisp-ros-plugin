@@ -5,7 +5,7 @@ class MT_Profile extends MT
 
     private $pq; //parent queue object
 
-    public function set(): bool
+    public function set_profile(): bool
     {
         if ($this->svc->plan->contention < 0 && !$this->children()) {
             return $this->delete();
@@ -67,8 +67,27 @@ class MT_Profile extends MT
 
     private function pq_name(): ?string
     {
+        if($this->router_disabled()){
+            return 'none';
+        }
         $plan = 'servicePlan-'.$this->svc->plan->id().'-parent';
         return $this->svc->disabled() ? 'none': $plan;
+    }
+
+    private function router_disabled(): bool
+    {
+        $id = $this->svc->device()->id ;
+        $disabled_routers = json_decode($this->conf->disabled_routers);
+        return isset($disabled_routers[$id]);
+    }
+
+    protected function rate():stdClass
+    {
+        $rate = parent::rate();
+        if($this->router_disabled()){
+            $rate->text = null;
+        }
+        return $rate;
     }
 
     private function local_addr()
@@ -123,8 +142,10 @@ class MT_Profile extends MT
     {
         parent::init();
         $this->path = '/ppp/profile/';
-        $this->exists = $this->exists();
-        $this->pq = new MT_Parent_Queue($this->svc);
+        if($this->svc) {
+            $this->exists = $this->exists();
+            $this->pq = new MT_Parent_Queue($this->svc);
+        }
     }
 
     protected function filter(): string
