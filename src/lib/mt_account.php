@@ -28,8 +28,8 @@ class MT_Account extends MT
     private function set_profile(): bool
     {
         return $this->svc->pppoe
-            ? $this->profile->set()
-            : $this->q->set();
+            ? $this->profile->set_profile()
+            : $this->q->set_queue();
     }
 
     private function set_account(): bool // add/edit account
@@ -107,7 +107,7 @@ class MT_Account extends MT
             : '?mac-address=' . $this->svc->mac();
     }
 
-    protected function findErr()
+    protected function findErr(): void
     {
         if ($this->profile->status()->error) {
             $this->status = $this->profile->status();
@@ -117,7 +117,7 @@ class MT_Account extends MT
         }
     }
 
-    public function move()
+    public function move(): bool
     {
         $this->svc->move(true);
         $this->init(); // switch device
@@ -140,13 +140,18 @@ class MT_Account extends MT
     {
         parent::init();
         $this->path = $this->path();
-        $this->exists = $this->exists();
-        $this->profile = new MT_Profile($this->svc);
-        $this->q = new MT_Queue($this->svc);
+        if($this->svc) {
+            $this->exists = $this->exists();
+            $this->profile = new MT_Profile($this->svc);
+            $this->q = new MT_Queue($this->svc);
+        }
     }
 
     protected function path(): string
     {
+        if(!$this->svc){ //default to pppoe
+            return '/ppp/secret';
+        }
         return $this->svc->pppoe ? '/ppp/secret/' : '/ip/dhcp-server/lease/';
     }
 
