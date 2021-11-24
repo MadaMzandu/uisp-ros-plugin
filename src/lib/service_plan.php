@@ -58,7 +58,7 @@ class Service_Plan extends Service_Base
     public function children(): int
     {
         $entity = $this->move ? 'before' : 'entity';
-        $device = $this->$entity->{$this->conf->device_name_attr};
+        $device = $this->get_attribute_value($this->conf->device_name_attr,$entity);
         $planId = $this->$entity->servicePlanId;
         $deviceId = $this->db()->selectDeviceIdByDeviceName($device);
         $children = $this->db()->countDeviceServicesByPlanId($planId, $deviceId);

@@ -30,4 +30,20 @@ class Service_Client extends Service_Base{
         }
         return $name;
     }
+
+    public function username(): ?string
+    {
+        $default = 'client-'
+            .$this->entity->clientId.'-'
+            .$this->entity->id;
+        $tmp = $this->get()->username;
+        if(filter_var($tmp,FILTER_VALIDATE_EMAIL)){
+            $tmp = $this->get()->companyName ?? $this->get()->lastName ;
+        }
+        $chars = ".!&%#@*^()'\":;\\/[]{}|?><,";
+        $stripped = str_replace(str_split($chars),'',strtolower($tmp)).'-'.$this->entity->id;
+        $username = preg_replace('/\s+/','',$stripped) ?? $default ;
+        return $this->set_attribute($this->conf->pppoe_user_attr,$username) ? $username : null;
+    }
+
 }

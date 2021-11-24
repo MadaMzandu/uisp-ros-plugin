@@ -49,6 +49,37 @@ class Service_Base
         }
     }
 
+    protected function get_attribute_value($key,$entity='entity'): ?string
+    { //returns an attribute value
+        if(isset($this->$entity->attributes)) {
+            foreach ($this->$entity->attributes as $attribute) {
+                if ($key == $attribute->key) {
+                    return $attribute->value;
+                }
+            }
+        }
+        return null;
+    }
+
+    protected function set_attribute($attribute,$value): bool
+    {
+        $attribute = $this->list_attribute($attribute);
+        $data = ['attributes' => [['customAttributeId' => $attribute->id, 'value'=> $value]]];
+        $id = $this->entity->id ;
+        return (bool) (new API_Unms())->request('clients/services/'.$id,'PATCH',$data);
+    }
+
+    protected function list_attribute($attribute): ?stdClass
+    {
+        $list = (new API_Unms())->request('custom-attributes');
+        foreach ($list as $item){
+            if($item->key == $attribute){
+                return $item ;
+            }
+        }
+        return null ;
+    }
+
     protected function db()
     {
         try {
