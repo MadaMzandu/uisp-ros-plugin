@@ -4,7 +4,7 @@ include_once 'lib/api_sqlite.php';
 include_once 'lib/admin.php';
 include_once 'lib/admin_backup.php';
 
-$version = '1.8.1a';
+$version = '1.8.1b';
 $conf = db()->readConfig();
 
 $conf_updates = json_decode(
