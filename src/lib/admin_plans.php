@@ -62,7 +62,7 @@ class Plans extends Admin
                 $this->result[$plan['id']][$key] = $plan[$key] ?? 0;
             }
             if ($isNew) {
-                $this->db()->insert($this->result['id'], 'plans');
+                $this->db()->insert($this->result[$plan['id']], 'plans');
             }
         }
     }
