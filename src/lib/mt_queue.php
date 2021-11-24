@@ -6,7 +6,7 @@ class MT_Queue extends MT
     private $pq; //parent queue object
     private $id;
 
-    public function set(): bool
+    public function set_queue(): bool
     {
         if ($this->svc->plan->contention < 0) {
             return $this->delete();
@@ -79,8 +79,10 @@ class MT_Queue extends MT
     {
         parent::init();
         $this->path = '/queue/simple/';
-        $this->exists = $this->exists();
-        $this->pq = new MT_Parent_Queue($this->svc);
+        if ($this->svc) {
+            $this->exists = $this->exists();
+            $this->pq = new MT_Parent_Queue($this->svc);
+        }
     }
 
 
