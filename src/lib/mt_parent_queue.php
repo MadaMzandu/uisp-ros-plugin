@@ -5,8 +5,7 @@ class MT_Parent_Queue extends MT
 
     public function set(): bool
     {
-        $child = $this->children();
-        if ($this->svc->plan->contention < 0 && !$child) {
+        if ($this->svc->plan->contention < 0 && !$this->children()) {
             return $this->delete();
         }
         if($this->svc->disabled()){
