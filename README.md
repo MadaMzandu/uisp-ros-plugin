@@ -66,8 +66,8 @@ The custom attributes in Configution (4) should be listed in the form when creat
 
 There are two reasons why this can only be done manually if you are interested to know: 
 
-1. Plugins can query uisp but uisp cannot query plugins therefore custom attrbutes cannot pull values such as device names from the plugin.
-2. A rigid solution would be for the plugin to push the device list to uisp whenever a device is added, however ubiquiti has not provided an API call that can push values to enumerated custom attribute.
+1. Plugins can query crm but crm cannot query plugins. For this reason custom attrbutes cannot pull values such as device names from the plugin.
+2. Why not push the list of devices to crm then? The API has not provided a call that can push values to enumerated custom attributes.
 
 ## Handling account suspension and unsuspension
 
