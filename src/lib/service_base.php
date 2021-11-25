@@ -42,6 +42,15 @@ class Service_Base
         $this->before = $this->data->extraData->entityBeforeEdit ?? (object)[];
     }
 
+    public function queue_job(): void
+    {
+        if($this->queued){return;} //already queued
+        $file = 'data/queue.json';
+        $q = json_decode(file_get_contents($file));
+        $q[] = $this->data;
+        file_put_contents($file,json_encode($q));
+    }
+
     protected function get_config()
     {
         $this->conf = $this->db()->readConfig();

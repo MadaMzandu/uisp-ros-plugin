@@ -106,16 +106,21 @@ class MT_Account extends MT
 
     protected function findErr($success=''): bool
     {
+        $error = false ;
         if($this->status->error){
-            return true ;
+            $error = true ;
         }
         if ($this->profile->status()->error) {
             $this->status = $this->profile->status();
-            $this->true ;
+            $error = true ;
         }
         if ($this->q->status()->error) {
             $this->status = $this->q->status();
-            return true ;
+            $error =  true ;
+        }
+        if($error){
+            $this->svc->queue_job();
+            return true;
         }
         $this->setMess($success);
         return false ;
