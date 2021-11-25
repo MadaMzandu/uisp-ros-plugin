@@ -51,10 +51,13 @@ The custom attributes in Configution (4) should be listed in the form when creat
 ## Enabling automatic username and password generation
 
 1. You need to go to panel > settings > general and enable the checkbox for this feature.
-2. When adding a service for a client leave the username and password blank to let plugin generate the field automatically.
-3. A manually typed in username or password will override automatic generation for the field.
-4. Deleting the existing username or password will cause the plugin to generate a new value for the field
-5. The username is either client login, client lastname or client company name with service number appended.
+2. When adding a service for a client leave the username and password blank to let plugin generate the field automatically, thats it.
+
+Also note the following;
+
+1. A manually typed in username or password will override automatic generation for the field.
+2. Deleting the existing username or password will cause the plugin to generate a new value for the field
+3. The username is either client login, client lastname or client company name with service number appended.
 
 ## Making a dropdown device list
 
