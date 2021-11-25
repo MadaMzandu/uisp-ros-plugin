@@ -61,7 +61,7 @@ The custom attributes in Configution (4) should be listed in the form when creat
 1. Go to crm settings > other > custom attributes.
 2. Create a new custom attribute with the following parameters - type: choice, Attribute type: service,Client Visible:no.
 3. Add the device names of your managed mikrotiks as values. You have to manually update this list of values when you add a new device.
-4. Next go to plugin panel > settings > attributes and type in the name of attribute created in step 2. 
+4. Next go to plugin panel > settings > attributes and in the device name field type in the name of the attribute created in step 2. 
 5. Click the save button when the panel finds the attribute.
 
 There are two reasons why this can only be done manually if you are interested to know: 
