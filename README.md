@@ -67,7 +67,7 @@ The custom attributes in Configution (4) should be listed in the form when creat
 There are two reasons why this can only be done manually if you are interested to know: 
 
 1. Plugins can query crm but crm cannot query plugins. And since custom attrbutes are part of crm it means they cannot pull values such as device names from the plugin.
-2. Why not push the list of devices to crm then? True this would be semi static fallback solution but crm API has not provided a call that can push values to an enumerated custom attribute.
+2. Why not push the list of devices to crm then? True this would be semi static fallback solution but crm API has not provided a call that can push values to an enumerated custom attribute so for now this will have to do.
 
 ## Handling account suspension and unsuspension
 
