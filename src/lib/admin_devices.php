@@ -2,6 +2,90 @@
 
 class Devices extends Admin
 {
+    public function disable()
+    { // disables/enables plan limits on device
+        $id = $this->data->id ;
+        $enable = $this->data->enable ?? false ;
+        $data = (object)[
+            'device_id' => $this->data->id,
+            'path' => '/ppp/profile'
+        ];
+        $profiles = (new MT_Profile($data,false))->get();
+        $plans = $this->get_plans();
+        foreach($profiles as $profile)
+        {
+            if(isset($plans[$profile['name']])){
+                $this->set_profile_limit($id,$profile,$plans[$profile['name']],$enable);
+            }
+        }
+        $this->save_router($id,$enable);
+        $this->reset_pppoe($id);
+    }
+
+    private function reset_pppoe($id)
+    {
+        $data = (object)[
+            'device_id' => $id,
+            'path' => '/interface/pppoe-server/server'
+        ];
+        $servers = (new MT($data,false))->get();
+        foreach ($servers as $server)
+        {
+            $edit = (object)[
+                'device_id'=> $id,
+                'path' => '/interface/pppoe-server/server',
+                'action' => 'disable',
+                'data' => (object) ['.id' => $server['.id'],],];
+            (new MT($edit,false))->set();
+            $edit->action = 'enable';
+            (new MT($edit,false))->set();
+        }
+
+    }
+
+    private function get_plans()
+    {
+        $plans = (new Plans($data))->list();
+        $plans_map = [];
+        foreach ($plans as $plan) {
+            $plans_map[$plan['name']] = $plan ;
+        }
+        return $plans_map;
+    }
+
+    private function save_router($id,$enable=false)
+    {
+        $list = json_decode($this->conf->disabled_routers,true) ?? [];
+        if($enable){
+            unset($list[$id]);
+        }else{
+            $list[$id] = 1;
+        }
+        $this->conf->disabled_routers = json_encode($list) ?? [];
+        return $this->db()->saveConfig($this->conf);
+    }
+
+    private function set_profile_limit($id,$profile,$plan,$enable=false)
+    {
+        $rate = $enable
+            ? $plan['uploadSpeed']. 'M/'.$plan['downloadSpeed'] .'M'
+            : null ;
+        $parent = $enable
+            ? 'servicePlan-'.$plan['id'].'-parent'
+            : 'none';
+        $data = (object)[
+            'device_id' => $id,
+            'action' => 'set',
+            'path' => '/ppp/profile',
+            'data' => (object)[
+                '.id' => $profile['.id'],
+                'rate-limit' => $rate,
+                'parent-queue' => $parent,
+            ],
+        ];
+        return (new MT($data,false))->set();
+    }
+
 
     public function services(): void
     {

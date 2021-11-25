@@ -4,7 +4,7 @@ include_once 'lib/api_sqlite.php';
 include_once 'lib/admin.php';
 include_once 'lib/admin_backup.php';
 
-$version = '1.8.1';
+$version = '1.8.1b';
 $conf = db()->readConfig();
 
 $conf_updates = json_decode(
@@ -62,4 +62,23 @@ function version_is_ok() {
         return false;
     }
     return true;
+}
+
+function run_queue()
+{
+    $file = 'data/queue.json';
+    if(!file_exists($file)) {
+        touch($file);
+        file_put_contents($file,json_encode([]));
+    }
+    $q = json_decode(file_get_contents($file));
+    foreach($q as $item){
+        $s = new Service($item);
+        if($s->ready) {
+            $s->queued = true;
+            $m = new MT_Account($s);
+            $action = $s->action;
+            $m->$action();
+        }
+    }
 }

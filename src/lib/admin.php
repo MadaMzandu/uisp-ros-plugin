@@ -72,19 +72,6 @@ class Admin
         }
     }
 
-    protected function service_blank(): stdClass
-    {
-        return (object)[
-            'changeType' =>'none',
-            'extraData' => (object)[
-                'entity' => (object)[
-                    'id' => 0,
-                    'status' => 0,
-                ],
-            ]
-        ];
-    }
-
     public function result()
     {
         return $this->result;

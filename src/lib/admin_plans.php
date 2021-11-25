@@ -62,7 +62,7 @@ class Plans extends Admin
                 $this->result[$plan['id']][$key] = $plan[$key] ?? 0;
             }
             if ($isNew) {
-                $this->db()->insert($this->result['id'], 'plans');
+                $this->db()->insert($this->result[$plan['id']], 'plans');
             }
         }
     }
@@ -87,16 +87,55 @@ class Plans extends Admin
 
     public function edit(): bool
     {
-        $id = $this->data->id;
         if (!$this->db()->edit($this->data, 'plans')) {
             $this->set_error('failed to update contention ratio for service plan');
             return false;
         }
-        $blank = $this->service_blank();
-        $data = new Service($blank);
-        (new MT_Parent_Queue($data))->update($id);
-        $this->set_message('Contention ratio has been updated and applied');
-        return true;
+        if($this->set_queue_contention()) {
+            $this->set_message('contention ratio has been updated and applied on devices');
+            return true;
+        }
+        $this->set_error('failed to update contention on one or more devices');
+        return false ;
+    }
+
+    private function set_queue_contention(): bool
+    {
+        $devices = $this->db()->selectAllFromTable('devices');
+        $ret = true ;
+        foreach($devices as $device){
+            $contention = $this->contention_data($device['id']);
+            if(!$contention){
+                continue;
+            }
+            $data =(object) [
+                'path' => '/queue/simple',
+                'device_id' => $device['id'],
+                'action' => 'set',
+                'data' => $contention,
+            ];
+            $ret = $ret && (new MT($data,false))->set();
+        }
+        return $ret ;
+    }
+
+    private function contention_data($deviceId): ?object
+    {
+        $planId = $this->data->id ;
+        $children = $this->db()->countDeviceServicesByPlanId($planId, $deviceId);
+        if(!$children){return null;}
+        $plan = $this->list()[$planId];
+        $ratio = $plan['ratio'];
+        $shares = intdiv($children, $ratio);
+        if(($children % $ratio) > 0){$shares++ ;}
+        $ul = $plan['uploadSpeed'] * $shares;
+        $dl = $plan['downloadSpeed'] * $shares;
+        $rate = $ul . "M/". $dl."M" ;
+        return (object)[
+            '.id' => 'servicePlan-'.$planId.'-parent',
+            'max-limit' => $rate,
+            'limit-at' => $rate,
+        ];
     }
 
 }

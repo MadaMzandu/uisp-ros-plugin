@@ -6,6 +6,7 @@ class Service_Base
 
     public $ready ;
     public $move ;
+    public $queued ;
     protected $status;
     protected $data;
     protected $entity;
@@ -41,12 +42,52 @@ class Service_Base
         $this->before = $this->data->extraData->entityBeforeEdit ?? (object)[];
     }
 
+    public function queue_job(): void
+    {
+        if($this->queued){return;} //already queued
+        $file = 'data/queue.json';
+        $q = json_decode(file_get_contents($file));
+        $q[] = $this->data;
+        file_put_contents($file,json_encode($q));
+    }
+
     protected function get_config()
     {
         $this->conf = $this->db()->readConfig();
         if (!(array)$this->conf) {
             $this->setErr('failed to read plugin configuration');
         }
+    }
+
+    protected function get_attribute_value($key,$entity='entity'): ?string
+    { //returns an attribute value
+        if(isset($this->$entity->attributes)) {
+            foreach ($this->$entity->attributes as $attribute) {
+                if ($key == $attribute->key) {
+                    return $attribute->value;
+                }
+            }
+        }
+        return null;
+    }
+
+    protected function set_attribute($attribute,$value): bool
+    {
+        $attribute = $this->list_attribute($attribute);
+        $data = ['attributes' => [['customAttributeId' => $attribute->id, 'value'=> $value]]];
+        $id = $this->entity->id ;
+        return (bool) (new API_Unms())->request('clients/services/'.$id,'PATCH',$data);
+    }
+
+    protected function list_attribute($attribute): ?stdClass
+    {
+        $list = (new API_Unms())->request('custom-attributes');
+        foreach ($list as $item){
+            if($item->key == $attribute){
+                return $item ;
+            }
+        }
+        return null ;
     }
 
     protected function db()

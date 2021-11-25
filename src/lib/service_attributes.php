@@ -9,62 +9,61 @@ class Service_Attributes extends Service_Base
     public $pppoe ;
     public $unsuspend = false;
     public $move = false;
+    protected $auto ;
 
     protected function init(): void
     {
         parent::init();
-        $this->set_attributes();
         $this->check_device();
-        $this->set_status();
         $this->check_attributes();
         $this->set_action();
     }
 
-    protected function set_attributes()
+    protected function check_attributes(): bool
     {
-        $objects = ['entity', 'before'];
-        foreach ($objects as $object) {
-            if (!isset($this->$object->attributes)) {
-                continue;
-            }
-            foreach ($this->$object->attributes as $attribute) {
-                $this->$object->{$attribute->key} = $attribute->value;
-            }
-        }
-    }
-
-    protected function set_status()
-    {
-        $id = $this->move ? $this->before->id : $this->entity->id;
-        $this->exists = (bool)$this->db()->ifServiceIdExists($id);
-    }
-
-    protected function check_attributes()
-    {
-        $ip = $this->attribute($this->conf->ip_addr_attr);
-        $mac = $this->attribute($this->conf->mac_addr_attr);
-        $username = $this->attribute($this->conf->pppoe_user_attr);
-        if(!($username || $mac)){
+        if(!($this->check_mac() || $this->check_username())){
             $this->setErr('no valid username or mac address provided for service');
-            return;
+            return false ;
         }
+        return $this->check_ip();
+    }
+
+    protected function check_username(): bool
+    {
+        $username = $this->get_attribute_value($this->conf->pppoe_user_attr);
+        $password = $this->get_attribute_value($this->conf->pppoe_pass_attr);
+        $auto = $this->conf->auto_ppp_user ;
+        if($auto || $username){
+            $this->pppoe = true ;
+            $this->auto = !($username && $password);
+        }
+        return $auto || $username;
+    }
+
+    protected function check_ip(): bool
+    {
+        $ip = $this->get_attribute_value($this->conf->ip_addr_attr);
         if ($ip && !filter_var($ip, FILTER_VALIDATE_IP)) {
             $this->setErr('Invalid ip address was provided for the account');
-            return;
+            return false ;
         }
-        if($username){
-            $this->pppoe = true ;
-        }
-        if ($mac && filter_var($mac, FILTER_VALIDATE_MAC)) {
-            $this->pppoe = false;
-        }
+        return true;
     }
 
+    protected function check_mac(): bool
+    {
+        $mac = $this->get_attribute_value($this->conf->mac_addr_attr);
+        if ($mac && filter_var($mac, FILTER_VALIDATE_MAC)) {
+            $this->pppoe = false;
+            return true ;
+        }
+        return false ;
+    }
 
 
     protected function check_device(): void
     {
-        $device = $this->attribute($this->conf->device_name_attr);
+        $device = $this->get_attribute_value($this->conf->device_name_attr);
         if(!$device || !$this->db()->selectDeviceIdByDeviceName($device)){
             $this->setErr('no device or unknown device name specified for service');
         }
@@ -72,15 +71,15 @@ class Service_Attributes extends Service_Base
 
     protected function check_username_change(): void
     {
-        $mac = $this->attribute($this->conf->mac_addr_attr);
-        $old_mac = $this->attribute($this->conf->mac_addr_attr,'before');
-        if($mac && $old_mac && $mac != $old_mac){
+        $mac = $this->get_attribute_value($this->conf->mac_addr_attr);
+        $old_mac = $this->get_attribute_value($this->conf->mac_addr_attr,'before');
+        if($old_mac && $mac != $old_mac){
             $this->data->changeType= 'move';
             return ;
         }
-        $user = $this->attribute($this->conf->pppoe_user_attr);
-        $old_user = $this->attribute($this->conf->pppoe_user_attr,'before');
-        if($user && $old_user && $user != $old_user){
+        $user = $this->get_attribute_value($this->conf->pppoe_user_attr);
+        $old_user = $this->get_attribute_value($this->conf->pppoe_user_attr,'before');
+        if($old_user &&  $user != $old_user){
             $this->data->changeType = 'move';
         }
     }
@@ -96,8 +95,8 @@ class Service_Attributes extends Service_Base
 
     protected function set_edit(): void
     {
-        $device = $this->attribute($this->conf->device_name_attr);
-        $old_device = $this->attribute($this->conf->device_name_attr,'before');
+        $device = $this->get_attribute_value($this->conf->device_name_attr);
+        $old_device = $this->get_attribute_value($this->conf->device_name_attr,'before');
         if ($old_device && strtolower($device) != strtolower($old_device)) {
             $this->data->changeType = 'move';
             return ;
@@ -121,18 +120,6 @@ class Service_Attributes extends Service_Base
     {
         $this->data->changeType = 'suspend';
         $this->unsuspend = true;
-    }
-
-    protected function attribute($key,$entity='entity'): ?string
-    { //returns an attribute value
-        if(isset($this->$entity->attributes)) {
-            foreach ($this->$entity->attributes as $attribute) {
-                if ($key == $attribute->key) {
-                    return $attribute->value;
-                }
-            }
-        }
-        return null;
     }
 
 }

@@ -6,7 +6,7 @@ class MT_Queue extends MT
     private $pq; //parent queue object
     private $id;
 
-    public function set(): bool
+    public function set_queue(): bool
     {
         if ($this->svc->plan->contention < 0) {
             return $this->delete();
@@ -14,24 +14,38 @@ class MT_Queue extends MT
         return $this->exec();
     }
 
+    protected function findErr($success='')
+    {
+        if($this->status->error){
+            return true ;
+        }
+        if ($this->pq->status()->error) {
+            $this->status = $this->pq->status();
+            return true ;
+        }
+        $this->setMess($success);
+        return false ;
+    }
+
     private function delete(): bool
     {
         if($this->exists) {
             $id['.id'] = $this->insertId;
-            return $this->write((object)$id, 'remove')
-                && $this->pq->set();
+            $this->write((object)$id, 'remove')
+                && $this->pq->set_parent();
         }
-        return true;
+        return !$this->findErr('ok');
     }
 
     private function exec(): bool
     {
         $action = $this->exists ? 'set' : 'add';
         $orphanId = $this->orphaned();
-        $pq = $orphanId
+        $orphanId
             ? $this->pq->reset($orphanId)
-            : $this->pq->set();
-        return $pq && $this->write($this->data(),$action);
+            : $this->pq->set_parent();
+        $this->write($this->data(),$action);
+        return !$this->findErr('ok');
     }
 
     protected function data(): stdClass
@@ -79,8 +93,10 @@ class MT_Queue extends MT
     {
         parent::init();
         $this->path = '/queue/simple/';
-        $this->exists = $this->exists();
-        $this->pq = new MT_Parent_Queue($this->svc);
+        if ($this->svc) {
+            $this->exists = $this->exists();
+            $this->pq = new MT_Parent_Queue($this->svc);
+        }
     }
 
 
