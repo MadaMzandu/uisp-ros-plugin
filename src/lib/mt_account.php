@@ -36,16 +36,13 @@ class MT_Account extends MT
     {
         $action = $this->exists ? 'set' : 'add';
         $message = $this->exists ? 'updated' : 'added';
-        if ($this->set_profile()
+        $success = 'account for '.$this->svc->client->name()
+            . 'was successfully '.$message;
+        $this->set_profile()
             && $this->write($this->data(), $action)
             && $this->svc->save()
-            && $this->disconnect()) {
-            $this->setMess('service for '
-                . $this->svc->client->name() . ' was ' . $message);
-            return true;
-        }
-        $this->findErr();
-        return false;
+            && $this->disconnect() ;
+        return !$this->findErr($success);
     }
 
     protected function data()
@@ -107,14 +104,21 @@ class MT_Account extends MT
             : '?mac-address=' . $this->svc->mac();
     }
 
-    protected function findErr(): void
+    protected function findErr($success=''): bool
     {
+        if($this->status->error){
+            return true ;
+        }
         if ($this->profile->status()->error) {
             $this->status = $this->profile->status();
+            $this->true ;
         }
         if ($this->q->status()->error) {
             $this->status = $this->q->status();
+            return true ;
         }
+        $this->setMess($success);
+        return false ;
     }
 
     public function move(): bool
@@ -158,19 +162,16 @@ class MT_Account extends MT
     public function delete(): bool
     {
         $this->svc->plan->contention = -1;
+        $success = 'account for '. $this->svc->client->name()
+            . ' has been deleted';
         if($this->exists) {
             $data['.id'] = $this->insertId;
-            $done = $this->set_profile()
+            $this->set_profile()
              && $this->write((object)$data, 'remove')
              && $this->svc->delete()
              && $this->disconnect();
-            if(!$done){
-                return false;
-            }
         }
-        $this->setMess('account for '
-            . $this->svc->client->name() .' has been deleted');
-        return true ;
+        return !$this->findErr($success);
     }
 
     public function insert(): bool

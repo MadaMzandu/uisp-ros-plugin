@@ -3,7 +3,7 @@
 class MT_Parent_Queue extends MT
 {
 
-    public function set(): bool
+    public function set_parent(): bool
     {
         if ($this->svc->plan->contention < 0 && !$this->children()) {
             return $this->delete();
@@ -23,14 +23,22 @@ class MT_Parent_Queue extends MT
     {
         $data['.id'] = $this->data()->{'.id'};
         $child['.id'] = $this->child()->{'.id'};
-        $done = true ;
         if($this->child_exists()){
-            $done = $this->write((object)$child, 'remove');
+            $this->write((object)$child, 'remove');
         }
         if($this->exists){
-            $done = $this->write((object)$data, 'remove');
+            $this->write((object)$data, 'remove');
         }
-        return $done ;
+        return !$this->findErr('ok');
+    }
+
+    protected function findErr($success='')
+    {
+        if($this->status->error){
+            return true ;
+        }
+        $this->setMess($success);
+        return false ;
     }
 
     protected function data(): object
@@ -66,11 +74,11 @@ class MT_Parent_Queue extends MT
 
     private function exec(): bool
     {
-        $set = $this->exists ? 'set' : 'add';
-        $parent = $this->write($this->data(),$set);
-        $set = $this->child_exists() ? 'set' : 'add';
-        return $parent
-            && $this->write($this->child(),$set);
+        $action = $this->exists ? 'set' : 'add';
+        $this->write($this->data(),$action);
+        $action = $this->child_exists() ? 'set' : 'add';
+        $this->write($this->child(),$action);
+        return !$this->findErr('ok');
     }
 
     public function reset($orphanId = false): bool

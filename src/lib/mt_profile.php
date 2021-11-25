@@ -10,7 +10,7 @@ class MT_Profile extends MT
         if ($this->svc->plan->contention < 0 && !$this->children()) {
             return $this->delete();
         }
-        return $this->set_account();
+        return $this->exec();
     }
 
     private function children()
@@ -41,10 +41,10 @@ class MT_Profile extends MT
     {
         if($this->exists) {
             $id['.id'] = $this->name();
-            return $this->pq->set()
+            $this->pq->set_parent()
             && $this->write((object)$id, 'remove');
         }
-        return true;
+        return !$this->findErr('ok');;
     }
 
     protected function data(): object
@@ -114,24 +114,28 @@ class MT_Profile extends MT
         return $value == "true";
     }
 
-    protected function findErr()
+    protected function findErr($success='')
     {
+        if($this->status->error){
+            return true ;
+        }
         if ($this->pq->status()->error) {
             $this->status = $this->pq->status();
+            return true ;
         }
+        $this->setMess($success);
+        return false ;
     }
 
-    private function set_account(): bool
+    private function exec(): bool
     {
         $action = $this->exists ? 'set' : 'add';
         $orphanId = $this->orphaned();
-        $p = $orphanId
+        $orphanId
             ? $this->pq->reset($orphanId)
-            : $this->pq->set();
-        $m = $this->svc->move ;
-        $d = $this->data();
-        $w = $this->write($d,$action);
-        return $p && $w ;
+            : $this->pq->set_parent();
+        $this->write($this->data(),$action);
+        return !$this->findErr('ok');
     }
 
     private function orphaned(): ?string
