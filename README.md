@@ -8,8 +8,9 @@ So it finally came to be, a simple to install plugin replacement for the previou
 2. One click installation via uisp plugin interface
 3. Contention ratios - the plugin will now create and manage parent queues to apply contention per router device.
 4. Automatic ppp profile creation - ppp profiles for service plans are now created/removed automatically
-5. Rebuild utility - the plugin can now re-sync itself and router devices against uisp. A new router can now be repopulated with accounts in minutes.
-6. Automatic backup - although the plugin can resync itself with uisp and managed routers, there is a now backup feature for added redundancy.
+5. Automatic ppp username and password generation
+6. Rebuild utility - the plugin can now re-sync itself and router devices against uisp. A new router can now be repopulated with accounts in minutes.
+7. Automatic backup - although the plugin can resync itself with uisp and managed routers, there is a now backup feature for added redundancy.
 
 ## Other features
 1. Real time provisioning, editing, suspending, unsuspending of accounts
@@ -46,6 +47,26 @@ The custom attributes in Configution (4) should be listed in the form when creat
 2. PPPoE username and Password to provision PPPoE.
 3. Mac address to provision DHCP instead.
 4. IP address to bypass the pool
+
+## Enabling automatic username and password generation
+
+1. You need to go to panel > settings > general and enable the checkbox for this feature.
+2. When adding a service for a client leave the username and password blank to let plugin generate the field automatically.
+3. A manually typed in username or password will override automatic generation for the field.
+4. Deleting the existing username or password will cause the plugin to generate a new value for the field
+5. The username is either client login, client lastname or client company name with service number appended.
+
+## Creating dropdown device selection
+
+1. Go to crm settings > other > custom attributes.
+2. Create a new custom attribute with the following parameters - type: choice, Attribute type: text,Client Visible:no.
+3.  Then go to plugin panel > settings > attributes and type in the name of attribute created in step 2. 
+4.  Click the save button when the panel finds the attribute.
+
+There are two reasons why this can only be done manually if your are interested: 
+
+1. Plugins can query uisp but uisp cannot query plugins therefore custom attrbutes cannot pull values such as device names from the plugin.
+2. A rigid solution would be for the plugin to push the device list to uisp whenever a device is added, however ubiquiti has not provided an API call that can push values to enumerated custom attribute.
 
 ## Handling account suspension and unsuspension
 
