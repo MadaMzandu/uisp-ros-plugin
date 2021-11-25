@@ -43,7 +43,7 @@ Please ensure that your mikrotik devices are added to the plugin and are online.
 # Using
 
 The custom attributes in Configution (4) should be listed in the form when creating or editing a service in Uisp.
-1. Fill the device name to specify the router for the clients account
+1. Fill the device name to specify the router for the clients account (see making a device dropdown list below)
 2. PPPoE username and Password to provision PPPoE.
 3. Mac address to provision DHCP instead.
 4. IP address to bypass the pool
@@ -56,14 +56,15 @@ The custom attributes in Configution (4) should be listed in the form when creat
 4. Deleting the existing username or password will cause the plugin to generate a new value for the field
 5. The username is either client login, client lastname or client company name with service number appended.
 
-## Creating dropdown device selection
+## Making a dropdown device list
 
 1. Go to crm settings > other > custom attributes.
-2. Create a new custom attribute with the following parameters - type: choice, Attribute type: text,Client Visible:no.
-3.  Then go to plugin panel > settings > attributes and type in the name of attribute created in step 2. 
-4.  Click the save button when the panel finds the attribute.
+2. Create a new custom attribute with the following parameters - type: choice, Attribute type: service,Client Visible:no.
+3. Add the device names of your managed mikrotiks as values. You have to manually update this list of values when you add a new device.
+4. Next go to plugin panel > settings > attributes and type in the name of attribute created in step 2. 
+5. Click the save button when the panel finds the attribute.
 
-There are two reasons why this can only be done manually if your are interested: 
+There are two reasons why this can only be done manually if you are interested to know: 
 
 1. Plugins can query uisp but uisp cannot query plugins therefore custom attrbutes cannot pull values such as device names from the plugin.
 2. A rigid solution would be for the plugin to push the device list to uisp whenever a device is added, however ubiquiti has not provided an API call that can push values to enumerated custom attribute.
