@@ -3,7 +3,7 @@ include_once 'service_plan.php';
 include_once 'service_attributes.php';
 include_once 'service_client.php';
 include_once 'api_ipv4.php';
-include_once 'api_unms.php';
+include_once '_temp.php';
 
 class Service_Account extends Service_Attributes
 {
@@ -11,7 +11,6 @@ class Service_Account extends Service_Attributes
     public $plan ;
     public $client ;
     public $ip; //ip address assignment
-    public $device_index = 0; // for iterating devices
 
     protected function init(): void
     {
@@ -33,9 +32,7 @@ class Service_Account extends Service_Attributes
 
     public function device(): ?stdClass
     {
-        return $this->ready
-            ? $this->get_device()
-            : $this->get_next_device();
+        return $this->get_device();
     }
 
     public function move($bool): void
@@ -54,20 +51,6 @@ class Service_Account extends Service_Attributes
             return null;
         }
         return $dev;
-    }
-
-    protected function get_next_device(): ?stdClass
-    {
-        $devices = $this->db()->selectAllFromTable('devices') ?? [];
-        $length = sizeof($devices);
-        $device = null;
-        if($this->device_index < $length){
-            $device = (object) $devices[$this->device_index];
-        }
-        if(++$this->device_index >= $length){
-            $this->device_index = -1;
-        }
-        return $device;
     }
 
     public function username(): ?string

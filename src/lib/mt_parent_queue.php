@@ -88,49 +88,19 @@ class MT_Parent_Queue extends MT
         return true;
     }
 
-    public function update($planId): void
-    {
-        $count = 0 ;
-        while ($this->svc->device_index > -1){
-            $device = $this->svc->device();
-            $data = $this->contention_data($planId,$device->id);
-            if($data) {
-                $this->svc->device_index = $count; //restore index for write
-                $this->write($data);
-            }
-            $count++;
-        }
-    }
-
     private function child_exists(): bool
     {
         return (bool)
             $this->read('?name='.$this->prefix() . '-child');
     }
 
-    private function contention_data($planId,$deviceId): ?object
-    {
-        $children = $this->db()->countDeviceServicesByPlanId($planId, $deviceId);
-        if(!$children){return null;}
-        $plan = (new Plans($planId))->list()[$planId];
-        $ratio = $plan['ratio'];
-        $shares = intdiv($children, $ratio);
-        if(($children % $ratio) > 0){$shares++ ;}
-        $ul = $plan['uploadSpeed'] * $shares;
-        $dl = $plan['downloadSpeed'] * $shares;
-        $rate = $ul . "M/". $dl."M" ;
-        return (object)[
-            '.id' => 'servicePlan-'.$planId.'-parent',
-            'max-limit' => $rate,
-            'limit-at' => $rate,
-        ];
-    }
-
     protected function init(): void
     {
         parent::init();
         $this->path = '/queue/simple/';
-        $this->exists = $this->svc->ready && $this->exists();
+        if($this->svc) {
+            $this->exists = $this->exists();
+        }
     }
 
     protected function filter(): string
