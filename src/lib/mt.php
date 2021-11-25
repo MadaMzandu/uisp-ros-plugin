@@ -14,68 +14,71 @@ class MT extends Device
 
     public function set()
     {
-        $this->path = rtrim($this->data->path,'\/').'/';
-        return $this->write($this->data->data,$this->data->action);
+        $this->path = rtrim($this->is_set('path'),'\/').'/' ;
+        return $this->write($this->is_set('data'),$this->is_set('action'));
     }
 
-    public function get()
+    public function get(): ?array
     {
-        $this->path = rtrim($this->data->path,'\/').'/';
-        $filter = $this->data->filter ?? null;
-        return $this->read($filter);
+        $this->path = rtrim($this->is_set('path'),'\/').'/';
+        return $this->read($this->is_set('filter'));
     }
 
     protected function write($data, $action = 'set')
     {
-        if ($action == 'add') {
-            unset($data->{'.id'});
-        }
         $api = $this->connect();
-        if (!$api) {
+        $prep = $this->prep_data($data,$action); //prepared data
+        if (!($api && $prep && $action)) {
             return false;
         }
-        try {
-            $api->write($this->path . $action, false);
-            foreach (array_keys((array)$data) as $key) {
-                $api->write('=' . $key . '=' . $data->$key, false);
-            }
-            $api->write(';'); // trailing semi-colon works
-            $this->read = $api->read();
-            $api->disconnect();
-            if (!$this->read || is_string($this->read)) { //don't care what's inside the string?
-                return is_string($this->read)
-                    ? $this->read
-                    :!(bool) $this->read;
-            }
-            $this->setErr('rosapi write:failed', true);
-            return false;
-        } catch (Exception $e) {
-            $api->disconnect;
-            $this->setErr($e->getMessage());
-            return false;
+        $api->write($this->path . $action, false);
+        foreach (array_keys((array)$prep) as $key) {
+            $api->write('=' . $key . '=' . $prep->$key, false);
         }
+        $api->write(';'); // trailing semicolon works
+        $this->read = $api->read();
+        $api->disconnect();
+        return $this->has_error() ? false
+            : ($this->read ? $this->read : true);
     }
 
-    private function connect()
+    private function prep_data($data,$action): ?stdClass
     {
-       if(!$this->get_device()){
-           return false;
-       }
-        try {
-            $api = new Routerosapi();
-            $api->timeout = 3;
-            $api->attempts = 1;
-            // $api->debug = true;
-            if ($api->connect($this->device->ip,
-                $this->device->user, $this->device->password)) {
-                return $api;
-            }
-            $this->setErr('failed to connect to device');
-            return false;
-        } catch (Exception $e) {
-            $this->setErr($e->getMessage());
-            return false;
+        $prep = is_array($data) ? (object)$data : $data ;
+        if(!is_object($prep)){
+            $this->setErr('mikrotik post data is empty');
+            return null;
         }
+        if($action == 'add'){
+            unset($prep->{'.id'});
+        }
+        return $prep ;
+    }
+
+    private function is_set($property)
+    { // check and return data object property
+        if(isset($this->data->$property)){
+            return $this->data->$property;
+        }
+        return null;
+    }
+
+
+    private function connect(): ?RouterosAPI
+    {
+        if (!$this->get_device()) {
+            return null;
+        }
+        $api = new Routerosapi();
+        $api->timeout = 1;
+        $api->attempts = 1;
+        //$api->debug = true;
+        if ($api->connect($this->device->ip,
+            $this->device->user, $this->device->password)) {
+            return $api;
+        }
+        $this->setErr('failed to connect to device');
+        return null;
     }
 
     protected function get_device(): bool
@@ -94,9 +97,19 @@ class MT extends Device
             $this->device = $this->db()->selectDeviceByDeviceName($this->data->device);
             return true ;
         }
-        $this->setErr('device is not specified in the request');
+        $this->setErr('failed to get device information');
         return false;
     }
+
+    private function has_error(): bool
+    {
+        if(isset($this->read['!trap'])) {
+            $this->setErr('failed',true);
+            return true ;
+        }
+        return false;
+    }
+
 
     protected function setErr($msg, $obj = false): void
     {
@@ -130,9 +143,9 @@ class MT extends Device
         return (bool)$this->insertId;
     }
 
-    protected function filter(): string
+    protected function filter(): ?string
     {
-        return '?comment='.$this->comment();
+        return null ;
     }
 
     protected function read($filter = false): ?array
@@ -141,20 +154,14 @@ class MT extends Device
         if (!$api) {
             return null;
         }
-        try {
-            $api->write($this->path . 'print', false);
-            if ($filter) {
-                $api->write($filter, false);
-            }
-            $api->write(";");
-            $this->read = $api->read() ?? [];
-            $api->disconnect();
-            return $this->read;
-        } catch (Exception $e) {
-            $api->disconnect();
-            $this->setErr($e->getMessage());
-            return null;
+        $api->write($this->path . 'print', false);
+        if ($filter) {
+            $api->write($filter, false);
         }
+        $api->write(";");
+        $this->read = $api->read();
+        $api->disconnect();
+        return $this->has_error() ? [] : $this->read ;
     }
 
 }

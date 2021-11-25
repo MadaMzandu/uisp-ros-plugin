@@ -77,7 +77,7 @@ class MT_Profile extends MT
     private function router_disabled(): bool
     {
         $id = $this->svc->device()->id ;
-        $disabled_routers = json_decode($this->conf->disabled_routers);
+        $disabled_routers = json_decode($this->conf->disabled_routers,true);
         return isset($disabled_routers[$id]);
     }
 
@@ -90,22 +90,28 @@ class MT_Profile extends MT
         return $rate;
     }
 
-    private function local_addr()
+    private function local_addr(): ?string
     { // get one address for profile local address
         $savedPath = $this->path;
         $this->path = '/ip/address/';
         if ($this->read()) {
             foreach ($this->read as $prefix) {
-                if ($prefix['dynamic'] == 'true') {
+                if ($this->makeBool($prefix['dynamic'])
+                    || $this->makeBool($prefix['invalid'])
+                    || $this->makeBool($prefix['disabled'])) {
                     continue;
                 }
-                [$addr] = explode('/', $prefix['address']);
+                $address = explode('/', $prefix['address'])[0];
                 $this->path = $savedPath;
-                return $addr;
+                return $address;
             }
         }
         $this->path = $savedPath;
-        return false;
+        return null;
+    }
+
+    private function makeBool($value){
+        return $value == "true";
     }
 
     protected function findErr()

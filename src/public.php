@@ -26,6 +26,8 @@ if(!bak_is_ok()){ // create automatic backup
     create_backup();
 }
 
+run_queue();  // run previously queued data
+
 include_once('lib/api_router.php');
 require_once 'vendor/autoload.php';
 

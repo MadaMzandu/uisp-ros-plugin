@@ -6,6 +6,7 @@ class Service_Base
 
     public $ready ;
     public $move ;
+    public $queued ;
     protected $status;
     protected $data;
     protected $entity;
