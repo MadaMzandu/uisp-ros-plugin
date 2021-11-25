@@ -17,30 +17,23 @@ class MT_Profile extends MT
     {
         $this->path = '/ppp/secret/';
         $read = $this->read('?profile=' . $this->name()) ?? [];
-        $disabled = $this->entity_disabled();
-        $this->path = '/ppp/profile/';
         $count = sizeof($read) ?? 0;
-        $count += $disabled ? 0 : -1; // do not deduct if account is disabled
+        $count += $this->account_disabled() ? 0 : -1; // do not deduct if account is disabled
+        $this->path = '/ppp/profile/'; //restore path before return
         return (bool)max($count, 0);
     }
 
-    private function entity_disabled(): bool
+    private function account_disabled(): bool
     {
         // $this->path = '/ppp/secret/'; path is already set by prev call
-        $read = $this->read('?comment');
-        $id = (string)$this->svc->id();
-        foreach ($read as $item) {
-            if (substr($item['comment'], 0, strlen($id)) == $id) {
-                return $item['profile'] == $this->conf->disabled_profile;
-            }
-        }
-        return false;
+        $read = $this->read('?name='.$this->svc->username());
+        return $read && $read[0]['profile'] == $this->conf->disabled_profile;
     }
 
     private function delete(): bool
     {
         if($this->exists) {
-            $id['.id'] = $this->name();
+            $id['.id'] = $this->insertId ?? $this->name();
             $this->pq->set_parent()
             && $this->write((object)$id, 'remove');
         }
