@@ -39,7 +39,7 @@ class MT extends Device
         $this->read = $api->read() ?? [];
         $api->disconnect();
         return $this->has_error() ? false
-            : ($this->read ? $this->read : true);
+            : ($this->read ? : true);
     }
 
     private function prep_data($data,$action): ?stdClass
