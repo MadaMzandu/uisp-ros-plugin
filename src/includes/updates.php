@@ -1,8 +1,10 @@
 <?php
 
-include_once 'lib/api_sqlite.php';
+/*include_once 'lib/api_sqlite.php';
 include_once 'lib/admin.php';
 include_once 'lib/admin_backup.php';
+include_once 'lib/service.php';
+include_once 'lib/mt_account.php';*/
 
 $version = '1.8.1b';
 $conf = db()->readConfig();

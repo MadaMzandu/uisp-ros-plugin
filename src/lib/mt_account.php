@@ -37,7 +37,7 @@ class MT_Account extends MT
         $action = $this->exists ? 'set' : 'add';
         $message = $this->exists ? 'updated' : 'added';
         $success = 'account for '.$this->svc->client->name()
-            . 'was successfully '.$message;
+            . ' was successfully '.$message;
         $this->set_profile()
             && $this->write($this->data(), $action)
             && $this->svc->save()

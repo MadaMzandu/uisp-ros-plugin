@@ -15,6 +15,8 @@ if(!file_exists('data/data.db'))
     if(!$done){exit();}
 }
 
+include_once('lib/api_router.php');
+require_once 'vendor/autoload.php';
 include_once 'includes/updates.php'; 
 
 if(!version_is_ok())
@@ -26,10 +28,7 @@ if(!bak_is_ok()){ // create automatic backup
     create_backup();
 }
 
-run_queue();  // run previously queued data
-
-include_once('lib/api_router.php');
-require_once 'vendor/autoload.php';
+//run_queue();  // run previously queued data
 
 $json = file_get_contents('php://input') ?? false;
 

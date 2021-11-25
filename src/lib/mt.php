@@ -36,7 +36,7 @@ class MT extends Device
             $api->write('=' . $key . '=' . $prep->$key, false);
         }
         $api->write(';'); // trailing semicolon works
-        $this->read = $api->read();
+        $this->read = $api->read() ?? [];
         $api->disconnect();
         return $this->has_error() ? false
             : ($this->read ? $this->read : true);
@@ -85,17 +85,17 @@ class MT extends Device
     {
         if($this->svc){
             $this->device = $this->svc->device();
-            return true;
+            return (bool )$this->device;
         }
         if(isset($this->data->device_id))
         {
             $this->device = $this->db()->selectDeviceById($this->data->device_id);
-            return true ;
+            return (bool)$this->device ;
         }
         if(isset($this->data->device))
         {
             $this->device = $this->db()->selectDeviceByDeviceName($this->data->device);
-            return true ;
+            return (bool)$this->device ;
         }
         $this->setErr('failed to get device information');
         return false;
@@ -159,7 +159,7 @@ class MT extends Device
             $api->write($filter, false);
         }
         $api->write(";");
-        $this->read = $api->read();
+        $this->read = $api->read() ?? [];
         $api->disconnect();
         return $this->has_error() ? [] : $this->read ;
     }
