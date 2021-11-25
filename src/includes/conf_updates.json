@@ -1,5 +1,5 @@
 {
   "version": "1.8.0",
   "disabled_rate": 1,
-  "auto_ppp_user": "true"
+  "auto_ppp_user": "false"
 }
