@@ -35,10 +35,11 @@ class Service_Account extends Service_Attributes
         return $this->get_device();
     }
 
-    public function move($bool): void
+    public function move(bool $move): void
     {
-        $this->move = $bool;
-        $this->plan->move = $bool;
+        $this->move = $move;
+        $this->plan->move = $move;
+        $this->client->move = $move;
     }
 
     protected function get_device(): ?stdClass
