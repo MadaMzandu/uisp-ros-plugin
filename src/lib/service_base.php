@@ -13,11 +13,22 @@ class Service_Base
     protected $before;
     protected $conf;
 
-    public function __construct(&$data)
+    public function __construct($data)
     {
-        $this->data = $data;
+        $this->data = $this->make_object($data);
         $this->init();
     }
+
+    private function make_object($data): stdClass
+    {
+        if(!$data){
+            return (object)[];
+        }
+        return !is_object($data)
+            ? json_decode(json_encode($data))
+            : $data;
+    }
+
 
     protected function init(): void
     {
@@ -90,7 +101,7 @@ class Service_Base
         return null ;
     }
 
-    protected function db()
+    protected function db(): ?API_SQLite
     {
         try {
             return new API_SQLite();
