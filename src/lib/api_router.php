@@ -16,20 +16,21 @@ class API_Router
     private $status;
     private $result;
 
-    public function __construct(&$data)
+    public function __construct($data)
     {
-        $this->data = $this->prep_data($data);
+        $this->data = $this->make_object($data);
         $this->result = [];
         $this->status = (object)['status' => 'ok', 'message' => '', 'session' => false];
     }
 
-    private function prep_data($data)
+    private function make_object($data): stdClass
     {
-        return !$data
-            ? (object)[]
-            :(is_array($data)
-                ? json_decode(json_encode($data))
-                : $data);
+        if(!$data){
+            return (object)[];
+        }
+        return !is_object($data)
+            ? json_decode(json_encode($data))
+            : $data;
     }
 
     public function status(): ?stdClass
