@@ -32,7 +32,7 @@ class MT_Parent_Queue extends MT
         return !$this->findErr('ok');
     }
 
-    protected function findErr($success='')
+    protected function findErr($success=''): bool
     {
         if($this->status->error){
             return true ;
@@ -41,7 +41,7 @@ class MT_Parent_Queue extends MT
         return false ;
     }
 
-    protected function data(): object
+    protected function data(): stdClass
     {
         return (object)array(
             'name' => $this->name(),
@@ -59,11 +59,11 @@ class MT_Parent_Queue extends MT
         return 'do not delete';
     }
 
-    private function child(): object
+    private function child(): stdClass
     {
         return (object)array(
             'name' => $this->prefix() . '-child',
-            'target' => '169.254.244.122',
+            'packet-marks' => 'firstChild',
             'parent' => $this->name(),
             'max-limit' => '1M/1M',
             'limit-at' => '1M/1M',
@@ -81,9 +81,9 @@ class MT_Parent_Queue extends MT
         return !$this->findErr('ok');
     }
 
-    public function reset($orphanId = false): bool
+    public function reset($orphanId = null): bool
     { //recreates a parent queue
-        $ret = $this->exec();
+        if(!$this->exec()){return false;}
         if ($orphanId) { //update orphan children
             $orphans = $this->read('?parent=' . $orphanId);
             foreach ($orphans as $item) {
