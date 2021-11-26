@@ -109,12 +109,11 @@ class MT_Profile extends MT
 
     protected function findErr($success='')
     {
-        if($this->status->error){
-            return true ;
-        }
-        if ($this->pq->status()->error) {
-            $this->status = $this->pq->status();
-            return true ;
+        $calls = [&$this,&$this->pq];
+        foreach ($calls as $call){
+            if(!$call->status()->error){continue;}
+            $this->status = $call->status();
+            return true;
         }
         $this->setMess($success);
         return false ;
