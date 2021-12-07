@@ -63,7 +63,7 @@ class MT_Parent_Queue extends MT
     {
         return (object)array(
             'name' => $this->prefix() . '-child',
-            'packet-marks' => '1stchild',
+            'target' => '169.254.244.122',
             'parent' => $this->name(),
             'max-limit' => '1M/1M',
             'limit-at' => '1M/1M',
