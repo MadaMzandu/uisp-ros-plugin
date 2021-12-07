@@ -77,7 +77,8 @@ class MT_Profile extends MT
     protected function rate():stdClass
     {
         $rate = parent::rate();
-        if($this->router_disabled()){
+        if($this->name() != $this->conf->disabled_profile
+            && $this->router_disabled()){
             $rate->text = null;
         }
         return $rate;

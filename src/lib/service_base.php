@@ -15,20 +15,18 @@ class Service_Base
 
     public function __construct($data)
     {
-        $this->data = $this->make_object($data);
+        $this->data = $this->toObject($data);
         $this->init();
     }
 
-    private function make_object($data): stdClass
+    private function toObject($data)
     {
-        if(!$data){
-            return (object)[];
+        if(is_array($data) || is_object($data)){
+            return is_object($data) ? $data
+                :json_decode(json_encode((object)$data));
         }
-        return !is_object($data)
-            ? json_decode(json_encode($data))
-            : $data;
+        return null;
     }
-
 
     protected function init(): void
     {
@@ -53,12 +51,15 @@ class Service_Base
         $this->before = $this->data->extraData->entityBeforeEdit ?? (object)[];
     }
 
-    public function queue_job(): void
+    public function queue_job($status=[]): void
     {
         if($this->queued){return;} //already queued
         $file = 'data/queue.json';
         $q = json_decode(file_get_contents($file));
-        $q[] = $this->data;
+        $q[$this->entityId] =[
+            'data' => $this->data,
+            'status' => $status,
+        ];
         file_put_contents($file,json_encode($q));
     }
 

@@ -19,18 +19,17 @@ class Admin
 
     public function __construct($data)
     {
-        $this->data = $this->make_object($data);
+        $this->data = $this->toObject($data);
         $this->init();
     }
 
-    private function make_object($data): stdClass
+    private function toObject($data): stdClass
     {
-        if(!$data){
-            return (object)[];
+        if(is_array($data) || is_object($data)){
+            return is_object($data) ? $data
+                :json_decode(json_encode($data));
         }
-        return !is_object($data)
-            ? json_decode(json_encode($data))
-            : $data;
+        return (object)[];
     }
 
     protected function init(): void
