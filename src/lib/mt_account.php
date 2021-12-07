@@ -13,7 +13,7 @@ class MT_Account extends MT
 
     public function suspend(): bool
     {
-        if ($this->move()) {
+        if ($this->set_account()) {
             if ($this->svc->unsuspend && $this->conf->unsuspend_date_fix) {
                 $this->date_fix();
             }
@@ -88,8 +88,8 @@ class MT_Account extends MT
         if (!$this->svc->pppoe) {
             return true;
         }
-        $this->path = '/ppp/active';
-        $read = $this->read('?name=' . $this->svc->username());
+        $this->path = '/ppp/active/';
+        $read = $this->read('?name=' . 'test');
         foreach ($read as $active)
         {
             $data['.id'] = $active['.id'];
@@ -113,7 +113,7 @@ class MT_Account extends MT
         foreach ($calls as $call){
             if(!$call->status()->error){continue;}
             $this->status = $call->status();
-            $this->svc->queue_job();
+            $this->svc->queue_job($this->status());
             return true;
         }
         $this->setMess($success);
@@ -125,17 +125,14 @@ class MT_Account extends MT
         $this->svc->move(true);
         $this->init(); // switch device
         if (!$this->delete()) {
-            $this->setErr('unable to delete old service');
             return false;
         }
         $this->svc->move(false);
         $this->svc->plan->contention = $this->svc->exists() ? 0 : 1; // next contention after -1 delete
         $this->init(); // restore device
         if (!$this->insert()) {
-            $this->setErr('unable to create service on new device');
             return false;
         }
-        $this->setMess('account for '.$this->svc->client->name().' was updated');
         return true;
     }
 

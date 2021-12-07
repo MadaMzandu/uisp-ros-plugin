@@ -11,7 +11,8 @@ class MT_Parent_Queue extends MT
         if($this->svc->disabled()){
             $this->svc->plan->contention = 0;
         }
-        return $this->exec();
+        $test = $this->exec();
+        return $test ;
     }
 
     protected function children(): int
@@ -29,10 +30,10 @@ class MT_Parent_Queue extends MT
         if($this->exists){
             $this->write((object)$data, 'remove');
         }
-        return !$this->findErr('ok');
+        return !$this->findErr();
     }
 
-    protected function findErr($success=''): bool
+    protected function findErr($success='ok'): bool
     {
         if($this->status->error){
             return true ;

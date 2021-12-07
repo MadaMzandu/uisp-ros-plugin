@@ -47,6 +47,7 @@ class MT_Queue extends MT
         return !$this->findErr('ok');
     }
 
+
     protected function data(): stdClass
     {
         return (object)array(

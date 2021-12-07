@@ -12,19 +12,18 @@ class Device_Base
 
     public function __construct($data,$service=true)
     {
-        $this->svc = $service ? $this->make_object($data) : [];
-        $this->data = $service ? [] : $this->make_object($data);
+        $this->svc = $service ? $this->toObject($data) : null;
+        $this->data = $service ? null : $this->toObject($data);
         $this->init();
     }
 
-    private function make_object($data)
+    private function toObject($data)
     {
-        if(!$data){
-            return (object)[];
+        if(is_array($data) || is_object($data)){
+            return is_object($data) ? $data
+                :json_decode(json_encode((object)$data));
         }
-        return !is_object($data)
-            ? json_decode(json_encode($data))
-            : $data;
+        return null;
     }
 
     protected function init(): void

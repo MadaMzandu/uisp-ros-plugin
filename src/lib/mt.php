@@ -30,6 +30,7 @@ class MT extends Device
         if (!($api && $data && $action)) {
             return false;
         }
+        if($action == 'add'){unset($data->{'.id'});}
         $api->write($this->path . $action, false);
         foreach (array_keys((array)$data) as $key) {
             $api->write('=' . $key . '=' . $data->$key, false);
