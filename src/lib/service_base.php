@@ -117,6 +117,7 @@ class Service_Base
         $this->ready = false;
         $this->status->error = true;
         $this->status->messsage = $err;
+        return null ;
     }
 
     public function status()

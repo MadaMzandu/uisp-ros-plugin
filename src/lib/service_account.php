@@ -46,12 +46,9 @@ class Service_Account extends Service_Attributes
     {
         $entity = $this->move ? 'before' : 'entity';
         $name = $this->get_attribute_value($this->conf->device_name_attr,$entity);
-        $dev = $this->db()->selectDeviceByDeviceName($name);
-        if (!(array)$dev) {
-            $this->setErr('the specified device was not found');
-            return null;
-        }
-        return $dev;
+        $dev = $this->db()->selectDeviceByDeviceName($name)
+            or $this->setErr('the specified device was not found');
+        return $dev ;
     }
 
     public function username(): ?string

@@ -46,6 +46,7 @@ class MT_Parent_Queue extends MT
     {
         return (object)array(
             'name' => $this->name(),
+            'target' => $this->svc->plan->target(),
             'max-limit' => $this->svc->plan->total()->text,
             'limit-at' => $this->svc->plan->total()->text,
             'queue' => 'pcq-upload-default/'
