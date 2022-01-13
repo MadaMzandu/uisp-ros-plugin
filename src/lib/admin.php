@@ -98,16 +98,18 @@ class Admin
         return null;
     }
 
-    protected function set_message($msg): void
+    protected function set_message($msg): bool
     {
         $this->status->error = false;
         $this->status->message = $msg;
+        return true;
     }
 
-    protected function set_error($msg): void
+    protected function set_error($msg): bool
     {
         $this->status->error = true;
         $this->status->message = $msg;
+        return false ;
     }
 
 }
