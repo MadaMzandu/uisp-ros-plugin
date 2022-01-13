@@ -53,6 +53,7 @@ class MT_Account extends MT
         return (object)[
             'remote-address' => $this->svc->ip(),
             'name' => $this->svc->username(),
+            'caller-id' => $this->svc->callerId(),
             'password' => $this->svc->password(),
             'profile' => $this->profile(),
             'comment' => $this->comment(),
@@ -89,7 +90,7 @@ class MT_Account extends MT
             return true;
         }
         $this->path = '/ppp/active/';
-        $read = $this->read('?name=' . 'test');
+        $read = $this->read('?name=' . $this->svc->username());
         foreach ($read as $active)
         {
             $data['.id'] = $active['.id'];
@@ -107,7 +108,7 @@ class MT_Account extends MT
             : '?mac-address=' . $this->svc->mac();
     }
 
-    public function findErr($success=''): bool
+    public function findErr($success='ok'): bool
     {
         $calls = [&$this,&$this->profile,&$this->q];
         foreach ($calls as $call){
