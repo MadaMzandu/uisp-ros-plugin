@@ -55,8 +55,8 @@ class Service_Base
     {
         if($this->queued){return;} //already queued
         $file = 'data/queue.json';
-        $q = json_decode(file_get_contents($file));
-        $q[$this->entityId] =[
+        $q = json_decode(file_get_contents($file),true);
+        $q[$this->entityId] = [
             'data' => $this->data,
             'status' => $status,
         ];
