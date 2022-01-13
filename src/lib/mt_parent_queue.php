@@ -5,6 +5,9 @@ class MT_Parent_Queue extends MT
 
     public function set_parent(): bool
     {
+        if($this->conf->disable_contention){
+            return true ;
+        }
         if ($this->svc->plan->contention < 0 && !$this->children()) {
             return $this->delete();
         }
@@ -46,7 +49,7 @@ class MT_Parent_Queue extends MT
     {
         return (object)array(
             'name' => $this->name(),
-            'target' => $this->svc->plan->target(),
+            'target' => '0.0.0.0/0',
             'max-limit' => $this->svc->plan->total()->text,
             'limit-at' => $this->svc->plan->total()->text,
             'queue' => 'pcq-upload-default/'
@@ -65,7 +68,7 @@ class MT_Parent_Queue extends MT
     {
         return (object)array(
             'name' => $this->prefix() . '-child',
-            'target' => '169.254.244.122',
+            'target' => '127.0.0.10',
             'parent' => $this->name(),
             'max-limit' => '1M/1M',
             'limit-at' => '1M/1M',

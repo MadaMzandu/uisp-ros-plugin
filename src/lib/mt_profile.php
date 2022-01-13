@@ -60,7 +60,7 @@ class MT_Profile extends MT
 
     private function pq_name(): ?string
     {
-        if($this->router_disabled()){
+        if($this->router_disabled() || $this->conf->disable_contention){
             return 'none';
         }
         $plan = 'servicePlan-'.$this->svc->plan->id().'-parent';
