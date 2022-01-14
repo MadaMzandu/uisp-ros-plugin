@@ -1,13 +1,25 @@
 <?php
 
-$version = '1.8.1c';
+$version = '1.8.2';
 $conf = db()->readConfig();
 
 $conf_updates = json_decode(
     file_get_contents('includes/conf_updates.json'),true);
 
 function apply_updates() {
-   return table_updates() && conf_updates();
+   return table_updates()
+       && conf_updates()
+       && rebuild();
+}
+
+function rebuild()
+{
+    global $conf ;
+    if($conf->version <= '1.8.1b'){
+        $data =[];
+        return (new Admin_System($data))->rebuild();
+    }
+    return true ;
 }
 
 function conf_updates()
@@ -54,7 +66,8 @@ function bak_is_ok() {
 
 function version_is_ok() {
     global $version, $conf;
-    if (!isset($conf->version) || $version > $conf->version) {
+    $current = $conf->version ?? '1.0.0' ;
+    if ($version > $current) {
         return false;
     }
     return true;

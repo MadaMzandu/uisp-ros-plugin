@@ -25,7 +25,7 @@ class Admin
 
     private function toObject($data): stdClass
     {
-        if(is_array($data) || is_object($data)){
+        if($data && (is_array($data) || is_object($data))){
             return is_object($data) ? $data
                 :json_decode(json_encode($data));
         }

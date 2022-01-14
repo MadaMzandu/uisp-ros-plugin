@@ -19,11 +19,10 @@ class Device_Base
 
     private function toObject($data)
     {
-        if(is_object($data)){
-            return $data ;
-        }
-        if(is_array($data)){
-            return json_decode(json_encode($data));
+        if($data && (is_object($data) || is_array($data))) {
+            return is_object($data)
+                ? $data
+                : json_decode(json_encode($data));
         }
         return (object)[];
     }

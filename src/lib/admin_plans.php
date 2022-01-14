@@ -7,9 +7,9 @@ class Plans extends Admin
     private $ids; // array of imported service plan ids
     private $unms; //uisp http query object
 
-    public function __construct(&$data)
+    protected function init(): void
     {
-        parent::__construct($data);
+        parent::init();
         $this->unms = new API_Unms();
         $this->ids = [];
     }

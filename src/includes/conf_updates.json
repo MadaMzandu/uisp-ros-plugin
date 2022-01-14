@@ -1,5 +1,7 @@
 {
   "version": "1.8.0",
   "disabled_rate": 1,
-  "auto_ppp_user": "false"
+  "auto_ppp_user": "false",
+  "pppoe_caller_attr": "callerId",
+  "disable_contention": false
 }
