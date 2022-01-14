@@ -16,20 +16,20 @@ class API_Router
     private $status;
     private $result;
 
-    public function __construct(&$data)
+    public function __construct($data)
     {
-        $this->data = $this->prep_data($data);
+        $this->data = $this->toObject($data);
         $this->result = [];
         $this->status = (object)['status' => 'ok', 'message' => '', 'session' => false];
     }
 
-    private function prep_data($data)
+    private function toObject($data): ?stdClass
     {
-        return !$data
-            ? (object)[]
-            :(is_array($data)
-                ? json_decode(json_encode($data))
-                : $data);
+        if(is_array($data) || is_object($data)){
+            return is_object($data) ? $data
+                :json_decode(json_encode((object)$data));
+        }
+        return null;
     }
 
     public function status(): ?stdClass
@@ -39,11 +39,11 @@ class API_Router
 
     public function route(): void
     {
-        if (!$this->is_valid_request()) { // check validity before system tasks
+        if (!$this->data_is_valid()) { // check validity before system tasks
             return;
         }
 
-        if ($this->is_admin_request()) { // admin requests end here
+        if ($this->request_is_admin()) { // admin requests end here
             return;
         }
         $service = new Service($this->data);
@@ -55,9 +55,9 @@ class API_Router
         $this->status = $route->status();
     }
 
-    private function is_valid_request(): bool
+    private function data_is_valid(): bool
     {
-        if (!$this->data) {
+        if (!(array)$this->data) {
             $this->set_message('No request data sent');
             return false;
         }
@@ -80,7 +80,7 @@ class API_Router
         $this->status->message = $msg;
     }
 
-    private function is_admin_request(): bool
+    private function request_is_admin(): bool
     {
         if ($this->data->changeType != 'admin') {
             return false;

@@ -16,12 +16,11 @@ class MT_Queue extends MT
 
     protected function findErr($success='')
     {
-        if($this->status->error){
-            return true ;
-        }
-        if ($this->pq->status()->error) {
-            $this->status = $this->pq->status();
-            return true ;
+        $calls = [&$this,&$this->pq];
+        foreach ($calls as $call){
+            if(!$call->status()->error){continue;}
+            $this->status = $call->status();
+            return true;
         }
         $this->setMess($success);
         return false ;
@@ -48,6 +47,7 @@ class MT_Queue extends MT
         return !$this->findErr('ok');
     }
 
+
     protected function data(): stdClass
     {
         return (object)array(
@@ -63,8 +63,18 @@ class MT_Queue extends MT
 
     protected function pq_name(): string
     {
+        if($this->router_disabled() || $this->conf->disable_contention){
+            return 'none';
+        }
         $plan = 'servicePlan-'.$this->svc->plan->id().'-parent';
         return $this->svc->disabled() ? 'none': $plan;
+    }
+
+    private function router_disabled(): bool
+    {
+        $id = $this->svc->device()->id ;
+        $disabled_routers = json_decode($this->conf->disabled_routers,true);
+        return isset($disabled_routers[$id]);
     }
 
     protected function filter(): string

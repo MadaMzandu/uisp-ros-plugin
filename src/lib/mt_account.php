@@ -11,18 +11,16 @@ class MT_Account extends MT
     private $profile;
     private $q;
 
-    public function suspend()
+    public function suspend(): bool
     {
-        $name = $this->svc->client->name();
-        if ($this->move()) {
+        if ($this->set_account()) {
             if ($this->svc->unsuspend && $this->conf->unsuspend_date_fix) {
                 $this->date_fix();
             }
-            $action = $this->svc->unsuspend ? 'unsuspended' : 'suspended';
-            $this->setMess('service for ' . $name . ' was ' . $action);
-            return true;
         }
-        return false;
+        $action = $this->svc->unsuspend ? 'unsuspended' : 'suspended';
+        return !$this->findErr('service for '
+            . $this->svc->client->name() . ' was ' . $action);
     }
 
     private function set_profile(): bool
@@ -45,7 +43,7 @@ class MT_Account extends MT
         return !$this->findErr($success);
     }
 
-    protected function data()
+    protected function data(): stdClass
     {
         return $this->svc->pppoe ? $this->pppoe_data() : $this->dhcp_data();
     }
@@ -55,6 +53,7 @@ class MT_Account extends MT
         return (object)[
             'remote-address' => $this->svc->ip(),
             'name' => $this->svc->username(),
+            'caller-id' => $this->svc->callerId(),
             'password' => $this->svc->password(),
             'profile' => $this->profile(),
             'comment' => $this->comment(),
@@ -74,25 +73,30 @@ class MT_Account extends MT
             'address' => $this->svc->ip(),
             'mac-address' => $this->svc->mac(),
             'insert-queue-before' => 'bottom',
-            'address-lists' => $this->addr_list(),
+            'address-lists' => $this->address_list(),
             'comment' => $this->comment(),
             '.id' => $this->insertId,
         ];
     }
 
-    protected function addr_list()
+    protected function address_list(): string
     {
         return $this->svc->disabled() ? $this->conf->disabled_list : $this->conf->active_list;
     }
 
-    private function disconnect()
+    private function disconnect(): bool
     {
-        if ($this->svc->pppoe) {
-            if ($this->read('?name=' . $this->svc->username())) {
-                foreach ($this->read as $item) {
-                }
-            }
+        if (!$this->svc->pppoe) {
+            return true;
         }
+        $this->path = '/ppp/active/';
+        $read = $this->read('?name=' . $this->svc->username());
+        foreach ($read as $active)
+        {
+            $data['.id'] = $active['.id'];
+            $this->write((object)$data,'remove');
+        }
+        $this->path = $this->path();
         return true;
     }
 
@@ -104,26 +108,17 @@ class MT_Account extends MT
             : '?mac-address=' . $this->svc->mac();
     }
 
-    protected function findErr($success=''): bool
+    public function findErr($success='ok'): bool
     {
-        $error = false ;
-        if($this->status->error){
-            $error = true ;
-        }
-        if ($this->profile->status()->error) {
-            $this->status = $this->profile->status();
-            $error = true ;
-        }
-        if ($this->q->status()->error) {
-            $this->status = $this->q->status();
-            $error =  true ;
-        }
-        if($error){
-            $this->svc->queue_job();
+        $calls = [&$this,&$this->profile,&$this->q];
+        foreach ($calls as $call){
+            if(!$call->status()->error){continue;}
+            $this->status = $call->status();
+            $this->svc->queue_job($this->status());
             return true;
         }
         $this->setMess($success);
-        return false ;
+        return false;
     }
 
     public function move(): bool
@@ -131,17 +126,14 @@ class MT_Account extends MT
         $this->svc->move(true);
         $this->init(); // switch device
         if (!$this->delete()) {
-            $this->setErr('unable to delete old service');
             return false;
         }
         $this->svc->move(false);
-        $this->svc->plan->contention = $this->svc->exists() ? 0 : 1;
+        $this->svc->plan->contention = $this->svc->exists() ? 0 : 1; // next contention after -1 delete
         $this->init(); // restore device
         if (!$this->insert()) {
-            $this->setErr('unable to create service on new device');
             return false;
         }
-        $this->setMess('account for '.$this->svc->client->name().' was updated');
         return true;
     }
 

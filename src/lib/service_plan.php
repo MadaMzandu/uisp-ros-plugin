@@ -39,12 +39,29 @@ class Service_Plan extends Service_Base
         ];
     }
 
+    public function target()
+    {
+        if($this->conf->router_ppp_pool){
+            return $this->device()->pool ?? null ;
+        }
+        return $this->conf->ppp_pool ;
+    }
+
     protected function shares():int
     { // calculates the number of contention shares
         $ratio = $this->get()['ratio'];
         $children = $this->children();
         $shares = intdiv($children, $ratio);
         return ($children % $ratio) > 0 ? ++$shares : $shares; // go figure :-)
+    }
+
+    protected function device(): ?stdClass
+    {
+        $entity = $this->move ? 'before' : 'entity';
+        $name = $this->get_attribute_value($this->conf->device_name_attr,$entity);
+        $dev = $this->db()->selectDeviceByDeviceName($name)
+            or $this->setErr('the specified device was not found');
+        return $dev ;
     }
 
     protected function get(): array

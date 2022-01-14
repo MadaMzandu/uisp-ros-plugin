@@ -185,11 +185,11 @@ class API_SQLite
         return $this->db->querySingle($sql);
     }
 
-    public function selectServiceById($id)
+    public function selectServiceById($id): ?stdClass
     {
         $sql = "select services.*,devices.name as deviceName from services left join devices "
             . "on services.device=devices.id where services.id=" . $id;
-        return (object)$this->db->querySingle($sql, true);
+        return (object)$this->db->querySingle($sql, true) ?? null;
     }
 
     public function selectDeviceByDeviceName($name)

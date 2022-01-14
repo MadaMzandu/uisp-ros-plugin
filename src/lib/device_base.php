@@ -10,11 +10,21 @@ class Device_Base
     protected $read; // temporary reads for processing
     protected $conf;
 
-    public function __construct(&$data,$service=true)
+    public function __construct($data,$service=true)
     {
-        $this->svc = $service ? $data : [];
-        $this->data = $service ? [] : $data ;
+        $this->svc = $service ? $this->toObject($data) : null;
+        $this->data = $service ? null : $this->toObject($data);
         $this->init();
+    }
+
+    private function toObject($data)
+    {
+        if($data && (is_object($data) || is_array($data))) {
+            return is_object($data)
+                ? $data
+                : json_decode(json_encode($data));
+        }
+        return (object)[];
     }
 
     protected function init(): void

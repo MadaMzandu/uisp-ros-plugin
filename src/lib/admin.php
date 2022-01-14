@@ -17,10 +17,19 @@ class Admin
     protected $read;
     protected $conf;
 
-    public function __construct(&$data)
+    public function __construct($data)
     {
-        $this->data = $data;
+        $this->data = $this->toObject($data);
         $this->init();
+    }
+
+    private function toObject($data): stdClass
+    {
+        if($data && (is_array($data) || is_object($data))){
+            return is_object($data) ? $data
+                :json_decode(json_encode($data));
+        }
+        return (object)[];
     }
 
     protected function init(): void
@@ -89,16 +98,18 @@ class Admin
         return null;
     }
 
-    protected function set_message($msg): void
+    protected function set_message($msg): bool
     {
         $this->status->error = false;
         $this->status->message = $msg;
+        return true;
     }
 
-    protected function set_error($msg): void
+    protected function set_error($msg): bool
     {
         $this->status->error = true;
         $this->status->message = $msg;
+        return false ;
     }
 
 }

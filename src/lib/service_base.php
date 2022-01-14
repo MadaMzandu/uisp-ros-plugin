@@ -13,10 +13,19 @@ class Service_Base
     protected $before;
     protected $conf;
 
-    public function __construct(&$data)
+    public function __construct($data)
     {
-        $this->data = $data;
+        $this->data = $this->toObject($data);
         $this->init();
+    }
+
+    private function toObject($data)
+    {
+        if(is_array($data) || is_object($data)){
+            return is_object($data) ? $data
+                :json_decode(json_encode((object)$data));
+        }
+        return null;
     }
 
     protected function init(): void
@@ -42,12 +51,15 @@ class Service_Base
         $this->before = $this->data->extraData->entityBeforeEdit ?? (object)[];
     }
 
-    public function queue_job(): void
+    public function queue_job($status=[]): void
     {
         if($this->queued){return;} //already queued
         $file = 'data/queue.json';
-        $q = json_decode(file_get_contents($file));
-        $q[] = $this->data;
+        $q = json_decode(file_get_contents($file),true);
+        $q[$this->entityId] = [
+            'data' => $this->data,
+            'status' => $status,
+        ];
         file_put_contents($file,json_encode($q));
     }
 
@@ -90,7 +102,7 @@ class Service_Base
         return null ;
     }
 
-    protected function db()
+    protected function db(): ?API_SQLite
     {
         try {
             return new API_SQLite();
@@ -105,6 +117,7 @@ class Service_Base
         $this->ready = false;
         $this->status->error = true;
         $this->status->messsage = $err;
+        return null ;
     }
 
     public function status()

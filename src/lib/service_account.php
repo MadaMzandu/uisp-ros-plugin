@@ -35,22 +35,29 @@ class Service_Account extends Service_Attributes
         return $this->get_device();
     }
 
-    public function move($bool): void
+    public function move(bool $move): void
     {
-        $this->move = $bool;
-        $this->plan->move = $bool;
+        $this->move = $move;
+        $this->plan->move = $move;
+        $this->client->move = $move;
+    }
+
+    public function callerId(): ?string
+    {
+        $entity = $this->move ? 'before' : 'entity';
+        return $this->get_attribute_value(
+            $this->conf->pppoe_caller_attr,$entity
+        );
+
     }
 
     protected function get_device(): ?stdClass
     {
         $entity = $this->move ? 'before' : 'entity';
         $name = $this->get_attribute_value($this->conf->device_name_attr,$entity);
-        $dev = $this->db()->selectDeviceByDeviceName($name);
-        if (!(array)$dev) {
-            $this->setErr('the specified device was not found');
-            return null;
-        }
-        return $dev;
+        $dev = $this->db()->selectDeviceByDeviceName($name)
+            or $this->setErr('the specified device was not found');
+        return $dev ;
     }
 
     public function username(): ?string

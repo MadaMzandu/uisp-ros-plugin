@@ -5,13 +5,17 @@ class MT_Parent_Queue extends MT
 
     public function set_parent(): bool
     {
+        if($this->conf->disable_contention){
+            return true ;
+        }
         if ($this->svc->plan->contention < 0 && !$this->children()) {
             return $this->delete();
         }
         if($this->svc->disabled()){
             $this->svc->plan->contention = 0;
         }
-        return $this->exec();
+        $test = $this->exec();
+        return $test ;
     }
 
     protected function children(): int
@@ -29,10 +33,10 @@ class MT_Parent_Queue extends MT
         if($this->exists){
             $this->write((object)$data, 'remove');
         }
-        return !$this->findErr('ok');
+        return !$this->findErr();
     }
 
-    protected function findErr($success='')
+    protected function findErr($success='ok'): bool
     {
         if($this->status->error){
             return true ;
@@ -41,10 +45,11 @@ class MT_Parent_Queue extends MT
         return false ;
     }
 
-    protected function data(): object
+    protected function data(): stdClass
     {
         return (object)array(
             'name' => $this->name(),
+            'target' => '0.0.0.0/0',
             'max-limit' => $this->svc->plan->total()->text,
             'limit-at' => $this->svc->plan->total()->text,
             'queue' => 'pcq-upload-default/'
@@ -59,11 +64,11 @@ class MT_Parent_Queue extends MT
         return 'do not delete';
     }
 
-    private function child(): object
+    private function child(): stdClass
     {
         return (object)array(
             'name' => $this->prefix() . '-child',
-            'target' => '169.254.244.122',
+            'target' => '127.0.0.10',
             'parent' => $this->name(),
             'max-limit' => '1M/1M',
             'limit-at' => '1M/1M',
@@ -81,9 +86,9 @@ class MT_Parent_Queue extends MT
         return !$this->findErr('ok');
     }
 
-    public function reset($orphanId = false): bool
+    public function reset($orphanId = null): bool
     { //recreates a parent queue
-        $ret = $this->exec();
+        if(!$this->exec()){return false;}
         if ($orphanId) { //update orphan children
             $orphans = $this->read('?parent=' . $orphanId);
             foreach ($orphans as $item) {

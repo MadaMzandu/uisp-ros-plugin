@@ -60,7 +60,7 @@ class MT_Profile extends MT
 
     private function pq_name(): ?string
     {
-        if($this->router_disabled()){
+        if($this->router_disabled() || $this->conf->disable_contention){
             return 'none';
         }
         $plan = 'servicePlan-'.$this->svc->plan->id().'-parent';
@@ -77,7 +77,8 @@ class MT_Profile extends MT
     protected function rate():stdClass
     {
         $rate = parent::rate();
-        if($this->router_disabled()){
+        if($this->name() != $this->conf->disabled_profile
+            && $this->router_disabled()){
             $rate->text = null;
         }
         return $rate;
@@ -109,12 +110,11 @@ class MT_Profile extends MT
 
     protected function findErr($success='')
     {
-        if($this->status->error){
-            return true ;
-        }
-        if ($this->pq->status()->error) {
-            $this->status = $this->pq->status();
-            return true ;
+        $calls = [&$this,&$this->pq];
+        foreach ($calls as $call){
+            if(!$call->status()->error){continue;}
+            $this->status = $call->status();
+            return true;
         }
         $this->setMess($success);
         return false ;

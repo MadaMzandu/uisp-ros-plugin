@@ -14,26 +14,26 @@ class MT extends Device
 
     public function set()
     {
-        $this->path = rtrim($this->is_set('path'),'\/').'/' ;
-        return $this->write($this->is_set('data'),$this->is_set('action'));
+        $this->path = rtrim($this->getData('path'),'\/').'/' ;
+        return $this->write($this->getData('data'),$this->is_set('action'));
     }
 
     public function get(): ?array
     {
-        $this->path = rtrim($this->is_set('path'),'\/').'/';
-        return $this->read($this->is_set('filter'));
+        $this->path = rtrim($this->getData('path'),'\/').'/';
+        return $this->read($this->getData('filter'));
     }
 
     protected function write($data, $action = 'set')
     {
         $api = $this->connect();
-        $prep = $this->prep_data($data,$action); //prepared data
-        if (!($api && $prep && $action)) {
+        if (!($api && $data && $action)) {
             return false;
         }
+        if($action == 'add'){unset($data->{'.id'});}
         $api->write($this->path . $action, false);
-        foreach (array_keys((array)$prep) as $key) {
-            $api->write('=' . $key . '=' . $prep->$key, false);
+        foreach (array_keys((array)$data) as $key) {
+            $api->write('=' . $key . '=' . $data->$key, false);
         }
         $api->write(';'); // trailing semicolon works
         $this->read = $api->read() ?? [];
@@ -42,27 +42,13 @@ class MT extends Device
             : ($this->read ? : true);
     }
 
-    private function prep_data($data,$action): ?stdClass
-    {
-        $prep = is_array($data) ? (object)$data : $data ;
-        if(!is_object($prep)){
-            $this->setErr('mikrotik post data is empty');
-            return null;
-        }
-        if($action == 'add'){
-            unset($prep->{'.id'});
-        }
-        return $prep ;
-    }
-
-    private function is_set($property)
+    private function getData($property)
     { // check and return data object property
         if(isset($this->data->$property)){
             return $this->data->$property;
         }
         return null;
     }
-
 
     private function connect(): ?RouterosAPI
     {
@@ -87,14 +73,16 @@ class MT extends Device
             $this->device = $this->svc->device();
             return (bool )$this->device;
         }
-        if(isset($this->data->device_id))
+        if($this->getData('device_id'))
         {
-            $this->device = $this->db()->selectDeviceById($this->data->device_id);
+            $this->device = $this->db()->selectDeviceById(
+                $this->getData('device_id'));
             return (bool)$this->device ;
         }
-        if(isset($this->data->device))
+        if($this->getData('device'))
         {
-            $this->device = $this->db()->selectDeviceByDeviceName($this->data->device);
+            $this->device = $this->db()->selectDeviceByDeviceName(
+                $this->getData('device'));
             return (bool)$this->device ;
         }
         $this->setErr('failed to get device information');
@@ -128,7 +116,7 @@ class MT extends Device
         $this->exists = false;
     }
 
-    protected function comment()
+    protected function comment(): string
     {
         return $this->svc->client->id() . " - "
             . $this->svc->client->name() . " - "

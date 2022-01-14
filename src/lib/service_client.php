@@ -4,8 +4,9 @@ include_once 'service_base.php';
 class Service_Client extends Service_Base{
 
     protected $client;
+    public $move ;
 
-    protected function get(): ?object
+    protected function get(): ?stdClass
     {
         if (!(array)$this->client) {
             $this->client = (new API_Unms())->request('/clients/' . $this->id());
@@ -33,15 +34,16 @@ class Service_Client extends Service_Base{
 
     public function username(): ?string
     {
+        $entity = $this->move ? 'before' : 'entity';
         $default = 'client-'
-            .$this->entity->clientId.'-'
-            .$this->entity->id;
+            .$this->$entity->clientId.'-'
+            .$this->$entity->id;
         $tmp = $this->get()->username;
         if(filter_var($tmp,FILTER_VALIDATE_EMAIL)){
             $tmp = $this->get()->companyName ?? $this->get()->lastName ;
         }
         $chars = ".!&%#@*^()'\":;\\/[]{}|?><,";
-        $stripped = str_replace(str_split($chars),'',strtolower($tmp)).'-'.$this->entity->id;
+        $stripped = str_replace(str_split($chars),'',strtolower($tmp)).'-'.$this->$entity->id;
         $username = preg_replace('/\s+/','',$stripped) ?? $default ;
         return $this->set_attribute($this->conf->pppoe_user_attr,$username) ? $username : null;
     }
