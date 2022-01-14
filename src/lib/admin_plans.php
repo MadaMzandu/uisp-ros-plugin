@@ -1,5 +1,6 @@
 <?php
 
+include_once 'admin_mt_contention.php';
 class Plans extends Admin
 {
 
@@ -87,55 +88,24 @@ class Plans extends Admin
 
     public function edit(): bool
     {
-        if (!$this->db()->edit($this->data, 'plans')) {
-            $this->set_error('failed to update contention ratio for service plan');
-            return false;
-        }
-        if($this->set_queue_contention()) {
-            $this->set_message('contention ratio has been updated and applied on devices');
-            return true;
-        }
-        $this->set_error('failed to update contention on one or more devices');
-        return false ;
+        return (
+            $this->db()->edit($this->data, 'plans')
+            && $this->set_contention()
+            && $this->set_message('contention ratio has been updated and applied on devices'))
+            or $this->set_error('failed to update contention on one or more devices');
     }
 
-    private function set_queue_contention(): bool
+    private function set_contention(): bool
     {
-        $devices = $this->db()->selectAllFromTable('devices');
-        $ret = true ;
-        foreach($devices as $device){
-            $contention = $this->contention_data($device['id']);
-            if(!$contention){
-                continue;
-            }
-            $data =(object) [
-                'path' => '/queue/simple',
-                'device_id' => $device['id'],
-                'action' => 'set',
-                'data' => $contention,
-            ];
-            $ret = $ret && (new MT($data,false))->set();
+        if($this->conf->disable_contention){
+            return true ;
         }
-        return $ret ;
-    }
-
-    private function contention_data($deviceId): ?object
-    {
-        $planId = $this->data->id ;
-        $children = $this->db()->countDeviceServicesByPlanId($planId, $deviceId);
-        if(!$children){return null;}
-        $plan = $this->list()[$planId];
-        $ratio = $plan['ratio'];
-        $shares = intdiv($children, $ratio);
-        if(($children % $ratio) > 0){$shares++ ;}
-        $ul = $plan['uploadSpeed'] * $shares;
-        $dl = $plan['downloadSpeed'] * $shares;
-        $rate = $ul . "M/". $dl."M" ;
-        return (object)[
-            '.id' => 'servicePlan-'.$planId.'-parent',
-            'max-limit' => $rate,
-            'limit-at' => $rate,
-        ];
+        $plan = $this->list()[$this->data->id] ?? null;
+        if(!$plan){
+            return $this->set_error('failed to retrieve service plan data');
+        }
+        return (new Admin_Mt_Contention(
+            $plan,false))->update();
     }
 
 }

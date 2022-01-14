@@ -1,5 +1,5 @@
 <?php
-include_once 'admin_mt_plan.php';
+include_once 'admin_mt_contention.php';
 class Settings extends Admin
 {
 
@@ -26,10 +26,10 @@ class Settings extends Admin
 
     private function apply(): bool
     {
-        $keys = ['disable_contention'];
+        $keys = ['disable_contention']; // keys that have apply methods
         foreach($keys as $key){
             if($this->hasChanged($key)){
-                return $this->$key();
+                return $this->$key();  // run apply method for key
             }
         }
         return true ;
@@ -45,10 +45,10 @@ class Settings extends Admin
     {
         $this->db()->saveConfig($this->data);
         $data = [];
-        $mt = new Admin_Mt_Plan($data,false);
+        $mt = new Admin_Mt_Contention($data,false);
         $action = $this->data->disable_contention
-            ? 'disable_contention'
-            : 'enable_contention' ;
+            ? 'disable'
+            : 'enable' ;
         $ret = $mt->$action();
         $this->status = $mt->status();
         return $ret ;
