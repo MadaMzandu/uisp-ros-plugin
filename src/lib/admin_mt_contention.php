@@ -16,14 +16,14 @@ class Admin_Mt_Contention extends MT
         return true ;
     }
 
-    public function enable()
+    public function enable(): bool
     { //rebuild to enable contention ratios
         $data = [];
         (new Admin_System($data))->rebuild();
         return true ;
     }
 
-    private function set_profiles()
+    private function set_profiles(): void
     { //removes profile parent queues
         $this->data->path = '/ppp/profile';
         $profiles = $this->get();
@@ -37,7 +37,7 @@ class Admin_Mt_Contention extends MT
         }
     }
 
-    private function set_queues()
+    private function set_queues(): void
     { //removes dhcp queue parents
         $this->data->path = '/queue/simple';
         $this->data->filter = '?dynamic=false';
@@ -52,7 +52,7 @@ class Admin_Mt_Contention extends MT
         }
     }
 
-    private function delete_queues()
+    private function delete_queues(): void
     { //deletes parent queues
         $this->data->path = '/queue/simple';
         $this->data->filter = '?dynamic=false';
@@ -66,7 +66,7 @@ class Admin_Mt_Contention extends MT
         }
     }
 
-    private function reset_pppoe()
+    private function reset_pppoe(): void
     { //resets pppoe servers to apply queue changes
         $this->data->path = '/int/pppoe-server/server';
         $this->data->filter = null ;
