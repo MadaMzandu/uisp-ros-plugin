@@ -37,8 +37,9 @@ class Settings extends Admin
 
     private function hasChanged($key): bool
     {
-        $conf = $this->db()->readConfig();
-        return $this->data->{$key} != $conf->{$key};
+        $conf = $this->db()->readConfig()->{$key} ?? null ;
+        $val = $this->data->{$key} ?? null ;
+        return $conf &&  $val != $conf ;
     }
 
     private function disable_contention(): bool
