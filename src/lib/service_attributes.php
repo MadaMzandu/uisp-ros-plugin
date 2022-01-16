@@ -32,7 +32,7 @@ class Service_Attributes extends Service_Base
     {
         $username = $this->get_attribute_value($this->conf->pppoe_user_attr);
         $password = $this->get_attribute_value($this->conf->pppoe_pass_attr);
-        $auto = $this->conf->auto_ppp_user ;
+        $auto = $this->conf->auto_ppp_user ?? false ;
         if($auto || $username){
             $this->pppoe = true ;
             $this->auto = !($username && $password);
