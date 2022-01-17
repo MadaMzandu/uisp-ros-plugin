@@ -80,6 +80,22 @@ The plugin provides four mikrotik parameters that allow customizing how disabled
 3. required : disabled rate - the rate limit to apply to disabled accounts. Automatically applied to ppp profile or dhcp queue. 
 4. optional : active address list - extra address list to apply to active accounts. Firewall rules must be manually configured by admin.
 
+# Credits
+
+This software uses or depends on the following software by these developers with
+the greatest gratitude.
+
+Ben Menking – RouterOS API
+
+<https://github.com/BenMenking/routeros-api>
+
+Ubiquiti - UISP/UCRM/UNMS
+
+<https://ubnt.com>
+
+Mikrotik - RouterOS
+
+<https://mikrotik.com>
 
 
 
