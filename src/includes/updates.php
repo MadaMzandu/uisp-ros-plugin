@@ -1,6 +1,6 @@
 <?php
 
-$version = '1.8.2';
+$version = '1.8.2a';
 $conf = db()->readConfig();
 
 $conf_updates = json_decode(
