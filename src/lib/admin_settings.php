@@ -39,7 +39,7 @@ class Settings extends Admin
     {
         $conf = $this->db()->readConfig()->{$key} ?? null ;
         $val = $this->data->{$key} ?? null ;
-        return $conf &&  $val != $conf ;
+        return is_bool($conf) &&  $val != $conf ;
     }
 
     private function disable_contention(): bool
