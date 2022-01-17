@@ -4,7 +4,6 @@ class MT_Queue extends MT
 {
 
     private $pq; //parent queue object
-    private $id;
 
     public function set_queue(): bool
     {
@@ -63,18 +62,11 @@ class MT_Queue extends MT
 
     protected function pq_name(): string
     {
-        if($this->router_disabled() || $this->conf->disable_contention){
+        if($this->conf->disable_contention){
             return 'none';
         }
         $plan = 'servicePlan-'.$this->svc->plan->id().'-parent';
         return $this->svc->disabled() ? 'none': $plan;
-    }
-
-    private function router_disabled(): bool
-    {
-        $id = $this->svc->device()->id ;
-        $disabled_routers = json_decode($this->conf->disabled_routers,true);
-        return isset($disabled_routers[$id]);
     }
 
     protected function filter(): string

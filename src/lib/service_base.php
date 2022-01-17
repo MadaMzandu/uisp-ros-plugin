@@ -73,13 +73,12 @@ class Service_Base
 
     protected function get_attribute_value($key,$entity='entity'): ?string
     { //returns an attribute value
-        if(isset($this->$entity->attributes)) {
-            foreach ($this->$entity->attributes as $attribute) {
+        $attributes = $this->$entity->attributes ?? [];
+            foreach ($attributes as $attribute) {
                 if ($key == $attribute->key) {
                     return $attribute->value;
                 }
             }
-        }
         return null;
     }
 
