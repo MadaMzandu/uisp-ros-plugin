@@ -3,5 +3,5 @@
   "disabled_rate": 1,
   "auto_ppp_user": "false",
   "pppoe_caller_attr": "callerId",
-  "disable_contention": false
+  "disable_contention": "false"
 }
