@@ -16,7 +16,7 @@ function apply_updates() {
 function rebuild()
 {
     global $current ;
-    if($current < '1.8.2'){
+    if($current < '1.8.2b'){
         $data =[];
         return (new Admin_System($data))->rebuild();
     }
