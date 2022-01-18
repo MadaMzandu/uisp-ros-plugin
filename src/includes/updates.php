@@ -2,6 +2,7 @@
 
 $version = '1.8.2a';
 $conf = db()->readConfig();
+$current = $conf->version ?? '1.0.0';
 
 $conf_updates = json_decode(
     file_get_contents('includes/conf_updates.json'),true);
@@ -14,8 +15,8 @@ function apply_updates() {
 
 function rebuild()
 {
-    global $conf ;
-    if($conf->version <= '1.8.1b'){
+    global $current ;
+    if($current < '1.8.2'){
         $data =[];
         return (new Admin_System($data))->rebuild();
     }
@@ -25,19 +26,23 @@ function rebuild()
 function conf_updates()
 {
     global $conf, $conf_updates,$version;
+    $ret = true ;
     foreach (array_keys($conf_updates) as $key) {
         if (!isset($conf->$key)) {
-            db()->insert((object)['key' => $key,
+            $ret &= db()->insert((object)['key' => $key,
                 'value' => $conf_updates[$key]],'config');
         }
     }
-    $conf->version = $version;
-    db()->saveConfig($conf);
+    return $ret && db()->setVersion($version);
 }
 
 function table_updates(){
-    $file = file_get_contents('includes/tables.sql');
-    return db()->exec($file);
+    global $current ;
+    if($current < '1.8.1') {
+        $file = file_get_contents('includes/tables.sql');
+        return db()->exec($file);
+    }
+    return true ;
 }
 
 function db():?API_SQLite
@@ -65,12 +70,9 @@ function bak_is_ok() {
 }
 
 function version_is_ok() {
-    global $version, $conf;
-    $current = $conf->version ?? '1.0.0' ;
-    if ($version > $current) {
-        return false;
-    }
-    return true;
+    global $version, $current;
+    $test = $current >= $version ;
+    return $test ;
 }
 
 function run_queue()

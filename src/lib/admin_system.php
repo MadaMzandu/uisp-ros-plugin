@@ -3,9 +3,10 @@
 class Admin_System extends Admin
 {
 
-    public function rebuild()
+    public function rebuild(): bool
     {
         $this->send_triggers();
+        return true ;
     }
 
     private function send_triggers():void
