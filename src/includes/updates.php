@@ -71,8 +71,7 @@ function bak_is_ok() {
 
 function version_is_ok() {
     global $version, $current;
-    $test = $current >= $version ;
-    return $test ;
+    return $current >= $version ;
 }
 
 function run_queue()
