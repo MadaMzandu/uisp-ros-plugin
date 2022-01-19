@@ -39,12 +39,13 @@ class Service_Plan extends Service_Base
         ];
     }
 
-    public function target()
+    public function target(): array
     {
-        if($this->conf->router_ppp_pool){
-            return $this->device()->pool ?? null ;
-        }
-        return $this->conf->ppp_pool ;
+        $entity = $this->move ? 'before' : 'entity';
+        $dev = $this->get_attribute_value($this->conf->device_name_attr,$entity);
+        $devId = $this->db()->selectDeviceIdByDeviceName($dev);
+        $hosts = $this->db()->selectTargets($this->id(),$devId) ?? [];
+        return $hosts ;
     }
 
     protected function shares():int

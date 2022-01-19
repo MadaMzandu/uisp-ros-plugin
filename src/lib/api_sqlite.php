@@ -216,6 +216,17 @@ class API_SQLite
         return $this->db()->querySingle($sql);
     }
 
+    public function selectTargets($id,$devId)
+    {
+        $sql = "select address from services where planId=".$id . " and device=".$devId;
+        $res = $this->db()->query($sql);
+        $return = [];
+        while ($row = $res->fetchArray(SQLITE3_ASSOC)) {
+            $return[$row['address']] = $row['address'];
+        }
+        return $return;
+    }
+
     public function setVersion($version)
     {
         $sql = "update config set value='".$version."' where key='version'";

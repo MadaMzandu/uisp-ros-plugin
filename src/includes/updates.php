@@ -1,6 +1,6 @@
 <?php
 
-$version = '1.8.2a';
+$version = '1.8.2b';
 $conf = db()->readConfig();
 $current = $conf->version ?? '1.0.0';
 
@@ -16,9 +16,11 @@ function apply_updates() {
 function rebuild()
 {
     global $current ;
-    if($current < '1.8.2b'){
-        $data =[];
-        return (new Admin_System($data))->rebuild();
+    if($current < '1.8.2c'){
+        $disable['disable_contention'] = true;
+        $enable['disable_contention'] = false;
+        return (new Settings($disable))->edit()
+            && (new Settings($enable))->edit();
     }
     return true ;
 }
