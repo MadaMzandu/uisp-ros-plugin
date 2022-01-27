@@ -61,8 +61,8 @@ class API_Router
             $this->set_message('No request data sent');
             return false;
         }
-        $entity = $this->data->entity ?? 'none';
-        if ($entity != 'service') {
+        $entity = $this->data->entity ?? null ;
+        if ($entity && $entity != 'service') {
             $this->set_message('ok');
             return false;
         }
