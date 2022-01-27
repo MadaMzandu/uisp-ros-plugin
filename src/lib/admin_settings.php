@@ -46,7 +46,7 @@ class Settings extends Admin
     {
         $this->db()->saveConfig($this->data);
         $data = [];
-        $mt = new Admin_Mt_Contention($data,false);
+        $mt = new Admin_Mt_Contention($data);
         $action = $this->data->disable_contention
             ? 'disable'
             : 'enable' ;

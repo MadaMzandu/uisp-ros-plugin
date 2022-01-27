@@ -105,7 +105,7 @@ class Plans extends Admin
             return $this->set_error('failed to retrieve service plan data');
         }
         return (new Admin_Mt_Contention(
-            $plan,false))->update();
+            $plan))->update();
     }
 
 }
