@@ -15,7 +15,7 @@ class MT extends Device
     public function set()
     {
         $this->path = rtrim($this->getData('path'),'\/').'/' ;
-        return $this->write($this->getData('data'),$this->is_set('action'));
+        return $this->write($this->getData('data'),$this->getData('action'));
     }
 
     public function get(): ?array
@@ -44,17 +44,12 @@ class MT extends Device
 
     private function getData($property)
     { // check and return data object property
-        if(isset($this->data->$property)){
-            return $this->data->$property;
-        }
-        return null;
+        return $this->data->$property ?? null ;
     }
 
     private function connect(): ?RouterosAPI
     {
-        if (!$this->get_device()) {
-            return null;
-        }
+        $this->getDevice() or die('failed to get mikrotik device');
         $api = new Routerosapi();
         $api->timeout = 1;
         $api->attempts = 1;
@@ -67,22 +62,20 @@ class MT extends Device
         return null;
     }
 
-    protected function get_device(): bool
+    protected function getDevice(): bool
     {
         if($this->svc){
             $this->device = $this->svc->device();
             return (bool )$this->device;
         }
-        if($this->getData('device_id'))
+        if($id = $this->getData('device_id'))
         {
-            $this->device = $this->db()->selectDeviceById(
-                $this->getData('device_id'));
+            $this->device = $this->db()->selectDeviceById($id);
             return (bool)$this->device ;
         }
-        if($this->getData('device'))
+        if($dev = $this->getData('device'))
         {
-            $this->device = $this->db()->selectDeviceByDeviceName(
-                $this->getData('device'));
+            $this->device = $this->db()->selectDeviceByDeviceName($dev);
             return (bool)$this->device ;
         }
         $this->setErr('failed to get device information');
@@ -91,22 +84,11 @@ class MT extends Device
 
     private function has_error(): bool
     {
-        if(isset($this->read['!trap'])) {
-            $this->setErr('failed',true);
-            return true ;
+        $error = $this->read['!trap'][0]['message'] ?? null;
+        if($error) {
+            $this->setErr('failed');
         }
-        return false;
-    }
-
-
-    protected function setErr($msg, $obj = false): void
-    {
-        $this->status->error = true;
-        if ($obj) {
-            $this->status->message = $this->read['!trap'][0]['message'];
-        } else {
-            $this->status->message = $msg;
-        }
+        return (bool) $error;
     }
 
     protected function init(): void
@@ -136,12 +118,9 @@ class MT extends Device
         return null ;
     }
 
-    protected function read($filter = false): ?array
+    protected function read($filter = null): ?array
     {  //implements mikrotik print
         $api = $this->connect();
-        if (!$api) {
-            return null;
-        }
         $api->write($this->path . 'print', false);
         if ($filter) {
             $api->write($filter, false);
