@@ -13,7 +13,7 @@ class MT_Profile extends MT
         return $this->exec();
     }
 
-    private function children()
+    private function children(): bool
     {
         $this->path = '/ppp/secret/';
         $read = $this->read('?profile=' . $this->name()) ?? [];
@@ -37,14 +37,14 @@ class MT_Profile extends MT
             $this->pq->set_parent()
             && $this->write((object)$id, 'remove');
         }
-        return !$this->findErr('ok');;
+        return !$this->findErr('ok');
     }
 
     protected function data(): object
     {
         return (object)[
             'name' => $this->name(),
-            'local-address' => $this->local_addr(),
+            'local-address' => $this->local_address(),
             'rate-limit' => $this->rate()->text,
             'parent-queue' => $this->pq_name(),
             'address-list' => $this->address_list(),
@@ -70,8 +70,9 @@ class MT_Profile extends MT
     private function router_disabled(): bool
     {
         $id = $this->svc->device()->id ;
-        $disabled_routers = json_decode($this->conf->disabled_routers,true);
-        return isset($disabled_routers[$id]);
+        $conf = $this->conf->disabled_routers ?? "[]";
+        $routers = json_decode($conf,true);
+        return isset($routers[$id]);
     }
 
     protected function rate():stdClass
@@ -84,7 +85,7 @@ class MT_Profile extends MT
         return $rate;
     }
 
-    private function local_addr(): ?string
+    private function local_address(): ?string
     { // get one address for profile local address
         $savedPath = $this->path;
         $this->path = '/ip/address/';
@@ -104,11 +105,12 @@ class MT_Profile extends MT
         return null;
     }
 
-    private function makeBool($value){
+    private function makeBool($value): bool
+    {
         return $value == "true";
     }
 
-    protected function findErr($success='')
+    protected function findErr($success='ok'): bool
     {
         $calls = [&$this,&$this->pq];
         foreach ($calls as $call){
