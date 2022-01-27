@@ -37,21 +37,20 @@ class Admin
         $this->conf = $this->db()->readConfig();
         $this->status = new stdClass();
         $this->result = new stdClass();
-        $this->status->authenticated = false;
         $this->status->error = false;
         $this->status->message = 'ok';
     }
 
     public function exec(): void
     {
-        $target = $this->target($this->data->target);
+        $target = $this->target();
         $exec = new $target($this->data->data);
         $exec->{$this->data->action}();
         $this->status = $exec->status();
         $this->result = $exec->result();
     }
 
-    private function target($target): ?string
+    private function target(): ?string
     {
         $map = array(
             'config' => 'Settings',
@@ -64,7 +63,11 @@ class Admin
             'system' => 'Admin_System',
             'backup' => 'Admin_Backup',
         );
-        return $map[$target] ?? null;
+        $target = $this->data->target ?? null ;
+        if($target){
+            return $map[$target] ?? null ;
+        }
+        return null ;
     }
 
     public function status(): stdClass
