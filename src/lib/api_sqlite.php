@@ -216,6 +216,18 @@ class API_SQLite
         return $this->db()->querySingle($sql);
     }
 
+    public function selectServices()
+    {
+        $sql = "select services.*,devices.name as deviceName from services left join devices "
+            . "on services.device=devices.id" ;
+        $res = $this->db()->query($sql);
+        $return = [];
+        while ($row = $res->fetchArray(SQLITE3_ASSOC)) {
+            $return[] = $row;
+        }
+        return $return;
+    }
+
     public function selectTargets($id,$devId)
     {
         $sql = "select address from services where planId=".$id . " and device=".$devId;
