@@ -13,13 +13,14 @@ class MT_Queue extends MT
         return $this->exec();
     }
 
-    protected function findErr($success='')
+    protected function findErr($success='ok')
     {
         $calls = [&$this,&$this->pq];
         foreach ($calls as $call){
-            if(!$call->status()->error){continue;}
-            $this->status = $call->status();
-            return true;
+            if($call->status()->error){
+                $this->status = $call->status();
+                return true;
+            }
         }
         $this->setMess($success);
         return false ;
@@ -84,7 +85,7 @@ class MT_Queue extends MT
     private function orphaned(): ?string
     {
         if (!$this->exists()) {
-            return false;
+            return null;
         }
         $queue = $this->entity;
         return substr($queue['parent'], 0, 1) == '*'
