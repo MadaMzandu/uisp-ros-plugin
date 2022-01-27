@@ -27,7 +27,8 @@ class Service_Account extends Service_Attributes
     public function disabled(): bool
     {
         $entity = $this->move ? 'before' : 'entity';
-        return $this->$entity->status != 1 ;
+        $status = $this->$entity->status ?? 3 ;
+        return in_array($status,[3,5]);
     }
 
     public function device(): ?stdClass
