@@ -103,6 +103,7 @@ class API_Router
         }
         $response = [
             'status' => $status,
+            'error' => $this->status->error,
             'message' => $this->status->message ?? 'Unknown error',
             'data' => $this->result,
         ];
