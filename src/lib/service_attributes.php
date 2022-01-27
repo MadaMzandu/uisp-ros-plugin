@@ -16,7 +16,17 @@ class Service_Attributes extends Service_Base
         parent::init();
         $this->check_device();
         $this->check_attributes();
+        $this->check_status();
         $this->set_action();
+    }
+
+    protected function check_status()
+    {
+        $status = $this->entity->status ?? -1 ;
+        if(in_array($status,[0,4,6,7])){
+            $this->setErr("Deferred update - service status: ".$status);
+            $this->status->error = false ;
+        }
     }
 
     protected function check_attributes(): bool
