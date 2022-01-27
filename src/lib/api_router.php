@@ -61,12 +61,13 @@ class API_Router
             $this->set_message('No request data sent');
             return false;
         }
-        if (isset($this->data->entity) && $this->data->entity != 'service') {
+        $entity = $this->data->entity ?? 'none';
+        if ($entity != 'service') {
             $this->set_message('ok');
             return false;
         }
-        if (isset($this->data->changeType) &&
-            !in_array($this->data->changeType, ['insert', 'edit', 'end',
+        $change = $this->data->changeType ?? 'none';
+        if (!in_array($change, ['insert', 'edit', 'end',
                 'suspend', 'unsuspend', 'admin'])) {
             $this->set_message('ok');
             return false;
