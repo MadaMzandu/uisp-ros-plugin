@@ -7,6 +7,7 @@ class Service_Base
     public $ready ;
     public $move ;
     public $queued ;
+    public $type = 'service';
     protected $status;
     protected $data;
     protected $entity;
@@ -53,14 +54,23 @@ class Service_Base
 
     public function queue_job($status=[]): void
     {
-        if($this->queued){return;} //already queued
+        if($this->queued){ //already queued
+            return;
+        }
         $file = 'data/queue.json';
-        $q = json_decode(file_get_contents($file),true);
-        $q[$this->entityId] = [
-            'data' => $this->data,
-            'status' => $status,
-        ];
-        file_put_contents($file,json_encode($q));
+        $q = [] ;
+        if(file_exists($file)){
+            $f = file_get_contents($file) ?? "[]";
+            $q = json_decode($f,true) ;
+        }
+        $id = $this->data->entityId ?? 0 ;
+        if($id) {
+            $q[$id] = [
+                'data' => $this->data,
+                'status' => $status,
+            ];
+            file_put_contents($file, json_encode($q));
+        }
     }
 
     protected function get_config()
@@ -115,7 +125,7 @@ class Service_Base
     {
         $this->ready = false;
         $this->status->error = true;
-        $this->status->messsage = $err;
+        $this->status->message = $err;
         return null ;
     }
 
