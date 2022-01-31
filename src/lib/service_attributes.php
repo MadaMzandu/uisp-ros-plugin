@@ -16,6 +16,7 @@ class Service_Attributes extends Service_Base
         parent::init();
         $this->check_device();
         $this->check_attributes();
+        $this->check_changes();
         $this->check_status();
         $this->set_action();
     }
@@ -25,6 +26,22 @@ class Service_Attributes extends Service_Base
         $status = $this->entity->status ?? -1 ;
         if(in_array($status,[0,4,6,7])){
             $this->setErr("Deferred update - service status: ".$status);
+            $this->status->error = false ;
+        }
+    }
+
+    protected function check_changes(){
+        $keys = ['id','status','servicePlanId','attributes'];
+        $changes = [] ;
+        foreach($keys as $key){
+            $new = $this->entity->{$key} ?? null ;
+            $old = $this->before->{$key} ?? null ;
+            if($new != $old){
+                $changes[] = $key ;
+            }
+        }
+        if(!$changes){
+            $this->setErr("No changes to apply");
             $this->status->error = false ;
         }
     }
