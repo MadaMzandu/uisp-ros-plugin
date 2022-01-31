@@ -39,15 +39,15 @@ class API_Router
 
     public function route(): void
     {
-        if (!$this->data_is_valid()) { // check validity before system tasks
+        if (!$this->data_is_valid()) { // check basic validity
             return;
         }
 
-        if ($this->request_is_admin()) { // admin requests end here
+        if ($this->request_is_admin()) { // execute admin calls
             return;
         }
         $service = new Service($this->data);
-        if (!$service->ready) {
+        if (!$service->ready) { // invalid service data
             $this->status = $service->status();
             return;
         }
