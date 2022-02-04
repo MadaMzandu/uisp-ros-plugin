@@ -96,21 +96,6 @@ class Service_Attributes extends Service_Base
         }
     }
 
-    protected function check_username_change(): void
-    {
-        $mac = $this->get_attribute_value($this->conf->mac_addr_attr);
-        $old_mac = $this->get_attribute_value($this->conf->mac_addr_attr,'before');
-        if($old_mac && $mac != $old_mac){
-            $this->data->changeType= 'move';
-            return ;
-        }
-        $user = $this->get_attribute_value($this->conf->pppoe_user_attr);
-        $old_user = $this->get_attribute_value($this->conf->pppoe_user_attr,'before');
-        if($old_user &&  $user != $old_user){
-            $this->data->changeType = 'move';
-        }
-    }
-
     protected function set_action(): void
     {
         $change = 'set_' . $this->data->changeType;
@@ -126,9 +111,7 @@ class Service_Attributes extends Service_Base
         $old_device = $this->get_attribute_value($this->conf->device_name_attr,'before');
         if ($old_device && strtolower($device) != strtolower($old_device)) {
             $this->data->changeType = 'move';
-            return ;
         }
-        $this->check_username_change();
     }
 
     protected function set_insert(): void
