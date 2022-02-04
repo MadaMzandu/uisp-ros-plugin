@@ -5,7 +5,7 @@ class Service_Base
 {
 
     public $ready ;
-    public $move ;
+    public $mode = 0 ;
     public $queued ;
     public $type = 'service';
     protected $status;
@@ -44,6 +44,18 @@ class Service_Base
     {
        return (bool)$this->db()
             ->ifServiceIdExists($this->entity->id);
+    }
+
+    public function mode($mode=null): ?int
+    {//switches between edit and before edit objects
+        // or returns mode is parameter is null
+        if(is_int($mode)){
+            $mode = $mode > 0 ? 1 :0 ;
+            $this->mode = $mode;
+            $this->plan->mode = $mode;
+            $this->client->mode = $mode;
+        }
+        return $this->mode ;
     }
 
     protected function set_shortcuts()

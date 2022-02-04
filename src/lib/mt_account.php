@@ -123,12 +123,12 @@ class MT_Account extends MT
 
     public function move(): bool
     {
-        $this->svc->move(true);
+        $this->svc->mode(1);
         $this->init(); // switch device
         if (!$this->delete()) {
             return false;
         }
-        $this->svc->move(false);
+        $this->svc->mode(0);
         $this->svc->plan->contention = $this->svc->exists() ? 0 : 1; // next contention after -1 delete
         $this->init(); // restore device
         if (!$this->insert()) {

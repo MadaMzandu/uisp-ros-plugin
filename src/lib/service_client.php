@@ -34,7 +34,7 @@ class Service_Client extends Service_Base{
 
     public function username(): ?string
     {
-        $entity = $this->move ? 'before' : 'entity';
+        $entity = $this->mode ? 'before' : 'entity';
         $default = 'client-'
             .$this->$entity->clientId.'-'
             .$this->$entity->id;

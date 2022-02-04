@@ -26,7 +26,7 @@ class Service_Account extends Service_Attributes
 
     public function disabled(): bool
     {
-        $entity = $this->move ? 'before' : 'entity';
+        $entity = $this->mode ? 'before' : 'entity';
         $status = $this->$entity->status ?? 3 ;
         return in_array($status,[3,5]);
     }
@@ -36,16 +36,9 @@ class Service_Account extends Service_Attributes
         return $this->get_device();
     }
 
-    public function move(bool $move): void
-    {
-        $this->move = $move;
-        $this->plan->move = $move;
-        $this->client->move = $move;
-    }
-
     public function callerId(): ?string
     {
-        $entity = $this->move ? 'before' : 'entity';
+        $entity = $this->mode ? 'before' : 'entity';
         return $this->get_attribute_value(
             $this->conf->pppoe_caller_attr,$entity
         );
@@ -54,7 +47,7 @@ class Service_Account extends Service_Attributes
 
     protected function get_device(): ?stdClass
     {
-        $entity = $this->move ? 'before' : 'entity';
+        $entity = $this->mode ? 'before' : 'entity';
         $name = $this->get_attribute_value($this->conf->device_name_attr,$entity);
         $dev = $this->db()->selectDeviceByDeviceName($name)
             or $this->setErr('the specified device was not found');
@@ -63,7 +56,7 @@ class Service_Account extends Service_Attributes
 
     public function username(): ?string
     {
-        $entity = $this->move ? 'before' : 'entity';
+        $entity = $this->mode ? 'before' : 'entity';
         $username = $this->get_attribute_value($this->conf->pppoe_user_attr,$entity);
         if(!$username && $this->conf->auto_ppp_user){
             $username = $this->client->username();
@@ -94,7 +87,7 @@ class Service_Account extends Service_Attributes
 
     public function password(): string
     {
-        $entity = $this->move ? 'before' : 'entity';
+        $entity = $this->mode ? 'before' : 'entity';
         $password = $this->get_attribute_value($this->conf->pppoe_pass_attr,$entity);
         if(!$password){
             $password = $this->pass_generate();
@@ -104,7 +97,7 @@ class Service_Account extends Service_Attributes
 
     public function mac(): ?string
     {
-        $entity = $this->move ? 'before' : 'entity';
+        $entity = $this->mode ? 'before' : 'entity';
         return $this->get_attribute_value($this->conf->mac_addr_attr,$entity);
     }
 
@@ -149,7 +142,7 @@ class Service_Account extends Service_Attributes
 
     public function id(): int
     {
-        $entity = $this->move ? 'before' : 'entity';
+        $entity = $this->mode ? 'before' : 'entity';
         return $this->$entity->id;
     }
 
@@ -165,7 +158,7 @@ class Service_Account extends Service_Attributes
 
     public function delete(): bool
     {
-        $id = $this->move ? $this->before->id : $this->entity->id;
+        $id = $this->mode ? $this->before->id : $this->entity->id;
         $this->db()->delete($id);
         return true ;
     }
