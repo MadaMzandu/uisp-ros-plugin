@@ -4,9 +4,9 @@ include_once 'api_sqlite.php';
 class Service_Base
 {
 
-    public $ready ;
-    public $mode = 0 ;
-    public $queued ;
+    public $ready;
+    public $mode = 0;
+    public $queued;
     public $type = 'service';
     protected $status;
     protected $data;
@@ -22,16 +22,16 @@ class Service_Base
 
     private function toObject($data)
     {
-        if(is_array($data) || is_object($data)){
+        if (is_array($data) || is_object($data)) {
             return is_object($data) ? $data
-                :json_decode(json_encode((object)$data));
+                : json_decode(json_encode((object)$data));
         }
         return null;
     }
 
     protected function init(): void
     {
-        $this->ready = true ;
+        $this->ready = true;
         $this->status = (object)[];
         $this->status->ready = &$this->ready;
         $this->status->error = false;
@@ -42,20 +42,23 @@ class Service_Base
 
     public function exists(): bool
     {
-       return (bool)$this->db()
+        return (bool)$this->db()
             ->ifServiceIdExists($this->entity->id);
     }
 
-    public function mode($mode=null): ?int
+    public function mode($mode = null): ?int
     {//switches between edit and before edit objects
         // or returns mode is parameter is null
-        if(is_int($mode)){
-            $mode = $mode > 0 ? 1 :0 ;
+        $edit = $this->data->extraData->entityBeforeEdit ?? null;
+        if (is_int($mode)) {
+            $mode = $edit ? $mode : 0;
+            $mode = $mode > 0 ? 1 : 0;
             $this->mode = $mode;
             $this->plan->mode = $mode;
             $this->client->mode = $mode;
+            return null;
         }
-        return $this->mode ;
+        return $this->mode;
     }
 
     protected function set_shortcuts()
@@ -64,19 +67,19 @@ class Service_Base
         $this->before = $this->data->extraData->entityBeforeEdit ?? (object)[];
     }
 
-    public function queue_job($status=[]): void
+    public function queue_job($status = []): void
     {
-        if($this->queued){ //already queued
+        if ($this->queued) { //already queued
             return;
         }
         $file = 'data/queue.json';
-        $q = [] ;
-        if(file_exists($file)){
+        $q = [];
+        if (file_exists($file)) {
             $f = file_get_contents($file) ?? "[]";
-            $q = json_decode($f,true) ;
+            $q = json_decode($f, true);
         }
-        $id = $this->data->entityId ?? 0 ;
-        if($id) {
+        $id = $this->data->entityId ?? 0;
+        if ($id) {
             $q[$id] = [
                 'data' => $this->data,
                 'status' => $status,
@@ -93,34 +96,34 @@ class Service_Base
         }
     }
 
-    protected function get_attribute_value($key,$entity='entity'): ?string
+    protected function get_attribute_value($key, $entity = 'entity'): ?string
     { //returns an attribute value
         $attributes = $this->$entity->attributes ?? [];
-            foreach ($attributes as $attribute) {
-                if ($key == $attribute->key) {
-                    return $attribute->value;
-                }
+        foreach ($attributes as $attribute) {
+            if ($key == $attribute->key) {
+                return $attribute->value;
             }
+        }
         return null;
     }
 
-    protected function set_attribute($attribute,$value): bool
+    protected function set_attribute($attribute, $value): bool
     {
         $attribute = $this->list_attribute($attribute);
-        $data = ['attributes' => [['customAttributeId' => $attribute->id, 'value'=> $value]]];
-        $id = $this->entity->id ;
-        return (bool) (new API_Unms())->request('clients/services/'.$id,'PATCH',$data);
+        $data = ['attributes' => [['customAttributeId' => $attribute->id, 'value' => $value]]];
+        $id = $this->entity->id;
+        return (bool)(new API_Unms())->request('clients/services/' . $id, 'PATCH', $data);
     }
 
     protected function list_attribute($attribute): ?stdClass
     {
         $list = (new API_Unms())->request('custom-attributes');
-        foreach ($list as $item){
-            if($item->key == $attribute){
-                return $item ;
+        foreach ($list as $item) {
+            if ($item->key == $attribute) {
+                return $item;
             }
         }
-        return null ;
+        return null;
     }
 
     protected function db(): ?API_SQLite
@@ -138,7 +141,7 @@ class Service_Base
         $this->ready = false;
         $this->status->error = true;
         $this->status->message = $err;
-        return null ;
+        return null;
     }
 
     public function status()
