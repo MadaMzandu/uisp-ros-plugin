@@ -68,7 +68,7 @@ class API_Router
         }
         $change = $this->data->changeType ?? 'none';
         if (!in_array($change, ['insert', 'edit', 'end',
-                'suspend', 'unsuspend', 'admin'])) {
+                'suspend', 'unsuspend', 'admin','move','delete','rename'])) {
             $this->set_message('ok');
             return false;
         }
