@@ -135,22 +135,20 @@ class MT_Profile extends MT
 
     private function orphaned(): ?string
     {
-        if (!$this->exists()) {
+        if (!$this->exists) {
             return false;
         }
-        $profile = $this->entity;
-        return substr($profile['parent-queue'], 0, 1) == '*'
-            ? $profile['parent-queue'] : null;
+        $parent = $this->entity['parent-queue'] ?? '';
+        return substr($parent, 0, 1) == '*'
+            ? $parent : null;
     }
 
     protected function init(): void
     {
         parent::init();
         $this->path = '/ppp/profile/';
-        if($this->svc) {
-            $this->exists = $this->exists();
-            $this->pq = new MT_Parent_Queue($this->svc);
-        }
+        $this->exists = $this->exists();
+        $this->pq = new MT_Parent_Queue($this->svc);
     }
 
     protected function filter(): string

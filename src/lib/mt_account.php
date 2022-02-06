@@ -34,12 +34,12 @@ class MT_Account extends MT
     {
         $action = $this->exists ? 'set' : 'add';
         $message = $this->exists ? 'updated' : 'added';
-        $success = 'account for '.$this->svc->client->name()
-            . ' was successfully '.$message;
+        $success = 'account for ' . $this->svc->client->name()
+            . ' was successfully ' . $message;
         $this->set_profile()
-            && $this->write($this->data(), $action)
-            && $this->svc->save()
-            && $this->disconnect() ;
+        && $this->write($this->data(), $action)
+        && $this->svc->save()
+        && $this->disconnect();
         return !$this->findErr($success);
     }
 
@@ -91,28 +91,29 @@ class MT_Account extends MT
         }
         $this->path = '/ppp/active/';
         $read = $this->read('?name=' . $this->svc->username());
-        foreach ($read as $active)
-        {
+        foreach ($read as $active) {
             $data['.id'] = $active['.id'];
-            $this->write((object)$data,'remove');
+            $this->write((object)$data, 'remove');
         }
         $this->path = $this->path();
         return true;
     }
 
 
-    protected function filter():string
+    protected function filter(): string
     {
         return $this->svc->pppoe
-            ? '?name='. $this->svc->username()
+            ? '?name=' . $this->svc->username()
             : '?mac-address=' . $this->svc->mac();
     }
 
-    public function findErr($success='ok'): bool
+    public function findErr($success = 'ok'): bool
     {
-        $calls = [&$this,&$this->profile,&$this->q];
-        foreach ($calls as $call){
-            if(!$call->status()->error){continue;}
+        $calls = [&$this, &$this->profile, &$this->q];
+        foreach ($calls as $call) {
+            if (!$call->status()->error) {
+                continue;
+            }
             $this->status = $call->status();
             $this->svc->queue_job($this->status());
             return true;
@@ -123,34 +124,40 @@ class MT_Account extends MT
 
     public function move(): bool
     {
-        $this->svc->mode(1);
-        $this->init(); // switch device
-        if (!$this->delete()) {
-            return false;
-        }
-        $this->svc->mode(0);
-        $this->svc->plan->contention = $this->svc->exists() ? 0 : 1; // next contention after -1 delete
-        $this->init(); // restore device
-        if (!$this->insert()) {
-            return false;
-        }
-        return true;
+        return $this->delete()
+            && $this->move_insert();
+    }
+
+    protected function move_insert(): bool
+    {
+        $this->mini_init();
+        return $this->insert();
+    }
+
+    protected function mini_init($action = 'insert'): void
+    {
+        $this->svc->action = $action;
+        $delete = $action == 'delete' || $action == 'move';
+        $this->svc->plan->contention = $delete ? -1
+            : ($this->svc->exists() ? 0 : 1);
+        $this->path = $this->path();
+        $this->exists = $this->exists();
+        $this->profile = new MT_Profile($this->svc);
+        $this->q = new MT_Queue($this->svc);
     }
 
     protected function init(): void
     {
         parent::init();
         $this->path = $this->path();
-        if($this->svc) {
-            $this->exists = $this->exists();
-            $this->profile = new MT_Profile($this->svc);
-            $this->q = new MT_Queue($this->svc);
-        }
+        $this->exists = $this->exists();
+        $this->profile = new MT_Profile($this->svc);
+        $this->q = new MT_Queue($this->svc);
     }
 
     protected function path(): string
     {
-        if(!$this->svc){ //default to pppoe
+        if (!$this->svc) { //default to pppoe
             return '/ppp/secret';
         }
         return $this->svc->pppoe ? '/ppp/secret/' : '/ip/dhcp-server/lease/';
@@ -159,14 +166,14 @@ class MT_Account extends MT
     public function delete(): bool
     {
         $this->svc->plan->contention = -1;
-        $success = 'account for '. $this->svc->client->name()
+        $success = 'account for ' . $this->svc->client->name()
             . ' has been deleted';
-        if($this->exists) {
+        if ($this->exists) {
             $data['.id'] = $this->insertId;
             $this->set_profile()
-             && $this->write((object)$data, 'remove')
-             && $this->svc->delete()
-             && $this->disconnect();
+            && $this->write((object)$data, 'remove')
+            && $this->svc->delete()
+            && $this->disconnect();
         }
         return !$this->findErr($success);
     }
@@ -177,6 +184,11 @@ class MT_Account extends MT
     }
 
     public function edit(): bool
+    {
+        return $this->set_account();
+    }
+
+    public function rename(): bool
     {
         return $this->set_account();
     }
