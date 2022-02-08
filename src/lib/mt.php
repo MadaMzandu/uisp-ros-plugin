@@ -48,35 +48,34 @@ class MT extends Device
 
     private function connect(): ?RouterosAPI
     {
-        $this->getDevice() or die('failed to get mikrotik device');
+        if(!$this->getDevice()){
+            throw new Exception('failed to get device information');
+        };
         $api = new Routerosapi();
         $api->timeout = 1;
         $api->attempts = 1;
         //$api->debug = true;
         if (!$api->connect($this->device->ip,
             $this->device->user, $this->device->password)) {
-            $this->setErr('device connect failed: ' . $api->error_str);
-            die(json_encode($this->status));
+            $this->queueMe('device connect failed');
+            throw new Exception('device connect failed: job has been queued');
         }
         return $api;
     }
 
     protected function getDevice(): bool
     {
+        $this->device = null ;
         if ($this->svc) {
             $this->device = $this->svc->device();
-            return (bool )$this->device;
         }
-        if ($id = $this->getData('device_id')) {
+        elseif ($id = $this->getData('device_id')) {
             $this->device = $this->db()->selectDeviceById($id);
-            return (bool)$this->device;
         }
-        if ($dev = $this->getData('device')) {
+        elseif ($dev = $this->getData('device')) {
             $this->device = $this->db()->selectDeviceByDeviceName($dev);
-            return (bool)$this->device;
         }
-        $this->setErr('failed to get device information');
-        return false;
+        return (bool)$this->device ;
     }
 
     private function has_error(): bool

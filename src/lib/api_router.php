@@ -39,20 +39,25 @@ class API_Router
 
     public function route(): void
     {
-        if (!$this->data_is_valid()) { // check basic validity
-            return;
-        }
+        try {
+            if (!$this->data_is_valid()) { // check basic validity
+                return;
+            }
 
-        if ($this->request_is_admin()) { // execute admin calls
-            return;
+            if ($this->request_is_admin()) { // execute admin calls
+                return;
+            }
+            $service = new Service($this->data);
+            if (!$service->ready) { // invalid service data
+                $this->status = $service->status();
+                return;
+            }
+            $route = new API_Routes($service); //execute
+            $this->status = $route->status();
+        } catch(Exception $error){
+            $this->status->error = true ;
+            $this->status->message = $error->getMessage();
         }
-        $service = new Service($this->data);
-        if (!$service->ready) { // invalid service data
-            $this->status = $service->status();
-            return;
-        }
-        $route = new API_Routes($service); //execute
-        $this->status = $route->status();
     }
 
     private function data_is_valid(): bool

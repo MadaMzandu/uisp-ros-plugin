@@ -125,11 +125,11 @@ class Service_Attributes extends Service_Base
 
     protected function set_action(): void
     {
-        $change = 'set_' . $this->data->changeType;
-        if (in_array($this->data->changeType, ['end', 'insert', 'edit', 'unsuspend'])) {
-            $this->$change();
+        $change = $this->data->changeType ?? null ;
+        if (in_array($change, ['end', 'insert', 'edit', 'unsuspend'])) {
+            $this->{'set_'.$change}();
         }
-        $this->action = $this->data->changeType;
+        $this->action = $this->data->changeType ??  null;
     }
 
     protected function set_edit(): void
@@ -138,9 +138,9 @@ class Service_Attributes extends Service_Base
         $old_device = $this->get_attribute_value($this->conf->device_name_attr, 'before');
         if ($old_device && strtolower($device) != strtolower($old_device)) {
             $this->data->changeType = 'move';
-            return;
+        } else {
+            $this->check_username_change();
         }
-        $this->check_username_change();
     }
 
     protected function set_insert(): void

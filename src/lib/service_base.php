@@ -6,7 +6,6 @@ class Service_Base
 
     public $ready;
     public $mode = 0;
-    public $queued;
     public $type = 'service';
     protected $status;
     protected $data;
@@ -18,6 +17,11 @@ class Service_Base
     {
         $this->data = $this->toObject($data);
         $this->init();
+    }
+
+    public function queued(): bool
+    {
+        return $this->data->queued ?? false ;
     }
 
     private function toObject($data)
@@ -67,9 +71,9 @@ class Service_Base
         $this->before = $this->data->extraData->entityBeforeEdit ?? (object)[];
     }
 
-    public function queue_job($status = []): void
+    public function queue_job($status=[]): void
     {
-        if ($this->queued) { //already queued
+        if ($this->queued()) { //already queued
             return;
         }
         $file = 'data/queue.json';
@@ -83,6 +87,7 @@ class Service_Base
             $q[$id] = [
                 'data' => $this->data,
                 'status' => $status,
+                'last' => (new DateTime())->format('Y-m-d H:i:s'),
             ];
             file_put_contents($file, json_encode($q));
         }

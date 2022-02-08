@@ -28,8 +28,6 @@ if(!bak_is_ok()){ // create automatic backup
     create_backup();
 }
 
-//run_queue();  // run previously queued data
-
 $json = file_get_contents('php://input') ?? false;
 
 if ($json) { // api mode
