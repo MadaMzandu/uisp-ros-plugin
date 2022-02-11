@@ -89,6 +89,7 @@ class MT_Profile extends MT
     { // get one address for profile local address
         $savedPath = $this->path;
         $this->path = '/ip/address/';
+        $address = null;
         if ($this->read()) {
             foreach ($this->read as $prefix) {
                 if ($this->makeBool($prefix['dynamic'])
@@ -97,12 +98,10 @@ class MT_Profile extends MT
                     continue;
                 }
                 $address = explode('/', $prefix['address'])[0];
-                $this->path = $savedPath;
-                return $address;
             }
         }
         $this->path = $savedPath;
-        return null;
+        return $address ?? (new API_IPv4())->local();  // or generate one
     }
 
     private function makeBool($value): bool
