@@ -165,7 +165,7 @@ class API_SQLite
     {
         $sql = "select * from services where device=" . $device_id;
         $res = $this->db()->query($sql);
-        $return = [];
+        $return = null;
         while ($row = $res->fetchArray(SQLITE3_ASSOC)) {
             $return[] = $row;
         }
@@ -221,7 +221,7 @@ class API_SQLite
         $sql = "select services.*,devices.name as deviceName from services left join devices "
             . "on services.device=devices.id" ;
         $res = $this->db()->query($sql);
-        $return = [];
+        $return = null ;
         while ($row = $res->fetchArray(SQLITE3_ASSOC)) {
             $return[] = $row;
         }
@@ -232,7 +232,7 @@ class API_SQLite
     {
         $sql = "select address from services where planId=".$id . " and device=".$devId;
         $res = $this->db()->query($sql);
-        $return = [];
+        $return = null ;
         while ($row = $res->fetchArray(SQLITE3_ASSOC)) {
             $return[$row['address']] = $row['address'];
         }
@@ -271,7 +271,7 @@ class API_SQLite
     public function readConfig()
     {
         $this->read = $this->selectAllFromTable('config');
-        $return = [];
+        $return = null ;
         foreach ($this->read as $row) {
             $return[$row['key']] = $this->fixBoolValue($row['value']);
         }
@@ -282,7 +282,7 @@ class API_SQLite
     {
         $sql = 'select * from ' . $table;
         $res = $this->db()->query($sql);
-        $return = [];
+        $return = null;
         while ($row = $res->fetchArray(SQLITE3_ASSOC)) {
             $return[] = $row;
         }
