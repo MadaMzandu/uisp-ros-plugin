@@ -6,6 +6,7 @@ include_once 'admin_plans.php';
 include_once 'admin_validation.php';
 include_once 'admin_backup.php';
 include_once 'admin_system.php';
+include_once 'api_jobs.php';
 
 class Admin
 {
@@ -59,15 +60,17 @@ class Admin
             'plans' => 'Plans',
             'validation' => 'Validation',
             'users' => 'Users',
+            'jobs' => 'Api_Jobs',
             'unms' => 'API_Unms',
             'system' => 'Admin_System',
             'backup' => 'Admin_Backup',
         );
-        $target = $this->data->target ?? null ;
-        if($target){
-            return $map[$target] ?? null ;
+        $target = $this->data->target ?? 'none' ;
+        $module = $map[$target] ?? null ;
+        if(!$module){
+            throw new Exception('Unknown target module specified');
         }
-        return null ;
+        return $module ;
     }
 
     public function status(): stdClass
