@@ -140,12 +140,6 @@ class API_SQLite
         return (object)$this->singleQuery($sql,true);
     }
 
-    public function selectDeviceIdByDeviceName($name)
-    {
-        $sql = "select id from devices where name='" . $name . "' collate nocase";
-        return $this->singleQuery($sql);
-    }
-
     public function selectServices()
     {
         $sql = "select services.*,devices.name as deviceName from services left join devices "

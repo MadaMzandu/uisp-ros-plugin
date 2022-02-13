@@ -42,8 +42,8 @@ class Service_Plan extends Service_Base
     public function target(): array
     {
         $entity = $this->mode ? 'before' : 'entity';
-        $dev = $this->get_attribute_value($this->conf->device_name_attr,$entity);
-        $devId = $this->db()->selectDeviceIdByDeviceName($dev);
+        $name = $this->get_attribute_value($this->conf->device_name_attr,$entity);
+        $devId = $this->db()->selectDeviceByDeviceName($name)->id ?? 0;
         $hosts = $this->db()->selectTargets($this->id(),$devId) ?? [];
         return $hosts ;
     }
@@ -76,9 +76,9 @@ class Service_Plan extends Service_Base
     public function children(): int
     {
         $entity = $this->mode ? 'before' : 'entity';
-        $device = $this->get_attribute_value($this->conf->device_name_attr,$entity);
-        $planId = $this->$entity->servicePlanId;
-        $deviceId = $this->db()->selectDeviceIdByDeviceName($device);
+        $name = $this->get_attribute_value($this->conf->device_name_attr,$entity);
+        $planId = $this->$entity->servicePlanId ?? 0;
+        $deviceId = $this->db()->selectDeviceByDeviceName($name)->id ?? 0 ;
         $children = $this->db()->countDeviceServicesByPlanId($planId, $deviceId);
         $children += $this->contention;
         return max($children, 0);

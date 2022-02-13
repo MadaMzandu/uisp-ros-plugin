@@ -117,8 +117,9 @@ class Service_Attributes extends Service_Base
 
     protected function check_device(): void
     {
-        $device = $this->get_attribute_value($this->conf->device_name_attr);
-        if (!$device || !$this->db()->selectDeviceIdByDeviceName($device)) {
+        $name = $this->get_attribute_value($this->conf->device_name_attr);
+        $device = $this->db()->selectDeviceByDeviceName($name) ?? null ;
+        if (!($name && $device)) {
             $this->setErr('no device or unknown device name specified for service');
         }
     }
