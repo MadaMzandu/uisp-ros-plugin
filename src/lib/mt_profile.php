@@ -98,6 +98,7 @@ class MT_Profile extends MT
                     continue;
                 }
                 $address = explode('/', $prefix['address'])[0];
+                break ;
             }
         }
         $this->path = $savedPath;
