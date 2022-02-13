@@ -23,7 +23,7 @@ class API_SQLite
         }
         $this->data = is_array($data) ? $data : (array)$data;
         $this->table = $table;
-        return $this->query($this->prepareInsert());
+        return $this->execQuery($this->prepareInsert());
     }
 
     private function prepareInsert()
@@ -56,12 +56,12 @@ class API_SQLite
         $this->id = $this->data['id'];
         unset($this->data['id']);
         $this->table = $table;
-        return $this->query($this->prepareUpdate());
+        return $this->execQuery($this->prepareUpdate());
     }
 
     public function exec($sql)
     {
-        return $this->query($sql);
+        return $this->execQuery($sql);
     }
 
     private function prepareUpdate()
@@ -172,24 +172,19 @@ class API_SQLite
     public function setVersion($version)
     {
         $sql = "update config set value='" . $version . "' where key='version'";
-        return $this->query($sql);
+        return $this->execQuery($sql);
     }
 
     public function delete($id, $table = 'services')
     {
         $sql = 'delete from ' . $table . " where id=" . $id;
-        return $this->query($sql);
+        return $this->execQuery($sql);
     }
 
     public function deleteAll($table)
     {
         $sql = "delete from " . $table;
-        return $this->query($sql);
-    }
-
-    public function move($data, $table = 'services')
-    {
-        return $this->insert($data, $table);
+        return $this->execQuery($sql);
     }
 
     public function readConfig()
@@ -226,7 +221,7 @@ class API_SQLite
             $value = is_bool($val) ? ($val ? 'true' : 'false') : $val;
             $sql = "update config set value='" . $value
                 . "' where key='" . $key . "'";
-            if (!$this->query($sql)) {
+            if (!$this->execQuery($sql)) {
                 return false;
             }
         }
