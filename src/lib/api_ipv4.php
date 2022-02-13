@@ -30,8 +30,8 @@ class API_IPv4
 
     public function local(): string
     {
-        $start = ip2long('169.254.0.0');
-        $end = ip2long('169.254.255.255');
+        $start = ip2long('169.254.1.0');
+        $end = ip2long('169.254.254.255');
         $address = null ;
         while(!$address){
             $a = rand($start,$end);
