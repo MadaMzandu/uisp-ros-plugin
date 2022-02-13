@@ -145,7 +145,9 @@ class Service_Attributes extends Service_Base
 
     protected function set_insert(): void
     {
-        if (isset($this->data->extraData->entityBeforeEdit)) {
+        $newId = $this->data->extraData->entity->id ?? null ;
+        $oldId = $this->data->extraData->entityBeforeEdit->id ?? null ;
+        if ($oldId && $newId != $oldId ) {
             $this->data->changeType = 'move';
         }
     }
