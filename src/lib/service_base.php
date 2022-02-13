@@ -154,14 +154,4 @@ class Service_Base
         return $this->status;
     }
 
-    public function error()
-    {
-        return $this->status->message;
-    }
-
-    public function entity()
-    {
-        return $this->data->extraData->entity;
-    }
-
 }
