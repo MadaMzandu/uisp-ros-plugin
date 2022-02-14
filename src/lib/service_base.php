@@ -41,6 +41,7 @@ class Service_Base
         $this->status->error = false;
         $this->status->message = 'ok';
         $this->get_config();
+        $this->fix_attributes();
         $this->set_shortcuts();
     }
 
@@ -101,15 +102,12 @@ class Service_Base
         }
     }
 
-    protected function get_attribute_value($key, $entity = 'entity'): ?string
+    protected function get_value($key, $entity = null ): ?string
     { //returns an attribute value
-        $attributes = $this->$entity->attributes ?? [];
-        foreach ($attributes as $attribute) {
-            if ($key == $attribute->key) {
-                return $attribute->value;
-            }
+        if(!$entity) {
+            $entity = $this->mode ? 'before' : 'entity';
         }
-        return null;
+       return $this->$entity->attributes[$key]->value ?? null ;
     }
 
     protected function set_attribute($attribute, $value): bool
@@ -118,6 +116,21 @@ class Service_Base
         $data = ['attributes' => [['customAttributeId' => $attribute->id, 'value' => $value]]];
         $id = $this->entity->id;
         return (bool)(new API_Unms())->request('clients/services/' . $id, 'PATCH', $data);
+    }
+
+    protected function fix_attributes()
+    {
+        $objects = ['entity','entityBeforeEdit'];
+        foreach($objects as $object){
+            $array =  $this->data->extraData->$object->attributes ?? [];
+            $assoc = [] ;
+            foreach ($array as $attr){
+                $assoc[$attr->key] = $attr ;
+            }
+            if($array) {
+                $this->data->extraData->$object->attributes = $assoc;
+            }
+        }
     }
 
     protected function list_attribute($attribute): ?stdClass

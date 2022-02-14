@@ -38,17 +38,13 @@ class Service_Account extends Service_Attributes
 
     public function callerId(): ?string
     {
-        $entity = $this->mode ? 'before' : 'entity';
-        return $this->get_attribute_value(
-            $this->conf->pppoe_caller_attr, $entity
-        );
-
+        return $this->get_value(
+            $this->conf->pppoe_caller_attr);
     }
 
     protected function get_device(): ?stdClass
     {
-        $entity = $this->mode ? 'before' : 'entity';
-        $name = $this->get_attribute_value($this->conf->device_name_attr, $entity);
+        $name = $this->get_value($this->conf->device_name_attr);
         $dev = $this->db()->selectDeviceByDeviceName($name)
         or $this->setErr('the specified device was not found');
         return $dev;
@@ -56,8 +52,7 @@ class Service_Account extends Service_Attributes
 
     public function username(): ?string
     {
-        $entity = $this->mode ? 'before' : 'entity';
-        $username = $this->get_attribute_value($this->conf->pppoe_user_attr, $entity);
+        $username = $this->get_value($this->conf->pppoe_user_attr);
         if (!$username && $this->conf->auto_ppp_user) {
             $username = $this->client->username();
         }
@@ -87,8 +82,7 @@ class Service_Account extends Service_Attributes
 
     public function password(): string
     {
-        $entity = $this->mode ? 'before' : 'entity';
-        $password = $this->get_attribute_value($this->conf->pppoe_pass_attr, $entity);
+        $password = $this->get_value($this->conf->pppoe_pass_attr);
         if (!$password) {
             $password = $this->pass_generate();
         }
@@ -97,8 +91,8 @@ class Service_Account extends Service_Attributes
 
     public function mac(): ?string
     {
-        $entity = $this->mode ? 'before' : 'entity';
-        return $this->get_attribute_value($this->conf->mac_addr_attr, $entity);
+        return $this->get_value(
+            $this->conf->mac_addr_attr);
     }
 
     public function save(): bool
@@ -122,7 +116,7 @@ class Service_Account extends Service_Attributes
 
     public function ip(): ?string
     {
-        $ip = $this->get_attribute_value($this->conf->ip_addr_attr);
+        $ip = $this->get_value($this->conf->ip_addr_attr);
         if ($ip) {
             return $ip;
         }
@@ -135,8 +129,8 @@ class Service_Account extends Service_Attributes
 
     protected function ip_removed(): bool
     {
-        $ip = $this->get_attribute_value($this->conf->ip_addr_attr);
-        $old_ip = $this->get_attribute_value($this->conf->ip_addr_attr, 'before');
+        $ip = $this->get_value($this->conf->ip_addr_attr);
+        $old_ip = $this->get_value($this->conf->ip_addr_attr, 'before');
         return $old_ip && !$ip;
     }
 

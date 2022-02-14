@@ -41,8 +41,7 @@ class Service_Plan extends Service_Base
 
     public function target(): array
     {
-        $entity = $this->mode ? 'before' : 'entity';
-        $name = $this->get_attribute_value($this->conf->device_name_attr,$entity);
+        $name = $this->get_value($this->conf->device_name_attr);
         $devId = $this->db()->selectDeviceByDeviceName($name)->id ?? 0;
         $hosts = $this->db()->selectTargets($this->id(),$devId) ?? [];
         return $hosts ;
@@ -58,8 +57,7 @@ class Service_Plan extends Service_Base
 
     protected function device(): ?stdClass
     {
-        $entity = $this->mode ? 'before' : 'entity';
-        $name = $this->get_attribute_value($this->conf->device_name_attr,$entity);
+        $name = $this->get_value($this->conf->device_name_attr);
         $dev = $this->db()->selectDeviceByDeviceName($name)
             or $this->setErr('the specified device was not found');
         return $dev ;
@@ -76,7 +74,7 @@ class Service_Plan extends Service_Base
     public function children(): int
     {
         $entity = $this->mode ? 'before' : 'entity';
-        $name = $this->get_attribute_value($this->conf->device_name_attr,$entity);
+        $name = $this->get_value($this->conf->device_name_attr);
         $planId = $this->$entity->servicePlanId ?? 0;
         $deviceId = $this->db()->selectDeviceByDeviceName($name)->id ?? 0 ;
         $children = $this->db()->countDeviceServicesByPlanId($planId, $deviceId);

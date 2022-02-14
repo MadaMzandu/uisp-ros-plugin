@@ -69,8 +69,8 @@ class Service_Attributes extends Service_Base
 
     protected function check_username(): bool
     {
-        $username = $this->get_attribute_value($this->conf->pppoe_user_attr);
-        $password = $this->get_attribute_value($this->conf->pppoe_pass_attr);
+        $username = $this->get_value($this->conf->pppoe_user_attr);
+        $password = $this->get_value($this->conf->pppoe_pass_attr);
         $auto = $this->conf->auto_ppp_user ?? false;
         if ($auto || $username) {
             $this->pppoe = true;
@@ -81,14 +81,14 @@ class Service_Attributes extends Service_Base
 
     protected function check_username_change(): void
     {
-        $mac = $this->get_attribute_value($this->conf->mac_addr_attr);
-        $old_mac = $this->get_attribute_value($this->conf->mac_addr_attr, 'before');
+        $mac = $this->get_value($this->conf->mac_addr_attr);
+        $old_mac = $this->get_value($this->conf->mac_addr_attr, 'before');
         if ($old_mac && $mac != $old_mac) {
             $this->data->changeType = 'rename';
             return;
         }
-        $user = $this->get_attribute_value($this->conf->pppoe_user_attr);
-        $old_user = $this->get_attribute_value($this->conf->pppoe_user_attr, 'before');
+        $user = $this->get_value($this->conf->pppoe_user_attr);
+        $old_user = $this->get_value($this->conf->pppoe_user_attr, 'before');
         if ($old_user && $user != $old_user) {
             $this->data->changeType = 'rename';
         }
@@ -96,7 +96,7 @@ class Service_Attributes extends Service_Base
 
     protected function check_ip(): bool
     {
-        $ip = $this->get_attribute_value($this->conf->ip_addr_attr);
+        $ip = $this->get_value($this->conf->ip_addr_attr);
         if ($ip && !filter_var($ip, FILTER_VALIDATE_IP)) {
             $this->setErr('Invalid ip address was provided for the account');
             return false;
@@ -106,7 +106,7 @@ class Service_Attributes extends Service_Base
 
     protected function check_mac(): bool
     {
-        $mac = $this->get_attribute_value($this->conf->mac_addr_attr);
+        $mac = $this->get_value($this->conf->mac_addr_attr);
         if ($mac && filter_var($mac, FILTER_VALIDATE_MAC)) {
             $this->pppoe = false;
             return true;
@@ -117,12 +117,14 @@ class Service_Attributes extends Service_Base
 
     protected function check_device(): void
     {
-        $name = $this->get_attribute_value($this->conf->device_name_attr);
+        $name = $this->get_value($this->conf->device_name_attr);
         $device = $this->db()->selectDeviceByDeviceName($name) ?? null ;
         if (!($name && $device)) {
             $this->setErr('no device or unknown device name specified for service');
         }
     }
+
+
 
     protected function set_action(): void
     {
@@ -135,8 +137,8 @@ class Service_Attributes extends Service_Base
 
     protected function set_edit(): void
     {
-        $device = $this->get_attribute_value($this->conf->device_name_attr);
-        $old_device = $this->get_attribute_value($this->conf->device_name_attr, 'before');
+        $device = $this->get_value($this->conf->device_name_attr);
+        $old_device = $this->get_value($this->conf->device_name_attr, 'before');
         if ($old_device && strtolower($device) != strtolower($old_device)) {
             $this->data->changeType = 'move';
         } else {
