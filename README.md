@@ -48,6 +48,10 @@ The custom attributes in Configution (4) should be listed in the form when creat
 3. Mac address to provision DHCP instead.
 4. IP address to bypass the pool
 
+## Job queue - new feature
+
+Version 1.8.3 now has a job queue to handle webhook requests that arrive when the target device is unreachable. When the plugin receives a webhook for a mikrotik device that is offlie it is automatically queued for later execution. The job queue can be executed automatically by enabling the plugin's scheduled execution or manually from Panel > Settings > Jobs then clicking on the "run queue" button.
+
 ## Enabling automatic username and password generation
 
 1. You need to go to panel > settings > general and enable the checkbox for this feature.
@@ -79,6 +83,18 @@ The plugin provides four mikrotik parameters that allow customizing how disabled
 2. required : disabled address list - the name of firewall address list to assign suspended accounts. Firewall rules for the the list must be manually configured by admin. The rules can be nat rules to redirect and filter rules to drop.
 3. required : disabled rate - the rate limit to apply to disabled accounts. Automatically applied to ppp profile or dhcp queue. 
 4. optional : active address list - extra address list to apply to active accounts. Firewall rules must be manually configured by admin.
+
+## Recovering from a failed rebuild
+
+Should the rebuild utility fail to complete, simply restore the latest backup that is listed and the plugin should be restored to its previous state. Note that the rebuild utility makes a backup each time it is executed and that the plugin rotates every 7th backup. Therefore it is advisable to download at least one backup when doing maintenance.
+
+## Actions that interrupt customer service.
+
+The following actions require an active pppoe to disconnect to apply changes. This is normal behaviour. For mikrotik pppoe clients this takes less than a second however ubiquiti pppoe clients seem to take longer to reconnect after an administrative disconnect so it is advisable to use certain features with caution.
+
+1. Any edit of customer's username,password,ip address or callerid causes the active pppoe for the customer to be disconnected to apply changes.
+2. Changing the customer's plan, suspending the customer or moving the customer to a different device will also disconnect the active account to apply changes.
+3. Enabling or Disabling parent queues using "Panel > Settings > Disable Contention" requires ALL pppoe services to disconnect to apply changes.
 
 # Credits
 
