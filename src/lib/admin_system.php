@@ -18,7 +18,7 @@ class Admin_System extends Admin
         if($this->clear_cache()) {
             $url = '/clients/services/';
             foreach ($services as $item) {
-                if ($this->is_valid($item)) {
+                if ($this->hasAttributes($item)) {
                     $data = ['note' => $item['note']];
                     $api->request($url . $item['id'], 'PATCH', $data);
                 }
@@ -31,14 +31,15 @@ class Admin_System extends Admin
         return $this->db()->deleteAll('services');
     }
 
-    private function is_valid($item): bool
+    private function hasAttributes($item): bool
     {
-        if ($item['status'] > 5) {
+        $status = $item['status'] ?? 0 ;
+        if (!in_array($status,[1,3,5])) {
             return false;
         }
         $device = $this->get_attrib($this->conf->device_name_attr,$item);
         $user = $this->get_attrib($this->conf->pppoe_user_attr,$item);
         $mac = $this->get_attrib($this->conf->mac_addr_attr,$item);
-        return ($device && ($user || $mac));
+        return $device && ($user || $mac);
     }
 }

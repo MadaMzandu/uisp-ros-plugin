@@ -28,6 +28,22 @@ class API_IPv4
         return $this->addr;
     }
 
+    public function local(): string
+    {
+        $start = ip2long('169.254.1.0');
+        $end = ip2long('169.254.254.255');
+        $address = null ;
+        while(!$address){
+            $a = rand($start,$end);
+            $i = long2ip($a);
+            $lastOct = explode('.',$i)[3];
+            if($lastOct > 0 && $lastOct < 255){
+                $address = $i ;
+            }
+        }
+        return $address ;
+    }
+
     private function findUnused(): void
     {
         foreach ($this->pool as $range) {

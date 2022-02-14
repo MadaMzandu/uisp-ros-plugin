@@ -10,9 +10,10 @@ class Device_Base
     protected $read; // temporary reads for processing
     protected $conf;
 
-    public function __construct($data,$service=true)
+    public function __construct($data)
     {
-        $this->svc = $service ? $this->toObject($data) : null;
+        $service = is_object($data) && ($data->type ?? null) == 'service';
+        $this->svc = $service ? $data : null;
         $this->data = $service ? null : $this->toObject($data);
         $this->init();
     }
@@ -51,8 +52,15 @@ class Device_Base
             $this->setErr($e->getMessage());
             return null;
         }
+    }
 
-
+    protected function queueMe($msg): void
+    {
+        $this->setErr($msg);
+        $this->status->status = 'failed';
+        if($this->svc){
+            $this->svc->queue_job($this->status);
+        }
     }
 
     protected function setErr($msg): void

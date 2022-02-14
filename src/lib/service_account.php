@@ -8,8 +8,8 @@ include_once 'api_unms.php';
 class Service_Account extends Service_Attributes
 {
 
-    public $plan ;
-    public $client ;
+    public $plan;
+    public $client;
     public $ip; //ip address assignment
 
     protected function init(): void
@@ -17,7 +17,7 @@ class Service_Account extends Service_Attributes
         parent::init();
         $this->plan = new Service_Plan($this->data);
         $this->client = new Service_Client($this->data);
-        if($this->auto){
+        if ($this->auto) {
             $this->username() && $this->password();
             $this->status->message = 'Username/password trigger sent';
             $this->ready = false;
@@ -26,8 +26,9 @@ class Service_Account extends Service_Attributes
 
     public function disabled(): bool
     {
-        $entity = $this->move ? 'before' : 'entity';
-        return $this->$entity->status != 1 ;
+        $entity = $this->mode ? 'before' : 'entity';
+        $status = $this->$entity->status ?? 3;
+        return in_array($status, [3, 5]);
     }
 
     public function device(): ?stdClass
@@ -35,36 +36,24 @@ class Service_Account extends Service_Attributes
         return $this->get_device();
     }
 
-    public function move(bool $move): void
-    {
-        $this->move = $move;
-        $this->plan->move = $move;
-        $this->client->move = $move;
-    }
-
     public function callerId(): ?string
     {
-        $entity = $this->move ? 'before' : 'entity';
-        return $this->get_attribute_value(
-            $this->conf->pppoe_caller_attr,$entity
-        );
-
+        return $this->get_value(
+            $this->conf->pppoe_caller_attr);
     }
 
     protected function get_device(): ?stdClass
     {
-        $entity = $this->move ? 'before' : 'entity';
-        $name = $this->get_attribute_value($this->conf->device_name_attr,$entity);
+        $name = $this->get_value($this->conf->device_name_attr);
         $dev = $this->db()->selectDeviceByDeviceName($name)
-            or $this->setErr('the specified device was not found');
-        return $dev ;
+        or $this->setErr('the specified device was not found');
+        return $dev;
     }
 
     public function username(): ?string
     {
-        $entity = $this->move ? 'before' : 'entity';
-        $username = $this->get_attribute_value($this->conf->pppoe_user_attr,$entity);
-        if(!$username && $this->conf->auto_ppp_user){
+        $username = $this->get_value($this->conf->pppoe_user_attr);
+        if (!$username && $this->conf->auto_ppp_user) {
             $username = $this->client->username();
         }
         return $username;
@@ -78,24 +67,23 @@ class Service_Account extends Service_Attributes
         $chars[] = "1234567890";
         $chars[] = "!@#$&*?";
         $tmp = '';
-        while(strlen($tmp) < $len){
-            foreach ($chars as $set){
-                if(strlen($tmp) == $len){
+        while (strlen($tmp) < $len) {
+            foreach ($chars as $set) {
+                if (strlen($tmp) == $len) {
                     continue;
                 }
                 $tmp .= str_split($set)[array_rand(str_split($set))];
             }
         }
         $pass = str_shuffle($tmp);
-        return $this->set_attribute($this->conf->pppoe_pass_attr,$pass)
+        return $this->set_attribute($this->conf->pppoe_pass_attr, $pass)
             ? $pass : null;
     }
 
     public function password(): string
     {
-        $entity = $this->move ? 'before' : 'entity';
-        $password = $this->get_attribute_value($this->conf->pppoe_pass_attr,$entity);
-        if(!$password){
+        $password = $this->get_value($this->conf->pppoe_pass_attr);
+        if (!$password) {
             $password = $this->pass_generate();
         }
         return $password;
@@ -103,8 +91,8 @@ class Service_Account extends Service_Attributes
 
     public function mac(): ?string
     {
-        $entity = $this->move ? 'before' : 'entity';
-        return $this->get_attribute_value($this->conf->mac_addr_attr,$entity);
+        return $this->get_value(
+            $this->conf->mac_addr_attr);
     }
 
     public function save(): bool
@@ -128,7 +116,7 @@ class Service_Account extends Service_Attributes
 
     public function ip(): ?string
     {
-        $ip = $this->get_attribute_value($this->conf->ip_addr_attr);
+        $ip = $this->get_value($this->conf->ip_addr_attr);
         if ($ip) {
             return $ip;
         }
@@ -141,14 +129,14 @@ class Service_Account extends Service_Attributes
 
     protected function ip_removed(): bool
     {
-        $ip = $this->get_attribute_value($this->conf->ip_addr_attr);
-        $old_ip = $this->get_attribute_value($this->conf->ip_addr_attr,'before');
-        return $old_ip && !$ip  ;
+        $ip = $this->get_value($this->conf->ip_addr_attr);
+        $old_ip = $this->get_value($this->conf->ip_addr_attr, 'before');
+        return $old_ip && !$ip;
     }
 
     public function id(): int
     {
-        $entity = $this->move ? 'before' : 'entity';
+        $entity = $this->mode ? 'before' : 'entity';
         return $this->$entity->id;
     }
 
@@ -164,9 +152,9 @@ class Service_Account extends Service_Attributes
 
     public function delete(): bool
     {
-        $id = $this->move ? $this->before->id : $this->entity->id;
+        $id = $this->mode ? $this->before->id : $this->entity->id;
         $this->db()->delete($id);
-        return true ;
+        return true;
     }
 
 }

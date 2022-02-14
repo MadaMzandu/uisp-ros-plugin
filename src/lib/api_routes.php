@@ -40,8 +40,12 @@ class API_Routes
             'radius' => 'Radius_Account',
             'mikrotik' => 'MT_Account',
         ];
-        $type = $this->service->device()->type;
-        return $type ? $map[$type] : null;
+        $type = $this->service->device()->type ?? null ;
+        $device = $map[$type] ?? null;
+        if(!$device){
+            throw new Exception('Unknown device type');
+        }
+        return $device ;
     }
 
     public function status(): ?stdClass

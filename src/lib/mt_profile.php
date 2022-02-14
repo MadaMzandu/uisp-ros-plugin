@@ -13,7 +13,7 @@ class MT_Profile extends MT
         return $this->exec();
     }
 
-    private function children()
+    private function children(): bool
     {
         $this->path = '/ppp/secret/';
         $read = $this->read('?profile=' . $this->name()) ?? [];
@@ -37,14 +37,14 @@ class MT_Profile extends MT
             $this->pq->set_parent()
             && $this->write((object)$id, 'remove');
         }
-        return !$this->findErr('ok');;
+        return !$this->findErr('ok');
     }
 
     protected function data(): object
     {
         return (object)[
             'name' => $this->name(),
-            'local-address' => $this->local_addr(),
+            'local-address' => $this->local_address(),
             'rate-limit' => $this->rate()->text,
             'parent-queue' => $this->pq_name(),
             'address-list' => $this->address_list(),
@@ -70,8 +70,9 @@ class MT_Profile extends MT
     private function router_disabled(): bool
     {
         $id = $this->svc->device()->id ;
-        $disabled_routers = json_decode($this->conf->disabled_routers,true);
-        return isset($disabled_routers[$id]);
+        $conf = $this->conf->disabled_routers ?? "[]";
+        $routers = json_decode($conf,true);
+        return isset($routers[$id]);
     }
 
     protected function rate():stdClass
@@ -84,10 +85,11 @@ class MT_Profile extends MT
         return $rate;
     }
 
-    private function local_addr(): ?string
+    private function local_address(): ?string
     { // get one address for profile local address
         $savedPath = $this->path;
         $this->path = '/ip/address/';
+        $address = null;
         if ($this->read()) {
             foreach ($this->read as $prefix) {
                 if ($this->makeBool($prefix['dynamic'])
@@ -96,19 +98,19 @@ class MT_Profile extends MT
                     continue;
                 }
                 $address = explode('/', $prefix['address'])[0];
-                $this->path = $savedPath;
-                return $address;
+                break ;
             }
         }
         $this->path = $savedPath;
-        return null;
+        return $address ?? (new API_IPv4())->local();  // or generate one
     }
 
-    private function makeBool($value){
+    private function makeBool($value): bool
+    {
         return $value == "true";
     }
 
-    protected function findErr($success='')
+    protected function findErr($success='ok'): bool
     {
         $calls = [&$this,&$this->pq];
         foreach ($calls as $call){
@@ -133,22 +135,20 @@ class MT_Profile extends MT
 
     private function orphaned(): ?string
     {
-        if (!$this->exists()) {
+        if (!$this->exists) {
             return false;
         }
-        $profile = $this->entity;
-        return substr($profile['parent-queue'], 0, 1) == '*'
-            ? $profile['parent-queue'] : null;
+        $parent = $this->entity['parent-queue'] ?? '';
+        return substr($parent, 0, 1) == '*'
+            ? $parent : null;
     }
 
     protected function init(): void
     {
         parent::init();
         $this->path = '/ppp/profile/';
-        if($this->svc) {
-            $this->exists = $this->exists();
-            $this->pq = new MT_Parent_Queue($this->svc);
-        }
+        $this->exists = $this->exists();
+        $this->pq = new MT_Parent_Queue($this->svc);
     }
 
     protected function filter(): string

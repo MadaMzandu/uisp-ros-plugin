@@ -1,19 +1,21 @@
 <?php
 
-$version = '1.8.2b';
+$version = '1.8.3c';
 $conf = db()->readConfig();
 $current = $conf->version ?? '1.0.0';
 
 $conf_updates = json_decode(
     file_get_contents('includes/conf_updates.json'),true);
 
-function apply_updates() {
+function apply_updates(): bool
+{
    return table_updates()
        && conf_updates()
+       && remove_jobs()
        && rebuild();
 }
 
-function rebuild()
+function rebuild(): bool
 {
     global $current ;
     if($current < '1.8.2c'){
@@ -25,7 +27,18 @@ function rebuild()
     return true ;
 }
 
-function conf_updates()
+function remove_jobs(){
+    global $current ;
+    $file = 'data/queue.json';
+    if($current < '1.8.3c'){
+        if(file_exists($file)){
+            return file_put_contents($file,null);
+        }
+    }
+    return true ;
+}
+
+function conf_updates(): bool
 {
     global $conf, $conf_updates,$version;
     $ret = true ;
@@ -38,7 +51,8 @@ function conf_updates()
     return $ret && db()->setVersion($version);
 }
 
-function table_updates(){
+function table_updates(): bool
+{
     global $current ;
     if($current < '1.8.1') {
         $file = file_get_contents('includes/tables.sql');
@@ -56,12 +70,14 @@ function db():?API_SQLite
     }
 }
 
-function create_backup(){
+function create_backup()
+{
     $data = false ;
     return (new Admin_Backup($data))->run();
 }
 
-function bak_is_ok() {
+function bak_is_ok(): bool
+{
     if(!file_exists('data/.last_backup')){return false;}
     $file = file_get_contents('data/.last_backup');
     $last = explode(',', $file . ",2000-01-01 00:00:00")[1] ;
@@ -71,31 +87,9 @@ function bak_is_ok() {
     return $next > $now ;
 }
 
-function version_is_ok() {
+function version_is_ok(): bool
+{
     global $version, $current;
     return $current >= $version ;
 }
 
-function run_queue()
-{
-    $file = 'data/queue.json';
-    if(!file_exists($file)) {
-        touch($file);
-        file_put_contents($file,json_encode([]));
-    }
-    $q = json_decode(file_get_contents($file)) ?? [];
-    foreach($q as $item){
-        $s = new Service($item->data);
-        if($s->ready) {
-            $s->queued = true;
-            $m = new MT_Account($s);
-            $action = $s->action;
-            $m->$action();
-            if(!$m->status()->error){
-                unset($q->{$item->data->entityId});
-            }
-        }
-    }
-    $write = json_encode($q) ?? "[]";
-    file_put_contents($file,$write);
-}

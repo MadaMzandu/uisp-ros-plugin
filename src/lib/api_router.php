@@ -39,20 +39,25 @@ class API_Router
 
     public function route(): void
     {
-        if (!$this->data_is_valid()) { // check validity before system tasks
-            return;
-        }
+        try {
+            if (!$this->data_is_valid()) { // check basic validity
+                return;
+            }
 
-        if ($this->request_is_admin()) { // admin requests end here
-            return;
+            if ($this->request_is_admin()) { // execute admin calls
+                return;
+            }
+            $service = new Service($this->data);
+            if (!$service->ready) { // invalid service data
+                $this->status = $service->status();
+                return;
+            }
+            $route = new API_Routes($service); //execute
+            $this->status = $route->status();
+        } catch(Exception $error){
+            $this->status->error = true ;
+            $this->status->message = $error->getMessage();
         }
-        $service = new Service($this->data);
-        if (!$service->ready) {
-            $this->status = $service->status();
-            return;
-        }
-        $route = new API_Routes($service); //execute
-        $this->status = $route->status();
     }
 
     private function data_is_valid(): bool
@@ -61,13 +66,14 @@ class API_Router
             $this->set_message('No request data sent');
             return false;
         }
-        if (isset($this->data->entity) && $this->data->entity != 'service') {
+        $entity = $this->data->entity ?? null ;
+        if ($entity && $entity != 'service') {
             $this->set_message('ok');
             return false;
         }
-        if (isset($this->data->changeType) &&
-            !in_array($this->data->changeType, ['insert', 'edit', 'end',
-                'suspend', 'unsuspend', 'admin'])) {
+        $change = $this->data->changeType ?? 'none';
+        if (!in_array($change, ['insert', 'edit', 'end',
+                'suspend', 'unsuspend', 'admin','move','delete','rename'])) {
             $this->set_message('ok');
             return false;
         }
@@ -102,6 +108,7 @@ class API_Router
         }
         $response = [
             'status' => $status,
+            'error' => $this->status->error,
             'message' => $this->status->message ?? 'Unknown error',
             'data' => $this->result,
         ];

@@ -13,24 +13,25 @@ class MT_Queue extends MT
         return $this->exec();
     }
 
-    protected function findErr($success='')
+    protected function findErr($success = 'ok')
     {
-        $calls = [&$this,&$this->pq];
-        foreach ($calls as $call){
-            if(!$call->status()->error){continue;}
-            $this->status = $call->status();
-            return true;
+        $calls = [&$this, &$this->pq];
+        foreach ($calls as $call) {
+            if ($call->status()->error) {
+                $this->status = $call->status();
+                return true;
+            }
         }
         $this->setMess($success);
-        return false ;
+        return false;
     }
 
     private function delete(): bool
     {
-        if($this->exists) {
+        if ($this->exists) {
             $id['.id'] = $this->insertId;
             $this->write((object)$id, 'remove')
-                && $this->pq->set_parent();
+            && $this->pq->set_parent();
         }
         return !$this->findErr('ok');
     }
@@ -42,7 +43,7 @@ class MT_Queue extends MT
         $orphanId
             ? $this->pq->reset($orphanId)
             : $this->pq->set_parent();
-        $this->write($this->data(),$action);
+        $this->write($this->data(), $action);
         return !$this->findErr('ok');
     }
 
@@ -62,11 +63,11 @@ class MT_Queue extends MT
 
     protected function pq_name(): string
     {
-        if($this->conf->disable_contention){
+        if ($this->conf->disable_contention) {
             return 'none';
         }
-        $plan = 'servicePlan-'.$this->svc->plan->id().'-parent';
-        return $this->svc->disabled() ? 'none': $plan;
+        $plan = 'servicePlan-' . $this->svc->plan->id() . '-parent';
+        return $this->svc->disabled() ? 'none' : $plan;
     }
 
     protected function filter(): string
@@ -83,8 +84,8 @@ class MT_Queue extends MT
 
     private function orphaned(): ?string
     {
-        if (!$this->exists()) {
-            return false;
+        if (!$this->exists) {
+            return null;
         }
         $queue = $this->entity;
         return substr($queue['parent'], 0, 1) == '*'
@@ -95,10 +96,8 @@ class MT_Queue extends MT
     {
         parent::init();
         $this->path = '/queue/simple/';
-        if ($this->svc) {
-            $this->exists = $this->exists();
-            $this->pq = new MT_Parent_Queue($this->svc);
-        }
+        $this->exists = $this->exists();
+        $this->pq = new MT_Parent_Queue($this->svc);
     }
 
 

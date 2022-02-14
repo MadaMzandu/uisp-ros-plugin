@@ -10,7 +10,7 @@ class Devices extends Admin
             'device_id' => $this->data->id,
             'path' => '/ppp/profile'
         ];
-        $profiles = (new MT_Profile($data,false))->get();
+        $profiles = (new MT_Profile($data))->get();
         $plans = $this->get_plans();
         foreach($profiles as $profile)
         {
@@ -22,13 +22,83 @@ class Devices extends Admin
         $this->reset_pppoe($id);
     }
 
+    public function services(): void
+    {
+        $services = $this->get_map('clients/services');
+        $clients =  $this->get_map();
+        $records = $this->service_records();
+        $ids = array_keys($records);
+        $this->result = [];
+        foreach($ids as $id){
+            $this->result[$id] = $services[$id];
+            $this->result[$id]['attributes'] = $this->fix_attributes($services[$id]['attributes']);
+            $this->result[$id]['client'] = $clients[$services[$id]['clientId']];
+            $this->result[$id]['record'] = $records[$id];
+        }
+    }
+
+    public function delete(): bool
+    {
+
+        $db = $this->connect();
+        if (!$db->delete($this->data->id, 'devices')) {
+            $this->set_error('database error');
+            return false;
+        }
+        $this->set_message('device has been deleted');
+        return true;
+    }public function insert(): bool
+{
+
+    $db = $this->connect();
+    unset($this->data->id);
+    if (!$db->insert($this->data, 'devices')) {
+        $this->set_error('database error');
+        return false;
+    }
+    $this->set_message('device has been added');
+    return true;
+}
+
+    public function edit(): bool
+    {
+
+        $db = $this->connect();
+        if (!$db->edit($this->data, 'devices')) {
+            $this->set_error('database error');
+            return false;
+        }
+        $this->set_message('device has been updated');
+        return true;
+    }
+
+    public function getAllServices()
+    {
+        $this->result =
+            $this->db()->selectServices();
+        return (bool) $this->result;
+    }
+
+    public function get(): bool
+    {
+        if (!$this->read()) {
+            $this->set_error('unable to retrieve list of devices');
+            return false;
+        }
+        $this->setStatus();
+        $this->setUsers();
+        $this->result = $this->read;
+        $this->set_message('devices retrieved');
+        return true;
+    }
+
     private function reset_pppoe($id)
     {
         $data = (object)[
             'device_id' => $id,
             'path' => '/interface/pppoe-server/server'
         ];
-        $servers = (new MT($data,false))->get();
+        $servers = (new MT($data))->get();
         foreach ($servers as $server)
         {
             $edit = (object)[
@@ -36,15 +106,16 @@ class Devices extends Admin
                 'path' => '/interface/pppoe-server/server',
                 'action' => 'disable',
                 'data' => (object) ['.id' => $server['.id'],],];
-            (new MT($edit,false))->set();
+            (new MT($edit))->set();
             $edit->action = 'enable';
-            (new MT($edit,false))->set();
+            (new MT($edit))->set();
         }
 
     }
 
     private function get_plans()
     {
+        $data = [];
         $plans = (new Plans($data))->list();
         $plans_map = [];
         foreach ($plans as $plan) {
@@ -83,24 +154,11 @@ class Devices extends Admin
                 'parent-queue' => $parent,
             ],
         ];
-        return (new MT($data,false))->set();
+        return (new MT($data))->set();
     }
 
 
-    public function services(): void
-    {
-        $services = $this->get_map('clients/services');
-        $clients =  $this->get_map();
-        $records = $this->service_records();
-        $ids = array_keys($records);
-        $this->result = [];
-        foreach($ids as $id){
-            $this->result[$id] = $services[$id];
-            $this->result[$id]['attributes'] = $this->fix_attributes($services[$id]['attributes']);
-            $this->result[$id]['client'] = $clients[$services[$id]['clientId']];
-            $this->result[$id]['record'] = $records[$id];
-        }
-    }
+
 
     private function fix_attributes($attributes): array
     {
@@ -119,59 +177,9 @@ class Devices extends Admin
         return $fixed ;
     }
 
-    public function delete(): bool
-    {
-
-        $db = $this->connect();
-        if (!$db->delete($this->data->id, 'devices')) {
-            $this->set_error('database error');
-            return false;
-        }
-        $this->set_message('device has been deleted');
-        return true;
-    }
-
     private function connect(): API_SQLite
     {
         return new API_SQLite();
-    }
-
-    public function insert(): bool
-    {
-
-        $db = $this->connect();
-        unset($this->data->id);
-        if (!$db->insert($this->data, 'devices')) {
-            $this->set_error('database error');
-            return false;
-        }
-        $this->set_message('device has been added');
-        return true;
-    }
-
-    public function edit(): bool
-    {
-
-        $db = $this->connect();
-        if (!$db->edit($this->data, 'devices')) {
-            $this->set_error('database error');
-            return false;
-        }
-        $this->set_message('device has been updated');
-        return true;
-    }
-
-    public function get(): bool
-    {
-        if (!$this->read()) {
-            $this->set_error('unable to retrieve list of devices');
-            return false;
-        }
-        $this->setStatus();
-        $this->setUsers();
-        $this->result = $this->read;
-        $this->set_message('devices retrieved');
-        return true;
     }
 
     private function get_map($type='clients'): array
