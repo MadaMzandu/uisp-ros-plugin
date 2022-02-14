@@ -50,7 +50,9 @@ The custom attributes in Configution (4) should be listed in the form when creat
 
 ## Job queue - new feature
 
-Version 1.8.3 now has a job queue to handle webhook requests that arrive when the target device is unreachable. When the plugin receives a webhook for a mikrotik device that is offlie it is automatically queued for later execution. The job queue can be executed automatically by enabling the plugin's scheduled execution or manually from Panel > Settings > Jobs then clicking on the "run queue" button.
+Version 1.8.3 now has a job queue to handle webhook requests that arrive when the target device is unreachable. 
+
+When the plugin receives a webhook for a mikrotik device that is offlie it is automatically queued for later execution. The job queue can be executed automatically by enabling the plugin's scheduled execution or manually from Panel > Settings > Jobs then clicking on the "run queue" button.
 
 ## Enabling automatic username and password generation
 
