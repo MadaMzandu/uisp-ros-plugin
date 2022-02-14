@@ -5,7 +5,7 @@
     "displayName": "Router OS Plugin",
     "description": "Real time provisioning for ROS",
     "url": "",
-    "version": "1.8.3-beta",
+    "version": "1.8.3c",
     "ucrmVersionCompliancy": {
       "min": "2.14.0-beta4",
       "max": null

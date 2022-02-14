@@ -1,6 +1,6 @@
 <?php
 
-$version = '1.8.2b';
+$version = '1.8.3c';
 $conf = db()->readConfig();
 $current = $conf->version ?? '1.0.0';
 
@@ -11,6 +11,7 @@ function apply_updates(): bool
 {
    return table_updates()
        && conf_updates()
+       && remove_jobs()
        && rebuild();
 }
 
@@ -22,6 +23,17 @@ function rebuild(): bool
         $enable['disable_contention'] = false;
         return (new Settings($disable))->edit()
             && (new Settings($enable))->edit();
+    }
+    return true ;
+}
+
+function remove_jobs(){
+    global $current ;
+    $file = 'data/queue.json';
+    if($current < '1.8.3c'){
+        if(file_exists($file)){
+            return file_put_contents($file,null);
+        }
     }
     return true ;
 }
@@ -81,26 +93,3 @@ function version_is_ok(): bool
     return $current >= $version ;
 }
 
-function run_queue(): void
-{
-    $file = 'data/queue.json';
-    if(!file_exists($file)) {
-        touch($file);
-        file_put_contents($file,json_encode([]));
-    }
-    $q = json_decode(file_get_contents($file)) ?? [];
-    foreach($q as $item){
-        $s = new Service($item->data);
-        if($s->ready) {
-            $s->queued = true;
-            $m = new MT_Account($s);
-            $action = $s->action;
-            $m->$action();
-            if(!$m->status()->error){
-                unset($q->{$item->data->entityId});
-            }
-        }
-    }
-    $write = json_encode($q) ?? "[]";
-    file_put_contents($file,$write);
-}
