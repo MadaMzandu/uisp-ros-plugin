@@ -93,7 +93,7 @@ The plugin provides four mikrotik parameters that allow customizing how disabled
 
 ## Recovering from a failed rebuild
 
-Should the rebuild utility fail to complete, simply restore the latest backup that is listed and the plugin should be restored to its previous state. Note that the rebuild utility makes a backup each time it is executed and that the plugin rotates every 7th backup. Therefore it is advisable to download at least one backup when doing maintenance.
+Should the rebuild utility fail to complete, simply restore the latest backup that is listed and the plugin should be restored to its previous state. Note that the rebuild utility makes a backup each time it is executed and that the plugin rotates every 7th backup. Therefore it is advisable to download at least one backup when things get out of hand.
 
 ## Actions that interrupt customer service.
 
