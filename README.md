@@ -55,7 +55,7 @@ Version 1.8.3 now has a job queue to handle webhook requests that arrive when th
 When the plugin receives a webhook for a mikrotik device that is offline the request is automatically queued for later execution. The job queue can be executed automatically by enabling the plugin's scheduled execution or manually from Panel > Settings > Jobs then clicking on the "run queue" button.
 
 ## Contention ratios and volume
-The maximum queue size that is acceptable on a Mikrotik is 4.294Gbps or 4294Mbps. If contention is enabled in the plugin then ensure that plan limit x contention x number of plan customers does not exceed 4.294Gbps. 
+The maximum queue size that is acceptable on a Mikrotik is 4.294Gbps or 4294Mbps. If contention is enabled in the plugin then ensure that plan limit x number of plan customers x contention ratio does not exceed 4.294Gb
 
 If total for the parent queue exceeds this limit the plugin will fail to add new customers to the plan until the contention ratio is adjusted. If contention is not required then disable contention in Panel > Settings > General. Warning!! Disabling contention requires all customers to disconnect to apply changes therefore schedule maintanance especially if pppoe clients are on ubiquiti devices. PPPoE clients on mikrotik devices will reconnect in less than a second so this is not a problem if clients have mikrotik devices.
 
