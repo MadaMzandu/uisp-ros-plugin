@@ -55,9 +55,11 @@ Version 1.8.3 now has a job queue to handle webhook requests that arrive when th
 When the plugin receives a webhook for a mikrotik device that is offline the request is automatically queued for later execution. The job queue can be executed automatically by enabling the plugin's scheduled execution or manually from Panel > Settings > Jobs then clicking on the "run queue" button.
 
 ## Contention ratios and volume
-The maximum queue size that is acceptable on a Mikrotik is 4.294Gbps or 4294Mbps. If contention is enabled in the plugin then ensure that plan limit x number of plan customers x contention ratio does not exceed 4.294Gb
+The maximum queue size that is acceptable on a Mikrotik is 4.294Gbps or 4294Mbps. If the total rate of the parent queue exceeds this limit the plugin will fail to add new customers to the plan until the contention ratio is adjusted. 
 
-If total for the parent queue exceeds this limit the plugin will fail to add new customers to the plan until the contention ratio is adjusted. If contention is not required then disable contention in Panel > Settings > General. Warning!! Disabling contention requires all customers to disconnect to apply changes therefore schedule maintanance especially if pppoe clients are on ubiquiti devices. PPPoE clients on mikrotik devices will reconnect in less than a second so this is not a problem if clients have mikrotik devices.
+If contention is enabled in the plugin then admin must ensure that plan limit x number of plan customers x contention ratio does not exceed 4.294Gb. For example a plan for 50Mpbs targeting 200 customers with a contention ratio of 1:1 (1/1) will not work because 50 x 200 x 1/1 = 10000Mbps or 10Gbs which exceeds the Mikrotik limit. The correct contention ratio for this plan must start at 1:3 (1/3) or above which is 50 x 200 x 1/3 = 3.3Gbps. This will work on Mikrotik.
+
+If contention is not required then disable contention in Panel > Settings > General. Warning!! Disabling contention requires all customers to disconnect to apply changes therefore schedule maintanance especially if pppoe clients are on ubiquiti devices. PPPoE clients on mikrotik devices will reconnect in less than a second so this is not a problem for Mikrotik pppoe clients.
 
 ## Enabling automatic username and password generation
 
