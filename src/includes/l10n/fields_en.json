@@ -9,8 +9,8 @@
   "device_ip" :
   {
     "name" : "ip",
-    "label" : "Ip address",
-    "hint" : "10.88.1.1",
+    "label" : "Hostname or Ip address",
+    "hint" : "test.example.com / 10.88.1.1",
     "describe" : true,
     "description" : "Set the Ip address for the device"
   },
