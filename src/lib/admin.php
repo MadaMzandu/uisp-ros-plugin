@@ -64,6 +64,7 @@ class Admin
             'unms' => 'API_Unms',
             'system' => 'Admin_System',
             'backup' => 'Admin_Backup',
+            'lang' => 'Api_Lang',
         );
         $target = $this->data->target ?? 'none' ;
         $module = $map[$target] ?? null ;
