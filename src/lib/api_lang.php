@@ -9,9 +9,9 @@ class Api_Lang extends Admin
     protected function init(): void
     {
         parent::init();
-        $default = 'includes/l10n/fields_en.json';
+        $default = 'includes/l10n/messages_en.json';
         $lang = strtolower($this->data->lang ?? 'en') ;
-        $type = strtolower($this->data->type ?? 'fields') ;
+        $type = strtolower($this->data->type ?? 'messages') ;
         $file = 'includes/l10n/' . $type . '_' . $lang . '.json';
         $this->file = file_exists($file) ? $file : $default ;
         if(!file_exists($this->file)){
