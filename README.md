@@ -50,7 +50,7 @@ The custom attributes in Configution (4) should be listed in the form when creat
 
 ## Localized Languages - new feature
 
-In version 1.8.4 we have added and are testing support for languages. Currently the languages are supported en,es,fr,pt and de.
+In version 1.8.4 we have added and are testing support for languages. Currently the languages supported are en,es,fr,pt and de.
 
 Please open an issue if you think there is a problem with the translations. For those that can spare the time and would like to contribute by translating to your preferred language the instructions will soon be posted in https://github.com/MadaMzandu/uisp-ros-plugin/tree/main/src/includes/l10n.
 
