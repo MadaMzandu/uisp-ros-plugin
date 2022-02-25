@@ -247,16 +247,15 @@ class Validation extends Admin
     {
         $fields = ['ip'];
         foreach ($fields as $field) {
-            if (!in_array($field, $this->keys)) {
-                continue;
-            }
-            if (!filter_var($this->data->{$field}, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
-                $this->setFieldError($field, 'this ip address is not valid');
-                $this->set_error('failed:ip validation');
-                return false;
+            $ip = $this->data->{$field} ?? null;
+            if (filter_var($ip, FILTER_VALIDATE_IP)
+                || filter_var($ip, FILTER_VALIDATE_DOMAIN, FILTER_FLAG_HOSTNAME)) {
+                return true;
             }
         }
-        return true;
+        $this->setFieldError($field, 'hostname or ip address is not valid');
+        $this->set_error('failed:host validation');
+        return false;
     }
 
 }
