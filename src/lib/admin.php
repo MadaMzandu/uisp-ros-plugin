@@ -7,6 +7,7 @@ include_once 'admin_validation.php';
 include_once 'admin_backup.php';
 include_once 'admin_system.php';
 include_once 'api_jobs.php';
+include_once 'api_lang.php';
 
 class Admin
 {
@@ -64,6 +65,7 @@ class Admin
             'unms' => 'API_Unms',
             'system' => 'Admin_System',
             'backup' => 'Admin_Backup',
+            'lang' => 'Api_Lang',
         );
         $target = $this->data->target ?? 'none' ;
         $module = $map[$target] ?? null ;
