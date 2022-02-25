@@ -29,6 +29,7 @@
   "contentionRatio": "contention ratio",
   "customTitle": "Custom settings",
   "dataLimit": "data limit",
+  "date" : "Date",
   "deleteDevice": "deleteDevice",
   "device": "device",
   "devicesTitle": "Managed devices",
