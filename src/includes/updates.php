@@ -76,7 +76,7 @@ function create_backup()
     return (new Admin_Backup($data))->run();
 }
 
-function bak_is_ok(): bool
+function bak_not_ok(): bool
 {
     if(!file_exists('data/.last_backup')){return false;}
     $file = file_get_contents('data/.last_backup');
@@ -84,12 +84,19 @@ function bak_is_ok(): bool
     $now = new DateTime();
     $interval = new DateInterval('P1D');
     $next = (new DateTime($last))->add($interval);
-    return $next > $now ;
+    return $now >= $next ;
 }
 
-function version_is_ok(): bool
+function version_not_ok(): bool
 {
     global $version, $current;
-    return $current >= $version ;
+    return $version > $current ;
 }
 
+function user_not_ok(): bool
+{
+    // return false ;
+    $security = \Ubnt\UcrmPluginSdk\Service\UcrmSecurity::create();
+    $user = $security->getUser();
+    return !$user || $user->isClient ;
+}
