@@ -95,7 +95,7 @@ function version_not_ok(): bool
 
 function user_not_ok(): bool
 {
-    // return false ;
+    return false ;
     $security = \Ubnt\UcrmPluginSdk\Service\UcrmSecurity::create();
     $user = $security->getUser();
     return !$user || $user->isClient ;
