@@ -9,7 +9,9 @@ class Service_Attributes extends Service_Base
     public $pppoe;
     public $unsuspend = false;
     public $move = false;
+    public $accountType = 1;  // 0 - dhcp , 1 - ppp , 2 - hotspot
     protected $auto;
+
 
     protected function init(): void
     {
@@ -71,9 +73,10 @@ class Service_Attributes extends Service_Base
     {
         $username = $this->get_value($this->conf->pppoe_user_attr);
         $password = $this->get_value($this->conf->pppoe_pass_attr);
+        $hotspot = $this->get_value($this->conf->hs_account_attr);
         $auto = $this->conf->auto_ppp_user ?? false;
         if ($auto || $username) {
-            $this->pppoe = true;
+            $this->accountType = $hotspot ? 2 :1 ;
             $this->auto = !($username && $password);
         }
         return $auto || $username;
@@ -108,7 +111,7 @@ class Service_Attributes extends Service_Base
     {
         $mac = $this->get_value($this->conf->mac_addr_attr);
         if ($mac && filter_var($mac, FILTER_VALIDATE_MAC)) {
-            $this->pppoe = false;
+            $this->accountType = 0 ;
             return true;
         }
         return false;

@@ -24,15 +24,16 @@ class Devices extends Admin
 
     public function services(): void
     {
-        $services = $this->get_map('clients/services');
-        $clients =  $this->get_map();
+        $opts = $this->options();
+        $services = $this->get_map('clients/services' . $opts);
+        $clients = [] ;// $this->get_map();
         $records = $this->service_records();
         $ids = array_keys($records);
         $this->result = [];
         foreach($ids as $id){
             $this->result[$id] = $services[$id];
             $this->result[$id]['attributes'] = $this->fix_attributes($services[$id]['attributes']);
-            $this->result[$id]['client'] = $clients[$services[$id]['clientId']];
+            $this->result[$id]['client'] = $clients[$services[$id]['clientId']] ?? [];
             $this->result[$id]['record'] = $records[$id];
         }
     }
@@ -90,6 +91,34 @@ class Devices extends Admin
         $this->result = $this->read;
         $this->set_message('devices retrieved');
         return true;
+    }
+
+    private function options(): string
+    {
+        $keys = array_keys((array) $this->data->options ?? []);
+        $attribs = $this->get_attributes();
+        $deviceAttribute = $attribs[$this->conf->device_name_attr]  ?? null ;
+        $deviceName = $this->db()->selectDeviceById($this->data->id)->name ?? null ;
+        $opts = '?';
+        if($deviceAttribute && $deviceName){
+            $opts .= 'customAttributeId=' . $deviceAttribute ;
+            $opts .= '&customAttributeValue=' . $deviceName ;
+        }
+        foreach($keys as $key){
+            $opts .= '&' .  $key . '=' . $this->data->options->$key ;
+        }
+        return $opts ;
+    }
+
+    public function get_attributes(){
+        $api = new API_Unms();
+        $api->assoc = true ;
+        $array = [];
+        $attribs = $api->request('/custom-attributes') ;
+        foreach($attribs as $attrib){
+            $array[$attrib['key']] = $attrib['id'];
+        }
+        return $array ;
     }
 
     private function reset_pppoe($id)
@@ -156,9 +185,6 @@ class Devices extends Admin
         ];
         return (new MT($data))->set();
     }
-
-
-
 
     private function fix_attributes($attributes): array
     {

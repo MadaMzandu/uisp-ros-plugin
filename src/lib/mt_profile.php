@@ -47,11 +47,11 @@ class MT_Profile extends MT
             );
         }
         return true ;
-    }
+	}
+
 
     private function account_disabled(): bool
     {
-        // $this->path = '/ppp/secret/'; path is already set by prev call
         $read = $this->read('?name='.$this->svc->username());
         return $read && $read[0]['profile'] == $this->conf->disabled_profile;
     }
@@ -70,6 +70,25 @@ class MT_Profile extends MT
     }
 
     protected function data($action): object
+    {
+        switch ($this->svc->accountType){
+            case 2: return $this->hotspot_data($action);
+            default: return $this->ppp_data($action);
+        }
+    }
+
+    private function hotspot_data(): object
+    {
+        return (object)[
+            'name' => $this->name(),
+            'rate-limit' => $this->rate()->text,
+            'parent-queue' => $this->pq_name(),
+            'address-list' => $this->address_list(),
+            '.id' => $this->name(),
+        ];
+    }
+
+    private function ppp_data(): object
     {
         return (object)[
             'action' => $action,
@@ -118,7 +137,6 @@ class MT_Profile extends MT
 
     private function local_address(): ?string
     { // get one address for profile local address
-        $savedPath = $this->path;
         $this->path = '/ip/address/';
         $address = null;
         if ($this->read()) {
@@ -132,7 +150,7 @@ class MT_Profile extends MT
                 break ;
             }
         }
-        $this->path = $savedPath;
+        $this->path = $this->path();
         return $address ?? (new API_IPv4())->local();  // or generate one
     }
 
@@ -180,7 +198,7 @@ class MT_Profile extends MT
     protected function init(): void
     {
         parent::init();
-        $this->path = '/ppp/profile/';
+        $this->path = $this->path();
         $this->pq = new MT_Parent_Queue($this->svc);
     }
 
@@ -293,6 +311,14 @@ class MT_Profile extends MT
 
         }
         return (bool) $this->cache ;
+	}
+	
+    private function path():string
+    {
+        switch($this->svc->accountType){
+            case 2: return '/ip/hotspot/profile' ;
+            default : return '/ppp/profile';
+        }
     }
 
 }

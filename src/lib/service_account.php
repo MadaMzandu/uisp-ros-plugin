@@ -150,7 +150,7 @@ class Service_Account extends Service_Attributes
     protected function assign_ip(): ?string
     {
         $device = false;
-        if ($this->conf->router_ppp_pool || !$this->pppoe) {
+        if ($this->conf->router_ppp_pool || $this->svc->accountType == 0) {
             $device = $this->get_device();
         }
         $this->ip = (new API_IPv4())->assign($device);

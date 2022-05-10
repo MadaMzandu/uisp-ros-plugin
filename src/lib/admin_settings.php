@@ -26,8 +26,12 @@ class Settings extends Admin
 
     private function apply(): bool
     {
-        $keys = ['disable_contention']; // keys that have apply methods
+        $apps = ['disable_contention']; // keys that have apply methods
+        $keys = array_keys((array)$this->data);
         foreach($keys as $key){
+            if(!in_array($key,$apps)){
+                continue;
+            }
             if($this->hasChanged($key)){
                 return $this->$key();  // run apply method for key
             }
@@ -39,7 +43,7 @@ class Settings extends Admin
     {
         $conf = $this->db()->readConfig()->{$key} ?? null ;
         $val = $this->data->{$key} ?? null ;
-        return is_bool($conf) &&  $val != $conf ;
+        return $conf &&  $val != $conf ;
     }
 
     private function disable_contention(): bool
