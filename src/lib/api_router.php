@@ -101,16 +101,17 @@ class API_Router
     public function http_response(): ?string
     {
         header('content-type: application/json');
-        $status = 'ok';
+        $stat = 'ok';
         if ($this->status->error) { // failed response
             header('X-API-Response: 202', true, 202);
-            $status = 'failed';
+            $stat = 'failed';
         }
         $response = [
-            'status' => $status,
+            'status' => $stat,
             'error' => $this->status->error,
             'message' => $this->status->message ?? 'Unknown error',
-            'data' => $this->result,
+            'duration' => $this->status->duration ?? 0,
+            'data' => $this->result ?? [],
         ];
         return json_encode($response);
     }
