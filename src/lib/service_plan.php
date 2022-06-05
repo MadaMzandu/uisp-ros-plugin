@@ -71,6 +71,11 @@ class Service_Plan extends Service_Base
         return $this->plan;
     }
 
+    public function ratio(): int
+    {
+        return $this->get()->ratio ?? 1;
+    }
+
     public function children(): int
     {
         $entity = $this->mode ? 'before' : 'entity';

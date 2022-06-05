@@ -3,7 +3,7 @@ include_once 'service_plan.php';
 include_once 'service_attributes.php';
 include_once 'service_client.php';
 include_once 'api_ipv4.php';
-include_once 'api_unms.php';
+include_once 'api_unnm.php';
 
 class Service_Account extends Service_Attributes
 {
@@ -112,6 +112,13 @@ class Service_Account extends Service_Attributes
             'status' => $this->entity->status,
             'device' => $this->get_device()->id
         ];
+    }
+
+    public function old_ip(): ?string
+    {
+        return $this->db()
+                ->selectServiceById($this->id())
+                ->address ?? null ;
     }
 
     public function ip(): ?string
