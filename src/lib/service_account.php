@@ -3,7 +3,7 @@ include_once 'service_plan.php';
 include_once 'service_attributes.php';
 include_once 'service_client.php';
 include_once 'api_ipv4.php';
-include_once 'api_unnm.php';
+include_once '_temp.php';
 
 class Service_Account extends Service_Attributes
 {
@@ -27,8 +27,8 @@ class Service_Account extends Service_Attributes
     public function disabled(): bool
     {
         $entity = $this->mode ? 'before' : 'entity';
-        $status = $this->$entity->status ?? 3;
-        return in_array($status, [3, 5]);
+        $status = $this->$entity->status ?? 1;
+        return $status == 3 ;
     }
 
     public function device(): ?stdClass
