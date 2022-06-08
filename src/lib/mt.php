@@ -11,6 +11,7 @@ class MT extends Device
     protected $entity;
     protected $device;
     protected $exists;
+    protected $batch ;
 
     public function set()
     {
@@ -24,21 +25,40 @@ class MT extends Device
         return $this->read($this->getData('filter'));
     }
 
-    protected function write($data, $action = 'set')
+    protected function write($data=null, $action = 'set')
+    {
+        if(is_object($data)){
+            $data->action = $action ;
+            $this->batch[] = (array)$data;
+        }
+        return $this->write_batch();
+    }
+
+    protected function write_batch(): bool
     {
         $api = $this->connect();
-        if ($action == 'add') {
-            unset($data->{'.id'});
+        foreach($this->batch as $data){
+            $action = $data['action'] ?? 'set';
+            unset($data['action']);
+            if($action == 'add') unset($data['.id']);
+            $api->write($this->path . $action,false);
+            foreach (array_keys($data) as $key ){
+                $api->write('=' . $key . '=' . $data[$key],false);
+            }
+            $api->write(';');
+            $this->read = $api->read();
+            if($this->has_error()){
+                $api->disconnect();
+                return false ;
+            }
         }
-        $api->write($this->path . $action, false);
-        foreach (array_keys((array)$data) as $key) {
-            $api->write('=' . $key . '=' . $data->$key, false);
-        }
-        $api->write(';'); // trailing semicolon works
-        $this->read = $api->read() ?? [];
         $api->disconnect();
-        return $this->has_error() ? false
-            : ($this->read ?: true);
+        return true ;
+    }
+
+    protected function set_batch($data)
+    {
+        $this->batch[] = (array)$data ;
     }
 
     private function getData($property)
@@ -80,7 +100,10 @@ class MT extends Device
 
     private function has_error(): bool
     {
-        $error = $this->read['!trap'][0]['message'] ?? null;
+        $error = null ;
+        if(is_array($this->read)){
+            $error = $this->read['!trap'][0]['message'] ?? null;
+        }
         if ($error) {
             $this->setErr($error);
         }
@@ -92,6 +115,7 @@ class MT extends Device
         parent::init();
         $this->entity = null;
         $this->insertId = null;
+        $this->batch = [];
     }
 
     protected function comment(): string
