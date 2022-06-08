@@ -124,12 +124,10 @@ class Service_Attributes extends Service_Base
         }
     }
 
-
-
     protected function set_action(): void
     {
         $change = $this->data->changeType ?? null ;
-        if (in_array($change, ['end', 'insert', 'edit', 'unsuspend'])) {
+        if (in_array($change, ['end','edit', 'unsuspend'])) {
             $this->{'set_'.$change}();
         }
         $this->action = $this->data->changeType ??  null;
@@ -139,9 +137,13 @@ class Service_Attributes extends Service_Base
     {
         $device = $this->get_value($this->conf->device_name_attr);
         $old_device = $this->get_value($this->conf->device_name_attr, 'before');
+        $status = $this->entity->status ?? -1 ;
         if ($old_device && strtolower($device) != strtolower($old_device)) {
             $this->data->changeType = 'move';
-        } else {
+        } elseif (in_array($status,[2,5])){
+            $this->data->changeType = 'delete';
+        }
+        else {
             $this->check_username_change();
         }
     }
