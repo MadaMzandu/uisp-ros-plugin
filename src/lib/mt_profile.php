@@ -4,6 +4,21 @@ class MT_Profile extends MT
 {
 
     private $pq; //parent queue object
+    private $profiles ;
+    private $secret ;
+    private $disabled ;
+
+    public function apply($data)
+    {
+        $this->exists = $this->read_child($data);
+        $contentions = ['rename' => 0,'edit' => 0,'delete' => -1];
+        $action = $this->svc->action ;
+        $this->svc->plan->contention = $contentions[$action] ?? 1;
+        if($this->svc->plan->contention < 0 && !$this->children()){
+            return $this->delete();
+        }
+        return $this->check_suspend() && $this->exec();
+    }
 
     public function set_profile(): bool
     {
@@ -13,14 +28,28 @@ class MT_Profile extends MT
         return $this->exec();
     }
 
+    private function check_suspend(): bool
+    {
+        $action = $this->svc->action ;
+        if(!in_array($action,['suspend','unsuspend']))
+            return true ;
+        $name = $this->secret['profile'] ?? null ;
+        $children = $this->count_secrets($name) ?? 2; // pretend we have children on fail
+        if(!max(--$children,0)){
+            $this->set_batch(
+                ['.id' => $name,
+                    'action' => 'remove'
+                    ]
+            );
+        }
+        return true ;
+    }
+
     private function children(): bool
     {
-        $this->path = '/ppp/secret/';
-        $read = $this->read('?profile=' . $this->name()) ?? [];
-        $count = sizeof($read) ?? 0;
-        $count += $this->account_disabled() ? 0 : -1; // do not deduct if account is disabled
-        $this->path = '/ppp/profile/'; //restore path before return
-        return (bool)max($count, 0);
+        $count = $this->entity['children'] ?? 0 ;
+        $children = $count + $this->svc->plan->contention ;
+        return max($children,0);
     }
 
     private function account_disabled(): bool
@@ -33,22 +62,25 @@ class MT_Profile extends MT
     private function delete(): bool
     {
         if($this->exists) {
-            $id['.id'] = $this->insertId ?? $this->name();
-            $this->pq->set_parent()
-            && $this->write((object)$id, 'remove');
+            $data['.id'] = $this->insertId ?? $this->name();
+            $data['action'] = 'remove';
+            $this->set_batch($data);
+            $this->pq->apply()
+            && $this->write();
         }
         return !$this->findErr('ok');
     }
 
-    protected function data(): object
+    protected function data($action): object
     {
         return (object)[
+            'action' => $action,
             'name' => $this->name(),
             'local-address' => $this->local_address(),
             'rate-limit' => $this->rate()->text,
             'parent-queue' => $this->pq_name(),
             'address-list' => $this->address_list(),
-            '.id' => $this->name(),
+            '.id' => $this->insertId ?? $this->name(),
         ];
     }
 
@@ -60,11 +92,12 @@ class MT_Profile extends MT
 
     private function pq_name(): ?string
     {
-        if($this->router_disabled() || $this->conf->disable_contention){
+        if ($this->router_disabled()
+            || $this->svc->disabled()
+            || $this->conf->disable_contention) {
             return 'none';
         }
-        $plan = 'servicePlan-'.$this->svc->plan->id().'-parent';
-        return $this->svc->disabled() ? 'none': $plan;
+        return $this->pq->name();
     }
 
     private function router_disabled(): bool
@@ -128,8 +161,9 @@ class MT_Profile extends MT
         $orphanId = $this->orphaned();
         $orphanId
             ? $this->pq->reset($orphanId)
-            : $this->pq->set_parent();
-        $this->write($this->data(),$action);
+            : $this->pq->apply();
+        $this->set_batch($this->data($action));
+        $this->write();
         return !$this->findErr('ok');
     }
 
@@ -147,8 +181,15 @@ class MT_Profile extends MT
     {
         parent::init();
         $this->path = '/ppp/profile/';
-        $this->exists = $this->exists();
         $this->pq = new MT_Parent_Queue($this->svc);
+    }
+
+    protected function exists(): bool
+    {
+        if($this->read_profiles()
+            && $this->find_profile()) return true ;
+        $this->add_profile();
+        return false ;
     }
 
     protected function filter(): string
@@ -156,11 +197,77 @@ class MT_Profile extends MT
         return '?name=' . $this->name();
     }
 
-    protected function name()
+    protected function base_name()
     {
         return $this->svc->disabled()
             ? $this->conf->disabled_profile
             : $this->svc->plan->name();
+    }
+
+    public function name(): ?string
+    {
+        return $this->entity['name'] ?? null;
+    }
+
+    private function count_secrets($profile): int
+    {
+        $this->path = '/ppp/secret/';
+        $read = $this->read('?profile=' . $profile) ?? [];
+        $this->path = '/ppp/profile/';
+        return sizeof($read) ?? 0;
+    }
+
+    private function read_child($data)
+    {
+        $this->secret = [] ;
+        if(is_array($data)){
+            foreach(array_keys($data) as $key){
+                $this->secret[$key] = $data[$key];
+            }
+        }
+        return $this->exists() ;
+    }
+
+    private function find_profile(): bool
+    {
+        $name = $this->secret['profile'] ?? null;
+        $entity = [] ;
+        if($name){
+            $entity = $this->profiles[$name] ?? [];
+        }else {
+            foreach($this->profiles as $p){
+                if($p['children'] < 128){
+                    $entity = $p ;
+                    break ;
+                }
+            }
+        }
+        $this->entity = $entity ;
+        $this->insertId = $entity['.id'] ?? null ;
+        return (bool) $this->insertId ;
+    }
+
+    private function add_profile()
+    {
+        $series = sizeof($this->profiles) ?? 0;
+        $suffix = null ;
+        if($series) $suffix = '-' . $series;
+        $name = $this->base_name() . $suffix ;
+        $this->entity['name'] = $name ;
+    }
+
+    private function read_profiles(): bool
+    {
+        $this->profiles = [];
+        $read = $this->read();
+        foreach($read as $p){
+            $re = '/' . $this->base_name() . '/';
+            if(preg_match($re,$p['name'])){
+                $p['children'] = $this->count_secrets($p['name']);
+                $this->profiles[$p['name']] = $p ;
+            }
+        }
+        return (bool) $this->profiles ;
     }
 
 }

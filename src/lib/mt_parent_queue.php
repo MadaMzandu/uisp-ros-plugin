@@ -215,8 +215,7 @@ class MT_Parent_Queue extends MT
     private function find_name(): ?string
     {
         return $this->child['parent']
-            ?? $this->child['parent-queue']
-            ?? null ;
+            ?? $this->child['parent-queue'] ?? null ;
     }
 
     private function read_parents(): bool

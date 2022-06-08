@@ -26,7 +26,7 @@ class MT_Account extends MT
     private function set_profile(): bool
     {
         return $this->svc->pppoe
-            ? $this->profile->set_profile()
+            ? $this->profile->apply($this->entity)
             : $this->q->set_queue();
     }
 
@@ -64,7 +64,7 @@ class MT_Account extends MT
     private function profile(): string
     {
         return $this->svc->disabled()
-            ? $this->conf->disabled_profile : $this->svc->plan->name();
+            ? $this->conf->disabled_profile : $this->profile->name();
     }
 
     private function dhcp_data(): stdClass
@@ -124,6 +124,7 @@ class MT_Account extends MT
 
     public function move(): bool
     {
+        $this->svc->action = 'delete';
         return $this->delete()
             && $this->move_insert();
     }
