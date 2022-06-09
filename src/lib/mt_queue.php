@@ -39,10 +39,11 @@ class MT_Queue extends MT
     private function exec(): bool
     {
         $action = $this->exists ? 'set' : 'add';
-        $orphanId = $this->orphaned();
+        /*$orphanId = $this->orphaned();
         $orphanId
             ? $this->pq->reset($orphanId)
-            : $this->pq->apply($this->entity);
+            : $this->pq->apply($this->entity);*/
+        $this->pq->apply($this->entity);
         $this->write($this->data(), $action);
         return !$this->findErr('ok');
     }
