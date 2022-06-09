@@ -138,9 +138,10 @@ class MT_Account extends MT
     protected function mini_init($action = 'insert'): void
     {
         $this->svc->action = $action;
-        $delete = $action == 'delete' || $action == 'move';
+        $delete = in_array($action,["delete","move"]);
         $this->svc->plan->contention = $delete ? -1
             : ($this->svc->exists() ? 0 : 1);
+        $this->batch = [];
         $this->path = $this->path();
         $this->exists = $this->exists();
         $this->profile = new MT_Profile($this->svc);
