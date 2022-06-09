@@ -13,6 +13,7 @@ class MT_Profile extends MT
         $this->exists = $this->read_child($data);
         $contentions = ['rename' => 0,'edit' => 0,'delete' => -1];
         $action = $this->svc->action ;
+        if($action == 'edit' && $this->svc->disabled()) return true ;  //forget this scenario
         $this->svc->plan->contention = $contentions[$action] ?? 1;
         if($this->svc->plan->contention < 0 && !$this->children()){
             return $this->delete();
@@ -158,10 +159,11 @@ class MT_Profile extends MT
     private function exec(): bool
     {
         $action = $this->exists ? 'set' : 'add';
-        $orphanId = $this->orphaned();
+        /*$orphanId = $this->orphaned();
         $orphanId
             ? $this->pq->reset($orphanId)
-            : $this->pq->apply();
+            : $this->pq->apply();*/
+        $this->pq->apply($this->entity);
         $this->set_batch($this->data($action));
         $this->write();
         return !$this->findErr('ok');
@@ -234,7 +236,8 @@ class MT_Profile extends MT
         $entity = [] ;
         if($name){
             $entity = $this->profiles[$name] ?? [];
-        }else {
+        }
+        if(!$entity){
             foreach($this->profiles as $p){
                 if($p['children'] < 128){
                     $entity = $p ;
