@@ -195,20 +195,21 @@ class MT_Parent_Queue extends MT
 
     private function find_parent(): bool
     {
-        $this->entity = [];
+        $entity = [];
         $name = $this->find_name();
         if($name) {
-            $this->entity = $this->parents[$name] ?? null;
-            $this->insertId = $this->entity['.id'] ?? null;
-        } else {
+            $entity = $this->parents[$name] ?? [];
+        }
+        if(!$entity) {
             foreach($this->parents as $p){
                 if(sizeof($p['targets']) < 128){
-                    $this->entity = $p ;
-                    $this->insertId = $p['.id'];
+                    $entity = $p ;
                     break ;
                 }
             }
         }
+        $this->entity = $entity ;
+        $this->insertId = $entity['.id'];
         return (bool) $this->insertId ;
     }
 
