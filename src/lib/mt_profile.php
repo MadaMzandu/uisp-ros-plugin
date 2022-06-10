@@ -5,13 +5,17 @@ class MT_Profile extends MT
 
     private $pq; //parent queue object
     private $profiles ;
+    private $cache ;
     private $child ;
+
 
     public function apply($data)
     {
-        $this->exists = $this->read_child($data);
+        $this->child = $data;
+        $this->exists = $this->exists();
         $contentions = ['rename' => 0,'edit' => 0,'delete' => -1];
         $action = $this->svc->action ;
+        //if($this->svc->unsuspend) $action = 'unsuspend';
         if($action == 'edit' && $this->svc->disabled()) return true ;  //forget this scenario
         $this->svc->plan->contention = $contentions[$action] ?? 1;
         if($this->svc->plan->contention < 0 && !$this->children()){
@@ -34,7 +38,7 @@ class MT_Profile extends MT
         if(!in_array($action,['suspend','unsuspend']))
             return true ;
         $name = $this->child['profile'] ?? null ;
-        $children = $this->count_secrets($name) ?? 2; // pretend we have children on fail
+        $children = $this->cache[$name]['children'] ?? 2; // pretend we have children on fail
         if(!max(--$children,0)){
             $this->set_batch(
                 ['.id' => $name,
@@ -43,13 +47,6 @@ class MT_Profile extends MT
             );
         }
         return true ;
-    }
-
-    private function children(): bool
-    {
-        $count = $this->entity['children'] ?? 0 ;
-        $children = $count + $this->svc->plan->contention ;
-        return max($children,0);
     }
 
     private function account_disabled(): bool
@@ -65,8 +62,8 @@ class MT_Profile extends MT
             $data['.id'] = $this->insertId ?? $this->name();
             $data['action'] = 'remove';
             $this->set_batch($data);
-            $this->entity['child'] = $this->child ;
-            $this->pq->apply($this->entity)
+            $child = $this->find_last() ?? $this->entity;
+            $this->pq->apply($child)
             && $this->write();
         }
         return !$this->findErr('ok');
@@ -163,8 +160,8 @@ class MT_Profile extends MT
         $orphanId
             ? $this->pq->reset($orphanId)
             : $this->pq->apply();*/
-        $this->entity['child'] = $this->child ;
-        $this->pq->apply($this->entity);
+        $child = $this->find_last() ?? $this->entity ;
+        $this->pq->apply($child);
         $this->set_batch($this->data($action));
         $this->write();
         return !$this->findErr('ok');
@@ -189,10 +186,18 @@ class MT_Profile extends MT
 
     protected function exists(): bool
     {
-        if($this->read_profiles()
-            && $this->find_profile()) return true ;
-        $this->add_profile();
-        return false ;
+        if($this->read_profiles()){
+            $action = $this->svc->action ;
+            if(in_array($action,['insert','suspend'])){
+                $this->entity = $this->find_profile();
+            }else {
+                $this->entity =  $this->find_last();
+            }
+            $this->insertId = $this->entity['.id'] ?? null ;
+            if($this->insertId) return true ;
+        }
+        $this->entity = $this->add_profile();
+        return false;
     }
 
     protected function filter(): string
@@ -212,76 +217,80 @@ class MT_Profile extends MT
         return $this->entity['name'] ?? null;
     }
 
-    private function count_secrets($profile): int
+    private function children(): int
     {
-        $this->path = '/ppp/secret/';
-        $read = $this->read('?profile=' . $profile) ?? [];
-        $this->path = '/ppp/profile/';
-        return sizeof($read) ?? 0;
+        $count = $this->entity['children'] ?? 0 ;
+        $children = $count + $this->svc->plan->contention ;
+        return max($children,0);
     }
 
-    private function read_child($data)
+    private function series(): int
     {
-        $this->child = [] ;
-        if(is_array($data)){
-            foreach(array_keys($data) as $key){
-                $this->child[$key] = $data[$key];
+        $re = '/' . $this->base_name() . '/' ;
+        $m = preg_grep($re,array_keys($this->cache));
+        return sizeof($m) ?? 0 ;
+    }
+
+    private function find_profile(): ?array
+    {
+        $re = '/' . $this->base_name() . '/' ;
+        foreach($this->cache as $profile){
+            if(preg_match($re,$profile['name'])){
+                $size = $profile['children'] ?? 0;
+                if($size < 128)return $profile ;
             }
         }
-        return $this->exists() ;
+        return null ;
+    }
+
+    private function find_last(): ?array
+    {
+        $name = $this->find_name();
+        if($name){
+            return $this->cache[$name] ?? null ;
+        }
+        return null ;
     }
 
     private function find_name(): ?string
     {
-        $action = $this->svc->action ;
-        if(!in_array($action,['insert','unsuspend'])){
-            return $this->child['profile'] ?? null ;
-        }
-       return null ;
-    }
-
-    private function find_profile(): bool
-    {
-        $entity = [];
-        $name = $this->find_name();
-        if ($name) {
-            $entity = $this->profiles[$name] ?? [];
-        }
-         if (!$entity) {
-            foreach ($this->profiles as $p) {
-                if ($p['children'] < 128) {
-                    $entity = $p;
-                    break;
-                }
-            }
-        }
-        $this->entity = $entity;
-        $this->insertId = $entity['.id'] ?? null;
-        return (bool)$this->insertId;
+        return $this->child['profile'] ?? null ;
     }
 
     private function add_profile()
     {
-        $series = sizeof($this->profiles) ?? 0;
+        $series = $this->series();
         $suffix = null ;
         if($series) $suffix = '-' . $series;
         $name = $this->base_name() . $suffix ;
-        $this->entity['name'] = $name ;
-        $this->entity['children'] = 0 ;
+        return ['name' => $name,'children'=> 0];
+    }
+
+    private function count_children(): array
+    {
+        $this->path = '/ppp/secret/';
+        $array = [];
+        $read = $this->read() ?? [];
+        $this->path = '/ppp/profile/';
+        foreach ($read as $acc){
+            $check = $array[$acc['profile']]  ?? null ;
+            if(!$check) $array[$acc['profile']] = 1;
+            else $array[$acc['profile']]= ++$check ;
+        }
+        return $array ;
     }
 
     private function read_profiles(): bool
     {
-        $this->profiles = [];
+        $this->cache = [];
+        $children = $this->count_children();
         $read = $this->read() ?? [];
-        $re = '/' . $this->base_name() . '/';
-        foreach($read as $p){
-            if(preg_match($re,$p['name'])){
-                $p['children'] = $this->count_secrets($p['name']);
-                $this->profiles[$p['name']] = $p ;
-            }
+        foreach($read as $profile){
+           $profile['children'] = $children[$profile['name']] ?? 0 ;
+            $this->cache[$profile['name']] = $profile ;
+
         }
-        return (bool) $this->profiles ;
+        return (bool) $this->cache ;
     }
 
 }
