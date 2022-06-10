@@ -4,6 +4,25 @@ class MT_Profile extends MT
 {
 
     private $pq; //parent queue object
+    private $profiles ;
+    private $cache ;
+    private $child ;
+
+
+    public function apply($data)
+    {
+        $this->child = $data;
+        $this->exists = $this->exists();
+        $contentions = ['rename' => 0,'edit' => 0,'delete' => -1];
+        $action = $this->svc->action ;
+        //if($this->svc->unsuspend) $action = 'unsuspend';
+        if($action == 'edit' && $this->svc->disabled()) return true ;  //forget this scenario
+        $this->svc->plan->contention = $contentions[$action] ?? 1;
+        if($this->svc->plan->contention < 0 && !$this->children()){
+            return $this->delete();
+        }
+        return $this->check_suspend() && $this->exec();
+    }
 
     public function set_profile(): bool
     {
@@ -13,14 +32,21 @@ class MT_Profile extends MT
         return $this->exec();
     }
 
-    private function children(): bool
+    private function check_suspend(): bool
     {
-        $this->path = '/ppp/secret/';
-        $read = $this->read('?profile=' . $this->name()) ?? [];
-        $count = sizeof($read) ?? 0;
-        $count += $this->account_disabled() ? 0 : -1; // do not deduct if account is disabled
-        $this->path = '/ppp/profile/'; //restore path before return
-        return (bool)max($count, 0);
+        $action = $this->svc->action ;
+        if(!in_array($action,['suspend','unsuspend']))
+            return true ;
+        $name = $this->child['profile'] ?? null ;
+        $children = $this->cache[$name]['children'] ?? 2; // pretend we have children on fail
+        if(!max(--$children,0)){
+            $this->set_batch(
+                ['.id' => $name,
+                    'action' => 'remove'
+                    ]
+            );
+        }
+        return true ;
     }
 
     private function account_disabled(): bool
@@ -33,22 +59,26 @@ class MT_Profile extends MT
     private function delete(): bool
     {
         if($this->exists) {
-            $id['.id'] = $this->insertId ?? $this->name();
-            $this->pq->set_parent()
-            && $this->write((object)$id, 'remove');
+            $data['.id'] = $this->insertId ?? $this->name();
+            $data['action'] = 'remove';
+            $this->set_batch($data);
+            $child = $this->find_last() ?? $this->entity;
+            $this->pq->apply($child)
+            && $this->write();
         }
         return !$this->findErr('ok');
     }
 
-    protected function data(): object
+    protected function data($action): object
     {
         return (object)[
+            'action' => $action,
             'name' => $this->name(),
             'local-address' => $this->local_address(),
             'rate-limit' => $this->rate()->text,
             'parent-queue' => $this->pq_name(),
             'address-list' => $this->address_list(),
-            '.id' => $this->name(),
+            '.id' => $this->insertId ?? $this->name(),
         ];
     }
 
@@ -60,11 +90,12 @@ class MT_Profile extends MT
 
     private function pq_name(): ?string
     {
-        if($this->router_disabled() || $this->conf->disable_contention){
+        if ($this->router_disabled()
+            || $this->svc->disabled()
+            || $this->conf->disable_contention) {
             return 'none';
         }
-        $plan = 'servicePlan-'.$this->svc->plan->id().'-parent';
-        return $this->svc->disabled() ? 'none': $plan;
+        return $this->pq->name();
     }
 
     private function router_disabled(): bool
@@ -125,11 +156,14 @@ class MT_Profile extends MT
     private function exec(): bool
     {
         $action = $this->exists ? 'set' : 'add';
-        $orphanId = $this->orphaned();
+        /*$orphanId = $this->orphaned();
         $orphanId
             ? $this->pq->reset($orphanId)
-            : $this->pq->set_parent();
-        $this->write($this->data(),$action);
+            : $this->pq->apply();*/
+        $child = $this->find_last() ?? $this->entity ;
+        $this->pq->apply($child);
+        $this->set_batch($this->data($action));
+        $this->write();
         return !$this->findErr('ok');
     }
 
@@ -147,8 +181,23 @@ class MT_Profile extends MT
     {
         parent::init();
         $this->path = '/ppp/profile/';
-        $this->exists = $this->exists();
         $this->pq = new MT_Parent_Queue($this->svc);
+    }
+
+    protected function exists(): bool
+    {
+        if($this->read_profiles()){
+            $action = $this->svc->action ;
+            if(in_array($action,['insert','suspend'])){
+                $this->entity = $this->find_profile();
+            }else {
+                $this->entity =  $this->find_last();
+            }
+            $this->insertId = $this->entity['.id'] ?? null ;
+            if($this->insertId) return true ;
+        }
+        $this->entity = $this->add_profile();
+        return false;
     }
 
     protected function filter(): string
@@ -156,11 +205,92 @@ class MT_Profile extends MT
         return '?name=' . $this->name();
     }
 
-    protected function name()
+    protected function base_name()
     {
         return $this->svc->disabled()
             ? $this->conf->disabled_profile
             : $this->svc->plan->name();
+    }
+
+    public function name(): ?string
+    {
+        return $this->entity['name'] ?? null;
+    }
+
+    private function children(): int
+    {
+        $count = $this->entity['children'] ?? 0 ;
+        $children = $count + $this->svc->plan->contention ;
+        return max($children,0);
+    }
+
+    private function series(): int
+    {
+        $re = '/' . $this->base_name() . '/' ;
+        $m = preg_grep($re,array_keys($this->cache));
+        return sizeof($m) ?? 0 ;
+    }
+
+    private function find_profile(): ?array
+    {
+        $re = '/' . $this->base_name() . '/' ;
+        foreach($this->cache as $profile){
+            if(preg_match($re,$profile['name'])){
+                $size = $profile['children'] ?? 0;
+                if($size < 128)return $profile ;
+            }
+        }
+        return null ;
+    }
+
+    private function find_last(): ?array
+    {
+        $name = $this->find_name();
+        if($name){
+            return $this->cache[$name] ?? null ;
+        }
+        return null ;
+    }
+
+    private function find_name(): ?string
+    {
+        return $this->child['profile'] ?? null ;
+    }
+
+    private function add_profile()
+    {
+        $series = $this->series();
+        $suffix = null ;
+        if($series) $suffix = '-' . $series;
+        $name = $this->base_name() . $suffix ;
+        return ['name' => $name,'children'=> 0];
+    }
+
+    private function count_children(): array
+    {
+        $this->path = '/ppp/secret/';
+        $array = [];
+        $read = $this->read() ?? [];
+        $this->path = '/ppp/profile/';
+        foreach ($read as $acc){
+            $check = $array[$acc['profile']]  ?? null ;
+            if(!$check) $array[$acc['profile']] = 1;
+            else $array[$acc['profile']]= ++$check ;
+        }
+        return $array ;
+    }
+
+    private function read_profiles(): bool
+    {
+        $this->cache = [];
+        $children = $this->count_children();
+        $read = $this->read() ?? [];
+        foreach($read as $profile){
+           $profile['children'] = $children[$profile['name']] ?? 0 ;
+            $this->cache[$profile['name']] = $profile ;
+
+        }
+        return (bool) $this->cache ;
     }
 
 }
