@@ -7,19 +7,29 @@ class MT_Parent_Queue extends MT
 
     public function apply($data=[]): bool
     {
+        $this->set_mode();
+        $this->exists = $this->read_child($data);
+        $this->set_contention();
+        if(!$this->children() && $this->svc->plan->contention < 0)
+            return $this->delete() ;
+        return $this->exec();
+    }
+
+    private function set_contention(): void
+    {
         $action = $this->svc->action ;
-        if(!$this->read_child($data) && $action == 'action')
-            return $this->setErr("missing profile or child data") ;
         if($action == 'suspend'
             && $this->svc->unsuspend) $action = 'unsuspend';
-        $mode = $action == 'delete' ? 1 : 0 ;
+        $c = in_array($action,['insert','unsuspend']) ? 1 : -1;
+        if(in_array($action,['edit','rename'])) $c = 0;
+        $this->svc->plan->contention = $c ;
+    }
+
+    private function set_mode(): void
+    {
+        $action = $this->svc->action ;
+        $mode = in_array($action,['delete','suspend']) ? 1 : 0 ;
         $this->svc->mode($mode);
-        $contention = in_array($action,['insert','unsuspend']) ? 1 : -1;
-        if($action == 'edit') $contention = 0;
-        $this->svc->plan->contention = $contention ;
-        if(!$this->children() && $contention < 0)
-            return $this->delete() ;
-        else return $this->exec();
     }
 
     public function set_parent(): bool
@@ -161,8 +171,7 @@ class MT_Parent_Queue extends MT
                 $this->child[$key] = $data[$key];
             }
         }
-        $this->exists = $this->exists();
-        return $this->exists;
+        return $this->exists();
     }
 
     private function add_parent(): bool
@@ -170,6 +179,7 @@ class MT_Parent_Queue extends MT
         $suffix = null ;
         $size = sizeof($this->parents);
         if($size) $suffix = '-' . $size ;
+        $this->entity = [];
         $this->entity['name'] = $this->base_name() . $suffix ;
         $this->entity['targets'] = [];
         return false ;
@@ -209,14 +219,18 @@ class MT_Parent_Queue extends MT
             }
         }
         $this->entity = $entity ;
-        $this->insertId = $entity['.id'];
+        $this->insertId = $entity['.id'] ?? null ;
         return (bool) $this->insertId ;
     }
 
     private function find_name(): ?string
     {
-        return $this->child['parent']
-            ?? $this->child['parent-queue'] ?? null ;
+        $action = $this->svc->action ;
+        if(!in_array($action,['insert','unsuspend'])){
+            return $this->child['parent']
+                ?? $this->child['parent-queue'] ?? null;
+        }
+        return null ;
     }
 
     private function read_parents(): bool

@@ -5,8 +5,7 @@ class MT_Profile extends MT
 
     private $pq; //parent queue object
     private $profiles ;
-    private $secret ;
-    private $disabled ;
+    private $child ;
 
     public function apply($data)
     {
@@ -34,7 +33,7 @@ class MT_Profile extends MT
         $action = $this->svc->action ;
         if(!in_array($action,['suspend','unsuspend']))
             return true ;
-        $name = $this->secret['profile'] ?? null ;
+        $name = $this->child['profile'] ?? null ;
         $children = $this->count_secrets($name) ?? 2; // pretend we have children on fail
         if(!max(--$children,0)){
             $this->set_batch(
@@ -66,7 +65,8 @@ class MT_Profile extends MT
             $data['.id'] = $this->insertId ?? $this->name();
             $data['action'] = 'remove';
             $this->set_batch($data);
-            $this->pq->apply()
+            $this->entity['child'] = $this->child ;
+            $this->pq->apply($this->entity)
             && $this->write();
         }
         return !$this->findErr('ok');
@@ -163,6 +163,7 @@ class MT_Profile extends MT
         $orphanId
             ? $this->pq->reset($orphanId)
             : $this->pq->apply();*/
+        $this->entity['child'] = $this->child ;
         $this->pq->apply($this->entity);
         $this->set_batch($this->data($action));
         $this->write();
@@ -221,33 +222,42 @@ class MT_Profile extends MT
 
     private function read_child($data)
     {
-        $this->secret = [] ;
+        $this->child = [] ;
         if(is_array($data)){
             foreach(array_keys($data) as $key){
-                $this->secret[$key] = $data[$key];
+                $this->child[$key] = $data[$key];
             }
         }
         return $this->exists() ;
     }
 
+    private function find_name(): ?string
+    {
+        $action = $this->svc->action ;
+        if(!in_array($action,['insert','unsuspend'])){
+            return $this->child['profile'] ?? null ;
+        }
+       return null ;
+    }
+
     private function find_profile(): bool
     {
-        $name = $this->secret['profile'] ?? null;
-        $entity = [] ;
-        if($name){
+        $entity = [];
+        $name = $this->find_name();
+        if ($name) {
             $entity = $this->profiles[$name] ?? [];
         }
-        if(!$entity){
-            foreach($this->profiles as $p){
-                if($p['children'] < 128){
-                    $entity = $p ;
-                    break ;
+         if (!$entity) {
+            foreach ($this->profiles as $p) {
+                if ($p['children'] < 128) {
+                    $entity = $p;
+                    break;
                 }
             }
         }
-        $this->entity = $entity ;
-        $this->insertId = $entity['.id'] ?? null ;
-        return (bool) $this->insertId ;
+        $this->entity = $entity;
+        $this->insertId = $entity['.id'] ?? null;
+        return (bool)$this->insertId;
     }
 
     private function add_profile()
@@ -257,14 +267,15 @@ class MT_Profile extends MT
         if($series) $suffix = '-' . $series;
         $name = $this->base_name() . $suffix ;
         $this->entity['name'] = $name ;
+        $this->entity['children'] = 0 ;
     }
 
     private function read_profiles(): bool
     {
         $this->profiles = [];
-        $read = $this->read();
+        $read = $this->read() ?? [];
+        $re = '/' . $this->base_name() . '/';
         foreach($read as $p){
-            $re = '/' . $this->base_name() . '/';
             if(preg_match($re,$p['name'])){
                 $p['children'] = $this->count_secrets($p['name']);
                 $this->profiles[$p['name']] = $p ;
