@@ -4,7 +4,6 @@ class MT_Profile extends MT
 {
 
     private $pq; //parent queue object
-    private $profiles ;
     private $cache ;
     private $child ;
 
@@ -77,9 +76,10 @@ class MT_Profile extends MT
         }
     }
 
-    private function hotspot_data(): object
+    private function hotspot_data($action): object
     {
         return (object)[
+            'action' => $action,
             'name' => $this->name(),
             'rate-limit' => $this->rate()->text,
             'parent-queue' => $this->pq_name(),
@@ -88,7 +88,7 @@ class MT_Profile extends MT
         ];
     }
 
-    private function ppp_data(): object
+    private function ppp_data($action): object
     {
         return (object)[
             'action' => $action,
