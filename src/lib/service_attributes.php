@@ -62,7 +62,7 @@ class Service_Attributes extends Service_Base
 
     protected function check_attributes(): bool
     {
-        if (!($this->check_mac() || $this->check_username())) {
+        if (!$this->check_username()) {
             $this->setErr('no valid username or mac address provided for service');
             return false;
         }
@@ -71,6 +71,7 @@ class Service_Attributes extends Service_Base
 
     protected function check_username(): bool
     {
+        if($this->check_mac()) return true ;
         $username = $this->get_value($this->conf->pppoe_user_attr);
         $password = $this->get_value($this->conf->pppoe_pass_attr);
         $hotspot = $this->get_value($this->conf->hs_account_attr);
