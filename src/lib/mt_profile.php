@@ -315,10 +315,22 @@ class MT_Profile extends MT
 	
     private function path():string
     {
+        $type = $this->svc->accountType ;
         switch($this->svc->accountType){
-            case 2: return '/ip/hotspot/profile' ;
-            default : return '/ppp/profile';
+            case 2: return '/ip/hotspot/user/profile/' ;
+            default : return '/ppp/profile/';
         }
     }
+
+    private function child_path():string
+    {
+        $type = $this->svc->accountType ;
+        switch($this->svc->accountType){
+            case 2: return '/ip/hotspot/user/' ;
+            default : return '/ppp/secret/';
+        }
+    }
+
+
 
 }
