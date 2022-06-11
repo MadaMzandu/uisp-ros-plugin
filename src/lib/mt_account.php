@@ -57,6 +57,7 @@ class MT_Account extends MT
         return (object)[
             'name' => $this->svc->username(),
             'password' => $this->svc->password(),
+            'address' => $this->svc->ip(),
             'profile' => $this->profile(),
             'comment' => $this->comment(),
             '.id' => $this->insertId
@@ -182,7 +183,7 @@ class MT_Account extends MT
         switch ($this->svc->accountType){
             case 0: return '/ip/dhcp-server/lease/';
             case 2: return '/ip/hotspot/user/';
-            default: return '/ppp/secret';
+            default: return '/ppp/secret/';
         }
     }
 
