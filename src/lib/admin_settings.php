@@ -26,7 +26,7 @@ class Settings extends Admin
 
     private function apply(): bool
     {
-        $apps = ['disable_contention']; // keys that have apply methods
+        $apps = ['disable_contention','auto_ppp_user','auto_hs_user']; // keys that have apply methods
         $keys = array_keys((array)$this->data);
         foreach($keys as $key){
             if(!in_array($key,$apps)){
@@ -45,6 +45,21 @@ class Settings extends Admin
         $val = $this->data->{$key} ?? null ;
         return $conf &&  $val != $conf ;
     }
+
+    private function auto_hs_user(): bool
+    {
+        $enable = $this->data->auto_hs_user ?? false ;
+        if($enable) $this->data->auto_ppp_user = false;
+        return true ;
+    }
+
+    private function auto_ppp_user(): bool
+    {
+        $enable = $this->data->auto_ppp_user ?? false ;
+        if($enable) $this->data->auto_hs_user = false;
+        return true ;
+    }
+
 
     private function disable_contention(): bool
     {

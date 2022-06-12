@@ -26,6 +26,7 @@ INSERT INTO config VALUES('disabled_rate','1',NULL,'2022-06-12 00:00:00');
 INSERT INTO config VALUES('auto_ppp_user','false',NULL,'2022-06-12 00:00:00');
 INSERT INTO config VALUES('pppoe_caller_attr','callerId',NULL,'2022-06-12 00:00:00');
 INSERT INTO config VALUES('disable_contention','true',NULL,'2022-06-12 00:00:00');
-INSERT INTO config VALUES('hs_account_attr','hotspotUser',NULL,'2022-06-12 00:00:00');
+INSERT INTO config VALUES('hs_attr','hotspot',NULL,'2022-06-12 00:00:00');
+INSERT INTO config VALUES('hs_enable','false',NULL,'2022-06-12 00:00:00');
 INSERT INTO config VALUES('auto_hs_user','false',NULL,'2022-06-12 00:00:00');
 COMMIT;

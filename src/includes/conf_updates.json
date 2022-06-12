@@ -4,6 +4,7 @@
   "auto_ppp_user": "false",
   "pppoe_caller_attr": "callerId",
   "disable_contention": "false",
-  "hs_account_attr" : "hotspotUser",
+  "hs_enable" : "false",
+  "hs_attr" : "hotspot",
   "auto_hs_user" : "false"
 }
