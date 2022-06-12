@@ -8,8 +8,9 @@ class API_IPv4
     private $addr; //assign
     private $prefix;
     private $len;
-    private $pool; // active configured pool
+    private $pools; // active configured pool
     private $conf;
+    private $type ; // 0 - v4 , 1 - v6
 
     public function __construct()
     {
@@ -22,7 +23,7 @@ class API_IPv4
             ? $device->pool
             : $this->conf->ppp_pool;
         if ($pool) {
-            $this->pool = explode(',', $pool . ',');
+            $this->pools = explode(',', $pool . ',') ?? [];
             $this->findUnused();
         }
         return $this->addr;
@@ -46,85 +47,91 @@ class API_IPv4
 
     private function findUnused(): void
     {
-        foreach ($this->pool as $range) {
+        foreach ($this->pools as $range) {
             if (empty($range)) continue;
             [$this->prefix, $this->len] = explode('/', $range);
-            $this->iteratePool();
+            $this->setType();
+            if($this->type < 0) continue ; //invalid range
+            $this->iterate();
         }
     }
 
-    private function iteratePool(): void
+    private function setType(): void
     {
-        $hosts = $this->hosts();
-        $net = ip2long($this->network()); //net_number2dec
-        $exclusions = $this->exclusions();
-        for ($i = $net + 1; $i < $net + $hosts - 1; $i++) {
-            if (in_array($i, $exclusions)) {  //skip if listed as exclusion
-                continue;
-            }
-            $addr = long2ip($i);
-            $lastoct = explode('.', $addr)[3];
-            if ($lastoct < 1 || $lastoct > 254) { // skip zeros and 255s
-                continue;
-            }
-            if ($this->db()->ifIpAddressIsUsed($addr)) { //skip if already assigned
-                continue;
-            }
-            $this->addr = $addr;
-            return;
+        if(filter_var($this->prefix,FILTER_VALIDATE_IP,FILTER_FLAG_IPV6))
+            $this->type = 1 ;
+        elseif(filter_var($this->prefix,FILTER_VALIDATE_IP,FILTER_FLAG_IPV4))
+            $this->type = 0 ;
+        else $this->type = -1 ;
+    }
+
+    private function iterate(): void
+    {
+        $last = $this->gmp_bcast();
+        $address = $this->ip2gmp();
+        while($address != $last){
+            $address = $this->gmp_next($address);
+            if($address == $last) break ;
+            if($this->excluded($address)) continue;
+            $ip = $this->gmp2ip($address);
+            if ($this->db()->ifIpAddressIsUsed($ip)) continue;
+            $this->addr = $ip ;
         }
     }
 
-    private function hosts(): float
+    private function gmp_hosts()
     {
-        $host_len = 32 - $this->len;
+        $len = $this->type == 0 ? 32 :128 ;
+        $host_len = $len - $this->len;
         $base = 2;
-        return pow($base, $host_len);
+        return gmp_pow($base, $host_len);
     }
 
-    private function network(): string
-    { //ok here we go
-        $ip = decbin(ip2long($this->prefix)); //ip2bin
-        $mask = decbin(ip2long(long2ip(-1 << (32 - $this->len)))); //len2netmask2bin
-        $net = $ip & $mask;
-        return long2ip(bindec($net)); //back2ip
+    private function gmp2ip($address)
+    {
+        return inet_ntop(hex2bin(gmp_strval($address,16)));
+    }
+
+    private function gmp_bcast()
+    {
+        $hosts = $this->gmp_hosts();
+        $addr = $this->ip2gmp();
+        if($this->len < 33) {
+            return gmp_add($addr, gmp_sub($hosts, 1));
+        }
+        return gmp_add($addr,$hosts);
+    }
+
+    private function gmp_next($addr)
+    {
+        return gmp_add($addr,1);
+    }
+
+    private function ip2gmp($address = null)
+    {
+        $ip = $address ? : $this->prefix ;
+        return gmp_init(bin2hex(inet_pton($ip)),16);
+    }
+
+    private function excluded($address): bool
+    {
+        $read = $this->exclusions();
+        foreach ($read as $range) {
+            $range .= '-';              //append hyphen incase of single addr entry
+            [$s, $e] = explode('-', $range);
+            if (!$e) $e = $s;
+            $start = $this->ip2gmp($s);
+            $end = $this->ip2gmp($e) ;
+            if($address >= $start && $address <= $end) return true ;
+        }
+        return false;
     }
 
     private function exclusions(): array
     {
-        $read = $this->readExclusions();
-        $exclusions = [];
-        foreach ($read as $range) {
-            $range .= '-';              //append hyphen incase of single addr entry
-            [$start, $end] = explode('-', $range);
-            if (!$end) {
-                $end = $start;
-            }
-            //$end = str_replace('-', '', $last); //remove hyphen now useless
-            if (filter_var($start, FILTER_VALIDATE_IP) &&
-                filter_var($end, FILTER_VALIDATE_IP)) {
-                $exclusions = array_merge($exclusions, $this->explodeRange($start, $end));
-            }
-        }
-        return $exclusions;
-    }
-
-    private function readExclusions(): array
-    {
         return $this->conf->excl_addr
             ? explode(',', $this->conf->excl_addr . ',')
             : [];
-    }
-
-    private function explodeRange($start, $end): array
-    {
-        $addresses = [];
-        $s = ip2long($start);
-        $e = ip2long($end);
-        for ($i = $s; $i < $e + 1; $i++) {
-            $addresses[] = $i;
-        }
-        return $addresses;
     }
 
     private function db()
