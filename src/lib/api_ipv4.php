@@ -65,6 +65,17 @@ class API_IPv4
         else $this->type = -1 ;
     }
 
+    private function is_odd($address): bool
+    {
+        $s = $this->type == 0 ? '.' : ':';
+        $a = explode($s,$address); //address into array
+        $last = $a[sizeof($a)-1] ?? '0' ; //last byte or word
+        if($this->type == 0 )$last = base_convert($last,10,16);
+        $zero = '/^0+$/';
+        $ff = '/^[fF]+$/';
+        return preg_match($zero,$last) || preg_match($ff,$last);
+    }
+
     private function iterate(): void
     {
         $last = $this->gmp_bcast();
@@ -72,9 +83,10 @@ class API_IPv4
         while($address != $last){
             $address = $this->gmp_next($address);
             if($address == $last) break ;
-            if($this->excluded($address)) continue;
+            if($this->excluded($address)) continue; //skip excluded
             $ip = $this->gmp2ip($address);
-            if ($this->db()->ifIpAddressIsUsed($ip)) continue;
+            if($this->is_odd($ip)) continue ; // skip zeros and xFFFF
+            if ($this->db()->ifIpAddressIsUsed($ip)) continue; // skip used
             $this->addr = $ip ;
             break;
         }
