@@ -151,7 +151,7 @@ class MT_Profile extends MT
             }
         }
         $this->path = $this->path();
-        return $address ?? (new API_IPv4())->local();  // or generate one
+        return $address ?? (new API_IP())->local();  // or generate one
     }
 
     private function makeBool($value): bool

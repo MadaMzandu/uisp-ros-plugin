@@ -2,7 +2,7 @@
 
 include_once 'api_sqlite.php';
 
-class API_IPv4
+class API_IP
 {
 
     private $addr; //assign

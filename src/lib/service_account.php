@@ -2,8 +2,8 @@
 include_once 'service_plan.php';
 include_once 'service_attributes.php';
 include_once 'service_client.php';
-include_once 'api_ipv4.php';
-include_once 'api_unms.php';
+include_once 'api_ip.php';
+include_once '_temp.php';
 
 class Service_Account extends Service_Attributes
 {
@@ -153,7 +153,7 @@ class Service_Account extends Service_Attributes
         if ($this->conf->router_ppp_pool || $this->svc->accountType == 0) {
             $device = $this->get_device();
         }
-        $this->ip = (new API_IPv4())->assign($device);
+        $this->ip = (new API_IP())->assign($device);
         return $this->ip;
     }
 
