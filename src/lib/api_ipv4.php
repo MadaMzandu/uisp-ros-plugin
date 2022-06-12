@@ -76,6 +76,7 @@ class API_IPv4
             $ip = $this->gmp2ip($address);
             if ($this->db()->ifIpAddressIsUsed($ip)) continue;
             $this->addr = $ip ;
+            break;
         }
     }
 
