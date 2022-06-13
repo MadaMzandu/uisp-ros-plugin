@@ -140,18 +140,6 @@ class API_SQLite
         return (object)$this->singleQuery($sql,true);
     }
 
-    public function selectChildren($plan,$device): ?array
-    {
-        $sql = "select series,count(series) as children from services where planId=" . $plan
-            . " and device=". $device . " group by series";
-        $res = $this->query($sql) ;
-        $return = null;
-        while ($row = $res->fetchArray(SQLITE3_ASSOC)) {
-            $return[$row['series']] = $row['children'];
-        }
-        return $return;
-    }
-
     public function selectServices(): ?array
     {
         $sql = "select services.*,devices.name as deviceName from services left join devices "
