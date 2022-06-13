@@ -12,8 +12,9 @@ function apply_updates(): bool
    return table_updates()
        && conf_updates()
        && remove_jobs()
-       && rebuild();
+       && rebuild() ;
 }
+
 
 function rebuild(): bool
 {
@@ -54,7 +55,7 @@ function conf_updates(): bool
 function table_updates(): bool
 {
     global $current ;
-    if($current < '1.8.1') {
+    if($current < '1.8.5') {
         $file = file_get_contents('includes/tables.sql');
         return db()->exec($file);
     }
