@@ -76,15 +76,13 @@ class Service_Plan extends Service_Base
         return $this->get()->ratio ?? 1;
     }
 
-    public function children(): int
+    public function children(): ?array
     {
         $entity = $this->mode ? 'before' : 'entity';
-        $name = $this->get_value($this->conf->device_name_attr);
-        $planId = $this->$entity->servicePlanId ?? 0;
-        $deviceId = $this->db()->selectDeviceByDeviceName($name)->id ?? 0 ;
-        $children = $this->db()->countDeviceServicesByPlanId($planId, $deviceId);
-        $children += $this->contention;
-        return max($children, 0);
+        $device = $this->get_value($this->conf->device_name_attr,$entity);
+        $plan = $this->$entity->servicePlanId ?? 0;
+        $deviceId = $this->db()->selectDeviceByDeviceName($device)->id ?? 0 ;
+        return $this->db()->selectChildren($plan,$deviceId);
     }
 
     public function rate(): stdClass
