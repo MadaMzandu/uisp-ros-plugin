@@ -38,9 +38,10 @@ class Service_Client extends Service_Base{
         $default = 'client-'
             .$this->$entity->clientId.'-'
             .$this->$entity->id;
-        $tmp = $this->get()->username;
+        $client = $this->get();
+        $tmp = $client->username ?? null;
         if(filter_var($tmp,FILTER_VALIDATE_EMAIL)){
-            $tmp = $this->get()->companyName ?? $this->get()->lastName ;
+            $tmp = $client->companyName ?? $client->lastName ??  null;
         }
         $chars = ".!&%#@*^()'\":;\\/[]{}|?><,";
         $stripped = str_replace(str_split($chars),'',strtolower($tmp)).'-'.$this->$entity->id;
