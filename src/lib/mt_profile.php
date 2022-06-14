@@ -293,7 +293,6 @@ class MT_Profile extends MT
             $queue = $profile['parent-queue'] ?? 'none';
             $profile['children'] = $children[$queue] ?? 1 ;
             $this->cache[$profile['name']] = $profile ;
-
         }
         return (bool) $this->cache ;
 	}

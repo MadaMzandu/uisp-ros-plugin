@@ -32,10 +32,15 @@ class MT_Parent_Queue extends MT
         $this->svc->mode($mode);
     }
 
-    protected function children(): int
+    public function children(): int
     {
+        $c = $this->svc->plan->contention ;
+        $ip = $this->svc->ip();
+        $exits = $this->entity['targets'][$ip] ?? null;
+        if($c > 0 && $exits) $c = 0 ; //already done
+        if($c < 0 && !$exits) $c = 0;
         $size = sizeof($this->entity['targets']) ?? 0;
-        $size += $this->svc->plan->contention ;
+        $size += $c ;
         return max($size,0) ;
     }
 
