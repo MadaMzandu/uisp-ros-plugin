@@ -74,7 +74,7 @@ class Service_Attributes extends Service_Base
         if($this->check_mac()) return true ;
         $username = $this->get_value($this->conf->pppoe_user_attr);
         $password = $this->get_value($this->conf->pppoe_pass_attr);
-        $hsenable = $this->get_value($this->conf->hs_attr);
+        $hsenable = $this->get_value($this->conf->hs_attr ?? null);
         $hsauto = $this->conf->auto_hs_user ?? false;
         if($hsenable && ($hsauto || $username)){
             $this->accountType = 2;
