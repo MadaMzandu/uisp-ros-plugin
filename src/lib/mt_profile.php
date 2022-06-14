@@ -8,7 +8,7 @@ class MT_Profile extends MT
     private $child ;
 
 
-    public function apply($data)
+    public function apply($data): bool
     {
         $this->child = $data;
         $this->exists = $this->exists();
@@ -21,14 +21,6 @@ class MT_Profile extends MT
             return $this->delete();
         }
         return $this->check_suspend() && $this->exec();
-    }
-
-    public function set_profile(): bool
-    {
-        if ($this->svc->plan->contention < 0 && !$this->children()) {
-            return $this->delete();
-        }
-        return $this->exec();
     }
 
     private function check_suspend(): bool
@@ -48,13 +40,6 @@ class MT_Profile extends MT
         return true ;
 	}
 
-
-    private function account_disabled(): bool
-    {
-        $read = $this->read('?name='.$this->svc->username());
-        return $read && $read[0]['profile'] == $this->conf->disabled_profile;
-    }
-
     private function delete(): bool
     {
         if($this->exists) {
@@ -65,10 +50,10 @@ class MT_Profile extends MT
             $this->pq->apply($child)
             && $this->write();
         }
-        return !$this->findErr('ok');
+        return !$this->findErr();
     }
 
-    protected function data($action): object
+    protected function data($action): stdClass
     {
         switch ($this->svc->accountType){
             case 2: return $this->hotspot_data($action);
@@ -76,7 +61,7 @@ class MT_Profile extends MT
         }
     }
 
-    private function hotspot_data($action): object
+    private function hotspot_data($action): stdClass
     {
         return (object)[
             'action' => $action,
@@ -88,7 +73,7 @@ class MT_Profile extends MT
         ];
     }
 
-    private function ppp_data($action): object
+    private function ppp_data($action): stdClass
     {
         return (object)[
             'action' => $action,
@@ -182,10 +167,10 @@ class MT_Profile extends MT
         $this->pq->apply($child);
         $this->set_batch($this->data($action));
         $this->write();
-        return !$this->findErr('ok');
+        return !$this->findErr();
     }
 
-    private function orphaned(): ?string
+    /*private function orphaned(): ?string
     {
         if (!$this->exists) {
             return false;
@@ -193,7 +178,7 @@ class MT_Profile extends MT
         $parent = $this->entity['parent-queue'] ?? '';
         return substr($parent, 0, 1) == '*'
             ? $parent : null;
-    }
+    }*/
 
     protected function init(): void
     {
@@ -275,7 +260,7 @@ class MT_Profile extends MT
         return $this->child['profile'] ?? null ;
     }
 
-    private function add_profile()
+    private function add_profile(): array
     {
         $series = $this->series();
         $suffix = null ;
@@ -315,7 +300,6 @@ class MT_Profile extends MT
 	
     private function path():string
     {
-        $type = $this->svc->accountType ;
         switch($this->svc->accountType){
             case 2: return '/ip/hotspot/user/profile/' ;
             default : return '/ppp/profile/';
@@ -324,7 +308,6 @@ class MT_Profile extends MT
 
     private function child_path():string
     {
-        $type = $this->svc->accountType ;
         switch($this->svc->accountType){
             case 2: return '/ip/hotspot/user/' ;
             default : return '/ppp/secret/';
