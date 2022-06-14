@@ -268,17 +268,18 @@ class MT_Profile extends MT
 
     private function count_children(): array
     {
-        $this->path = '/ppp/secret/';
+        $this->path = '/queue/simple/';
+        $filter = '?parent=none';
         $array = [];
-        $read = $this->read() ?? [];
-        $this->path = '/ppp/profile/';
-        foreach ($read as $acc){
-            $check = $array[$acc['profile']]  ?? null ;
-            if(!$check) $array[$acc['profile']] = 1;
-            else $array[$acc['profile']]= ++$check ;
+        $read = $this->read($filter) ?? [];
+        $this->path = $this->path();
+        foreach ($read as $parent){
+            $children = explode(',',$parent['target']) ?? [];
+            $array[$parent['name']] = sizeof($children) ?? 0 ;
         }
         return $array ;
     }
+
 
     private function read_profiles(): bool
     {
@@ -286,7 +287,8 @@ class MT_Profile extends MT
         $children = $this->count_children();
         $read = $this->read() ?? [];
         foreach($read as $profile){
-           $profile['children'] = $children[$profile['name']] ?? 0 ;
+            $queue = $profile['parent-queue'] ?? 'none';
+            $profile['children'] = $children[$queue] ?? 1 ;
             $this->cache[$profile['name']] = $profile ;
 
         }
