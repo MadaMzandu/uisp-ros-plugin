@@ -5,7 +5,6 @@ CREATE TABLE IF NOT EXISTS "services"(
                                          clientId INT,
                                          planId INT,
                                          status INT,
-                                         series INT DEFAULT 0,
                                          "last" TEXT,
                                          created TEXT
 );
@@ -60,9 +59,6 @@ CREATE INDEX "xsvc_device" ON "services" (
     );
 CREATE INDEX "xsvc_planId" ON "services" (
                                           "planId"
-    );
-CREATE INDEX "xsvc_series" ON services (
-                                        "series"
     );
 CREATE INDEX "xusers_session" ON "users" (
                                           "session"
