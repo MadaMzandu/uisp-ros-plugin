@@ -67,7 +67,7 @@
   },
   "config_auto_ppp_user": {
     "name": "auto_ppp_user",
-    "label": "Genereer outomaties gebruikersnaam",
+    "label": "Genereer outomatiese ppp-gebruikersnaam",
     "describe": true,
     "description": "Aktiveer om gebruikernaam en wagwoord outomaties te genereer",
     "hint": "",
@@ -273,6 +273,22 @@
     "obscure": null,
     "type": null,
     "isAttribute": null
+  },
+  "config_hs_enable" :
+  {
+    "name" : "hs_enable",
+    "label" : "Aktiveer hotspot-rekeninge",
+    "describe" : true,
+    "description" : "Aktiveer of deaktiveer gepasmaakte kenmerk van die hotspot-rekening",
+    "isAttribute" : true
+  },
+  "config_auto_hs_user" :
+  {
+    "name" : "auto_hs_user",
+    "label" : "Outomatiese hotspot-gebruikersnaam",
+    "describe" : true,
+    "description" : "Aktiveer vir outomatiese gebruikersnaam. Sal outomatiese ppp-gebruikersname deaktiveer",
+    "isAttribute" : true
   },
   "service_ratio": {
     "name": "ratio",

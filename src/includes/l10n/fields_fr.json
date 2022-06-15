@@ -67,7 +67,7 @@
   },
   "config_auto_ppp_user": {
     "name": "auto_ppp_user",
-    "label": "Générer automatiquement le nom utilisateur",
+    "label": "Générer automatiquement le nom d'utilisateur ppp",
     "describe": true,
     "description": "Activer la génération automatique du nom d'utilisateur et du mot de passe",
     "hint": "",
@@ -273,6 +273,22 @@
     "obscure": null,
     "type": null,
     "isAttribute": null
+  },
+  "config_hs_enable" :
+  {
+    "name" : "hs_enable",
+    "label" : "Activer les comptes hotspot",
+    "describe" : true,
+    "description" : "Activer ou désactiver l'attribut personnalisé du compte hotspot",
+    "isAttribute" : true
+  },
+  "config_auto_hs_user" :
+  {
+    "name" : "auto_hs_user",
+    "label" : "Nom d'utilisateur du hotspot automatique",
+    "describe" : true,
+    "description" : "Activer le nom d'utilisateur automatique. Va désactiver les noms d'utilisateurs automatiques de ppp",
+    "isAttribute" : true
   },
   "service_ratio": {
     "name": "ratio",

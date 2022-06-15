@@ -45,7 +45,7 @@
   "config_auto_ppp_user" :
   {
     "name" : "auto_ppp_user",
-    "label" : "Auto generate username",
+    "label" : "Generate automatic ppp username",
     "describe" : true,
     "description" : "Enable to generate username and password automatically"
   },
@@ -194,6 +194,22 @@
     "width" : "75",
     "describe" : true,
     "description" : "Check option to disable parent queues. May take a few minutes to apply and will delete parent queues from routers."
+  },
+  "config_hs_enable" :
+  {
+    "name" : "hs_enable",
+    "label" : "Enable hotspot accounts",
+    "describe" : true,
+    "description" : "Enable or disable hotspot account custom attribute",
+    "isAttribute" : true
+  },
+  "config_auto_hs_user" :
+  {
+    "name" : "auto_hs_user",
+    "label" : "Automatic hotspot username",
+    "describe" : true,
+    "description" : "Enable for automatic username. Will disable automatic ppp usernames",
+    "isAttribute" : true
   },
   "service_ratio" :
   {

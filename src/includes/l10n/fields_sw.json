@@ -67,7 +67,7 @@
    },
    "config_auto_ppp_user": {
       "name": "auto_ppp_user",
-      "label": "Tengeneza jina la mtumiaji kiotomatiki",
+      "label": "Tengeneza jina la mtumiaji la ppp otomatiki",
       "describe": true,
       "description": "Wezesha kutengeneza jina la mtumiaji na nenosiri kiotomatiki",
       "hint": "",
@@ -273,6 +273,22 @@
       "obscure": null,
       "type": null,
       "isAttribute": null
+   },
+   "config_hs_enable" :
+   {
+      "name" : "hs_enable",
+      "label" : "Washa akaunti za mtandaopepe",
+      "describe" : true,
+      "description" : "Washa au uzime sifa maalum ya akaunti ya hotspot",
+      "isAttribute" : true
+   },
+   "config_auto_hs_user" :
+   {
+      "name" : "auto_hs_user",
+      "label" : "Jina la mtumiaji la mtandaopepe otomatiki",
+      "describe" : true,
+      "description" : "Washa kwa jina la mtumiaji otomatiki. Italemaza majina ya watumiaji ya ppp otomatiki",
+      "isAttribute" : true
    },
    "service_ratio": {
       "name": "ratio",
