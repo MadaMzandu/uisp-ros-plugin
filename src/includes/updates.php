@@ -1,6 +1,6 @@
 <?php
 
-$version = '1.8.4d';
+$version = '1.8.5';
 $conf = db()->readConfig();
 $current = $conf->version ?? '1.0.0';
 
@@ -55,7 +55,7 @@ function conf_updates(): bool
 function table_updates(): bool
 {
     global $current ;
-    if($current < '1.8.1') {
+    if($current < '1.8.5') {
         $file = file_get_contents('includes/tables.sql');
         return db()->exec($file);
     }
