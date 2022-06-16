@@ -5,13 +5,13 @@ class Settings extends Admin
 
     public function edit(): bool
     {
+        $this->trim();
         return (
             $this->apply()
             && $this->db()->saveConfig($this->data)
             && $this->set_message('configuration has been updated'))
             or $this->set_error('failed to update configuration');
     }
-
 
     public function get(): bool
     {
@@ -24,42 +24,29 @@ class Settings extends Admin
         return true;
     }
 
-    private function apply(): bool
+    private function trim()
     {
-        $apps = ['disable_contention','auto_ppp_user','auto_hs_user']; // keys that have apply methods
-        $keys = array_keys((array)$this->data);
-        foreach($keys as $key){
-            if(!in_array($key,$apps)){
-                continue;
-            }
-            if($this->hasChanged($key)){
-                return $this->$key();  // run apply method for key
+        $conf = (array)$this->db()->readConfig();
+        foreach(array_keys($conf) as $key){
+            $old = $conf[$key] ;
+            $new = $this->data->$key ?? null ;
+            if($old == $new){
+                unset($this->data->$key);
             }
         }
-        return true ;
     }
 
-    private function hasChanged($key): bool
+    private function apply(): bool
     {
-        $conf = $this->db()->readConfig()->{$key} ?? null ;
-        $val = $this->data->{$key} ?? null ;
-        return $conf &&  $val != $conf ;
+        $apps = ['disable_contention']; // keys that have apply methods
+        $keys = array_keys((array)$this->data);
+        $ret = true ;
+        foreach($keys as $key){
+            if(!in_array($key,$apps))continue;
+            $ret &= $this->$key();
+        }
+        return $ret ;
     }
-
-    private function auto_hs_user(): bool
-    {
-        $enable = $this->data->auto_hs_user ?? false ;
-        if($enable) $this->data->auto_ppp_user = false;
-        return true ;
-    }
-
-    private function auto_ppp_user(): bool
-    {
-        $enable = $this->data->auto_ppp_user ?? false ;
-        if($enable) $this->data->auto_hs_user = false;
-        return true ;
-    }
-
 
     private function disable_contention(): bool
     {
