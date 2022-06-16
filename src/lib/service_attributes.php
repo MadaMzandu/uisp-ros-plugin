@@ -72,17 +72,17 @@ class Service_Attributes extends Service_Base
     protected function check_username(): bool
     {
         if($this->check_mac()) return true ;
-        $username = $this->get_value($this->conf->pppoe_user_attr);
-        $password = $this->get_value($this->conf->pppoe_pass_attr);
-        $hsenable = $this->get_value($this->conf->hs_attr ?? null);
+        $username = $this->get_value($this->conf->pppoe_user_attr ?? null);
+        $password = $this->get_value($this->conf->pppoe_pass_attr ?? null);
+        $hs = $this->get_value($this->conf->hs_attr ?? 'hotspot');
         $hsauto = $this->conf->auto_hs_user ?? false;
-        if($hsenable && ($hsauto || $username)){
+        if($hs && ($hsauto || $username)){
             $this->accountType = 2;
             $this->auto = !($username && $password) ;
             return true ;
         }
-        $pppauto = $this->conf->auto_ppp_user ?? false;
-        if ($pppauto || $username) {
+        $pauto = $this->conf->auto_ppp_user ?? false;
+        if ($pauto || $username) {
             $this->accountType = 1;
             $this->auto = !($username && $password) ;
             return true ;
