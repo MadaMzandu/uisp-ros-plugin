@@ -1,5 +1,5 @@
 <?php
-
+include_once 'lib/timer.php';
 class Devices extends Admin
 {
     public function disable()
@@ -22,22 +22,6 @@ class Devices extends Admin
         $this->reset_pppoe($id);
     }
 
-    public function services(): void
-    {
-        $opts = $this->options();
-        $services = $this->get_map('clients/services' . $opts);
-        $clients = [] ;// $this->get_map();
-        $records = $this->service_records();
-        $ids = array_keys($records);
-        $this->result = [];
-        foreach($ids as $id){
-            $this->result[$id] = $services[$id];
-            $this->result[$id]['attributes'] = $this->fix_attributes($services[$id]['attributes']);
-            $this->result[$id]['client'] = $clients[$services[$id]['clientId']] ?? [];
-            $this->result[$id]['record'] = $records[$id];
-        }
-    }
-
     public function delete(): bool
     {
 
@@ -48,7 +32,9 @@ class Devices extends Admin
         }
         $this->set_message('device has been deleted');
         return true;
-    }public function insert(): bool
+    }
+
+    public function insert(): bool
 {
 
     $db = $this->connect();
@@ -220,15 +206,14 @@ class Devices extends Admin
         return $map ;
     }
 
-    private function service_records(): array
+    public function services(): bool
     {
         $id = $this->data->id;
-        $records = [];
-        $services = $this->db()->selectServicesOnDevice($id);
-        foreach ($services as $service){
-            $records[$service['id']] = $service;
-        }
-        return $records ;
+        $limit = $this->data->limit ?? null ;
+        $offset = $this->data->offset ?? null ;
+        $this->result = [];
+        $this->result = $this->db()->selectServicesOnDevice($id,$limit,$offset);
+        return (bool) $this->result ;
     }
 
     private function read(): bool
