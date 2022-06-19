@@ -68,6 +68,7 @@ class MT_Account extends MT
     {
         return (object)[
             'remote-address' => $this->svc->ip(),
+            'remote-ipv6-prefix' => $this->svc->ip6() . $this->svc->ip6Length(),
             'name' => $this->svc->username(),
             'caller-id' => $this->svc->callerId(),
             'password' => $this->svc->password(),
