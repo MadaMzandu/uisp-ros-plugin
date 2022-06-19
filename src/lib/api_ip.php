@@ -8,6 +8,7 @@ class API_IP
     private $addr; //assign
     private $prefix;
     private $len;
+    private $alen ;
     private $pools; // active configured pool
     private $conf;
     private $type ; // 0 - v4 , 1 - v6
@@ -17,14 +18,16 @@ class API_IP
         $this->conf = (new API_SQLite())->readConfig();
     }
 
-    public function assign($device = false): ?string
+    public function assign($device = false): ?array
     {
-        $pool = $device
-            ? $device->pool
-            : $this->conf->ppp_pool;
-        if ($pool) {
-            $this->pools = explode(',', $pool . ',') ?? [];
-            $this->findUnused();
+        $p4 = $device->pool ?? null ;
+        $p6 = $device->pool6 ?? null ;
+        $this->alen = $device->pfxLength ?? 64 ;
+        foreach([$p4,$p6] as $pool){
+            if($pool){
+                $this->pools = explode(',', $pool . ',') ?? [];
+                $this->findUnused();
+            }
         }
         return $this->addr;
     }
@@ -73,7 +76,10 @@ class API_IP
         if($this->type == 0 )$last = base_convert($last,10,16);
         $zero = '/^0+$/';
         $ff = '/^[fF]+$/';
-        return preg_match($zero,$last) || preg_match($ff,$last);
+        $odd = $this->type == 0
+            ? preg_match($zero,$last) || preg_match($ff,$last)
+            : preg_match($ff,$last) ;
+        return $odd ;
     }
 
     private function iterate(): void
@@ -87,8 +93,8 @@ class API_IP
             $ip = $this->gmp2ip($address);
             if($this->is_odd($ip)) continue ; // skip zeros and xFFFF
             if ($this->db()->ifIpAddressIsUsed($ip)) continue; // skip used
-            $this->addr = $ip ;
-            break;
+            $this->addr[$this->type] = $ip ;
+            break ;
         }
     }
 
@@ -102,6 +108,7 @@ class API_IP
 
     private function gmp2ip($address)
     {
+		var_dump(gmp_strval($address,16));
         return inet_ntop(hex2bin(gmp_strval($address,16)));
     }
 
@@ -109,7 +116,7 @@ class API_IP
     {
         $hosts = $this->gmp_hosts();
         $addr = $this->ip2gmp();
-        if($this->len < 33) {
+        if($this->type == 0) {
             return gmp_add($addr, gmp_sub($hosts, 1));
         }
         return gmp_add($addr,$hosts);
@@ -117,7 +124,9 @@ class API_IP
 
     private function gmp_next($addr)
     {
-        return gmp_add($addr,1);
+        $next = $this->type == 0 ? 1
+            : gmp_pow(2,$this->alen);
+        return gmp_add($addr,$next);
     }
 
     private function ip2gmp($address = null)
