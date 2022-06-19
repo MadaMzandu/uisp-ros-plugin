@@ -33,6 +33,8 @@
 	"deleteDevice" : "verwyder Toestel",
 	"device" : "toestel",
 	"devicesTitle" : "Bestuurde toestelle",
+	"downloadComplete": "aflaai voltooi",
+	"downloading" :  "aflaai aan die gang",
 	"downloadTip" : "laai rugsteun af",
 	"downSpeed" : "aflaai spoed",
 	"editContention" : "Wysig twisverhouding",

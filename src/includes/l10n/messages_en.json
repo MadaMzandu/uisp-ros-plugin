@@ -33,6 +33,8 @@
   "deleteDevice": "deleteDevice",
   "device": "device",
   "devicesTitle": "Managed devices",
+  "downloadComplete": "download completed",
+  "downloading" :  "download in progress",
   "downloadTip": "download backup",
   "downSpeed": "download speed",
   "editContention": "Edit contention ratio",

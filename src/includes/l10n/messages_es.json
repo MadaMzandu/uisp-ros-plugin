@@ -33,6 +33,8 @@
   "deleteDevice" : "deleteDevice",
   "device" : "dispositivo",
   "devicesTitle" : "Dispositivos administrados",
+  "downloadComplete": "download completed",
+  "downloading" :  "download in progress",
   "downloadTip" : "descargar copia de seguridad",
   "downSpeed" : "velocidad de descarga",
   "editContention" : " Editar ratio de contención",

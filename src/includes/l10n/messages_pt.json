@@ -33,6 +33,8 @@
   "deleteDevice" : "excluirDispositivo",
   "device" : "dispositivo",
   "devicesTitle" : "Dispositivos gerenciados",
+  "downloadComplete": "Transferência concluída",
+  "downloading" :  "download em progresso",
   "downloadTip" : "baixar backup",
   "downSpeed" : "velocidade de download",
   "editContention" : " Editar o rácio de contenção",

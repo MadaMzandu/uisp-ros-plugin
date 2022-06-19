@@ -33,6 +33,8 @@
   "deleteDevice" : "deleteGerät",
   "device" : "Gerät",
   "devicesTitle" : "Verwaltete Geräte",
+  "downloadComplete": "Download abgeschlossen",
+  "downloading" :  "Download läuft",
   "downloadTip" : "Datensicherung herunterladen",
   "downSpeed" : "Downloadgeschwindigkeit",
   "editContention" : " Contention Ratio bearbeiten",

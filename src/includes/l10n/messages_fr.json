@@ -34,6 +34,8 @@
   "deleteDevice" : "supprimerPériphérique",
   "device" : "dispositif",
   "devicesTitle" : "Périphériques gérés",
+  "downloadComplete": "téléchargement terminé",
+  "downloading" :  "téléchargement en cours",
   "downloadTip" : "téléchargement de sauvegarde",
   "downSpeed" : "vitesse de téléchargement",
   "editContention" : " Modifier le rapport de contention",
