@@ -31,14 +31,16 @@ class API_SQLite
         $sql = 'insert into ' . $this->table . " (";
         $this->data['created'] = $this->getTime();
         $keys = array_keys($this->data);
+        $valid_keys = [];
         $values = [];
         foreach ($keys as $key) {
             if (is_null($this->data[$key])) {
                 continue;
             }
+            $valid_keys[] = $key ;
             $values[] = "'" . $this->data[$key] . "'";
         }
-        return $sql . implode(',', $keys) . ") values (" .
+        return $sql . implode(',', $valid_keys) . ") values (" .
             implode(',', $values) . ")";
     }
 
@@ -93,7 +95,8 @@ class API_SQLite
 
     public function ifIpAddressIsUsed($address)
     {
-        $sql = "select id from services where address='" . $address . "'";
+        $sql = "select id from services where address='"
+            . $address . "' or prefix6='" . $address . "'";
         return $this->singleQuery($sql);
     }
 
@@ -110,9 +113,11 @@ class API_SQLite
         return $this->singleQuery($sql);
     }
 
-    public function selectServicesOnDevice($device_id)
+    public function selectServicesOnDevice($device_id,$limit=null,$offset=null)
     {
-        $sql = "select * from services where device=" . $device_id;
+        if($limit) $limit = ' LIMIT ' . $limit ;
+        if($offset) $offset = ' OFFSET ' . $offset ;
+        $sql = "select * from services where device=" . $device_id . $limit . $offset;
         $res = $this->query($sql);
         $return = null;
         while ($row = $res->fetchArray(SQLITE3_ASSOC)) {
