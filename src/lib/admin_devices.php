@@ -79,34 +79,6 @@ class Devices extends Admin
         return true;
     }
 
-    private function options(): string
-    {
-        $keys = array_keys((array) $this->data->options ?? []);
-        $attribs = $this->get_attributes();
-        $deviceAttribute = $attribs[$this->conf->device_name_attr]  ?? null ;
-        $deviceName = $this->db()->selectDeviceById($this->data->id)->name ?? null ;
-        $opts = '?';
-        if($deviceAttribute && $deviceName){
-            $opts .= 'customAttributeId=' . $deviceAttribute ;
-            $opts .= '&customAttributeValue=' . $deviceName ;
-        }
-        foreach($keys as $key){
-            $opts .= '&' .  $key . '=' . $this->data->options->$key ;
-        }
-        return $opts ;
-    }
-
-    public function get_attributes(){
-        $api = new API_Unms();
-        $api->assoc = true ;
-        $array = [];
-        $attribs = $api->request('/custom-attributes') ;
-        foreach($attribs as $attrib){
-            $array[$attrib['key']] = $attrib['id'];
-        }
-        return $array ;
-    }
-
     private function reset_pppoe($id)
     {
         $data = (object)[
@@ -126,17 +98,6 @@ class Devices extends Admin
             (new MT($edit))->set();
         }
 
-    }
-
-    private function get_plans()
-    {
-        $data = [];
-        $plans = (new Plans($data))->list();
-        $plans_map = [];
-        foreach ($plans as $plan) {
-            $plans_map[$plan['name']] = $plan ;
-        }
-        return $plans_map;
     }
 
     private function save_router($id,$enable=false)
@@ -172,48 +133,50 @@ class Devices extends Admin
         return (new MT($data))->set();
     }
 
-    private function fix_attributes($attributes): array
-    {
-        $fixed = [];
-        $keys = [$this->conf->pppoe_user_attr => 'username',
-            $this->conf->mac_addr_attr => 'mac',
-            $this->conf->device_name_attr => 'device',
-            $this->conf->ip_addr_attr => 'ip'];
-        foreach (array_keys($keys) as $key) {
-            foreach ($attributes as $item) {
-                if ($item['key'] == $key){
-                    $fixed[$keys[$key]] = $item['value'];
-                }
-            }
-        }
-        return $fixed ;
-    }
-
     private function connect(): API_SQLite
     {
         return new API_SQLite();
     }
 
-    private function get_map($type='clients'): array
-    {
-        $api = new API_Unms();
-        $api->assoc = true ;
-        $array = $api->request('/'.$type);
-        $map = [];
-        foreach($array as $item){
-            $map[$item['id']] = $item ;
-        }
-        return $map ;
-    }
-
     public function services(): bool
     {
+        $this->cache_update();
+        $this->result = $this->cache();
+        if($this->result) return true ;
+        //if cache is not ready load skeleton from db
         $id = $this->data->id;
         $limit = $this->data->limit ?? null ;
         $offset = $this->data->offset ?? null ;
         $this->result = [];
         $this->result = $this->db()->selectServicesOnDevice($id,$limit,$offset);
-        return (bool) $this->result ;
+        $ret = (bool) $this->result ;
+        if($ret) $this->result['skel'] = true ;
+        return $ret ;
+    }
+
+    private function cache_update(): void
+    {
+        $cmd = 'php lib/admin_cache.php > /dev/null 2>&1 &' ;
+        shell_exec($cmd);
+    }
+
+    private function cache(): ?array
+    {
+        $file = 'data/cache.json';
+        if(!file_exists($file))return null ;
+        if($this->cache_is_valid()) return [1];
+        $id = $this->data->id ?? 0;
+        $cache = json_decode(file_get_contents($file),true) ;
+        $ret = $cache[$id] ?? null;
+        if($ret) $ret['date'] = filemtime('data/cache.json');
+        return $ret;
+    }
+
+    private function cache_is_valid(): bool
+    { // if last cache is still valid
+        $last = $this->data->lastCache ?? 0 ;
+        $current = filemtime('data/cache.json');
+        return $last == $current ;
     }
 
     private function read(): bool
