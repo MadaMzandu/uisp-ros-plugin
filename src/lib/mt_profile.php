@@ -186,13 +186,13 @@ class MT_Profile extends MT
 
     protected function exists(): bool
     {
+		$this->entity = [];
         if($this->read_profiles()){
             $action = $this->svc->action ;
-            if(in_array($action,['insert','suspend'])){
-                $this->entity = $this->find_profile();
-            }else {
-                $this->entity =  $this->find_last();
+            if(!in_array($action,['insert','suspend'])){
+                $this->entity = $this->find_last();
             }
+			if(!$this->entity)$this->entity =  $this->find_profile();
             $this->insertId = $this->entity['.id'] ?? null ;
             if($this->insertId) return true ;
         }
