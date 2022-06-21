@@ -66,9 +66,8 @@ class MT_Account extends MT
 
     private function pppoe_data(): stdClass
     {
-        return (object)[
+        $obj = (object)[
             'remote-address' => $this->svc->ip(),
-            'remote-ipv6-prefix' => $this->svc->ip6() . $this->svc->ip6Length(),
             'name' => $this->svc->username(),
             'caller-id' => $this->svc->callerId(),
             'password' => $this->svc->password(),
@@ -76,6 +75,10 @@ class MT_Account extends MT
             'comment' => $this->comment(),
             '.id' => $this->insertId,
         ];
+        if($this->svc->ip6())
+            $obj['remote-ipv6-prefix'] =
+                $this->svc->ip6() . $this->svc->ip6Length();
+        return $obj;
     }
 
     private function profile(): string
