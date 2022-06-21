@@ -1,7 +1,6 @@
 <?php
 include_once 'lib/_temp.php';
 include_once 'lib/api_sqlite.php';
-include_once 'lib/timer.php';
 
 function db()
 {
