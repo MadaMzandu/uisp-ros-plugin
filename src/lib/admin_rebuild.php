@@ -56,6 +56,8 @@ function send_triggers():void
     $t->end('Fetch and Filter');
     if($services && clear_cache()) {
         $url = '/clients/services/';
+        file_put_contents('data/cache.json',null); //reset cache
+        file_put_contents('data/queue.json',null); // reset queue
         foreach ($services as $item) {
             $data = ['note' => $item['note']];
             crm()->request($url . $item['id'], 'PATCH', $data);
