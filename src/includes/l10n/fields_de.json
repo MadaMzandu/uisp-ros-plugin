@@ -23,14 +23,32 @@
   },
   "device_pool": {
     "name": "pool",
-    "label": "IP-Adresspool-Subnetze",
+    "label": "IP4-Pool",
     "describe": true,
-    "description": "Definieren Sie durch Kommas getrennte Adresspools - erforderlich für dhcp. Um Gerätepools für ppp zu verwenden, aktivieren Sie die Option in den api-Einstellungen.",
-    "hint": "10.88.1.0/24,10.99.0.0/16",
+    "description": "Definieren Sie IP4-Präfixe für Clients - erforderlich für DHCP. Um diese Gerätepools für PPP zu verwenden, aktivieren Sie die Option in den API-Einstellungen.",
+    "hint": "10.88.1.0/24",
     "width": 600,
     "obscure": null,
     "type": null,
     "isAttribute": null
+  },
+  "device_pool6":
+  {
+    "name" : "pool6",
+    "width" : "600",
+    "label" : "IP6-Pool",
+    "hint" : "fddc:9057:1bea::/48",
+    "describe" : true,
+    "description" : "Definieren Sie IP6-Präfixe, um Clients zuzuweisen. Derzeit wird nur ip6 über ppp unterstützt. Präfixe können auf vielen Routern wiederverwendet werden."
+  },
+  "device_pfxLength":
+  {
+    "name" : "pfxLength",
+    "width" : "600",
+    "label" : "Client-IP6-Präfixlänge",
+    "hint" : "/64",
+    "describe" : true,
+    "description" : "Gibt die Größe des ip6-Präfixes an, das jedem Client zugewiesen werden soll"
   },
   "device_user": {
     "name": "user",

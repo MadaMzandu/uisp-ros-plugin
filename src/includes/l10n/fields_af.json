@@ -23,14 +23,32 @@
   },
   "device_pool": {
     "name": "pool",
-    "label": "IP-adres swembad subnette",
+    "label": "IP4 swembad",
     "describe": true,
-    "description": "Definieer kommageskeide adrespoele - vereis vir dhcp. Aktiveer die opsie in API-instellings om toestelpoele vir ppp te gebruik.",
-    "hint": "10.88.1.0/24,10.99.0.0/16",
+    "description": "Definieer ip4-voorvoegsels vir kliënte - vereis vir dhcp. Aktiveer die opsie in API-instellings om hierdie toestelpoele vir ppp te gebruik.",
+    "hint": "10.88.1.0/24",
     "width": 600,
     "obscure": null,
     "type": null,
     "isAttribute": null
+  },
+  "device_pool6":
+  {
+    "name" : "pool6",
+    "width" : "600",
+    "label" : "IP6 swembad",
+    "hint" : "fddc:9057:1bea::/48",
+    "describe" : true,
+    "description" : "Definieer ip6-voorvoegsels om kliënte toe te wys. Tans word slegs ip6 oor ppp ondersteun. Voorvoegsels kan op baie routers hergebruik word."
+  },
+  "device_pfxLength":
+  {
+    "name" : "pfxLength",
+    "width" : "600",
+    "label" : "Kliënt ip6 voorvoegsel lengte",
+    "hint" : "/64",
+    "describe" : true,
+    "description" : "Spesifiseer die grootte van ip6-voorvoegsel om aan elke kliënt toe te ken"
   },
   "device_user": {
     "name": "user",

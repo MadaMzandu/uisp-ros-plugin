@@ -52,6 +52,7 @@
   "generalOptions" : "Opções gerais",
   "generalPool" : "Pool de endereços IP",
   "id" : "ID",
+  "ip6Prefix": "prefixo ip6",
   "ipAddress" : "endereço ip",
   "jobsConfirm" : "Tem certeza de que deseja excluir essas alterações não aplicadas? A exclusão da fila de trabalhos não pode ser desfeita",
   "jobsDeleteTip" : "excluir trabalhos",

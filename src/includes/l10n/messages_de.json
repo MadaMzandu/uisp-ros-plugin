@@ -52,6 +52,7 @@
   "generalOptions" : "Allgemeine Optionen",
   "generalPool" : "IP-Adresspool",
   "id" : "ID",
+  "ip6Prefix": "ip6-Präfix",
   "ipAddress" : "IP-Adresse",
   "jobsConfirm" : "Möchten Sie diese nicht angewendeten Änderungen wirklich löschen? Löschen der Jobwarteschlange kann nicht rückgängig gemacht werden",
   "jobsDeleteTip" : "Aufträge löschen",

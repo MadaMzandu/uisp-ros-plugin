@@ -18,10 +18,28 @@
   {
     "name" : "pool",
     "width" : "600",
-    "label" : "Ip address pool subnets",
-    "hint" : "10.88.1.0/24,10.99.0.0/16",
+    "label" : "Ip4 pool",
+    "hint" : "10.88.1.0/24",
     "describe" : true,
-    "description" : "Define comma separated address pools - required for dhcp. To use device pools for ppp enable the option in api settings."
+    "description" : "Define ip4 prefixes for clients - required for dhcp. To use these device pools for ppp enable the option in api settings."
+  },
+  "device_pool6":
+  {
+    "name" : "pool6",
+    "width" : "600",
+    "label" : "Ip6 pool",
+    "hint" : "fddc:9057:1bea::/48",
+    "describe" : true,
+    "description" : "Define ip6 prefixes to assign clients. Currently only ip6 over ppp is supported. Prefixes can be reused on many routers."
+  },
+  "device_pfxLength":
+  {
+    "name" : "pfxLength",
+    "width" : "600",
+    "label" : "Client ip6 prefix length",
+    "hint" : "/64",
+    "describe" : true,
+    "description" : "Specifies the size of ip6 prefix to assign to each client"
   },
   "device_user" :
   {

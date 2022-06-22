@@ -23,14 +23,32 @@
    },
    "device_pool": {
       "name": "pool",
-      "label": "Subnet za bwawa la anwani ya IP",
+      "label": "Ip4 bwawa",
       "describe": true,
-      "description": "Bainisha vidimbwi vya anwani vilivyotenganishwa kwa koma - inahitajika kwa dhcp. Ili kutumia mabwawa ya kifaa kwa ppp wezesha chaguo katika mipangilio ya api.",
-      "hint": "10.88.1.0/24,10.99.0.0/16",
+      "description": "Bainisha viambishi awali vya ip4 kwa wateja - vinavyohitajika kwa dhcp. Ili kutumia vifaa hivi kwa ppp wezesha chaguo katika mipangilio ya api.",
+      "hint": "10.88.1.0/24",
       "width": 600,
       "obscure": null,
       "type": null,
       "isAttribute": null
+   },
+   "device_pool6":
+   {
+      "name" : "pool6",
+      "width" : "600",
+      "label" : "Ip6 bwawa",
+      "hint" : "fddc:9057:1bea::/48",
+      "describe" : true,
+      "description" : "Bainisha viambishi awali vya ip6 ili kuwapa wateja. Kwa sasa ni ip6 over ppp pekee ndiyo inayotumika. Viambishi awali vinaweza kutumika tena kwenye ruta nyingi."
+   },
+   "device_pfxLength":
+   {
+      "name" : "pfxLength",
+      "width" : "600",
+      "label" : "Urefu wa kiambishi awali cha ip6 cha mteja",
+      "hint" : "/64",
+      "describe" : true,
+      "description" : "Hubainisha ukubwa wa kiambishi awali cha ip6 cha kukabidhi kila mteja"
    },
    "device_user": {
       "name": "user",

@@ -53,6 +53,7 @@
   "generalOptions" : "Options générales",
   "generalPool" : "pool d'adresses IP",
   "id" : "id",
+  "ip6Prefix": "préfixe ip6",
   "ipAddress" : "adresse IP",
   "jobsConfirm" : "Êtes-vous sûr de vouloir supprimer ces modifications non appliquées ? La suppression de la file d'attente des travaux ne peut pas être annulée",
   "jobsDeleteTip" : "supprimer des tâches",

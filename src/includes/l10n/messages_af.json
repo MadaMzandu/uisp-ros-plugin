@@ -52,6 +52,7 @@
 	"generalOptions" : "Algemene opsies",
 	"generalPool" : "IP-adrespoel",
 	"id" : "id",
+	"ip6Prefix": "ip6 voorvoegsel",
 	"ipAddress" : "IP adres",
 	"jobsConfirm" : "Is jy seker jy wil hierdie ontoegepaste veranderinge uitvee. Die uitvee van die werkwaglys kan nie ongedaan gemaak word nie",
 	"jobsDeleteTip" : "werke uitvee",

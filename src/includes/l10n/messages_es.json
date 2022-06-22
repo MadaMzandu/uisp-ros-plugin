@@ -52,6 +52,7 @@
   "generalOptions" : "Opciones generales",
   "generalPool" : "grupo de direcciones IP",
   "id" : "id",
+  "ip6Prefix": "prefijo ip6",
   "ipAddress" : "dirección ip",
   "jobsConfirm" : "¿Está seguro de que desea eliminar estos cambios no aplicados? No se puede deshacer la eliminación de la cola de trabajos",
   "jobsDeleteTip" : "eliminar trabajos",

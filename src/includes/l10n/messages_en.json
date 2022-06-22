@@ -52,6 +52,7 @@
   "generalOptions": "General Options",
   "generalPool": "IP address pool",
   "id": "id",
+  "ip6Prefix": "ip6 prefix",
   "ipAddress": "ip address",
   "jobsConfirm": "Are you sure you want to delete these unapplied changes. Deleting the job queue cannot be undone",
   "jobsDeleteTip": "delete jobs",
