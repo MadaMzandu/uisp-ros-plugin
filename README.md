@@ -17,6 +17,11 @@ So it finally came to be, a simple to install plugin replacement for the previou
 2. Real time migration of accounts between devices
 3. Supports both dhcp and pppoe and other ppp variants
 
+# Kofi
+
+If this work adds value to your project then take the time and send the programmer some Kofi. 
+https://ko-fi.com/madamzandu
+
 # Installation
 
 1. Download the zip file in the src directory and upload into your Uisp > Settings > Plugins.
