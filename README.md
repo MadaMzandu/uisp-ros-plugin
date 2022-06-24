@@ -63,7 +63,7 @@ services on the client's lan.
 
 In the device settings provide an ipv6 prefix of reasonable size e.g. a /48. This prefix can be reused
 on more than one router and the plugin will manage and ensure that client allocations have no conflicts.
-After specifying the prefix you must specify the size or prefix length to assign clients in the prefix 
+After specifying the prefix you can specify the size or prefix length to assign clients in the prefix 
 length field. If the prefix length field is empty the plugin will default to assigning /64's to clients.
 
 When a pppoe client is added the plugin will allocate an ipv6 /64 along with the normal ipv4 framed address.
