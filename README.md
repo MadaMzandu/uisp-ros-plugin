@@ -48,7 +48,15 @@ The custom attributes in Configution (4) should be listed in the form when creat
 3. Mac address to provision DHCP instead.
 4. IP address to bypass the pool
 
-## Localized Languages - new feature
+## IPv6 Over PPP
+
+Version 1.8.5 introduces support for ipv6 gateway devices and ipv6 over ppp (without PD). 
+
+## Hotspot Account Support
+
+## Localized Languages
+
+Version 1.8.5 adds support for Swahili and Afrikaans. Please let me have feedback if there are problems.
 
 In version 1.8.4 we have added and are testing support for languages. Currently the languages supported are en,es,fr,pt and de.
 
