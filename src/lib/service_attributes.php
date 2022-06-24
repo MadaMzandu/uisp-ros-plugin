@@ -9,7 +9,9 @@ class Service_Attributes extends Service_Base
     public $pppoe;
     public $unsuspend = false;
     public $move = false;
+    public $accountType = 1;  // 0 - dhcp , 1 - ppp , 2 - hotspot
     protected $auto;
+
 
     protected function init(): void
     {
@@ -60,7 +62,7 @@ class Service_Attributes extends Service_Base
 
     protected function check_attributes(): bool
     {
-        if (!($this->check_mac() || $this->check_username())) {
+        if (!$this->check_username()) {
             $this->setErr('no valid username or mac address provided for service');
             return false;
         }
@@ -69,14 +71,23 @@ class Service_Attributes extends Service_Base
 
     protected function check_username(): bool
     {
-        $username = $this->get_value($this->conf->pppoe_user_attr);
-        $password = $this->get_value($this->conf->pppoe_pass_attr);
-        $auto = $this->conf->auto_ppp_user ?? false;
-        if ($auto || $username) {
-            $this->pppoe = true;
-            $this->auto = !($username && $password);
+        if($this->check_mac()) return true ;
+        $username = $this->get_value($this->conf->pppoe_user_attr ?? null);
+        $password = $this->get_value($this->conf->pppoe_pass_attr ?? null);
+        $hs = $this->get_value($this->conf->hs_attr ?? 'hotspot');
+        $hsauto = $this->conf->auto_hs_user ?? false;
+        if($hs && ($hsauto || $username)){
+            $this->accountType = 2;
+            $this->auto = !($username && $password) ;
+            return true ;
         }
-        return $auto || $username;
+        $pauto = $this->conf->auto_ppp_user ?? false;
+        if ($pauto || $username) {
+            $this->accountType = 1;
+            $this->auto = !($username && $password) ;
+            return true ;
+        }
+        return false ;
     }
 
     protected function check_username_change(): void
@@ -108,7 +119,7 @@ class Service_Attributes extends Service_Base
     {
         $mac = $this->get_value($this->conf->mac_addr_attr);
         if ($mac && filter_var($mac, FILTER_VALIDATE_MAC)) {
-            $this->pppoe = false;
+            $this->accountType = 0 ;
             return true;
         }
         return false;

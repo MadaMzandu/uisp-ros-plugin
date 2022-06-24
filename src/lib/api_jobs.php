@@ -16,7 +16,7 @@ class Api_Jobs extends Admin
 
     public function list()
     {
-        $this->result = $this->queue;
+        $this->result = $this->queue ?? [];
     }
 
     public function clear()
@@ -33,6 +33,17 @@ class Api_Jobs extends Admin
 
     public function run()
     {
+        $this->status->status = 'ok';
+        $this->status->data = [];
+        header('content-type: application/json');
+        echo json_encode($this->status);
+        if(function_exists('fastcgi_finish_request'))
+        fastcgi_finish_request();
+        else{
+            shell_exec('php lib/shell.php jobs > /dev/null 2>&1 &');
+            return;
+        }
+        set_time_limit(300);
         if(is_object($this->queue)){
             $ids = array_keys((array)$this->queue);
             foreach ($ids as $id){

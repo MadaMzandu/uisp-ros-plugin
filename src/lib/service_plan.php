@@ -27,32 +27,12 @@ class Service_Plan extends Service_Base
         return $this->$entity->servicePlanId;
     }
 
-    public function total(): stdClass
-    {
-        $shares = max($this->shares(), 1);
-        $u = $this->rate()->upload * $shares;
-        $d = $this->rate()->download * $shares;
-        return (object)[
-            'text' => $u . 'M/' . $d . 'M',
-            'upload' => $u,
-            'download' => $d,
-        ];
-    }
-
     public function target(): array
     {
         $name = $this->get_value($this->conf->device_name_attr);
         $devId = $this->db()->selectDeviceByDeviceName($name)->id ?? 0;
         $hosts = $this->db()->selectTargets($this->id(),$devId) ?? [];
         return $hosts ;
-    }
-
-    protected function shares():int
-    { // calculates the number of contention shares
-        $ratio = $this->get()['ratio'];
-        $children = $this->children();
-        $shares = intdiv($children, $ratio);
-        return ($children % $ratio) > 0 ? ++$shares : $shares; // go figure :-)
     }
 
     protected function device(): ?stdClass
@@ -74,17 +54,6 @@ class Service_Plan extends Service_Base
     public function ratio(): int
     {
         return $this->get()->ratio ?? 1;
-    }
-
-    public function children(): int
-    {
-        $entity = $this->mode ? 'before' : 'entity';
-        $name = $this->get_value($this->conf->device_name_attr);
-        $planId = $this->$entity->servicePlanId ?? 0;
-        $deviceId = $this->db()->selectDeviceByDeviceName($name)->id ?? 0 ;
-        $children = $this->db()->countDeviceServicesByPlanId($planId, $deviceId);
-        $children += $this->contention;
-        return max($children, 0);
     }
 
     public function rate(): stdClass

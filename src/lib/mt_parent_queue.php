@@ -7,8 +7,9 @@ class MT_Parent_Queue extends MT
 
     public function apply($data=[]): bool
     {
+        $this->child = $data ;
         $this->set_mode();
-        $this->exists = $this->read_child($data);
+        $this->exists = $this->exists();
         $this->set_contention();
         if(!$this->children() && $this->svc->plan->contention < 0)
             return $this->delete() ;
@@ -18,8 +19,7 @@ class MT_Parent_Queue extends MT
     private function set_contention(): void
     {
         $action = $this->svc->action ;
-        if($action == 'suspend'
-            && $this->svc->unsuspend) $action = 'unsuspend';
+        if($this->svc->unsuspend) $action = 'unsuspend';
         $c = in_array($action,['insert','unsuspend']) ? 1 : -1;
         if(in_array($action,['edit','rename'])) $c = 0;
         $this->svc->plan->contention = $c ;
@@ -32,24 +32,15 @@ class MT_Parent_Queue extends MT
         $this->svc->mode($mode);
     }
 
-    public function set_parent(): bool
+    public function children(): int
     {
-        if ($this->conf->disable_contention) {
-            return true;
-        }
-        if ($this->svc->plan->contention < 0 && !$this->children()) {
-            return $this->delete();
-        }
-        if ($this->svc->disabled()) {
-            $this->svc->plan->contention = 0;
-        }
-        return $this->exec();
-    }
-
-    protected function children(): int
-    {
+        $c = $this->svc->plan->contention ;
+        $ip = $this->svc->ip();
+        $exits = $this->entity['targets'][$ip] ?? null;
+        if($c > 0 && $exits) $c = 0 ; //already done
+        if($c < 0 && !$exits) $c = 0;
         $size = sizeof($this->entity['targets']) ?? 0;
-        $size += $this->svc->plan->contention ;
+        $size += $c ;
         return max($size,0) ;
     }
 
@@ -111,10 +102,10 @@ class MT_Parent_Queue extends MT
     {
         $action = $this->exists ? 'set' : 'add';
         $this->write($this->data(), $action);
-        return !$this->findErr('ok');
+        return !$this->findErr();
     }
 
-    public function reset($orphanId = null): bool
+    /*public function reset($orphanId = null): bool
     { //recreates a parent queue
         if (!$this->exec()) {
             return false;
@@ -129,7 +120,7 @@ class MT_Parent_Queue extends MT
             }
         }
         return true;
-    }
+    }*/
 
     protected function init(): void
     {
@@ -162,16 +153,6 @@ class MT_Parent_Queue extends MT
     private function base_name(): string
     {
         return $this->prefix() . "-parent";
-    }
-
-    private function read_child($data): bool
-    {
-        if(is_array($data)) {
-            foreach (array_keys($data) as $key) {
-                $this->child[$key] = $data[$key];
-            }
-        }
-        return $this->exists();
     }
 
     private function add_parent(): bool

@@ -2,7 +2,7 @@
 include_once 'service_plan.php';
 include_once 'service_attributes.php';
 include_once 'service_client.php';
-include_once 'api_ipv4.php';
+include_once 'api_ip.php';
 include_once 'api_unms.php';
 
 class Service_Account extends Service_Attributes
@@ -11,6 +11,7 @@ class Service_Account extends Service_Attributes
     public $plan;
     public $client;
     public $ip; //ip address assignment
+    public $ip6 ; //ip6 assignment
 
     protected function init(): void
     {
@@ -109,6 +110,7 @@ class Service_Account extends Service_Attributes
             'planId' => $this->entity->servicePlanId,
             'clientId' => $this->entity->clientId,
             'address' => $this->ip(),
+            'prefix6' => $this->ip6() ,
             'status' => $this->entity->status,
             'device' => $this->get_device()->id
         ];
@@ -128,10 +130,25 @@ class Service_Account extends Service_Attributes
             return $ip;
         }
         $rec = $this->db()->selectServiceById($this->id());
-        if ((array)$rec && !$this->ip_removed()) {
-            return $rec->address;
-        }
-        return $this->ip ?? $this->assign_ip();
+        if ((array)$rec && !$this->ip_removed())
+            $this->ip = $rec->address ?? null ;
+        return $this->ip ?? $this->assign_ip()[0] ?? null;
+    }
+
+    public function ip6(): ?string
+    {
+        if($this->accountType != 1) return null ;
+        $rec = $this->db()->selectServiceById($this->id());
+        $ip = $rec->prefix6 ?? null ;
+        if($ip) $this->ip6 = $ip ;
+        return $this->ip6 ?? $this->assign_ip()[1] ?? null;
+    }
+
+    public function ip6Length(): ?string
+    {
+        if($this->accountType != 1) return null ;
+        $len = $this->device()->pfxLength ?? 64;
+        return '/' . $len ;
     }
 
     protected function ip_removed(): bool
@@ -147,14 +164,14 @@ class Service_Account extends Service_Attributes
         return $this->$entity->id;
     }
 
-    protected function assign_ip(): ?string
+    protected function assign_ip(): array
     {
         $device = false;
-        if ($this->conf->router_ppp_pool || !$this->pppoe) {
+        if ($this->conf->router_ppp_pool || $this->svc->accountType == 0) {
             $device = $this->get_device();
         }
-        $this->ip = (new API_IPv4())->assign($device);
-        return $this->ip;
+        [$this->ip,$this->ip6] = (new API_IP())->assign($device);
+        return [$this->ip,$this->ip6];
     }
 
     public function delete(): bool

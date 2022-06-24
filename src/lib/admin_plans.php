@@ -17,8 +17,10 @@ class Plans extends Admin
 
     public function get(): void
     {
+        $start = microtime(true);
         $this->readCache();
         $this->updateCache();
+        $this->status->duration = (microtime(true) - $start) * 1000;
     }
 
     private function readCache(): void

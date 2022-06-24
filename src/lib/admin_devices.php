@@ -1,5 +1,5 @@
 <?php
-
+include_once 'lib/admin_cache.php';
 class Devices extends Admin
 {
     public function disable()
@@ -22,21 +22,6 @@ class Devices extends Admin
         $this->reset_pppoe($id);
     }
 
-    public function services(): void
-    {
-        $services = $this->get_map('clients/services');
-        $clients =  $this->get_map();
-        $records = $this->service_records();
-        $ids = array_keys($records);
-        $this->result = [];
-        foreach($ids as $id){
-            $this->result[$id] = $services[$id];
-            $this->result[$id]['attributes'] = $this->fix_attributes($services[$id]['attributes']);
-            $this->result[$id]['client'] = $clients[$services[$id]['clientId']];
-            $this->result[$id]['record'] = $records[$id];
-        }
-    }
-
     public function delete(): bool
     {
 
@@ -47,23 +32,27 @@ class Devices extends Admin
         }
         $this->set_message('device has been deleted');
         return true;
-    }public function insert(): bool
-{
-
-    $db = $this->connect();
-    unset($this->data->id);
-    if (!$db->insert($this->data, 'devices')) {
-        $this->set_error('database error');
-        return false;
     }
-    $this->set_message('device has been added');
-    return true;
-}
+
+    public function insert(): bool
+    {
+
+        $db = $this->connect();
+        unset($this->data->id);
+        $this->trim_prefix();
+        if (!$db->insert($this->data, 'devices')) {
+            $this->set_error('database error');
+            return false;
+        }
+        $this->set_message('device has been added');
+        return true;
+    }
 
     public function edit(): bool
     {
 
         $db = $this->connect();
+        $this->trim_prefix();
         if (!$db->edit($this->data, 'devices')) {
             $this->set_error('database error');
             return false;
@@ -113,17 +102,6 @@ class Devices extends Admin
 
     }
 
-    private function get_plans()
-    {
-        $data = [];
-        $plans = (new Plans($data))->list();
-        $plans_map = [];
-        foreach ($plans as $plan) {
-            $plans_map[$plan['name']] = $plan ;
-        }
-        return $plans_map;
-    }
-
     private function save_router($id,$enable=false)
     {
         $list = json_decode($this->conf->disabled_routers,true) ?? [];
@@ -157,52 +135,60 @@ class Devices extends Admin
         return (new MT($data))->set();
     }
 
-
-
-
-    private function fix_attributes($attributes): array
-    {
-        $fixed = [];
-        $keys = [$this->conf->pppoe_user_attr => 'username',
-            $this->conf->mac_addr_attr => 'mac',
-            $this->conf->device_name_attr => 'device',
-            $this->conf->ip_addr_attr => 'ip'];
-        foreach (array_keys($keys) as $key) {
-            foreach ($attributes as $item) {
-                if ($item['key'] == $key){
-                    $fixed[$keys[$key]] = $item['value'];
-                }
-            }
-        }
-        return $fixed ;
-    }
-
     private function connect(): API_SQLite
     {
         return new API_SQLite();
     }
 
-    private function get_map($type='clients'): array
+    public function services(): void
     {
-        $api = new API_Unms();
-        $api->assoc = true ;
-        $array = $api->request('/'.$type);
-        $map = [];
-        foreach($array as $item){
-            $map[$item['id']] = $item ;
+        $this->result = $this->cache();
+        if($this->result){
+            $this->cache_update();
+            return ;
         }
-        return $map ;
+        //if cache is not ready load skeleton from db
+        $id = $this->data->id;
+        $limit = $this->data->limit ?? null ;
+        $offset = $this->data->offset ?? null ;
+        $this->result = $this->db()->selectServicesOnDevice($id,$limit,$offset) ?? [];
+        $this->result['skel'] = true ;
+        $this->cache_update();
     }
 
-    private function service_records(): array
+    public function cache_update(): void
     {
-        $id = $this->data->id;
-        $records = [];
-        $services = $this->db()->selectServicesOnDevice($id);
-        foreach ($services as $service){
-            $records[$service['id']] = $service;
+        if(!function_exists('fastcgi_finish_request')){
+            shell_exec('php lib/shell.php cache > /dev/null 2>&1 &');
+            return;
+        }else{
+            $this->status->status = 'ok';
+            $this->status->data = $this->result ;
+            header('content-type: application/json');
+            echo json_encode($this->status);
+            fastcgi_finish_request();
         }
-        return $records ;
+        set_time_limit(300);
+        (new Admin_Cache())->create();
+    }
+
+    private function cache(): ?array
+    {
+        $file = 'data/cache.json';
+        if(!file_exists($file))return null ;
+        if($this->cache_is_valid()) return [1];
+        $id = $this->data->id ?? 0;
+        $cache = json_decode(file_get_contents($file),true) ;
+        $ret = $cache[$id] ?? null;
+        if($ret) $ret['date'] = filemtime('data/cache.json');
+        return $ret;
+    }
+
+    private function cache_is_valid(): bool
+    { // if last cache is still valid
+        $last = $this->data->lastCache ?? 0 ;
+        $current = filemtime('data/cache.json');
+        return $last == $current ;
     }
 
     private function read(): bool
@@ -210,6 +196,12 @@ class Devices extends Admin
         $db = $this->connect();
         $this->read = $db->selectAllFromTable('devices');
         return (bool) $this->read;
+    }
+
+    private function trim_prefix(): void
+    {
+        $pfx = $this->data->pfxLength ?? null ;
+        if($pfx) $this->data->pfxLength = trim($pfx,"/");
     }
 
     private function setStatus(): void

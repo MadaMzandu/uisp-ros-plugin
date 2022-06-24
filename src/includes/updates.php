@@ -1,6 +1,6 @@
 <?php
 
-$version = '1.8.4c';
+$version = '1.8.5';
 $conf = db()->readConfig();
 $current = $conf->version ?? '1.0.0';
 
@@ -12,8 +12,9 @@ function apply_updates(): bool
    return table_updates()
        && conf_updates()
        && remove_jobs()
-       && rebuild();
+       && rebuild() ;
 }
+
 
 function rebuild(): bool
 {
@@ -54,7 +55,7 @@ function conf_updates(): bool
 function table_updates(): bool
 {
     global $current ;
-    if($current < '1.8.1') {
+    if($current < '1.8.5') {
         $file = file_get_contents('includes/tables.sql');
         return db()->exec($file);
     }
@@ -76,7 +77,7 @@ function create_backup()
     return (new Admin_Backup($data))->run();
 }
 
-function bak_is_ok(): bool
+function bak_not_ok(): bool
 {
     if(!file_exists('data/.last_backup')){return false;}
     $file = file_get_contents('data/.last_backup');
@@ -84,12 +85,19 @@ function bak_is_ok(): bool
     $now = new DateTime();
     $interval = new DateInterval('P1D');
     $next = (new DateTime($last))->add($interval);
-    return $next > $now ;
+    return $now >= $next ;
 }
 
-function version_is_ok(): bool
+function version_not_ok(): bool
 {
     global $version, $current;
-    return $current >= $version ;
+    return $version > $current ;
 }
 
+function user_not_ok(): bool
+{
+    return false ;
+    $security = \Ubnt\UcrmPluginSdk\Service\UcrmSecurity::create();
+    $user = $security->getUser();
+    return !$user || $user->isClient ;
+}

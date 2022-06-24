@@ -245,17 +245,26 @@ class Validation extends Admin
 
     private function checkIpAddress()
     {
-        $fields = ['ip'];
-        foreach ($fields as $field) {
-            $ip = $this->data->{$field} ?? null;
+        $checkFields = ['ip'];
+        foreach ($checkFields as $field) {
+            if(!$this->dataContains($field)){
+                continue;
+            }
+            $ip = $this->data->$field;
             if (filter_var($ip, FILTER_VALIDATE_IP)
                 || filter_var($ip, FILTER_VALIDATE_DOMAIN, FILTER_FLAG_HOSTNAME)) {
                 return true;
+            }else{
+                $this->setFieldError($field, 'hostname or ip address is not valid');
+                $this->set_error('failed:host validation');
+                return false;
             }
         }
-        $this->setFieldError($field, 'hostname or ip address is not valid');
-        $this->set_error('failed:host validation');
-        return false;
+        return true ;
+    }
+
+    private function dataContains($key){
+        return in_array($key,array_keys((array)$this->data));
     }
 
 }

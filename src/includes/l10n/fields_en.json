@@ -18,10 +18,28 @@
   {
     "name" : "pool",
     "width" : "600",
-    "label" : "Ip address pool subnets",
-    "hint" : "10.88.1.0/24,10.99.0.0/16",
+    "label" : "Ip4 pool",
+    "hint" : "10.88.1.0/24",
     "describe" : true,
-    "description" : "Define comma separated address pools - required for dhcp. To use device pools for ppp enable the option in api settings."
+    "description" : "Define ip4 prefixes for clients - required for dhcp. To use these device pools for ppp enable the option in api settings."
+  },
+  "device_pool6":
+  {
+    "name" : "pool6",
+    "width" : "600",
+    "label" : "Ip6 pool",
+    "hint" : "fddc:9057:1bea::/48",
+    "describe" : true,
+    "description" : "Define ip6 prefixes to assign clients. Currently only ip6 over ppp is supported. Prefixes can be reused on many routers."
+  },
+  "device_pfxLength":
+  {
+    "name" : "pfxLength",
+    "width" : "600",
+    "label" : "Client ip6 prefix length",
+    "hint" : "/64",
+    "describe" : true,
+    "description" : "Specifies the size of ip6 prefix to assign to each client"
   },
   "device_user" :
   {
@@ -45,7 +63,7 @@
   "config_auto_ppp_user" :
   {
     "name" : "auto_ppp_user",
-    "label" : "Auto generate username",
+    "label" : "Generate automatic ppp username",
     "describe" : true,
     "description" : "Enable to generate username and password automatically"
   },
@@ -194,6 +212,22 @@
     "width" : "75",
     "describe" : true,
     "description" : "Check option to disable parent queues. May take a few minutes to apply and will delete parent queues from routers."
+  },
+  "config_hs_enable" :
+  {
+    "name" : "hs_enable",
+    "label" : "Enable hotspot accounts",
+    "describe" : true,
+    "description" : "Enable or disable hotspot account custom attribute",
+    "isAttribute" : true
+  },
+  "config_auto_hs_user" :
+  {
+    "name" : "auto_hs_user",
+    "label" : "Automatic hotspot username",
+    "describe" : true,
+    "description" : "Enable for automatic username. Will disable automatic ppp usernames",
+    "isAttribute" : true
   },
   "service_ratio" :
   {

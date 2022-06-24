@@ -1,5 +1,5 @@
 <?php
-// include_once 'includes/cors.php';
+//include_once 'includes/cors.php';
 
 chdir(__DIR__);
 
@@ -17,14 +17,24 @@ if(!file_exists('data/data.db'))
 
 include_once('lib/api_router.php');
 require_once 'vendor/autoload.php';
-include_once 'includes/updates.php'; 
+include_once 'includes/updates.php';
 
-if(!version_is_ok())
+if(user_not_ok()){
+    $status = [
+        'status' => 'failed',
+        'error' => true,
+        'message' => 'User is not authenticated',
+        'data' => []
+    ];
+    exit(json_encode($status));
+}
+
+if(version_not_ok())
 { //apply updates
     apply_updates();
 }
 
-if(!bak_is_ok()){ // create automatic backup
+if(bak_not_ok()){ // create automatic backup
     create_backup();
 }
 

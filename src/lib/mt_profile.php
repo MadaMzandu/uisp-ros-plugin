@@ -4,12 +4,11 @@ class MT_Profile extends MT
 {
 
     private $pq; //parent queue object
-    private $profiles ;
     private $cache ;
     private $child ;
 
 
-    public function apply($data)
+    public function apply($data): bool
     {
         $this->child = $data;
         $this->exists = $this->exists();
@@ -22,14 +21,6 @@ class MT_Profile extends MT
             return $this->delete();
         }
         return $this->check_suspend() && $this->exec();
-    }
-
-    public function set_profile(): bool
-    {
-        if ($this->svc->plan->contention < 0 && !$this->children()) {
-            return $this->delete();
-        }
-        return $this->exec();
     }
 
     private function check_suspend(): bool
@@ -47,14 +38,7 @@ class MT_Profile extends MT
             );
         }
         return true ;
-    }
-
-    private function account_disabled(): bool
-    {
-        // $this->path = '/ppp/secret/'; path is already set by prev call
-        $read = $this->read('?name='.$this->svc->username());
-        return $read && $read[0]['profile'] == $this->conf->disabled_profile;
-    }
+	}
 
     private function delete(): bool
     {
@@ -66,10 +50,30 @@ class MT_Profile extends MT
             $this->pq->apply($child)
             && $this->write();
         }
-        return !$this->findErr('ok');
+        return !$this->findErr();
     }
 
-    protected function data($action): object
+    protected function data($action): stdClass
+    {
+        switch ($this->svc->accountType){
+            case 2: return $this->hotspot_data($action);
+            default: return $this->ppp_data($action);
+        }
+    }
+
+    private function hotspot_data($action): stdClass
+    {
+        return (object)[
+            'action' => $action,
+            'name' => $this->name(),
+            'rate-limit' => $this->rate()->text,
+            'parent-queue' => $this->pq_name(),
+            'address-list' => $this->address_list(),
+            '.id' => $this->name(),
+        ];
+    }
+
+    private function ppp_data($action): stdClass
     {
         return (object)[
             'action' => $action,
@@ -118,7 +122,6 @@ class MT_Profile extends MT
 
     private function local_address(): ?string
     { // get one address for profile local address
-        $savedPath = $this->path;
         $this->path = '/ip/address/';
         $address = null;
         if ($this->read()) {
@@ -132,8 +135,8 @@ class MT_Profile extends MT
                 break ;
             }
         }
-        $this->path = $savedPath;
-        return $address ?? (new API_IPv4())->local();  // or generate one
+        $this->path = $this->path();
+        return $address ?? (new API_IP())->local();  // or generate one
     }
 
     private function makeBool($value): bool
@@ -164,10 +167,10 @@ class MT_Profile extends MT
         $this->pq->apply($child);
         $this->set_batch($this->data($action));
         $this->write();
-        return !$this->findErr('ok');
+        return !$this->findErr();
     }
 
-    private function orphaned(): ?string
+    /*private function orphaned(): ?string
     {
         if (!$this->exists) {
             return false;
@@ -175,12 +178,12 @@ class MT_Profile extends MT
         $parent = $this->entity['parent-queue'] ?? '';
         return substr($parent, 0, 1) == '*'
             ? $parent : null;
-    }
+    }*/
 
     protected function init(): void
     {
         parent::init();
-        $this->path = '/ppp/profile/';
+        $this->path = $this->path();
         $this->pq = new MT_Parent_Queue($this->svc);
     }
 
@@ -257,7 +260,7 @@ class MT_Profile extends MT
         return $this->child['profile'] ?? null ;
     }
 
-    private function add_profile()
+    private function add_profile(): array
     {
         $series = $this->series();
         $suffix = null ;
@@ -290,9 +293,26 @@ class MT_Profile extends MT
             $queue = $profile['parent-queue'] ?? 'none';
             $profile['children'] = $children[$queue] ?? 1 ;
             $this->cache[$profile['name']] = $profile ;
-
         }
         return (bool) $this->cache ;
+	}
+	
+    private function path():string
+    {
+        switch($this->svc->accountType){
+            case 2: return '/ip/hotspot/user/profile/' ;
+            default : return '/ppp/profile/';
+        }
     }
+
+    private function child_path():string
+    {
+        switch($this->svc->accountType){
+            case 2: return '/ip/hotspot/user/' ;
+            default : return '/ppp/secret/';
+        }
+    }
+
+
 
 }

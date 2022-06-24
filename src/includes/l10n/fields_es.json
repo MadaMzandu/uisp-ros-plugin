@@ -23,14 +23,32 @@
   },
   "device_pool": {
     "name": "pool",
-    "label": "Subredes del grupo de direcciones IP",
+    "label": "Piscina ip4",
     "describe": true,
-    "description": "Definir grupos de direcciones separados por comas: necesario para dhcp. Para usar grupos de dispositivos para ppp habilite la opción en configuración de api.",
-    "hint": "10.88.1.0/24,10.99.0.0/16",
+    "description": "Defina prefijos ip4 para clientes: necesarios para dhcp. Para usar estos grupos de dispositivos para ppp, habilite la opción en la configuración de API.",
+    "hint": "10.88.1.0/24",
     "width": 600,
     "obscure": null,
     "type": null,
     "isAttribute": null
+  },
+  "device_pool6":
+  {
+    "name" : "pool6",
+    "width" : "600",
+    "label" : "Piscina ip6",
+    "hint" : "fddc:9057:1bea::/48",
+    "describe" : true,
+    "description" : "Definir prefijos ip6 para asignar clientes. Actualmente solo se admite ip6 sobre ppp. Los prefijos se pueden reutilizar en muchos enrutadores."
+  },
+  "device_pfxLength":
+  {
+    "name" : "pfxLength",
+    "width" : "600",
+    "label" : "Longitud del prefijo ip6 del cliente",
+    "hint" : "/64",
+    "describe" : true,
+    "description" : "Especifica el tamaño del prefijo ip6 para asignar a cada cliente"
   },
   "device_user": {
     "name": "user",
@@ -67,7 +85,7 @@
   },
   "config_auto_ppp_user": {
     "name": "auto_ppp_user",
-    "label": "Generar nombre de usuario automáticamente",
+    "label": "Generar nombre de usuario ppp automático",
     "describe": true,
     "description": "Habilitar la generación automática de nombre de usuario y contraseña",
     "hint": "",
@@ -273,6 +291,22 @@
     "obscure": null,
     "type": null,
     "isAttribute": null
+  },
+  "config_hs_enable" :
+  {
+    "name" : "hs_enable",
+    "label" : "Habilitar cuentas de hotspot",
+    "describe" : true,
+    "description" : "Habilitar o desactivar el atributo personalizado de cuenta hotspot",
+    "isAttribute" : true
+  },
+  "config_auto_hs_user" :
+  {
+    "name" : "auto_hs_user",
+    "label" : "Nombre de usuario de hotspot automático",
+    "describe" : true,
+    "description" : "Habilitar para el nombre de usuario automático. Deshabilitará los nombres de usuario de ppp automáticos",
+    "isAttribute" : true
   },
   "service_ratio": {
     "name": "ratio",

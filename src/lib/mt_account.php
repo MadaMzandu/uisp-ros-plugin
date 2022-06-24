@@ -25,7 +25,7 @@ class MT_Account extends MT
 
     private function set_profile(): bool
     {
-        return $this->svc->pppoe
+        return $this->svc->accountType > 0
             ? $this->profile->apply($this->entity)
             : $this->q->set_queue();
     }
@@ -45,12 +45,28 @@ class MT_Account extends MT
 
     protected function data(): stdClass
     {
-        return $this->svc->pppoe ? $this->pppoe_data() : $this->dhcp_data();
+        switch ($this->svc->accountType){
+            case 0 : return $this->dhcp_data();
+            case 2 : return $this->hotspot_data();
+            default : return $this->pppoe_data();
+        }
+    }
+
+    private function hotspot_data(): stdClass
+    {
+        return (object)[
+            'name' => $this->svc->username(),
+            'password' => $this->svc->password(),
+            'address' => $this->svc->ip(),
+            'profile' => $this->profile(),
+            'comment' => $this->comment(),
+            '.id' => $this->insertId
+        ];
     }
 
     private function pppoe_data(): stdClass
     {
-        return (object)[
+        $obj = (object)[
             'remote-address' => $this->svc->ip(),
             'name' => $this->svc->username(),
             'caller-id' => $this->svc->callerId(),
@@ -59,6 +75,10 @@ class MT_Account extends MT
             'comment' => $this->comment(),
             '.id' => $this->insertId,
         ];
+        if($this->svc->ip6())
+            $obj->{'remote-ipv6-prefix'} =
+                $this->svc->ip6() .  $this->svc->ip6Length();
+        return $obj;
     }
 
     private function profile(): string
@@ -86,11 +106,13 @@ class MT_Account extends MT
 
     private function disconnect(): bool
     {
-        if (!$this->svc->pppoe) {
+        if ($this->svc->accountType != 1) {
             return true;
         }
-        $this->path = '/ppp/active/';
-        $read = $this->read('?name=' . $this->svc->username());
+        $this->path = $this->svc->accountType == 2
+            ? '/ip/hotspot/active': '/ppp/active/';
+        $filter = $this->svc->accountType == 2 ? '?user=' : '?name=';
+        $read = $this->read($filter . $this->svc->username());
         foreach ($read as $active) {
             $data['.id'] = $active['.id'];
             $this->write((object)$data, 'remove');
@@ -102,7 +124,7 @@ class MT_Account extends MT
 
     protected function filter(): string
     {
-        return $this->svc->pppoe
+        return $this->svc->accountType > 0
             ? '?name=' . $this->svc->username()
             : '?mac-address=' . $this->svc->mac();
     }
@@ -162,7 +184,11 @@ class MT_Account extends MT
         if (!$this->svc) { //default to pppoe
             return '/ppp/secret';
         }
-        return $this->svc->pppoe ? '/ppp/secret/' : '/ip/dhcp-server/lease/';
+        switch ($this->svc->accountType){
+            case 0: return '/ip/dhcp-server/lease/';
+            case 2: return '/ip/hotspot/user/';
+            default: return '/ppp/secret/';
+        }
     }
 
     public function delete(): bool

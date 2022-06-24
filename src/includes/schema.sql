@@ -1,12 +1,13 @@
 CREATE TABLE IF NOT EXISTS "services"(
-                                         id INT,
-                                         device INT,
-                                         address TEXT,
-                                         clientId INT,
-                                         planId INT,
-                                         status INT,
+                                         "id" INT,
+                                         "device" INT,
+                                         "address" TEXT,
+                                         "prefix6"   TEXT,
+                                         "clientId" INT,
+                                         "planId" INT,
+                                         "status" INT,
                                          "last" TEXT,
-                                         created TEXT
+                                         "created" TEXT
 );
 CREATE TABLE IF NOT EXISTS "users" (
                                        "id"    INTEGER NOT NULL,
@@ -27,6 +28,8 @@ CREATE TABLE IF NOT EXISTS "devices" (
                                          "password"      TEXT,
                                          "dbname"        TEXT,
                                          "pool"  TEXT,
+                                         "pool6"  TEXT,
+                                         "pfxLength" INT,
                                          "last"  TEXT,
                                          "created"       TEXT,
                                          PRIMARY KEY("id" AUTOINCREMENT)
@@ -53,7 +56,7 @@ CREATE TABLE IF NOT EXISTS "config" (
     );
 CREATE INDEX "xsvc_address" ON "services" (
                                            "address"
-     );
+    );
 CREATE INDEX "xsvc_device" ON "services" (
                                           "device"
     );
