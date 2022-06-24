@@ -76,8 +76,8 @@ class MT_Account extends MT
             '.id' => $this->insertId,
         ];
         if($this->svc->ip6())
-            $obj['remote-ipv6-prefix'] =
-                $this->svc->ip6() . $this->svc->ip6Length();
+            $obj->{'remote-ipv6-prefix'} =
+                $this->svc->ip6() .  $this->svc->ip6Length();
         return $obj;
     }
 
