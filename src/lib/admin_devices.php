@@ -1,5 +1,5 @@
 <?php
-include_once 'lib/timer.php';
+include_once 'lib/admin_cache.php';
 class Devices extends Admin
 {
     public function disable()
@@ -35,22 +35,24 @@ class Devices extends Admin
     }
 
     public function insert(): bool
-{
+    {
 
-    $db = $this->connect();
-    unset($this->data->id);
-    if (!$db->insert($this->data, 'devices')) {
-        $this->set_error('database error');
-        return false;
+        $db = $this->connect();
+        unset($this->data->id);
+        $this->trim_prefix();
+        if (!$db->insert($this->data, 'devices')) {
+            $this->set_error('database error');
+            return false;
+        }
+        $this->set_message('device has been added');
+        return true;
     }
-    $this->set_message('device has been added');
-    return true;
-}
 
     public function edit(): bool
     {
 
         $db = $this->connect();
+        $this->trim_prefix();
         if (!$db->edit($this->data, 'devices')) {
             $this->set_error('database error');
             return false;
@@ -138,26 +140,36 @@ class Devices extends Admin
         return new API_SQLite();
     }
 
-    public function services(): bool
+    public function services(): void
     {
-        $this->cache_update();
         $this->result = $this->cache();
-        if($this->result) return true ;
+        if($this->result){
+            $this->cache_update();
+            return ;
+        }
         //if cache is not ready load skeleton from db
         $id = $this->data->id;
         $limit = $this->data->limit ?? null ;
         $offset = $this->data->offset ?? null ;
-        $this->result = [];
-        $this->result = $this->db()->selectServicesOnDevice($id,$limit,$offset);
-        $ret = (bool) $this->result ;
-        if($ret) $this->result['skel'] = true ;
-        return $ret ;
+        $this->result = $this->db()->selectServicesOnDevice($id,$limit,$offset) ?? [];
+        $this->result['skel'] = true ;
+        $this->cache_update();
     }
 
-    private function cache_update(): void
+    public function cache_update(): void
     {
-        $cmd = 'php lib/admin_cache.php > /dev/null 2>&1 &' ;
-        shell_exec($cmd);
+        if(!function_exists('fastcgi_finish_request')){
+            shell_exec('php lib/shell.php cache > /dev/null 2>&1 &');
+            return;
+        }else{
+            $this->status->status = 'ok';
+            $this->status->data = $this->result ;
+            header('content-type: application/json');
+            echo json_encode($this->status);
+            fastcgi_finish_request();
+        }
+        set_time_limit(300);
+        (new Admin_Cache())->create();
     }
 
     private function cache(): ?array
@@ -184,6 +196,12 @@ class Devices extends Admin
         $db = $this->connect();
         $this->read = $db->selectAllFromTable('devices');
         return (bool) $this->read;
+    }
+
+    private function trim_prefix(): void
+    {
+        $pfx = $this->data->pfxLength ?? null ;
+        if($pfx) $this->data->pfxLength = trim($pfx,"/");
     }
 
     private function setStatus(): void

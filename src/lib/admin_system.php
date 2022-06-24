@@ -1,13 +1,23 @@
 <?php
+include_once 'lib/admin_rebuild.php';
 
 class Admin_System extends Admin
 {
 
-    public function rebuild(): bool
+    public function rebuild(): void
     {
-        $command = 'php lib/admin_rebuild.php > /dev/null 2>&1 &';
-        shell_exec($command);
-        return true ;
+        if(!function_exists('fastcgi_finish_request')){
+            shell_exec('php lib/shell.php rebuild > /dev/null 2>&1 &');
+            return;
+        }else{
+            $this->status->status = 'ok';
+            $this->status->data = [];
+            header('content-type: application/json');
+            echo json_encode($this->status);
+            fastcgi_finish_request();
+        }
+        set_time_limit(6000);
+        (new Admin_Rebuild())->send_triggers();
     }
 
 }
