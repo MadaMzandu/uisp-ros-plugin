@@ -1,5 +1,5 @@
 <?php
-// include_once 'includes/cors.php';
+//include_once 'includes/cors.php';
 
 chdir(__DIR__);
 
