@@ -85,6 +85,7 @@
   "price" : "preço",
   "rebuild" : "reconstruir",
   "rebuildDesc" : "Isso reconstruirá o cache do plug-in e preencherá as contas ausentes nos roteadores. Pode ser usado para recuperar roteadores ou o próprio plugin. As contas existentes em roteadores não são modificadas.",
+  "rebuildFork": "O processo de reconstrução continuará a ser executado em segundo plano",
   "rebuildTitle" : "Recriar dados do plug- in",
   "restore" : "restaurar",
   "restoreTip" : "restaurar backup",

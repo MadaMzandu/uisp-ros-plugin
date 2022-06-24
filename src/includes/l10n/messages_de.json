@@ -85,6 +85,7 @@
   "price" : "Preis",
   "rebuild" : "umbauen",
   "rebuildDesc" : "Dadurch wird der Cache des Plugins neu erstellt und fehlende Konten auf Routern aufgefüllt. Kann verwendet werden, um Router oder das Plugin selbst wiederherzustellen. Vorhandene Konten auf Routern werden nicht geändert.",
+  "rebuildFork": "Der Wiederherstellungsprozess wird weiterhin im Hintergrund ausgeführt",
   "rebuildTitle" : "Plugin-Daten neu erstellen",
   "restore" : "wiederherstellen",
   "restoreTip" : "Wiederherstellung",

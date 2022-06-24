@@ -85,6 +85,7 @@
   "price" : "precio",
   "rebuild" : "reconstruir",
   "rebuildDesc" : "Esto reconstruirá la caché del complemento y llenará las cuentas que faltan en los enrutadores. Se puede utilizar para recuperar enrutadores o el propio complemento. Las cuentas existentes en los enrutadores no se modifican.",
+  "rebuildFork": "El proceso de reconstrucción continuará ejecutándose en segundo plano.",
   "rebuildTitle" : "Reconstruir datos del complemento",
   "restore" : "restaurar",
   "restoreTip" : "restaurar copia de seguridad",
