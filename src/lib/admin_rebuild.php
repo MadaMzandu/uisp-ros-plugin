@@ -1,7 +1,6 @@
 <?php
 include_once 'lib/api_unms.php';
 include_once 'lib/api_sqlite.php';
-include_once 'lib/timer.php';
 
 class Admin_Rebuild{
     private $conf ;
