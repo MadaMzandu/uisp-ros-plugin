@@ -3,7 +3,7 @@ include_once 'service_plan.php';
 include_once 'service_attributes.php';
 include_once 'service_client.php';
 include_once 'api_ip.php';
-include_once '_temp.php';
+include_once 'api_unms.php';
 
 class Service_Account extends Service_Attributes
 {
@@ -147,8 +147,8 @@ class Service_Account extends Service_Attributes
     public function ip6Length(): ?string
     {
         if($this->accountType != 1) return null ;
-        $len = $this->device()->pfxLength ?? null;
-        return $len ? '/' . $len : null ;
+        $len = $this->device()->pfxLength ?? 64;
+        return '/' . $len ;
     }
 
     protected function ip_removed(): bool
