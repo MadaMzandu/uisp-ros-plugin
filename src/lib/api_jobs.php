@@ -33,25 +33,25 @@ class Api_Jobs extends Admin
 
     public function run()
     {
-        $this->status->status = 'ok';
-        $this->status->data = [];
-        header('content-type: application/json');
-        echo json_encode($this->status);
-        if(function_exists('fastcgi_finish_request'))
-        fastcgi_finish_request();
-        else{
+        if (!function_exists('fastcgi_finish_request')) {
             shell_exec('php lib/shell.php jobs > /dev/null 2>&1 &');
             return;
+        } else {
+            $this->status->status = 'ok';
+            $this->status->data = [];
+            header('content-type: application/json');
+            echo json_encode($this->status);
+            fastcgi_finish_request();
         }
         set_time_limit(300);
-        if(is_object($this->queue)){
+        if (is_object($this->queue)) {
             $ids = array_keys((array)$this->queue);
-            foreach ($ids as $id){
-                $status =  $this->run_item($this->queue->$id);
-                if($status->error){
+            foreach ($ids as $id) {
+                $status = $this->run_item($this->queue->$id);
+                if ($status->error) {
                     $this->queue->$id->last = (new DateTime())->format('Y-m-d H:i:s');
-                    $this->queue->$id->status = $status ;
-                }else{
+                    $this->queue->$id->status = $status;
+                } else {
                     unset($this->queue->$id);
                 }
             }
