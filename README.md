@@ -72,6 +72,15 @@ The ipv6 assignments can be viewed in the panel > devices > click on one of the 
 
 ## Hotspot Account Support
 
+Starting version 1.8.5 the plugin now also supports mikrotik hotspot accounts so that ucrm can also be used to bill 
+and provision hotspot clients.
+
+To enable hotspot services go to panel > settings > general and check "enable hotspot accounts". This will add a hotspot
+attribute to the crm client service form. This also makes available an option to auto generate hotspot user/password.
+However please note that enabling automatic hotspot usernames will disable automatic pppoe usernames.
+
+Create a user normally and check the hotspot attribute if the user has ordered a hotspot service plan. Thats it.
+
 ## Localized Languages
 
 Version 1.8.5 adds support for Swahili and Afrikaans. Please let me have feedback if there are problems.
