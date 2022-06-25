@@ -24,7 +24,7 @@ https://ko-fi.com/madamzandu
 
 # Installation
 
-1. Download the zip file in the src directory and upload into your Uisp > Settings > Plugins.
+1. Download the binary zip file "ros-plugin.zip" and upload into your Uisp > Settings > Plugins.
 
 2. Enable the plugin and create the webhook.
 
@@ -55,9 +55,31 @@ The custom attributes in Configution (4) should be listed in the form when creat
 
 ## IPv6 Over PPP
 
-Version 1.8.5 introduces support for ipv6 gateway devices and ipv6 over ppp (without PD). 
+Version 1.8.5 introduces support for ipv6 gateway devices and ipv6 over ppp (without PD). Ipv6 for dhcp is
+not implemented in this version.
+
+Ipv6 over ppp routes an ipv6 prefix to a ppp client's device which can then be used for dhcp or other 
+services on the client's lan.
+
+In the device settings provide an ipv6 prefix of reasonable size e.g. a /48. This prefix can be reused
+on more than one router and the plugin will manage and ensure that client allocations have no conflicts.
+After specifying the prefix you can specify the size or prefix length to assign clients in the prefix 
+length field. If the prefix length field is empty the plugin will default to assigning /64's to clients.
+
+When a pppoe client is added the plugin will allocate an ipv6 /64 along with the normal ipv4 framed address.
+The ipv6 assignments can be viewed in the panel > devices > click on one of the devices.
+
 
 ## Hotspot Account Support
+
+Starting version 1.8.5 the plugin now also supports mikrotik hotspot accounts so that ucrm can also be used to bill 
+and provision hotspot clients.
+
+To enable hotspot services go to panel > settings > general and check "enable hotspot accounts". This will add a hotspot
+attribute to the crm client service form. This also makes available an option to auto generate hotspot user/password.
+However please note that enabling automatic hotspot usernames will disable automatic pppoe usernames.
+
+Create a user normally and check the hotspot attribute if the user has ordered a hotspot service plan. Thats it.
 
 ## Localized Languages
 
