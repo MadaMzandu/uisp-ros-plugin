@@ -1,11 +1,14 @@
 <!--
 <?php
-use Ubnt\UcrmPluginSdk\Service\UcrmSecurity;
-$security = UcrmSecurity::create();
-    $user = $security->getUser();
-if (!$user || $user->isClient) {
-\App\Http::forbidden();
-exit();
+include_once 'includes/updates.php';
+if(user_not_ok()){
+    $status = [
+        'status' => 'failed',
+        'error' => true,
+        'message' => 'User is not authenticated',
+        'data' => []
+    ];
+    exit(json_encode($status));
 }
 ?> -->
 <!DOCTYPE html>
@@ -21,7 +24,8 @@ exit();
     For more details:
     * https://developer.mozilla.org/en-US/docs/Web/HTML/Element/base
   -->
-  <!-- <base href="/"> -->
+
+ <!--   <base href="/"> -->
  <base href="/crm/_plugins/ros-plugin/public/panel/">
 
   <meta charset="UTF-8">
@@ -43,7 +47,7 @@ exit();
        application. For more information, see:
        https://developers.google.com/web/fundamentals/primers/service-workers -->
   <script>
-    var serviceWorkerVersion = '3045347361';
+    var serviceWorkerVersion = '150959289';
     var scriptLoaded = false;
     function loadMainDartJs() {
       if (scriptLoaded) {
