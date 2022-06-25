@@ -108,7 +108,6 @@ class API_IP
 
     private function gmp2ip($address)
     {
-		var_dump(gmp_strval($address,16));
         return inet_ntop(hex2bin(gmp_strval($address,16)));
     }
 
