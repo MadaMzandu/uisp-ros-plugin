@@ -53,7 +53,7 @@ class Service_Plan extends Service_Base
 
     public function ratio(): int
     {
-        return $this->get()->ratio ?? 1;
+        return $this->get()['ratio'] ?? 1;
     }
 
     public function rate(): stdClass

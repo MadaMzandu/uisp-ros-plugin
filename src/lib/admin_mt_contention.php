@@ -55,7 +55,7 @@ class Admin_Mt_Contention extends MT
     private function delete_queues(): void
     { //deletes parent queues
         $this->data->path = '/queue/simple';
-        $this->data->filter = '?dynamic=false';
+        $this->data->filter = '?parent=none';
         $queues = $this->get();
         foreach($queues as $q){
             $name = $q['name'] ?? null ;
@@ -87,7 +87,7 @@ class Admin_Mt_Contention extends MT
         foreach($devices as $dev){
             $this->data->device_id = $dev['id'];
             if($data = $this->data()){
-                $ret = $ret && $this->write($data) ;
+                //$ret = $ret && $this->write($data) ;
             }
         }
         return $ret ;
