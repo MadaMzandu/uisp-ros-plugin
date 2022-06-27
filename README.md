@@ -79,7 +79,7 @@ To enable hotspot services go to panel > settings > general and check "enable ho
 attribute to the crm client service form. This also makes available an option to auto generate hotspot user/password.
 However please note that enabling automatic hotspot usernames will disable automatic pppoe usernames.
 
-Create a user normally and check the hotspot attribute if the user has ordered a hotspot service plan. Thats it.
+Create a user normally and check the hotspot attribute to provision to hotspot instead of ppp. Thats it.
 
 ## Localized Languages
 
