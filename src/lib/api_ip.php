@@ -22,7 +22,7 @@ class API_IP
     {
         $p4 = $device->pool ?? null ;
         $p6 = $device->pool6 ?? null ;
-        $this->alen = $device->pfxLength ?? 64 ;
+        $this->alen = empty($device->pfxLength) ? 64 : $device->pfxLength ;
         foreach([$p4,$p6] as $pool){
             if($pool){
                 $this->pools = explode(',', $pool . ',') ?? [];
