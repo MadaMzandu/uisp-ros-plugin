@@ -108,10 +108,10 @@ class Admin_Mt_Contention extends MT
                     '.id' => $p['.id'],
                     'max-limit' => $rate,
                     'limit-at' => $rate,
-                    ]
+                ]
             );
         }
-        return (bool) $this->batch ;
+        return !empty($this->batch) ;
     }
 
     private function read_parents(): array
