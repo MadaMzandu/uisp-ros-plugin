@@ -84,35 +84,51 @@ class Admin_Mt_Contention extends MT
         $devices = $this->db()->selectAllFromTable('devices');
         $ret = true ;
         $this->path = '/queue/simple/';
-        foreach($devices as $dev){
+        foreach($devices as $dev) {
             $this->data->device_id = $dev['id'];
-            if($data = $this->data()){
-                //$ret = $ret && $this->write($data) ;
-            }
+            if ($this->data()) $ret &= $this->write_batch();
         }
         return $ret ;
     }
 
-    private function data(): ?object
-    { //calculates contention bandwidth rate
-        $planId = $this->data->id ;
-        if($children = $this->db()->countDeviceServicesByPlanId(
-        $planId, $this->data->device_id)) {
-            $ratio = $this->data->ratio;
-            $shares = intdiv($children, $ratio);
-            if (($children % $ratio) > 0) {
-                $shares++;
-            }
+    private function data(){
+        $parents = $this->read_parents();
+        $this->batch = [];
+        foreach ($parents as $p){
+            $ratio = $this->data->ratio ;
+            $children = $p['children'];
+            $shares = intdiv($children,$ratio);
+            if (($children % $ratio) > 0) $shares++;
             $ul = $this->data->uploadSpeed * $shares;
             $dl = $this->data->downloadSpeed * $shares;
             $rate = $ul . "M/" . $dl . "M";
-            return (object)[
-                '.id' => 'servicePlan-' . $planId . '-parent',
-                'max-limit' => $rate,
-                'limit-at' => $rate,
-            ];
+            $this->set_batch(
+                [
+                    'action' => 'set',
+                    '.id' => $p['.id'],
+                    'max-limit' => $rate,
+                    'limit-at' => $rate,
+                    ]
+            );
         }
-        return null;
+        return (bool) $this->batch ;
+    }
+
+    private function read_parents(): array
+    {
+        $parents = [];
+        $filter = '?parent=none';
+        $read = $this->read($filter);
+        $id = $this->data->id ?? 0 ;
+        $name = 'servicePlan-' . $id . '-parent' ;
+        foreach($read as $q) {
+            $re = '/' . $name . '/';
+            if(preg_match($re,$q['name'])){
+                $q['children'] = sizeof(explode(',',$q['target'])) ?? 0 ;
+                $parents[$q['name']] = $q ;
+            }
+        }
+        return $parents ;
     }
 
 }
