@@ -7,6 +7,8 @@ class MT_Parent_Queue extends MT
 
     public function apply($data=[]): bool
     {
+        $nc = $this->conf->disable_contention ?? true ;
+        if($nc) return true ;
         $this->child = $data ;
         $this->set_mode();
         $this->exists = $this->exists();
