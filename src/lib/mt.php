@@ -149,12 +149,30 @@ class MT extends Device
         $api = $this->connect();
         $api->write($this->path . 'print', false);
         if ($filter) {
-            $api->write($filter, false);
+            foreach($this->ffilter($filter) as $item){
+                $api->write($item,false);
+            }
         }
         $api->write(";");
         $this->read = $api->read() ?? [];
         $api->disconnect();
         return $this->has_error() ? [] : $this->read;
+    }
+
+    protected function ffilter($filter): array
+    {
+        $return = [];
+        if(is_string($filter)){
+            foreach(explode(',',$filter . ',') as $item){
+                if(!empty($item)) $return[] = $item ;
+            }
+        }
+        if(is_array($filter)){
+            foreach(array_keys($filter) as $key){
+                $return[] = '?' . $key . '=' . $filter[$key] ?? null;
+            }
+        }
+        return $return ;
     }
 
 }

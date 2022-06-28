@@ -55,7 +55,7 @@ class Admin_Mt_Contention extends MT
     private function delete_queues(): void
     { //deletes parent queues
         $this->data->path = '/queue/simple';
-        $this->data->filter = '?parent=none';
+        $this->data->filter = '?parent=none,?dynamic=false';
         $queues = $this->get();
         foreach($queues as $q){
             $name = $q['name'] ?? null ;
@@ -117,7 +117,7 @@ class Admin_Mt_Contention extends MT
     private function read_parents(): array
     {
         $parents = [];
-        $filter = '?parent=none';
+        $filter = '?parent=none,?dynamic=false';
         $read = $this->read($filter);
         $id = $this->data->id ?? 0 ;
         $name = 'servicePlan-' . $id . '-parent' ;
