@@ -1,3 +1,4 @@
+DROP TABLE IF EXISTS "svctmp";
 CREATE TABLE IF NOT EXISTS "svctmp"
 (
     "id"       INT,
@@ -10,6 +11,7 @@ CREATE TABLE IF NOT EXISTS "svctmp"
     "last"   TEXT,
     "created"  TEXT
 );
+DROP TABLE IF EXISTS "devtmp";
 CREATE TABLE  IF NOT EXISTS "devtmp" (
      "id"    INTEGER NOT NULL,
      "name"  TEXT,
@@ -26,8 +28,9 @@ CREATE TABLE  IF NOT EXISTS "devtmp" (
      PRIMARY KEY("id" AUTOINCREMENT)
 );
 INSERT INTO "svctmp" (id, device, address, clientId, planId, status, "last", created)
-    SELECT * FROM "services";
-INSERT INTO "devtmp" (id,name,ip,type,user,password,dbname,pool,"last",created) SELECT * FROM "devices";
+    SELECT id, device, address, clientId, planId, status, "last", created FROM "services";
+INSERT INTO "devtmp" (id,name,ip,type,user,password,dbname,pool,"last",created)
+    SELECT id, device, address, clientId, planId, status, "last", createdFROM "devices";
 DROP TABLE "services";
 DROP TABLE "devices" ;
 ALTER TABLE "svctmp" RENAME to "services";
