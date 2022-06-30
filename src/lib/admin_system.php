@@ -1,5 +1,4 @@
 <?php
-include_once 'lib/admin_rebuild.php';
 
 class Admin_System extends Admin
 {
