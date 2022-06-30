@@ -234,11 +234,6 @@ class API_SQLite
             $db->busyTimeout(100);
             return $db;
         } catch (Exception $err) {
-            $status = [
-                'status' => 'failed',
-                'error' => true,
-                'message' => $err->getMessage(),
-            ];
             die($this->error($err->getMessage()));
         }
     }
