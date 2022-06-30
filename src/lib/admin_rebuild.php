@@ -1,6 +1,4 @@
 <?php
-include_once 'lib/api_unms.php';
-include_once 'lib/api_sqlite.php';
 
 class Admin_Rebuild{
     private $conf ;
