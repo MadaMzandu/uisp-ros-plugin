@@ -1,5 +1,9 @@
 #!/usr/bin/php
 <?php
+/*
+this is a repair script that can be used when the ros plugin fails to load after an update
+*/
+
 $update = 'DROP TABLE IF EXISTS "devtmp" ; DROP TABLE IF EXISTS "svctmp" ; CREATE TABLE IF NOT EXISTS "svctmp" (     "id"       INT,     "device"   INT,     "address"  TEXT,     "prefix6"   TEXT,     "clientId" INT,     "planId"   INT,     "status"   INT,     "last"   TEXT,     "created"  TEXT ); CREATE TABLE  IF NOT EXISTS "devtmp" (      "id"    INTEGER NOT NULL,      "name"  TEXT,      "ip"    TEXT,      "type"  TEXT,      "user"  TEXT,      "password"      TEXT,      "dbname"        TEXT,      "pool"  TEXT,      "pool6"  TEXT,      "pfxLength" INT,      "last"  TEXT,      "created"       TEXT,      PRIMARY KEY("id" AUTOINCREMENT) ); INSERT INTO "svctmp" (id, device, address, clientId, planId, status, "last", created)     SELECT id, device, address, clientId, planId, status, "last", created FROM "services"; INSERT INTO "devtmp" (id,name,ip,type,user,password,dbname,pool,"last",created)     SELECT id,name,ip,type,user,password,dbname,pool,"last",created FROM "devices"; DROP TABLE "services"; DROP TABLE "devices" ; ALTER TABLE "svctmp" RENAME to "services"; ALTER TABLE "devtmp" RENAME to "devices"; CREATE INDEX "xsvc_address" ON "services" ("address"); CREATE INDEX "xsvc_device" ON "services" ("device"); CREATE INDEX "xsvc_planId" ON "services" ("planId"); CREATE INDEX "xdev_name" ON "devices" ("name" COLLATE nocase);';
 $Config = '{  "version": "1.8.0",  "disabled_rate": 1,  "auto_ppp_user": "false",  "pppoe_caller_attr": "callerId",  "disable_contention": "false",  "hs_enable" : "false",  "hs_attr" : "hotspot",  "auto_hs_user" : "false"}';
 
