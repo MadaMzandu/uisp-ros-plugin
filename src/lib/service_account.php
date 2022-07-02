@@ -170,7 +170,9 @@ class Service_Account extends Service_Attributes
         if ($this->conf->router_ppp_pool || $this->svc->accountType == 0) {
             $device = $this->get_device();
         }
-        [$this->ip,$this->ip6] = (new API_IP())->assign($device);
+        $ips = (new API_IP())->assign($device);
+        $this->ip = $ips[0] ?? null ;
+        $this->ip6 = $ips[1] ?? null ;
         return [$this->ip,$this->ip6];
     }
 
