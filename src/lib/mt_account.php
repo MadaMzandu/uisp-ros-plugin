@@ -106,11 +106,11 @@ class MT_Account extends MT
 
     private function disconnect(): bool
     {
-        if ($this->svc->accountType != 1) {
+        if ($this->svc->accountType < 1) {
             return true;
         }
         $this->path = $this->svc->accountType == 2
-            ? '/ip/hotspot/active': '/ppp/active/';
+            ? '/ip/hotspot/active/': '/ppp/active/';
         $filter = $this->svc->accountType == 2 ? '?user=' : '?name=';
         $read = $this->read($filter . $this->svc->username());
         foreach ($read as $active) {
@@ -182,7 +182,7 @@ class MT_Account extends MT
     protected function path(): string
     {
         if (!$this->svc) { //default to pppoe
-            return '/ppp/secret';
+            return '/ppp/secret/';
         }
         switch ($this->svc->accountType){
             case 0: return '/ip/dhcp-server/lease/';
