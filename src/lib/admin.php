@@ -8,7 +8,7 @@ include_once 'admin_backup.php';
 include_once 'admin_system.php';
 include_once 'admin_rebuild.php';
 include_once 'admin_cache.php';
-include_once 'admin_mt_queue.php';
+//include_once 'admin_mt_queue.php';
 include_once 'api_jobs.php';
 include_once 'api_lang.php';
 
