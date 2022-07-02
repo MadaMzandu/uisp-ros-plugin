@@ -30,7 +30,7 @@ CREATE TABLE  IF NOT EXISTS "devtmp" (
 INSERT INTO "svctmp" (id, device, address, clientId, planId, status, "last", created)
     SELECT id, device, address, clientId, planId, status, "last", created FROM "services";
 INSERT INTO "devtmp" (id,name,ip,type,user,password,dbname,pool,"last",created)
-    SELECT id, device, address, clientId, planId, status, "last", createdFROM "devices";
+    SELECT id,name,ip,type,user,password,dbname,pool,"last",created FROM "devices";
 DROP TABLE "services";
 DROP TABLE "devices" ;
 ALTER TABLE "svctmp" RENAME to "services";
