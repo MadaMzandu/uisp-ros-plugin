@@ -48,10 +48,12 @@ class MT extends Device
             $api->write(';');
             $this->read = $api->read();
             if($this->has_error()){
+                $this->batch = [] ;
                 $api->disconnect();
                 return false ;
             }
         }
+        $this->batch = [] ;
         $api->disconnect();
         return true ;
     }
