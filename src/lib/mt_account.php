@@ -181,10 +181,10 @@ class MT_Account extends MT
 
     protected function path(): string
     {
-        if (!$this->svc) { //default to pppoe
+        if (empty($this->svc)) //default to pppoe
             return '/ppp/secret/';
-        }
-        switch ($this->svc->accountType){
+        $type = $this->svc->accountType ?? 1 ;
+        switch ($type){
             case 0: return '/ip/dhcp-server/lease/';
             case 2: return '/ip/hotspot/user/';
             default: return '/ppp/secret/';
