@@ -25,7 +25,7 @@ if(user_not_ok()){
     * https://developer.mozilla.org/en-US/docs/Web/HTML/Element/base
   -->
 
- <!--   <base href="/"> -->
+ <!-- <base href="/"> -->
  <base href="/crm/_plugins/ros-plugin/public/panel/">
 
   <meta charset="UTF-8">
@@ -47,7 +47,7 @@ if(user_not_ok()){
        application. For more information, see:
        https://developers.google.com/web/fundamentals/primers/service-workers -->
   <script>
-    var serviceWorkerVersion = '150959289';
+    var serviceWorkerVersion = '1193115767';
     var scriptLoaded = false;
     function loadMainDartJs() {
       if (scriptLoaded) {
