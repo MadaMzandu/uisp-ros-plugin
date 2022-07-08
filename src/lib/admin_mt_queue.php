@@ -1,5 +1,4 @@
 <?php
-include_once 'timer.php';
 class Admin_Queue extends MT
 {
     private $id ;
@@ -245,7 +244,6 @@ class Admin_Queue extends MT
 
     private function readDevice()
     {
-        $tm = new Timer();
         $paths = $this->paths() ;
         $data = [];
         foreach (array_keys($paths) as $key){
