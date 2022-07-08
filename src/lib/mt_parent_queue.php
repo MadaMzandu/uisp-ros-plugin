@@ -223,7 +223,8 @@ class MT_Parent_Queue extends MT
         $read = $this->read($filter);
         foreach($read as $q) {
             $re = '/' . $this->base_name() . '/';
-            if(preg_match($re,$q['name'])){
+            $name = $q['name'] ?? "";
+            if(preg_match($re,$name)){
                 foreach(explode(',',$q['target']) as $sn){
                     $ip = explode('/',$sn)[0] ?? null;
                     $q['targets'][$ip] = $ip;
