@@ -10,6 +10,7 @@ include_once 'admin_rebuild.php';
 include_once 'admin_cache.php';
 include_once 'api_jobs.php';
 include_once 'api_lang.php';
+include_once 'admin_mt_queue.php';
 
 class Admin
 {
@@ -68,6 +69,7 @@ class Admin
             'system' => 'Admin_System',
             'backup' => 'Admin_Backup',
             'lang' => 'Api_Lang',
+            'queues' => 'Admin_Queue'
         );
         $target = $this->data->target ?? 'none' ;
         $module = $map[$target] ?? null ;
