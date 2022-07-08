@@ -39,6 +39,11 @@ class MT extends Device
         $api = $this->connect();
         foreach($this->batch as $data){
             $action = $data['action'] ?? 'set';
+            $path = $data['path'] ?? null ;
+            if($path){
+                $this->path = $path ;
+                unset($data['path']);
+            }
             unset($data['action']);
             if($action == 'add') unset($data['.id']);
             $api->write($this->path . $action,false);
