@@ -230,7 +230,7 @@ class MT_Profile extends MT
     private function series(): int
     {
         $re = '/' . $this->base_name() . '/' ;
-        $m = preg_grep($re,array_keys($this->cache));
+        $m = preg_grep($re,array_keys($this->cache)) ?? [];
         return sizeof($m) ?? 0 ;
     }
 
@@ -238,7 +238,8 @@ class MT_Profile extends MT
     {
         $re = '/' . $this->base_name() . '/' ;
         foreach($this->cache as $profile){
-            if(preg_match($re,$profile['name'])){
+            $name = $profile['name'] ?? "";
+            if(preg_match($re,$name)){
                 $size = $profile['children'] ?? 0;
                 if($size < 128)return $profile ;
             }
