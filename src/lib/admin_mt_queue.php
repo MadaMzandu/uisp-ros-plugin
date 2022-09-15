@@ -9,6 +9,7 @@ class Admin_Queue extends MT
     private $series ;
 
     public function fix(){
+        if(true) return ; //disable entire thing
         $disabled = $this->conf->disable_contention ?? true ;
         if($disabled) return ;
         $this->batch = [];
