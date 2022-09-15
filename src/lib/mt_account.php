@@ -25,8 +25,8 @@ class MT_Account extends MT
 
     private function set_profile(): bool
     {
-        return $this->svc->accountType > 0
-            ? $this->profile->apply($this->entity)
+        return $this->svc->pppoe
+            ? $this->profile->set_profile()
             : $this->q->set_queue();
     }
 
@@ -81,12 +81,6 @@ class MT_Account extends MT
         return $obj;
     }
 
-    private function profile(): string
-    {
-        return $this->svc->disabled()
-            ? $this->conf->disabled_profile : $this->profile->name();
-    }
-
     private function dhcp_data(): stdClass
     {
         return (object)[
@@ -99,6 +93,12 @@ class MT_Account extends MT
         ];
     }
 
+    private function profile(): string
+    {
+        return $this->svc->disabled()
+            ? $this->conf->disabled_profile : $this->svc->plan->name();
+    }
+
     protected function address_list(): string
     {
         return $this->svc->disabled() ? $this->conf->disabled_list : $this->conf->active_list;
@@ -106,13 +106,11 @@ class MT_Account extends MT
 
     private function disconnect(): bool
     {
-        if ($this->svc->accountType < 1) {
+        if (!$this->svc->pppoe) {
             return true;
         }
-        $this->path = $this->svc->accountType == 2
-            ? '/ip/hotspot/active/': '/ppp/active/';
-        $filter = $this->svc->accountType == 2 ? '?user=' : '?name=';
-        $read = $this->read($filter . $this->svc->username());
+        $this->path = '/ppp/active/';
+        $read = $this->read('?name=' . $this->svc->username());
         foreach ($read as $active) {
             $data['.id'] = $active['.id'];
             $this->write((object)$data, 'remove');
@@ -121,10 +119,9 @@ class MT_Account extends MT
         return true;
     }
 
-
     protected function filter(): string
     {
-        return $this->svc->accountType > 0
+        return $this->svc->pppoe
             ? '?name=' . $this->svc->username()
             : '?mac-address=' . $this->svc->mac();
     }
@@ -146,7 +143,6 @@ class MT_Account extends MT
 
     public function move(): bool
     {
-        $this->svc->action = 'delete';
         return $this->delete()
             && $this->move_insert();
     }
@@ -160,10 +156,9 @@ class MT_Account extends MT
     protected function mini_init($action = 'insert'): void
     {
         $this->svc->action = $action;
-        $delete = in_array($action,["delete","move"]);
+        $delete = $action == 'delete' || $action == 'move';
         $this->svc->plan->contention = $delete ? -1
             : ($this->svc->exists() ? 0 : 1);
-        $this->batch = [];
         $this->path = $this->path();
         $this->exists = $this->exists();
         $this->profile = new MT_Profile($this->svc);
@@ -205,6 +200,8 @@ class MT_Account extends MT
         }
         return !$this->findErr($success);
     }
+
+
 
     public function insert(): bool
     {

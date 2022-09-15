@@ -16,7 +16,12 @@ class Admin_System extends Admin
             fastcgi_finish_request();
         }
         set_time_limit(6000);
-        (new Admin_Rebuild())->send_triggers();
+        $re = new Admin_Rebuild();
+        if(empty($this->data)){
+            $re->send_triggers();
+        }
+        else{
+            $re->rebuild_device($this->data);
+        }
     }
-
 }

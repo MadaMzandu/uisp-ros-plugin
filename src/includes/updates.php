@@ -1,6 +1,6 @@
 <?php
 
-$version = '1.8.6';
+$version = '1.8.7';
 $conf = db()->readConfig();
 $current = $conf->version ?? '1.0.0';
 
@@ -12,10 +12,8 @@ function apply_updates(): bool
    return table_updates()
        && conf_updates()
        && remove_jobs()
-       && fix_queues()
        && rebuild() ;
 }
-
 
 function rebuild(): bool
 {
@@ -25,16 +23,6 @@ function rebuild(): bool
         $enable['disable_contention'] = false;
         return (new Settings($disable))->edit()
             && (new Settings($enable))->edit();
-    }
-    return true ;
-}
-
-function fix_queues(): bool
-{
-    global $current ;
-    if($current < '1.8.5c'){
-        $data = [];
-        (new Admin_Queue($data))->fix();
     }
     return true ;
 }
