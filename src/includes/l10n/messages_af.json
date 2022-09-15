@@ -87,6 +87,8 @@
 	"qFixDesc" : "Gebruik om ouerrye wat 128-limiet oorskry het, reg te stel of te ontsmet",
 	"qFixTitle" : "Maak toue reg",
 	"rebuild" : "herbou",
+	"rebuildDevice" : "Sinkroniseer",
+	"rebuildAlert" : "Toestel word tans gesinchroniseer",
 	"rebuildDesc" : "Dit sal die inprop se kas herbou en ontbrekende rekeninge op routers vul. Kan gebruik word om routers of die inprop self te herstel. Bestaande rekeninge op routers word nie gewysig nie.",
 	"rebuildFork": "Die herbouproses sal voortgaan om in die agtergrond te loop",
 	"rebuildTitle" : "Herbou inpropdata",

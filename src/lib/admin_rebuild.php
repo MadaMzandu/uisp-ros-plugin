@@ -2,6 +2,7 @@
 
 class Admin_Rebuild{
     private $conf ;
+    private $device ;
 
     private function db()
     {
@@ -27,7 +28,12 @@ class Admin_Rebuild{
         foreach ($services as $s){
             $attrs = $s['attributes'] ?? [];
             foreach($attrs as $a){
-                if($a['key'] == $dn && $a['value']) $result[] = $s;
+                if($this->device){
+                    if($a['key'] == $dn && $a['value'] == $this->device) $result[] = $s;
+                }
+                else{
+                    if($a['key'] == $dn && $a['value']) $result[] = $s;
+                }
             }
         }
         return $result;
@@ -41,6 +47,12 @@ class Admin_Rebuild{
             if($a['key'] == $dn) return $a['id'];
         }
         return null ;
+    }
+
+    public function rebuild_device($device)
+    {
+        $this->device = $device->name ?? null;
+        $this->send_triggers();
     }
 
     public function send_triggers():void

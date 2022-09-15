@@ -87,6 +87,8 @@
   "qFixDesc" : "Tumia kusahihisha au kusafisha foleni za wazazi ambazo zimezidi kikomo cha 128",
   "qFixTitle" : "Rekebisha Foleni",
   "rebuild" : "jenga upya",
+  "rebuildDevice" : "Sawazisha",
+  "rebuildAlert" : "Kifaa kinasawazishwa",
   "rebuildDesc" : "Hii itaunda upya akiba ya programu-jalizi na kujaza akaunti zinazokosekana kwenye vipanga njia. Inaweza kutumika kurejesha ruta au programu-jalizi yenyewe. Akaunti zilizopo kwenye ruta hazibadilishwa.",
   "rebuildFork": "Mchakato wa kuunda upya utaendelea kufanya kazi chinichini",
   "rebuildTitle" : "Unda upya data ya programu-jalizi",

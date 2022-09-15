@@ -31,7 +31,7 @@ class MT_Queue extends MT
         if ($this->exists) {
             $id['.id'] = $this->insertId;
             $this->write((object)$id, 'remove')
-            && $this->pq->apply($this->entity);
+            && $this->pq->set_parent();
         }
         return !$this->findErr('ok');
     }
@@ -39,11 +39,10 @@ class MT_Queue extends MT
     private function exec(): bool
     {
         $action = $this->exists ? 'set' : 'add';
-        /*$orphanId = $this->orphaned();
+        $orphanId = $this->orphaned();
         $orphanId
             ? $this->pq->reset($orphanId)
-            : $this->pq->apply($this->entity);*/
-        $this->pq->apply($this->entity);
+            : $this->pq->set_parent();
         $this->write($this->data(), $action);
         return !$this->findErr('ok');
     }
@@ -67,7 +66,8 @@ class MT_Queue extends MT
         if ($this->conf->disable_contention) {
             return 'none';
         }
-        return $this->svc->disabled() ? 'none' : $this->pq->name();
+        $plan = 'servicePlan-' . $this->svc->plan->id() . '-parent';
+        return $this->svc->disabled() ? 'none' : $plan;
     }
 
     protected function filter(): string
