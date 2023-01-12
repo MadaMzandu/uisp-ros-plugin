@@ -32,6 +32,7 @@ class MT_Profile extends MT
 
     private function delete(): bool
     {
+        return true ; //skip deleting profiles for now
         if($this->exists) {
             $id['.id'] = $this->insertId ?? $this->name();
             $this->pq->set_parent()
@@ -125,7 +126,7 @@ class MT_Profile extends MT
         $orphanId
             ? $this->pq->reset($orphanId)
             : $this->pq->set_parent();
-        $this->write($this->data(),$action);
+        $this->write($this->data($action),$action);
         return !$this->findErr('ok');
     }
 
@@ -142,7 +143,7 @@ class MT_Profile extends MT
     protected function init(): void
     {
         parent::init();
-        $this->path = '/ppp/profile/';
+        $this->path = $this->path();
         $this->exists = $this->exists();
         $this->pq = new MT_Parent_Queue($this->svc);
     }

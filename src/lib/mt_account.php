@@ -25,9 +25,11 @@ class MT_Account extends MT
 
     private function set_profile(): bool
     {
-        return $this->svc->pppoe
-            ? $this->profile->set_profile()
-            : $this->q->set_queue();
+        switch($this->svc->accountType)
+        {
+            case 0: { return $this->q->set_queue(); }
+            default: { return $this->profile->set_profile(); }
+        }
     }
 
     private function set_account(): bool // add/edit account
@@ -121,9 +123,12 @@ class MT_Account extends MT
 
     protected function filter(): string
     {
-        return $this->svc->pppoe
-            ? '?name=' . $this->svc->username()
-            : '?mac-address=' . $this->svc->mac();
+        switch ($this->svc->accountType)
+        {
+            case 0: return '?mac-address=' . $this->svc->mac();
+            default: return '?name=' . $this->svc->username();
+
+        }
     }
 
     public function findErr($success = 'ok'): bool
