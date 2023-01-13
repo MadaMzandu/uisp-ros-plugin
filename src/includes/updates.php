@@ -1,6 +1,6 @@
 <?php
 
-$version = '1.8.7';
+$version = '1.8.8';
 $conf = db()->readConfig();
 $current = $conf->version ?? '1.0.0';
 
