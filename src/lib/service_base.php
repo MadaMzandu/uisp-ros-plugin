@@ -26,9 +26,10 @@ class Service_Base
 
     private function toObject($data)
     {
+        if(empty($data)) return null ;
         if (is_array($data) || is_object($data)) {
             return is_object($data) ? $data
-                : json_decode(json_encode((object)$data));
+                : json_decode(json_encode($data));
         }
         return null;
     }
@@ -56,8 +57,8 @@ class Service_Base
         // or returns mode is parameter is null
         $edit = $this->data->extraData->entityBeforeEdit ?? null;
         if (is_int($mode)) {
-            $mode = $edit ? $mode : 0;
-            $mode = $mode > 0 ? 1 : 0;
+            if($mode > 1) $mode = 1 ;
+            if(empty($edit)) $mode =  0 ;
             $this->mode = $mode;
             $this->plan->mode = $mode;
             $this->client->mode = $mode;
@@ -88,7 +89,7 @@ class Service_Base
             $q[$id] = [
                 'data' => $this->data,
                 'status' => $status,
-                'last' => (new DateTime())->format('Y-m-d H:i:s'),
+                'last' => date('Y-m-d H:i:s'),
             ];
             file_put_contents($file, json_encode($q));
         }
@@ -122,14 +123,12 @@ class Service_Base
     {
         $objects = ['entity','entityBeforeEdit'];
         foreach($objects as $object){
-            $array =  $this->data->extraData->$object->attributes ?? [];
-            $assoc = [] ;
-            foreach ($array as $attr){
-                $assoc[$attr->key] = $attr ;
+            $attrs =  $this->data->extraData->$object->attributes ?? [];
+            $fixed = [] ;
+            foreach ($attrs as $attr){
+                $fixed[$attr->key] = $attr ;
             }
-            if($array) {
-                $this->data->extraData->$object->attributes = $assoc;
-            }
+            $this->data->extraData->$object->attributes = $fixed;
         }
     }
 
