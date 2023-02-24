@@ -41,6 +41,12 @@ CREATE TABLE IF NOT EXISTS "plans" (
                                        "uploadSpeed"   INTEGER,
                                        "downloadBurst" INTEGER,
                                        "uploadBurst"   INTEGER,
+                                       "downloadLimit" INTEGER ,
+                                       "uploadLimit" INTEGER ,
+                                       "downloadTime" FLOAT ,
+                                       "uploadTime" FLOAT ,
+                                       "downloadThresh" INTEGER ,
+                                       "uploadThresh" INTEGER
                                        "dataUsageLimit"        INTEGER,
                                        "ratio" INTEGER,
                                        "last"  TEXT,
