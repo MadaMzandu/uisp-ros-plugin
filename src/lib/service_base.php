@@ -123,7 +123,10 @@ class Service_Base
     {
         $objects = ['entity','entityBeforeEdit'];
         foreach($objects as $object){
-            $attrs =  $this->data->extraData->$object->attributes ?? [];
+            $entity = $this->data->extraData->$object ?? null ;
+            if(!$entity) continue ;
+            $attrs =  $entity->attributes ?? null;
+            if(!$attrs) continue ;
             $fixed = [] ;
             foreach ($attrs as $attr){
                 $fixed[$attr->key] = $attr ;
