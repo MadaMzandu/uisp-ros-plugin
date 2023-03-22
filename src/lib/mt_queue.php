@@ -48,17 +48,22 @@ class MT_Queue extends MT
     }
 
 
-    protected function data(): stdClass
+    public function data(): stdClass
     {
-        return (object)array(
+        $limits = $this->svc->plan->limits();
+        return (object)[
             'name' => $this->name(),
             'target' => $this->svc->ip(),
-            'max-limit' => $this->rate()->text,
-            'limit-at' => $this->rate()->text,
+            'max-limit' => $this->to_pair($limits['rate']),
+            'limit-at' => $this->to_pair($limits['limit']),
+            'burst-limit' => $this->to_pair($limits['burst']),
+            'burst-threshold' => $this->to_pair($limits['thresh']),
+            'burst-time' => $this->to_pair($limits['time'],false),
+            'priority' => $this->to_int($limits['prio']),
             'parent' => $this->pq_name(),
             'comment' => $this->comment(),
             '.id' => $this->insertId ?? $this->name(),
-        );
+        ];
     }
 
     protected function pq_name(): string
