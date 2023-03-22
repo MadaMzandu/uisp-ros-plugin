@@ -166,7 +166,7 @@ class Service_Base
 
     protected function ucrm()
     {
-        $u = new WebUcrm();
+        $u = new ApiUcrm();
         $u->assoc = false ;
         return $u ;
     }

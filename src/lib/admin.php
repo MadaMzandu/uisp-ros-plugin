@@ -91,7 +91,7 @@ class Admin
 
     protected function ucrm()
     {
-        return new WebUcrm();
+        return new ApiUcrm();
     }
 
     public function result()
