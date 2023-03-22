@@ -182,4 +182,21 @@ class MT extends Device
         return $return ;
     }
 
+    protected function to_pair($array, $mbps = true): ?string
+    {
+        $str = [];
+        foreach($array as $value){
+            $unit = $mbps ? 'M' : null;
+            if(!$value){ $value = 0; $unit = null; }
+            $str[] = $value . $unit ;
+        }
+        return implode('/',$str);
+    }
+
+    protected function to_int($value)
+    {
+        if(!$value || !is_numeric($value)) return 0 ;
+        return $value;
+    }
+
 }

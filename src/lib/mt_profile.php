@@ -176,8 +176,8 @@ class MT_Profile extends MT
         }
     }
 
-    private function rate_limit(): string
-    {
+    private function rate_limits(): string
+    { // output mt format - rate/burst/thresh/time/prio/limit
         $limits = $this->svc->plan->limits();
         $values = [];
         foreach (array_keys($limits) as $key) {
@@ -197,29 +197,12 @@ class MT_Profile extends MT
         return implode(' ', $ret);
     }
 
-    private function to_pair($array, $mbps = true): ?string
-    {
-        $str = [];
-        foreach($array as $value){
-            $unit = $mbps ? 'M' : null;
-            if(!$value){ $value = 0; $unit = null; }
-            $str[] = $value . $unit ;
-        }
-        return implode('/',$str);
-    }
-
-    private function to_int($value)
-    {
-        if(!$value || !is_numeric($value)) return 0 ;
-        return $value;
-    }
-
     private function hotspot_data($action): stdClass
     {
         return (object)[
             'action' => $action,
             'name' => $this->name(),
-            'rate-limit' => $this->rate_limit(),
+            'rate-limit' => $this->rate_limits(),
             'parent-queue' => $this->pq_name(),
             'address-list' => $this->address_list(),
             '.id' => $this->name(),
@@ -232,7 +215,7 @@ class MT_Profile extends MT
             'action' => $action,
             'name' => $this->name(),
             'local-address' => $this->local_address(),
-            'rate-limit' => $this->rate_limit(),
+            'rate-limit' => $this->rate_limits(),
             'parent-queue' => $this->pq_name(),
             'address-list' => $this->address_list(),
             '.id' => $this->insertId ?? $this->name(),
