@@ -18,6 +18,10 @@ class AdminPlans extends Admin
         foreach($plans as $plan){
             $id = $plan['id'] ;
             foreach($keys as $key){
+                if($key == 'priority'){
+                    $plans[$id][$key] = $config[$id][$key] ?? 8 ;
+                    continue;
+                }
                 $plans[$id][$key] = $config[$id][$key] ?? 0 ;
             }
         }
