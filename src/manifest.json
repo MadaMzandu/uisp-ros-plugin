@@ -1,7 +1,7 @@
 {
   "version": "1",
   "information": {
-    "name": "ros-plugin",
+    "name": "ros-plugin-test",
     "displayName": "Router OS Plugin",
     "description": "Real time provisioning for ROS",
     "url": "",
@@ -19,7 +19,7 @@
   "menu": [
         {
             "key": "Ros Plugin",
-            "label": "Panel",
+            "label": "Testing",
             "type" : "admin",
             "target": "iframe",
             "parameters":{
