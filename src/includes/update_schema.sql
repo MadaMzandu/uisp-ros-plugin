@@ -31,6 +31,7 @@ DROP TABLE IF EXISTS plantmp;
 CREATE TABLE IF NOT EXISTS "plantmp" (
        "id"    INTEGER NOT NULL,
        "ratio" INTEGER,
+       "priority" INTEGER,
        "burstUpload" INTEGER ,
        "burstDownload" INTEGER ,
        "threshUpload" INTEGER,
