@@ -27,21 +27,9 @@ CREATE TABLE  IF NOT EXISTS "devtmp" (
      "created"       TEXT,
      PRIMARY KEY("id" AUTOINCREMENT)
 );
-DROP TABLE IF EXISTS planstmp;
+DROP TABLE IF EXISTS plantmp;
 CREATE TABLE IF NOT EXISTS "plantmp" (
        "id"    INTEGER NOT NULL,
-       "name"  TEXT,
-       "downloadSpeed" INTEGER,
-       "uploadSpeed"   INTEGER,
-       "downloadBurst" INTEGER,
-       "uploadBurst"   INTEGER,
-       "downloadLimit" INTEGER ,
-       "uploadLimit" INTEGER ,
-       "downloadTime" FLOAT ,
-       "uploadTime" FLOAT ,
-       "downloadThresh" INTEGER ,
-       "uploadThresh" INTEGER,
-       "dataUsageLimit" INTEGER,
        "ratio" INTEGER,
        "burstUpload" INTEGER ,
        "burstDownload" INTEGER ,
@@ -52,13 +40,12 @@ CREATE TABLE IF NOT EXISTS "plantmp" (
        "last"  TEXT,
        "created"       TEXT,
        PRIMARY KEY("id")
-);
+    );
 INSERT INTO "svctmp" (id, device, address, clientId, planId, status, "last", created)
 SELECT id, device, address, clientId, planId, status, "last", created FROM "services";
 INSERT INTO "devtmp" (id,name,ip,type,user,password,dbname,pool,"last",created)
 SELECT id,name,ip,type,user,password,dbname,pool,"last",created FROM "devices";
-INSERT INTO "plantmp" ("id","name","downloadSpeed","uploadSpeed","downloadBurst","uploadBurst","downloadLimit","uploadLimit","downloadTime","uploadTime","downloadThresh","uploadThresh","dataUsageLimit","ratio","last","created")
-SELECT "id","name","downloadSpeed","uploadSpeed","downloadBurst","uploadBurst","downloadLimit","uploadLimit","downloadTime","uploadTime","downloadThresh","uploadThresh","dataUsageLimit","ratio","last","created" FROM plans;
+INSERT INTO "plantmp" ("id","ratio","last","created") SELECT "id","ratio","last","created" FROM plans;
 DROP TABLE "services";
 DROP TABLE "devices" ;
 DROP TABLE "plans" ;

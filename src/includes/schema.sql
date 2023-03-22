@@ -36,18 +36,6 @@ CREATE TABLE IF NOT EXISTS "devices" (
 );
 CREATE TABLE IF NOT EXISTS "plans" (
            "id"    INTEGER NOT NULL,
-           "name"  TEXT,
-           "downloadSpeed" INTEGER,
-           "uploadSpeed"   INTEGER,
-           "downloadBurst" INTEGER,
-           "uploadBurst"   INTEGER,
-           "downloadLimit" INTEGER ,
-           "uploadLimit" INTEGER ,
-           "downloadTime" FLOAT ,
-           "uploadTime" FLOAT ,
-           "downloadThresh" INTEGER ,
-           "uploadThresh" INTEGER ,
-           "dataUsageLimit" INTEGER,
            "ratio" INTEGER,
            "burstUpload" INTEGER ,
            "burstDownload" INTEGER ,
