@@ -28,7 +28,7 @@ CREATE TABLE  IF NOT EXISTS "devtmp" (
      PRIMARY KEY("id" AUTOINCREMENT)
 );
 DROP TABLE IF EXISTS planstmp;
-CREATE TABLE IF NOT EXISTS "planstmp" (
+CREATE TABLE IF NOT EXISTS "plantmp" (
        "id"    INTEGER NOT NULL,
        "name"  TEXT,
        "downloadSpeed" INTEGER,
@@ -57,14 +57,14 @@ INSERT INTO "svctmp" (id, device, address, clientId, planId, status, "last", cre
 SELECT id, device, address, clientId, planId, status, "last", created FROM "services";
 INSERT INTO "devtmp" (id,name,ip,type,user,password,dbname,pool,"last",created)
 SELECT id,name,ip,type,user,password,dbname,pool,"last",created FROM "devices";
-INSERT INTO "planstmp" ("id","name","downloadSpeed","uploadSpeed","downloadBurst","uploadBurst","downloadLimit","uploadLimit","downloadTime","uploadTime","downloadThresh","uploadThresh","dataUsageLimit","ratio","last","created")
+INSERT INTO "plantmp" ("id","name","downloadSpeed","uploadSpeed","downloadBurst","uploadBurst","downloadLimit","uploadLimit","downloadTime","uploadTime","downloadThresh","uploadThresh","dataUsageLimit","ratio","last","created")
 SELECT "id","name","downloadSpeed","uploadSpeed","downloadBurst","uploadBurst","downloadLimit","uploadLimit","downloadTime","uploadTime","downloadThresh","uploadThresh","dataUsageLimit","ratio","last","created" FROM plans;
 DROP TABLE "services";
 DROP TABLE "devices" ;
 DROP TABLE "plans" ;
 ALTER TABLE "svctmp" RENAME to "services";
 ALTER TABLE "devtmp" RENAME to "devices";
-ALTER TABLE "planstmp" RENAME to "plans";
+ALTER TABLE "plantmp" RENAME to "plans";
 CREATE INDEX "xsvc_address" ON "services" ("address");
 CREATE INDEX "xsvc_device" ON "services" ("device");
 CREATE INDEX "xsvc_planId" ON "services" ("planId");
