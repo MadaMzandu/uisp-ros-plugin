@@ -139,7 +139,7 @@ class MT_Account extends MT
                 continue;
             }
             $this->status = $call->status();
-            MyLog()->appendLog("mtacc error: ".json_encode($this->status));
+            MyLog()->appendLog("mt account error: ".json_encode($this->status));
             MyLog()->appendLog("error object: ".json_encode($call));
             $this->svc->queue_job($this->status());
             return true;
