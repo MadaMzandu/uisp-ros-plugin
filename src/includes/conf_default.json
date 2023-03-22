@@ -1,0 +1,23 @@
+{
+  "ppp_pool": "10.99.0.0\/16",
+  "router_ppp_pool": "true",
+  "excl_addr": "null",
+  "active_list": "null",
+  "disabled_list": "disabled",
+  "disabled_profile": "disabled",
+  "unsuspend_date_fix": "false",
+  "unsuspend_fix_wait": "5",
+  "pppoe_user_attr": "pppoeUsername",
+  "pppoe_pass_attr": "pppoePassword",
+  "device_name_attr": "deviceName",
+  "mac_addr_attr": "macAddress",
+  "ip_addr_attr": "ipAddress",
+  "version": "1.8.5",
+  "disabled_rate": "1",
+  "auto_ppp_user": "false",
+  "pppoe_caller_attr": "callerId",
+  "disable_contention": "true",
+  "hs_attr": "hotspot",
+  "hs_enable": "false",
+  "auto_hs_user": "false"
+}

@@ -44,10 +44,10 @@ class Device_Base
         }
     }
 
-    protected function db(): ?API_SQLite
+    protected function db(): ?ApiSqlite
     {
         try {
-            return new API_SQLite();
+            return new ApiSqlite();
         } catch (Exception $e) {
             $this->setErr($e->getMessage());
             return null;

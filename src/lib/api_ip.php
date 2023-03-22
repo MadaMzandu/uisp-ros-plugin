@@ -15,7 +15,7 @@ class API_IP
 
     public function __construct()
     {
-        $this->conf = (new API_SQLite())->readConfig();
+        $this->conf = (new ApiSqlite())->readConfig();
     }
 
     public function assign($device = false): ?array
@@ -160,7 +160,7 @@ class API_IP
 
     private function db()
     {
-        return new API_SQLite();
+        return new ApiSqlite();
     }
 
 }

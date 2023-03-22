@@ -14,7 +14,7 @@ class Admin_Cache
 
     private function db()
     {
-        return new API_SQLite() ;
+        return new ApiSqlite() ;
     }
 
     private function crm()

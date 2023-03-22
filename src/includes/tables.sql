@@ -27,14 +27,44 @@ CREATE TABLE  IF NOT EXISTS "devtmp" (
      "created"       TEXT,
      PRIMARY KEY("id" AUTOINCREMENT)
 );
+DROP TABLE IF EXISTS planstmp;
+CREATE TABLE IF NOT EXISTS "planstmp" (
+       "id"    INTEGER NOT NULL,
+       "name"  TEXT,
+       "downloadSpeed" INTEGER,
+       "uploadSpeed"   INTEGER,
+       "downloadBurst" INTEGER,
+       "uploadBurst"   INTEGER,
+       "downloadLimit" INTEGER ,
+       "uploadLimit" INTEGER ,
+       "downloadTime" FLOAT ,
+       "uploadTime" FLOAT ,
+       "downloadThresh" INTEGER ,
+       "uploadThresh" INTEGER,
+       "dataUsageLimit" INTEGER,
+       "ratio" INTEGER,
+       "burstUpload" INTEGER ,
+       "burstDownload" INTEGER ,
+       "threshUpload" INTEGER,
+       "threshDownload" INTEGER ,
+       "timeUpload" FLOAT,
+       "timeDownload" FLOAT,
+       "last"  TEXT,
+       "created"       TEXT,
+       PRIMARY KEY("id")
+);
 INSERT INTO "svctmp" (id, device, address, clientId, planId, status, "last", created)
-    SELECT id, device, address, clientId, planId, status, "last", created FROM "services";
+SELECT id, device, address, clientId, planId, status, "last", created FROM "services";
 INSERT INTO "devtmp" (id,name,ip,type,user,password,dbname,pool,"last",created)
-    SELECT id,name,ip,type,user,password,dbname,pool,"last",created FROM "devices";
+SELECT id,name,ip,type,user,password,dbname,pool,"last",created FROM "devices";
+INSERT INTO "planstmp" ("id","name","downloadSpeed","uploadSpeed","downloadBurst","uploadBurst","downloadLimit","uploadLimit","downloadTime","uploadTime","downloadThresh","uploadThresh","dataUsageLimit","ratio","last","created")
+SELECT "id","name","downloadSpeed","uploadSpeed","downloadBurst","uploadBurst","downloadLimit","uploadLimit","downloadTime","uploadTime","downloadThresh","uploadThresh","dataUsageLimit","ratio","last","created" FROM plans;
 DROP TABLE "services";
 DROP TABLE "devices" ;
+DROP TABLE "plans" ;
 ALTER TABLE "svctmp" RENAME to "services";
 ALTER TABLE "devtmp" RENAME to "devices";
+ALTER TABLE "planstmp" RENAME to "plans";
 CREATE INDEX "xsvc_address" ON "services" ("address");
 CREATE INDEX "xsvc_device" ON "services" ("device");
 CREATE INDEX "xsvc_planId" ON "services" ("planId");

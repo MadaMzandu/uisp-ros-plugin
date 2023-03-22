@@ -135,9 +135,9 @@ class Devices extends Admin
         return (new MT($data))->set();
     }
 
-    private function connect(): API_SQLite
+    private function connect(): ApiSqlite
     {
-        return new API_SQLite();
+        return new ApiSqlite();
     }
 
     public function services(): void
@@ -231,7 +231,7 @@ class Devices extends Admin
 
     private function setUsers(): void
     {
-        $db = new API_SQLite();
+        $db = new ApiSqlite();
         foreach ($this->read as &$device) {
             $device['users'] = $db->countServicesByDeviceId($device['id']);
         }

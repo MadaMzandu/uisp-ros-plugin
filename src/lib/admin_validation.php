@@ -72,7 +72,7 @@ class Validation extends Admin
         if (!in_array($field, $this->keys)) {
             return true;
         }
-        $db = new API_SQLite();
+        $db = new ApiSqlite();
         if ($this->data->id > 0) {
             $device = $db->selectDeviceById($this->data->id);
             if (strtolower($device->name) == strtolower($this->data->name)) {

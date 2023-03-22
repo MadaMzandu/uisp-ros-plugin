@@ -1,59 +1,71 @@
 <?php
+chdir(__DIR__);
 //include_once 'includes/cors.php';
 
-chdir(__DIR__);
-
-if(!file_exists('data/data.db'))
-{ //check db
-    $db = new SQLite3('data/data.db');
-    $schema = file_get_contents('includes/schema.sql');
-    $done = false;
-    if ($db->exec($schema)) {
-        $default_conf = file_get_contents('includes/conf.sql');
-        $done = $db->exec($default_conf);
-    }
-    if(!$done){exit();}
+if (isset($_SERVER['REQUEST_METHOD'])
+    && $_SERVER['REQUEST_METHOD'] == 'OPTIONS') { //skip redirect for options
+    exit();
 }
 
-include_once('lib/api_router.php');
 require_once 'vendor/autoload.php';
-include_once 'includes/updates.php';
+include_once 'lib/api_common.php';
+include_once('lib/api_router.php');
+include_once 'includes/api_setup.php';
 
-if(user_not_ok()){
-    $status = [
-        'status' => 'failed',
-        'error' => true,
-        'message' => 'User is not authenticated',
-        'data' => []
-    ];
-    exit(json_encode($status));
-}
 
-if(version_not_ok())
-{ //apply updates
-    apply_updates();
-}
+//if(user_not_ok()){
+//    $status = [
+//        'status' => 'failed',
+//        'error' => true,
+//        'message' => 'User is not authenticated',
+//        'data' => []
+//    ];
+//    exit(json_encode($status));
+//}
 
-if(bak_not_ok()){ // create automatic backup
-    create_backup();
-}
+$json = file_get_contents('php://input') ?? null;
 
-$json = file_get_contents('php://input') ?? false;
+try
+{
+    $setup = new ApiSetup();
+    $setup->run();
 
-if ($json) { // api mode
+    if(!$json)
+    {
+        if (isset($_GET['page']) && $_GET['page'] == 'panel')
+        { //load panel
+            include 'public/panel/index.php';
+        }
+        exit();
+    }
+
     $data = json_decode($json);
     $api = new API_Router($data);
     $api->route();
-    echo $api->http_response();
-    exit();
+    $api->http_response();
+}
+catch (
+Exception
+| Error
+| \GuzzleHttp\Exception\GuzzleException
+| \Ubnt\UcrmPluginSdk\Exception\ConfigurationException
+| \Ubnt\UcrmPluginSdk\Exception\InvalidPluginRootPathException
+| \Ubnt\UcrmPluginSdk\Exception\JsonException $err){
+    MyLog()->appendLog('api: '.$err->getMessage().' request: '.$json);
+    respond($err->getMessage(),true);
 }
 
-if (isset($_SERVER['REQUEST_METHOD']) 
-        && $_SERVER['REQUEST_METHOD'] == 'OPTIONS') { //skip redirect for options 
-    exit();
-}
 
-if (isset($_GET['page']) && $_GET['page'] == 'panel') { //config page
-    include 'public/panel/index.php';
-    exit();
-} 
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -1,16 +1,3 @@
-<!--
-<?php
-include_once 'includes/updates.php';
-if(user_not_ok()){
-    $status = [
-        'status' => 'failed',
-        'error' => true,
-        'message' => 'User is not authenticated',
-        'data' => []
-    ];
-    exit(json_encode($status));
-}
-?> -->
 <!DOCTYPE html>
 <html>
 <head>

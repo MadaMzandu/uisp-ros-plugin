@@ -2,7 +2,7 @@
 const API_SQLT_EXEC = 0;
 const API_SQLT_SINGLE = 1;
 
-class API_SQLite
+class ApiSqlite
 {
 
     private $path;
@@ -61,9 +61,9 @@ class API_SQLite
         return $this->execQuery($this->prepareUpdate());
     }
 
-    public function exec($sql)
+    public function exec($sql): ?bool
     {
-        return $this->execQuery($sql);
+        return $this->db()->exec($sql);
     }
 
     private function prepareUpdate()
@@ -227,20 +227,17 @@ class API_SQLite
         return true;
     }
 
-    private function db(): ?SQLite3
+    private function db(): SQLite3
     {
-        try {
-            $db = new SQLite3($this->path);
-            $db->busyTimeout(100);
-            return $db;
-        } catch (Exception $err) {
-            die($this->error($err->getMessage()));
-        }
+        $db = new SQLite3($this->path);
+        $db->busyTimeout(100);
+        $db->enableExceptions(true);
+        return $db ;
     }
     
     private function execQuery($sql)
     {
-        return $this->query($sql,API_SQLT_EXEC);
+        return $this->db()->exec($sql);
     }
 
     private function singleQuery($sql,$entireRow=false)

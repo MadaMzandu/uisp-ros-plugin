@@ -5,7 +5,7 @@ include_once 'api_routes.php';
 include_once 'service.php';
 include_once 'api_sqlite.php';
 
-$conf = (new API_SQLite())->readConfig();
+$conf = (new ApiSqlite())->readConfig();
 $debug_log = [];
 
 
@@ -98,7 +98,7 @@ class API_Router
         return true;
     }
 
-    public function http_response(): ?string
+    public function http_response(): void
     {
         header('content-type: application/json');
         $stat = 'ok';
@@ -113,7 +113,7 @@ class API_Router
             'duration' => $this->status->duration ?? 0,
             'data' => $this->result ?? [],
         ];
-        return json_encode($response);
+        echo json_encode($response,JSON_PRETTY_PRINT);
     }
 
 }

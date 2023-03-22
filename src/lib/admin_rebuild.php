@@ -6,7 +6,7 @@ class Admin_Rebuild{
 
     private function db()
     {
-        return new API_SQLite() ;
+        return new ApiSqlite() ;
     }
 
     private function clear_cache():bool
