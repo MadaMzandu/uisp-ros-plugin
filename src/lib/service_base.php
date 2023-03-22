@@ -116,7 +116,7 @@ class Service_Base
         $attribute = $this->list_attribute($attribute);
         $data = ['attributes' => [['customAttributeId' => $attribute->id, 'value' => $value]]];
         $id = $this->entity->id;
-        return (bool)(new ApiUcrm())->request('clients/services/' . $id, 'PATCH', $data);
+        return (bool) $this->ucrm()->request('clients/services/' . $id, 'PATCH', $data);
     }
 
     protected function fix_attributes()
@@ -137,7 +137,7 @@ class Service_Base
 
     protected function list_attribute($attribute): ?stdClass
     {
-        $list = (new ApiUcrm())->request('custom-attributes');
+        $list = $this->ucrm()->request('custom-attributes');
         foreach ($list as $item) {
             if ($item->key == $attribute) {
                 return $item;
@@ -162,6 +162,18 @@ class Service_Base
         $this->status->error = true;
         $this->status->message = $err;
         return null;
+    }
+
+    protected function ucrm()
+    {
+        $u = new WebUcrm();
+        $u->assoc = false ;
+        return $u ;
+    }
+
+    protected function throwErr($err)
+    {
+        throw new Exception(sprintf("service error: %s",$err));
     }
 
     public function status()

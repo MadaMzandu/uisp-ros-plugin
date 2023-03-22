@@ -13,7 +13,7 @@ class WebUcrm
     protected $key = 'c3458db8-ad00-457f-bf08-f87f1e6b12f7';
     private $disable_ssl_verify = true;
 
-    private function request($url, $method = 'GET', $post = [])
+    public function request($url, $method = 'GET', $post = [])
     {
         $this->method = strtoupper($method);
         $this->ch = curl_init();
@@ -138,7 +138,7 @@ class WebUcrm
             echo sprintf('API error: %s', $response) . PHP_EOL;
         }
         curl_close($this->ch);
-        return $response !== false ? json_decode($response, $this->assoc) : null;
+        return json_decode($response, $this->assoc) ;
     }
 
 }

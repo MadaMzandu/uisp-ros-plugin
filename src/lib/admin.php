@@ -22,7 +22,7 @@ class Admin
     protected $read;
     protected $conf;
 
-    public function __construct($data)
+    public function __construct($data = [])
     {
         $this->data = $this->toObject($data);
         $this->init();
@@ -65,7 +65,7 @@ class Admin
             'validation' => 'Validation',
             'users' => 'Users',
             'jobs' => 'Api_Jobs',
-            'unms' => 'API_Unms',
+            'unms' => 'ApiUcrm',
             'system' => 'Admin_System',
             'backup' => 'Admin_Backup',
             'lang' => 'Api_Lang',
@@ -86,11 +86,12 @@ class Admin
 
     protected function db(): ?ApiSqlite
     {
-        try {
-            return new ApiSqlite();
-        } catch (Exception $e) {
-            return null;
-        }
+        return new ApiSqlite();
+    }
+
+    protected function ucrm()
+    {
+        return new WebUcrm();
     }
 
     public function result()

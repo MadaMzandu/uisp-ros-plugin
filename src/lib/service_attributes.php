@@ -87,7 +87,7 @@ class Service_Attributes extends Service_Base
             $this->auto = !($username && $password) ;
             return true ;
         }
-        return false ;
+        $this->throwErr('request is missing a username or mac address');
     }
 
     protected function check_username_change(): void
