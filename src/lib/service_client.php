@@ -9,7 +9,7 @@ class Service_Client extends Service_Base{
     protected function get(): ?stdClass
     {
         if (!(array)$this->client) {
-            $this->client = (new API_Unms())->request('/clients/' . $this->id());
+            $this->client = (new ApiUcrm())->request('/clients/' . $this->id());
         }
         return $this->client ;
     }

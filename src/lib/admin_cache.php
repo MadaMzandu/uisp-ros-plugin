@@ -19,7 +19,7 @@ class Admin_Cache
 
     private function crm()
     {
-        return new API_Unms();
+        return new ApiUcrm();
     }
 
     private function devices(): array

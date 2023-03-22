@@ -1,9 +1,8 @@
 <?php
 const MAX_BACKUPS = 6;
+const MY_VERSION = '1.8.9';
 class ApiSetup
 {
-    private string $my_version = '1.8.9';
-
     public function run(){
         if($this->needs_db()){
             $this->db_create();
@@ -54,10 +53,10 @@ class ApiSetup
     private  function set_version(): bool
     {
         $state = $this->state() ;
-        $state->version = $this->my_version ;
+        $state->version = MY_VERSION ;
         $this->save($state);
         $sql = sprintf('UPDATE config SET "value"="%s" WHERE "key"="%s"',
-            $this->my_version,'version');
+            MY_VERSION,'version');
         return $this->db()->exec($sql);
     }
 
@@ -109,7 +108,7 @@ class ApiSetup
     private function needs_update(): bool
     {
         $running = $this->state()->version ?? '1.0.0';
-        return $running < $this->my_version ;
+        return $running < MY_VERSION ;
     }
 
     private function needs_db(): bool

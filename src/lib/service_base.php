@@ -116,7 +116,7 @@ class Service_Base
         $attribute = $this->list_attribute($attribute);
         $data = ['attributes' => [['customAttributeId' => $attribute->id, 'value' => $value]]];
         $id = $this->entity->id;
-        return (bool)(new API_Unms())->request('clients/services/' . $id, 'PATCH', $data);
+        return (bool)(new ApiUcrm())->request('clients/services/' . $id, 'PATCH', $data);
     }
 
     protected function fix_attributes()
@@ -134,7 +134,7 @@ class Service_Base
 
     protected function list_attribute($attribute): ?stdClass
     {
-        $list = (new API_Unms())->request('custom-attributes');
+        $list = (new ApiUcrm())->request('custom-attributes');
         foreach ($list as $item) {
             if ($item->key == $attribute) {
                 return $item;

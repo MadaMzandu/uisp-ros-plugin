@@ -30,7 +30,7 @@ class Admin_Queue extends MT
 
     private function fixPlans($device){
         $d = [];
-        $plans = (new Plans($d))->list();
+        $plans = (new AdminPlans($d))->list();
         foreach ($plans as $plan){
             $this->plan = $plan ;
             $this->fixDevicePlan($device);
@@ -327,7 +327,7 @@ class Admin_Queue extends MT
 
     private function unms()
     {
-        $api = new API_Unms();
+        $api = new ApiUcrm();
         $api->assoc = true ;
         return $api ;
     }

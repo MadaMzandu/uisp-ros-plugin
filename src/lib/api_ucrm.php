@@ -1,8 +1,7 @@
 <?php
 
-use Ubnt\UcrmPluginSdk\Service\UcrmApi;
 
-class API_Unms
+class ApiUcrm
 {
 
     public $assoc = false;
@@ -35,17 +34,10 @@ class API_Unms
 
     private function exec()
     {
-        $action = $this->method;
-        $api = UcrmApi::create();
-        try {
-            $response = $api->$action($this->url, $this->post) ?? [];
-            return json_decode(json_encode($response), $this->assoc);
-        } catch (GuzzleHttp\Exception\ClientException $e) {
-            $response = [];
-            $this->status->error = true;
-            $this->status->message = $e->getMessage();
-            return $this->assoc ? $response : (object)$response;
-        }
+        $action = $this->method ?? 'get';
+        $api = \Ubnt\UcrmPluginSdk\Service\UcrmApi::create();
+        $response = $api->$action($this->url,$this->post);
+        return json_decode(json_encode($response), $this->assoc);
     }
 
     public function post()

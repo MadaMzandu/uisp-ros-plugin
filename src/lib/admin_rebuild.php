@@ -16,7 +16,7 @@ class Admin_Rebuild{
 
     private function crm()
     {
-        $c = new API_Unms();
+        $c = new ApiUcrm();
         $c->assoc = true ;
         return $c;
     }

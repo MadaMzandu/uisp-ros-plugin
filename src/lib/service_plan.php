@@ -67,7 +67,7 @@ class Service_Plan extends Service_Base
     {
         $entity = $this->mode ? 'before' : 'entity';
         $planId = $this->$entity->servicePlanId;
-        $this->plan = (new Plans($planId))->list()[$planId] ?? [];
+        $this->plan = (new AdminPlans($planId))->list()[$planId] ?? [];
         return $this->plan;
     }
 

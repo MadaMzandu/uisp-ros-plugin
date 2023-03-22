@@ -130,7 +130,7 @@ class Validation extends Admin
         global $conf;
         $savedToken = $conf->{$field};
         $conf->{$field} = $this->data->{$field};
-        $u = new API_Unms();
+        $u = new ApiUcrm();
         $test = $u->request('/service-plans');
         if (!$test) {
             $this->setFieldError($field, 'token may be invalid - services plans not found using token');
