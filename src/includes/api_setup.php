@@ -24,7 +24,7 @@ class ApiSetup
         if(!$this->db_backup()){
             $this->throwErr('setup: failed to backup - not updating');
         }
-        $source = 'includes/tables.sql';
+        $source = 'includes/update_schema.sql';
         $schema = file_get_contents($source);
         if($this->db()->exec($schema)){
             if($this->config_load()){
