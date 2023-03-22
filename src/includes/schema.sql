@@ -38,6 +38,8 @@ CREATE TABLE IF NOT EXISTS "plans" (
            "id"    INTEGER NOT NULL,
            "ratio" INTEGER,
            "priority" INTEGER,
+           "limitUpload" INTEGER ,
+           "limitDownload" INTEGER ,
            "burstUpload" INTEGER ,
            "burstDownload" INTEGER ,
            "threshUpload" INTEGER,

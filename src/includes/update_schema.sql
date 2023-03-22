@@ -29,19 +29,21 @@ CREATE TABLE  IF NOT EXISTS "devtmp" (
 );
 DROP TABLE IF EXISTS plantmp;
 CREATE TABLE IF NOT EXISTS "plantmp" (
-       "id"    INTEGER NOT NULL,
-       "ratio" INTEGER,
-       "priority" INTEGER,
-       "burstUpload" INTEGER ,
-       "burstDownload" INTEGER ,
-       "threshUpload" INTEGER,
-       "threshDownload" INTEGER ,
-       "timeUpload" FLOAT,
-       "timeDownload" FLOAT,
-       "last"  TEXT,
-       "created"       TEXT,
-       PRIMARY KEY("id")
-    );
+           "id"    INTEGER NOT NULL,
+           "ratio" INTEGER,
+           "priority" INTEGER,
+           "limitUpload" INTEGER ,
+           "limitDownload" INTEGER ,
+           "burstUpload" INTEGER ,
+           "burstDownload" INTEGER ,
+           "threshUpload" INTEGER,
+           "threshDownload" INTEGER ,
+           "timeUpload" FLOAT,
+           "timeDownload" FLOAT,
+           "last"  TEXT,
+           "created"       TEXT,
+           PRIMARY KEY("id")
+);
 INSERT INTO "svctmp" (id, device, address, clientId, planId, status, "last", created)
 SELECT id, device, address, clientId, planId, status, "last", created FROM "services";
 INSERT INTO "devtmp" (id,name,ip,type,user,password,dbname,pool,"last",created)
