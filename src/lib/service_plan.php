@@ -66,8 +66,8 @@ class Service_Plan extends Service_Base
     protected function get(): array
     {
         $entity = $this->mode ? 'before' : 'entity';
-        $planId = $this->$entity->servicePlanId;
-        $this->plan = (new AdminPlans($planId))->list()[$planId] ?? [];
+        $id = $this->$entity->servicePlanId;
+        $this->plan = $this->plans()->list()[$id] ?? [];
         return $this->plan;
     }
 
@@ -96,6 +96,23 @@ class Service_Plan extends Service_Base
             'upload' => $u,
             'download' => $d,
         ];
+    }
+
+    public function limits(): stdClass
+    {
+        $plan = $this->get();
+        $keys = "ratio,priority,uploadSpeed,downloadSpeed,burstUpload,burstDownload,".
+            "threshUpload,threshDownload,timeUpload,timeDownload";
+        $limits = [];
+        foreach(explode(',',$keys) as $key){
+            $limits[$key] = $plan[$key] ;
+        }
+        return (object) $limits ;
+    }
+
+    private function plans()
+    {
+        return new AdminPlans();
     }
 
 
