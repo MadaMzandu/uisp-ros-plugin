@@ -98,16 +98,29 @@ class Service_Plan extends Service_Base
         ];
     }
 
-    public function limits(): stdClass
+    public function limits(): array
     {
         $plan = $this->get();
-        $keys = "ratio,priority,uploadSpeed,downloadSpeed,burstUpload,burstDownload,".
-            "threshUpload,threshDownload,timeUpload,timeDownload";
-        $limits = [];
+        $keys = "ratio,priority,limitUpload,limitDownload,uploadSpeed,downloadSpeed,".
+            "burstUpload,burstDownload,threshUpload,threshDownload,timeUpload,timeDownload";
+        $values = [];
         foreach(explode(',',$keys) as $key){
-            $limits[$key] = $plan[$key] ;
+            switch ($key)
+            {
+                case 'priority': $values['prio'] = $plan[$key]; break;
+                case 'limitUpload':
+                case 'limitDownload': $values['limit'][] = $plan[$key];break;
+                case 'uploadSpeed':
+                case 'downloadSpeed': $values['rate'][] = $plan[$key];break;
+                case 'burstUpload':
+                case 'burstDownload': $values['burst'][] = $plan[$key];break;
+                case 'threshUpload':
+                case 'threshDownload': $values['thresh'][] = $plan[$key];break;
+                case 'timeUpload':
+                case 'timeDownload': $values['time'][] = $plan[$key];break;
+            }
         }
-        return (object) $limits ;
+        return $values ;
     }
 
     private function plans()

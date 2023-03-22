@@ -33,12 +33,12 @@ class MT_Profile extends MT
     private function delete(): bool
     {
         return true ; //skip deleting profiles for now
-        if($this->exists) {
-            $id['.id'] = $this->insertId ?? $this->name();
-            $this->pq->set_parent()
-            && $this->write((object)$id, 'remove');
-        }
-        return !$this->findErr('ok');
+//        if($this->exists) {
+//            $id['.id'] = $this->insertId ?? $this->name();
+//            $this->pq->set_parent()
+//            && $this->write((object)$id, 'remove');
+//        }
+//        return !$this->findErr('ok');
     }
 
     protected function data($action): stdClass
@@ -176,12 +176,50 @@ class MT_Profile extends MT
         }
     }
 
+    private function rate_limit(): string
+    {
+        $limits = $this->svc->plan->limits();
+        $values = [];
+        foreach (array_keys($limits) as $key) {
+            $limit = $limits[$key];
+            if (is_array($limit)) {
+                $mbps = $key != 'time';
+                $values[$key] = $this->to_pair($limit, $mbps);
+            } else {
+                $values[$key] = $this->to_int($limit);
+            }
+        }
+        $order = 'rate,burst,thresh,time,prio,limit';
+        $ret = [];
+        foreach (explode(',', $order) as $key) {
+            $ret[] = $values[$key];
+        }
+        return implode(' ', $ret);
+    }
+
+    private function to_pair($array, $mbps = true): ?string
+    {
+        $str = [];
+        foreach($array as $value){
+            $unit = $mbps ? 'M' : null;
+            if(!$value){ $value = 0; $unit = null; }
+            $str[] = $value . $unit ;
+        }
+        return implode('/',$str);
+    }
+
+    private function to_int($value)
+    {
+        if(!$value || !is_numeric($value)) return 0 ;
+        return $value;
+    }
+
     private function hotspot_data($action): stdClass
     {
         return (object)[
             'action' => $action,
             'name' => $this->name(),
-            'rate-limit' => $this->rate()->text,
+            'rate-limit' => $this->rate_limit(),
             'parent-queue' => $this->pq_name(),
             'address-list' => $this->address_list(),
             '.id' => $this->name(),
@@ -194,7 +232,7 @@ class MT_Profile extends MT
             'action' => $action,
             'name' => $this->name(),
             'local-address' => $this->local_address(),
-            'rate-limit' => $this->rate()->text,
+            'rate-limit' => $this->rate_limit(),
             'parent-queue' => $this->pq_name(),
             'address-list' => $this->address_list(),
             '.id' => $this->insertId ?? $this->name(),
