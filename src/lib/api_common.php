@@ -3,6 +3,8 @@
 
 function MyLog(){ return \Ubnt\UcrmPluginSdk\Service\PluginLogManager::create(); }
 
+function run_setup(){ $setup = new ApiSetup(); $setup->run(); }
+
 function respond($msg,$err = false,$data = [])
 {
     $status = $err ? 'failed' : 'ok';
