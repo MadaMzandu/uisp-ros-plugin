@@ -4,10 +4,6 @@ class ApiSetup
 {
     private string $my_version = '1.8.9';
 
-    public function test(){
-        var_dump($this->config_sql());
-    }
-
     public function run(){
         if($this->needs_db()){
             $this->db_create();
@@ -142,7 +138,7 @@ class ApiSetup
         file_put_contents($file,json_encode($state,JSON_PRETTY_PRINT));
     }
 
-    private function config_sql()
+    private function config_sql(): string
     {
         $file = 'includes/conf_default.json';
         $default = json_decode(file_get_contents($file),true);
@@ -153,30 +149,6 @@ class ApiSetup
             $str[] = $this->to_sql_vals([$key,$default[$key],$created]);
         }
         return $sql . implode(',',$str);
-    }
-
-    private function config_json(): void
-    { //output a default config
-        echo json_encode($this->default_config(),JSON_PRETTY_PRINT) . PHP_EOL;
-    }
-
-    private function default_config() :array
-    {
-        $keystr = 'ppp_pool,router_ppp_pool,excl_addr,active_list,disabled_list,disabled_profile,'.
-            'unsuspend_date_fix,unsuspend_fix_wait,pppoe_user_attr,pppoe_pass_attr,device_name_attr,'.
-            'mac_addr_attr,ip_addr_attr,version,disabled_rate,auto_ppp_user,pppoe_caller_attr,'.
-            'disable_contention,hs_attr,hs_enable,auto_hs_user';
-        $valstr = '10.99.0.0/16,true,null,null,disabled,disabled,false,5,pppoeUsername,pppoePassword,'.
-            'deviceName,macAddress,ipAddress,1.8.5,1,false,callerId,true,hotspot,false,false';
-        $keys = explode(',',$keystr);
-        $vals = explode(',',$valstr);
-        $ret = [];
-        $len = sizeof($keys);
-        for($i = 0;$i < $len;$i++){
-            $ret[$keys[$i]] = $vals[$i];
-        }
-        return $ret ;
-
     }
 
     private function to_sql_vals($array): string
@@ -202,7 +174,7 @@ class ApiSetup
         );
     }
 
-    private function db()
+    private function db(): ApiSqlite
     {
         return new ApiSqlite();
     }
