@@ -48,7 +48,7 @@ class MT_Queue extends MT
     }
 
 
-    public function data(): stdClass
+    protected function data(): stdClass
     {
         $limits = $this->svc->plan->limits();
         return (object)[
