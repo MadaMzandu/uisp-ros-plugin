@@ -27,8 +27,7 @@ $json = file_get_contents('php://input') ?? null;
 
 try
 {
-    $setup = new ApiSetup();
-    $setup->run();
+    run_setup();
 
     if(!$json)
     {
