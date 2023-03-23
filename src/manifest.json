@@ -2,7 +2,7 @@
   "version": "1",
   "information": {
     "name": "ros-plugin-test",
-    "displayName": "Router OS Plugin",
+    "displayName": "Router OS Plugin - TEST",
     "description": "Real time provisioning for ROS",
     "url": "",
     "version": "1.8.8",
