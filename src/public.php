@@ -8,8 +8,8 @@ if (isset($_SERVER['REQUEST_METHOD'])
 }
 
 require_once 'vendor/autoload.php';
+include_once 'lib/api_sqlite.php';
 include_once 'lib/api_common.php';
-include_once('lib/api_router.php');
 include_once 'includes/api_setup.php';
 
 
@@ -27,7 +27,10 @@ $json = file_get_contents('php://input') ?? null;
 
 try
 {
+    set_error_handler('myErrorHandler');
     run_setup();
+
+    include_once 'lib/api_router.php';
 
     if(!$json)
     {
@@ -53,18 +56,3 @@ Exception
     MyLog()->appendLog('api: '.$err->getMessage().' request: '.$json);
     respond($err->getMessage(),true);
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
