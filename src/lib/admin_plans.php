@@ -54,7 +54,8 @@ class AdminPlans extends Admin
     {
         $u = $this->ucrm();
         $u->assoc = true;
-        $read = $this->ucrm()->get('service-plans');
+        $u->get('service-plans');
+        $read = $u->result();
         $tmp = [];
         foreach ($read as $item) {
             $tmp[$item['id']] = $item ;

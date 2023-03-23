@@ -61,7 +61,7 @@ class Admin
             'config' => 'Settings',
             'devices' => 'Devices',
             'stats' => 'Stats',
-            'plans' => 'Plans',
+            'plans' => 'AdminPlans',
             'validation' => 'Validation',
             'users' => 'Users',
             'jobs' => 'Api_Jobs',
