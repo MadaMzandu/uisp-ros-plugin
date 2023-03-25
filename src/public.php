@@ -9,9 +9,9 @@ if (isset($_SERVER['REQUEST_METHOD'])
 
 require_once 'vendor/autoload.php';
 include_once 'lib/api_sqlite.php';
-include_once 'lib/api_common.php';
 include_once 'includes/api_setup.php';
-
+include_once 'lib/api_cache.php';
+include_once 'lib/api_common.php';
 
 //if(user_not_ok()){
 //    $status = [
@@ -56,3 +56,5 @@ Exception
     MyLog()->appendLog('api: '.$err->getMessage().' request: '.$json);
     respond($err->getMessage(),true);
 }
+
+run_cache($json);
