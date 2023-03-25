@@ -52,15 +52,12 @@ class AdminPlans extends Admin
 
     private function get_plans(): array
     {
-        $u = $this->ucrm();
-        $u->assoc = true;
-        $u->get('service-plans');
-        $read = $u->result();
+        $read = $this->ucrm()->get('service-plans');
         $tmp = [];
         foreach ($read as $item) {
-            $tmp[$item['id']] = $item ;
+            $tmp[$item->id] = $item ;
         }
-        return $tmp ;
+        return json_decode(json_encode($tmp),true) ;
     }
 
     private function get_config(): array

@@ -47,42 +47,43 @@ class Admin
         $this->status->message = 'ok';
     }
 
-    public function exec(): void
+    public function select()
     {
-        $target = $this->target();
-        $request = $this->data->data ;
-        if($target == 'AdminGet'){
-            $request = $this->data;
+        $target = $this->data->target ?? null ;
+        $request = $this->data ;
+        $data = $this->data->data ;
+        switch ($target){
+            case 'get': return new AdminGet($request);
+            case 'config': return new Settings($data);
+            case 'devices': return new Devices($data);
+            //case 'stats': return new Stats($data);
+            case 'plans': return new AdminPlans($data);
+            case 'validation': return new Validation($data);
+            //case 'users': return new Users($data);
+            case 'jobs': return new Api_Jobs($data);
+            case 'system': return new Admin_System($data);
+            case 'backup': return new Admin_Backup($data);
+            case 'lang': return new Api_Lang($data);
+            case 'queue': return new Admin_Queue($data);
         }
-        $exec = new $target($request);
-        $exec->{$this->data->action}();
-        $this->status = $exec->status();
-        $this->result = $exec->result();
+        return null ;
     }
 
-    private function target(): ?string
+    public function exec(): void
     {
-        $map = array(
-            'get' => 'AdminGet',
-            'config' => 'Settings',
-            'devices' => 'Devices',
-            'stats' => 'Stats',
-            'plans' => 'AdminPlans',
-            'validation' => 'Validation',
-            'users' => 'Users',
-            'jobs' => 'Api_Jobs',
-            'unms' => 'ApiUcrm',
-            'system' => 'Admin_System',
-            'backup' => 'Admin_Backup',
-            'lang' => 'Api_Lang',
-            'queues' => 'Admin_Queue'
-        );
-        $target = $this->data->target ?? 'none' ;
-        $module = $map[$target] ?? null ;
-        if(!$module){
-            throw new Exception('Unknown target module specified');
+        $api = $this->select();
+        $action = $this->data->action ?? null ;
+        if($api && method_exists($api,$action)){ //route found
+            $api->$action();
+            $this->status = $api->status();
+            $this->result = $api->result();
         }
-        return $module ;
+        else{ //assume its a uisp api call
+            $data = $this->data->data ?? [];
+            $path = $this->data->path ?? null;
+            $ucrm = new ApiUcrm();
+            $this->result = $ucrm->request($path,$action,(array)$data);
+        }
     }
 
     public function status(): stdClass
