@@ -9,6 +9,8 @@ function myErrorHandler($errno, $errstr, $errfile, $errline){
 
 function run_setup(){ $setup = new ApiSetup(); $setup->run(); }
 
+function run_cache($json){ $cache = new ApiCache(); $cache->update($json); }
+
 function respond($msg,$err = false,$data = [])
 {
     $status = $err ? 'failed' : 'ok';
