@@ -9,12 +9,14 @@ class ApiCache{
             fastcgi_finish_request();
         }
         set_time_limit(7200);
-        $table = ($item->entity ?? null) . 's';
+        $table = ($item->entity ?? '') . 's';
+        $id = $item->entityId ?? 0 ;
         if(!in_array($table,['clients','services'])) return ;
         $start = microtime(true);
         $data[] = $item;
         $this->sync();
         $this->batch($table,$data);
+        if($table == 'services')  $this->populate_net($id);
         $end = microtime(true);
         $duration = ($end - $start) / 60 ; //in minutes
         if($duration > 5)
@@ -31,10 +33,12 @@ class ApiCache{
         $this->populate_net();
     }
 
-    private function populate_net()
+    private function populate_net($id = null)
     {
+        if($id == 0) return ;
         $fields = 'services.id,services.address,services.prefix6,devices.id as deviceId,devices.name as device';
         $sql = sprintf("SELECT %s FROM services LEFT JOIN devices ON services.device=devices.id ",$fields);
+        if($id) $sql .= "WHERE services.id = ". $id ;
         $data = $this->db()->selectCustom($sql);
         if(!$data) return ;
         $first = $data[0] ?? null;
