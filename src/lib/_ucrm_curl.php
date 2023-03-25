@@ -4,7 +4,7 @@
 class WebUcrm
 {
 
-    public $assoc = true;
+    public $assoc = false;
     protected $ch;
     protected $method;
     protected $post;
