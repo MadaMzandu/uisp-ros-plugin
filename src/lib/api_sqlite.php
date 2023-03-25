@@ -186,15 +186,7 @@ class ApiSqlite
         return $this->execQuery($sql);
     }
 
-    public function readConfig()
-    {
-        $this->read = $this->selectAllFromTable('config');
-        $return = null;
-        foreach ($this->read as $row) {
-            $return[$row['key']] = $this->fixBoolValue($row['value']);
-        }
-        return (object)$return;
-    }
+
 
     public function selectCustom($sql) : ?array
     {
@@ -218,20 +210,43 @@ class ApiSqlite
         return $return;
     }
 
-    private function fixBoolValue($value)
+    private function unStringify($value)
     {
-        return ($value == 'true' || $value == 'false') ? ($value == 'true' ? true : false) : $value ?? '';
+        if(is_numeric($value)) return (double) $value;
+        if(in_array($value,['true','false'])) return $value == 'true' ;
+        if(empty($value)) return null;
+        return $value ;
     }
 
-    public function saveConfig($data)
+    private function stringify($value)
     {
-        $data = json_decode(json_encode($data),true);
-        foreach(array_keys($data) as $key){
-            $sql = 'INSERT or REPLACE INTO config ("key","value","last") VALUES ';
-            $now = (new DateTime())->format('Y-m-d H:i:s');
-            $sql .= sprintf("('%s','%s','%s')",$key,$data[$key],$now);
-            $this->db()->exec($sql);
+        if(is_bool($value)) return $value ? 'true' : 'false';
+        if(is_numeric($value)) return (string) $value;
+        if(empty($value)) return null ;
+        return $value ;
+    }
+
+    public function readConfig()
+    {
+        $this->read = $this->selectAllFromTable('config');
+        $return = null;
+        foreach ($this->read as $row) {
+            $return[$row['key']] = $this->unStringify($row['value']);
         }
+        return (object)$return;
+    }
+
+    public function saveConfig($fields)
+    {
+        $data = (array) $fields ;
+        $ret = true ;
+        foreach(array_keys($data) as $key){
+            $now = (new DateTime())->format('Y-m-d H:i:s');
+            $value = $this->stringify($data[$key] ?? null);
+            $sql = sprintf("UPDATE config SET value = '%s',last = '%s' WHERE key = '%s'",$value,$now,$key);
+            if(!$this->db()->exec($sql)) $ret = false;
+        }
+        return $ret;
     }
 
     private function db(): SQLite3

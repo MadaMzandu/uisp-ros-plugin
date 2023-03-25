@@ -5,12 +5,10 @@ class Settings extends Admin
 
     public function edit(): bool
     {
-        $this->trim();
-        return (
-            $this->apply()
-            && $this->db()->saveConfig($this->data)
-            && $this->set_message('configuration has been updated'))
-            or $this->set_error('failed to update configuration');
+        if($this->db()->saveConfig($this->data) && $this->apply()){
+            return $this->set_message('configuration updated');
+        }
+        return $this->set_error('failed to update configuration');
     }
 
     public function get(): bool
@@ -24,26 +22,14 @@ class Settings extends Admin
         return true;
     }
 
-    private function trim()
-    {
-        $conf = (array)$this->db()->readConfig();
-        foreach(array_keys($conf) as $key){
-            $old = $conf[$key] ;
-            $new = $this->data->$key ?? null ;
-            if($old == $new){
-                unset($this->data->$key);
-            }
-        }
-    }
-
     private function apply(): bool
     {
-        $apps = ['disable_contention']; // keys that have apply methods
         $keys = array_keys((array)$this->data);
         $ret = true ;
         foreach($keys as $key){
-            if(!in_array($key,$apps))continue;
-            $ret &= $this->$key();
+            if(method_exists($this,$key)){
+                $ret &= $this->$key();
+            }
         }
         return $ret ;
     }
