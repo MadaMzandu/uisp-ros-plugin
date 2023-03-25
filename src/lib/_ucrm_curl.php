@@ -10,6 +10,7 @@ class WebUcrm
     protected $post;
     protected $url;
     protected $data;
+    private $result ;
     protected $key = 'c3458db8-ad00-457f-bf08-f87f1e6b12f7';
     private $disable_ssl_verify = true;
 
@@ -46,6 +47,8 @@ class WebUcrm
         $this->configure($path, 'DELETE', $post);
         return $this->exec();
     }
+
+    public function result() {return $this->result; }
 
 
     private function api(): string

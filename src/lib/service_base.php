@@ -116,7 +116,7 @@ class Service_Base
         $attribute = $this->list_attribute($attribute);
         $data = ['attributes' => [['customAttributeId' => $attribute->id, 'value' => $value]]];
         $id = $this->entity->id;
-        return (bool) $this->ucrm()->request('clients/services/' . $id, 'PATCH', $data);
+        return (bool) $this->ucrm()->patch('clients/services/' . $id,$data);
     }
 
     protected function fix_attributes()
@@ -166,9 +166,7 @@ class Service_Base
 
     protected function ucrm()
     {
-        $u = new ApiUcrm();
-        $u->assoc = false ;
-        return $u ;
+        return new ApiUcrm();
     }
 
     protected function throwErr($err)

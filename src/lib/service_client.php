@@ -9,7 +9,7 @@ class Service_Client extends Service_Base{
     protected function get(): ?stdClass
     {
         if (!(array)$this->client) {
-            $this->client = $this->ucrm()->request('/clients/' . $this->id());
+            $this->client = $this->ucrm()->get('/clients/' . $this->id());
         }
         return $this->client ;
     }

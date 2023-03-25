@@ -4,81 +4,54 @@
 class ApiUcrm
 {
 
-    public $assoc = false;
-    private $method;
-    //private $has_data = false;
-    private $post;
-    private $url;
-    private $status;
-    private $result;
+    public bool $assoc = false ;
+    private ?string $method;
+    private $data ;
+    private ?string $url ;
 
-    public function __construct($data = [])
+    public function request($path,$method = 'get',$data = [])
     {
-        $data = json_decode(json_encode($data),true);
-        $this->url = $data['path'] ?? null ;
-        $this->post = $data['post'] ?? null;
-        $this->result = [];
-        $this->status = (object)[
-            'error' => false,
-            'message' => 'ok',
-        ];
-    }
-
-    public function get($path = null,$post = null)
-    {
-        $this->configure($path,'GET',$post);
-        $this->result = $this->exec();
+        $this->configure($path,strtolower($method),$data);
+        return $this->exec() ;
     }
 
     private function exec()
     {
-        $action = $this->method;
         $api = \Ubnt\UcrmPluginSdk\Service\UcrmApi::create();
-        try {
-            $response = $api->$action($this->url, $this->post) ?? [];
-            return json_decode(json_encode($response), $this->assoc);
-        } catch (GuzzleHttp\Exception\ClientException $e) {
-            $response = [];
-            $this->status->error = true;
-            $this->status->message = $e->getMessage();
-            return $this->assoc ? $response : (object)$response;
-        }
+        $action = $this->method;
+        $response = $api->$action($this->url, $this->data);
+        return json_decode(json_encode($response), $this->assoc);
     }
 
-    public function post($path = null,$post = [])
+    public function post($path,$data= [])
     {
-        $this->configure($path,'POST',$post);
-        $this->result = $this->exec();
+        $this->configure($path,'post',$data);
+        return $this->exec();
     }
 
-    public function patch($path = null,$post = [])
+    public function patch($path,$data = [])
     {
-        $this->configure($path,'PATCH',$post);
-        $this->result = $this->exec();
+        $this->configure($path,'patch',$data);
+        return $this->exec();
     }
 
-    public function request($url = '', $method = 'GET', $post = [])
+    public function get($path,$data = [])
     {
-        $this->configure($url,$method,$post);
-        $this->result = $this->exec();
-        return $this->result;
+        $this->configure($path,'get',$data);
+        return $this->exec();
     }
 
-    private function configure($path = null,$method = null, $post = null)
+    public function delete($path, $data = [])
     {
-        $this->url = $path ? : $this->url ;
-        $this->method = $method ? strtoupper($method) : $this->method ;
-        $this->post = $post ?: ($this->post ?? []);
+        $this->configure($path,'delete',$data);
+        return $this->exec();
     }
 
-    public function status()
+    private function configure($path,$method,$data)
     {
-        return $this->status;
-    }
-
-    public function result()
-    {
-        return $this->result;
+        $this->method = $method;
+        $this->url = $path ;
+        $this->data = $data ;
     }
 
 }
