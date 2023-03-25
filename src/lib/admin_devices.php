@@ -207,15 +207,20 @@ class Devices extends Admin
     private function setStatus(): void
     {
         foreach ($this->read as &$device) {
-            $conn = @fsockopen($device['ip'],
+            try{
+                $conn = @fsockopen($device['ip'],
                 $this->default_port($device['type']),
                 $code, $err, 0.3);
-            if (!is_resource($conn)) {
-                $device['status'] = false;
-                continue;
+                if (!is_resource($conn)) {
+                    $device['status'] = false;
+                    continue;
+                }
+                $device['status'] = true;
+                fclose($conn);
             }
-            $device['status'] = true;
-            fclose($conn);
+            catch (Exception $err){
+                $device['status'] = false ;
+            }
         }
     }
 
