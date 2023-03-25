@@ -8,6 +8,7 @@ include_once 'admin_backup.php';
 include_once 'admin_system.php';
 include_once 'admin_rebuild.php';
 include_once 'admin_cache.php';
+include_once 'admin_get.php';
 include_once 'api_jobs.php';
 include_once 'api_lang.php';
 include_once 'admin_mt_queue.php';
@@ -49,7 +50,11 @@ class Admin
     public function exec(): void
     {
         $target = $this->target();
-        $exec = new $target($this->data->data);
+        $request = $this->data->data ;
+        if($target == 'AdminGet'){
+            $request = $this->data;
+        }
+        $exec = new $target($request);
         $exec->{$this->data->action}();
         $this->status = $exec->status();
         $this->result = $exec->result();
@@ -58,6 +63,7 @@ class Admin
     private function target(): ?string
     {
         $map = array(
+            'get' => 'AdminGet',
             'config' => 'Settings',
             'devices' => 'Devices',
             'stats' => 'Stats',
