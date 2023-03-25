@@ -196,7 +196,18 @@ class ApiSqlite
         return (object)$return;
     }
 
-    public function selectAllFromTable($table = 'services')
+    public function selectCustom($sql) : ?array
+    {
+        $res = $this->query($sql);
+        $return = null;
+        while ($row = $res->fetchArray(SQLITE3_ASSOC)) {
+            $return[] = $row;
+        }
+        return $return;
+    }
+
+
+    public function selectAllFromTable($table = 'services'): ?array
     {
         $sql = 'select * from ' . $table;
         $res = $this->query($sql);
@@ -214,17 +225,13 @@ class ApiSqlite
 
     public function saveConfig($data)
     {
-        $keys = array_keys((array)$data);
-        foreach ($keys as $key) {
-            $val = $data->{$key};
-            $value = is_bool($val) ? ($val ? 'true' : 'false') : $val;
-            $sql = "update config set value='" . $value
-                . "' where key='" . $key . "'";
-            if (!$this->execQuery($sql)) {
-                return false;
-            }
+        $data = json_decode(json_encode($data),true);
+        foreach(array_keys($data) as $key){
+            $sql = 'INSERT or REPLACE INTO config ("key","value","last") VALUES ';
+            $now = (new DateTime())->format('Y-m-d H:i:s');
+            $sql .= sprintf("('%s','%s','%s')",$key,$data[$key],$now);
+            $this->db()->exec($sql);
         }
-        return true;
     }
 
     private function db(): SQLite3
