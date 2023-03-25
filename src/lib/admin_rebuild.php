@@ -1,80 +1,50 @@
 <?php
 
-class Admin_Rebuild{
-    private $conf ;
-    private $device ;
+class AdminRebuild{
 
-    private function db()
-    {
-        return new ApiSqlite() ;
-    }
+    private function db(){ return new ApiSqlite(); }
 
-    private function clear_cache():bool
-    {
-        return $this->db()->deleteAll('services');
-    }
+    private function ucrm() { return new WebUcrm(); }
 
-    private function crm()
-    {
-        $c = new ApiUcrm();
-        $c->assoc = true ;
-        return $c;
-    }
+    private function cache(){ return new ApiSqlite('data/cache.db'); }
 
-    private function filter($services): array
+    private function clear($type,$id = null)
     {
-        $dn = $this->conf->device_name_attr ?? 'deviceName';
-        $result = [];
-        foreach ($services as $s){
-            $attrs = $s['attributes'] ?? [];
-            foreach($attrs as $a){
-                if($this->device){
-                    if($a['key'] == $dn && $a['value'] == $this->device) $result[] = $s;
-                }
-                else{
-                    if($a['key'] == $dn && $a['value']) $result[] = $s;
-                }
-            }
+        if($type == 'all'){
+            $this->db()->deleteAll('services');
         }
-        return $result;
-    }
-
-    private function find_attr(): ?int
-    {
-        $dn = $this->conf->device_name_attr ?? 'deviceName';
-        $attrs = $this->crm()->request('/custom-attributes') ?? [];
-        foreach ($attrs as $a){
-            if($a['key'] == $dn) return $a['id'];
+        elseif ($type == 'device'){
+            $this->db()->exec('DELETE FROM services WHERE device = '.$id);
         }
-        return null ;
-    }
-
-    public function rebuild_device($device)
-    {
-        $this->device = $device->name ?? null;
-        $this->send_triggers();
-    }
-
-    public function send_triggers():void
-    {
-        $this->conf = $this->db()->readConfig();
-        //$id = $this->find_attr();
-        $opts = null ;
-        //if($id) $opts = '?customAttributeId=' . $id . '&customAttributeValue="Test2"';
-        $result = $this->crm()->request('/clients/services' . $opts) ?? [];
-        $services = $this->filter($result) ;
-        if($services && $this->clear_cache()) {
-            $url = '/clients/services/';
-            file_put_contents('data/cache.json',null); //reset cache
-            file_put_contents('data/queue.json',null); // reset queue
-            //$count = 20 ;
-            foreach ($services as $item) {
-                //if(!$count--)break ;
-                $data = ['note' => $item['note']];
-                $this->crm()->request($url . $item['id'], 'PATCH', $data);
-            }
+        elseif ($type == 'plan'){
+            $this->db()->exec('DELETE FROM services WHERE planId =' . $id);
         }
     }
-    
+
+    public function rebuild($data)
+    {
+        $type = $data->type ?? 'all';
+        $typeId = $data->id ?? null;
+        $select = [];
+        if($type == 'all'){
+            $select = $this->cache()->selectCustom('SELECT id FROM services');
+        }
+        if($type == 'service'){
+            $select = $this->cache()->selectCustom('SELECT id from services WHERE planId = '.$typeId);
+        }
+        if($type == 'device'){
+            $select = $this->cache()->selectCustom(
+                'SELECT services.id from services LEFT JOIN net ON services.id = net.id '.
+                'WHERE net.deviceId = '.$typeId);
+        }
+        $ids = [];
+        foreach ($select as $item) $ids[] = $item['id'];
+        $this->clear($type,$typeId);
+        $api = $this->ucrm();
+        foreach($ids as $id){
+            $api->patch('clients/services/'.$id, []);
+        }
+    }
+
 }
 

@@ -16,7 +16,7 @@ function cache()
 
 function rebuild()
 {
-    (new Admin_Rebuild())->send_triggers();
+    (new AdminRebuild())->rebuild([]);
 }
 
 if($argc < 2 ) exit();
