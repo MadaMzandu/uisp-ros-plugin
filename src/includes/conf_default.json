@@ -1,8 +1,8 @@
 {
   "ppp_pool": "10.99.0.0\/16",
   "router_ppp_pool": "true",
-  "excl_addr": "null",
-  "active_list": "null",
+  "excl_addr": null,
+  "active_list": null,
   "disabled_list": "disabled",
   "disabled_profile": "disabled",
   "unsuspend_date_fix": "false",
