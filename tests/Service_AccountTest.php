@@ -4,7 +4,6 @@ include_once '../src/lib/service_attributes.php';
 include_once '../src/lib/service_plan.php';
 include_once '../src/lib/service_client.php';
 include_once '../src/lib/service_account.php';
-include_once '../src/lib/api_sqlite.php';
 include_once '../src/lib/admin.php';
 include_once '../src/lib/admin_subnets.php';
 

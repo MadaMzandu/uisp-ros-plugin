@@ -1,7 +1,6 @@
 <?php
 
 include_once 'lib/admin.php';
-include_once 'lib/api_sqlite.php';
 include_once 'lib/admin_subnets.php';
 
 use PHPUnit\Framework\TestCase;

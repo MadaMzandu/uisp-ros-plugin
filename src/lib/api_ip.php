@@ -1,6 +1,5 @@
 <?php
 
-include_once 'api_sqlite.php';
 
 class API_IP
 {
