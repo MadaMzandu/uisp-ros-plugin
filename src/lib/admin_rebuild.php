@@ -4,7 +4,7 @@ class AdminRebuild{
 
     private function db(){ return new ApiSqlite(); }
 
-    private function ucrm() { return new WebUcrm(); }
+    private function ucrm() { return new ApiUcrm(); }
 
     private function cache(){ return new ApiSqlite('data/cache.db'); }
 
