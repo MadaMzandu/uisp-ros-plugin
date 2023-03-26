@@ -20,7 +20,7 @@ class ApiCache{
         $end = microtime(true);
         $duration = ($end - $start) / 60 ; //in minutes
         if($duration > 5)
-        MyLog()->appendLog('cache: sync completed in minutes: '.$duration,6);
+        MyLog()->Append('cache: sync completed in minutes: '.$duration,6);
     }
 
     public function sync()
@@ -169,7 +169,7 @@ class ApiCache{
         return json_decode($json,true);
     }
 
-    private function ucrm(){ return new WebUcrm(); }
+    private function ucrm(){ return new ApiUcrm(); }
 
     private function conf(){ return $this->db()->readConfig(); }
 

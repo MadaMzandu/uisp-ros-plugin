@@ -1,8 +1,5 @@
 <?php
 
-
-function MyLog(){ return \Ubnt\UcrmPluginSdk\Service\PluginLogManager::create(); }
-
 function myErrorHandler($errno, $errstr, $errfile, $errline){
     throw new Exception(sprintf('error no: %s error: %s',$errno,$errstr));
 }
