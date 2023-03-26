@@ -1,5 +1,4 @@
 <?php
-const API_SQLT_EXEC = 0;
 const API_SQLT_SINGLE = 1;
 
 class ApiSqlite
@@ -212,8 +211,8 @@ class ApiSqlite
 
     private function unStringify($value)
     {
-        if(is_numeric($value)) return (double) $value;
         if(in_array($value,['true','false'])) return $value == 'true' ;
+        if(is_numeric($value)) return (double) $value;
         if(empty($value)) return null;
         return $value ;
     }
@@ -226,7 +225,7 @@ class ApiSqlite
         return $value ;
     }
 
-    public function readConfig()
+    public function readConfig(): ?stdClass
     {
         $this->read = $this->selectAllFromTable('config');
         $return = null;
@@ -236,7 +235,7 @@ class ApiSqlite
         return (object)$return;
     }
 
-    public function saveConfig($fields)
+    public function saveConfig($fields): bool
     {
         $data = (array) $fields ;
         $ret = true ;
