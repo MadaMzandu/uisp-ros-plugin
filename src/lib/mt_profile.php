@@ -49,10 +49,12 @@ class MT_Profile extends MT
         }
     }
 
-    private function address_list():string
+    private function address_list(): ?string
     {
-        return $this->svc->disabled() ? $this->conf->disabled_list
-            : $this->conf->active_list ;
+        if($this->svc->disabled()){
+            return $this->conf->disabled_list ?? null ;
+        }
+        return $this->conf->active_list ?? null ;
     }
 
     private function pq_name(): ?string

@@ -101,9 +101,12 @@ class MT_Account extends MT
             ? $this->conf->disabled_profile : $this->svc->plan->name();
     }
 
-    protected function address_list(): string
+    private function address_list(): ?string
     {
-        return $this->svc->disabled() ? $this->conf->disabled_list : $this->conf->active_list;
+        if($this->svc->disabled()){
+            return $this->conf->disabled_list ?? null ;
+        }
+        return $this->conf->active_list ?? null ;
     }
 
     private function disconnect(): bool
@@ -139,8 +142,8 @@ class MT_Account extends MT
                 continue;
             }
             $this->status = $call->status();
-            MyLog()->appendLog("mt account error: ".json_encode($this->status));
-            MyLog()->appendLog("error object: ".json_encode($call));
+            MyLog()->Append("mt account error: ".json_encode($this->status));
+            MyLog()->Append("error object: ".json_encode($call));
             $this->svc->queue_job($this->status());
             return true;
         }
