@@ -3,7 +3,6 @@
 include_once 'admin.php';
 include_once 'api_routes.php';
 include_once 'service.php';
-include_once 'api_sqlite.php';
 
 $conf = (new ApiSqlite())->readConfig();
 $debug_log = [];
@@ -39,25 +38,24 @@ class API_Router
 
     public function route(): void
     {
-        try {
-            if (!$this->data_is_valid()) { // check basic validity
-                return;
-            }
-
-            if ($this->request_is_admin()) { // execute admin calls
-                return;
-            }
-            $service = new Service($this->data);
-            if (!$service->ready) { // invalid service data
-                $this->status = $service->status();
-                return;
-            }
-            $route = new API_Routes($service); //execute
-            $this->status = $route->status();
-        } catch(Exception $error){
-            $this->status->error = true ;
-            $this->status->message = $error->getMessage();
+        MyLog()->Append('router: begin route selection');
+        if (!$this->data_is_valid()) { // check basic validity
+            MyLog()->Append('router: request is not valid');
+            return;
         }
+        if ($this->request_is_admin()) { // execute admin calls
+            MyLog()->Append('router: selected admin api');
+            return;
+        }
+        MyLog()->Append('router: begin device provisioning');
+        $service = new Service($this->data);
+        if (!$service->ready) { // invalid service data
+            throw new Exception('router: failed to create service object'
+                .json_encode($service->status()));
+        }
+        $route = new API_Routes($service); //execute
+        $this->status = $route->status();
+        MyLog()->Append('router: routing completed');
     }
 
     private function data_is_valid(): bool
