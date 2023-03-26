@@ -47,7 +47,9 @@ class ApiSetup
 
     private function config_load(): bool
     {
-        return $this->db()->exec($this->config_sql());
+        $file = file_get_contents('includes/conf_default.json');
+        $default = json_decode($file);
+        return $this->db()->saveConfig($default);
     }
 
     private  function set_version(): bool
@@ -135,30 +137,6 @@ class ApiSetup
     {
         $file = 'data/state.json';
         file_put_contents($file,json_encode($state,JSON_PRETTY_PRINT));
-    }
-
-    private function config_sql(): string
-    {
-        $file = 'includes/conf_default.json';
-        $default = json_decode(file_get_contents($file),true);
-        $sql = 'INSERT OR IGNORE INTO config ("key","value","created") VALUES ';
-        $created = '2020-01-01 00:00:00';
-        $str = [];
-        foreach(array_keys($default) as $key){
-            $str[] = $this->to_sql_vals([$key,$default[$key],$created]);
-        }
-        return $sql . implode(',',$str);
-    }
-
-    private function to_sql_vals($array): string
-    {
-        $ret = [];
-        foreach($array as $val){
-            if($val == 'null' || empty($val)) $ret[] = 'null';
-            elseif(is_numeric($val)) $ret[] = $val ;
-            else $ret[] = sprintf("'%s'",$val);
-        }
-        return sprintf("(%s)",implode(',',$ret));
     }
 
     private function default_state(): stdClass
