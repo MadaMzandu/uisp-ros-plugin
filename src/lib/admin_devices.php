@@ -70,9 +70,9 @@ class Devices extends Admin
 
     public function get(): bool
     {
-        if (!$this->read()) {
-            $this->set_error('unable to retrieve list of devices');
-            return false;
+        if(!$this->read()){ //it's not an error if no devices
+            $this->result = [];
+            return true ;
         }
         $this->setStatus();
         $this->setUsers();
@@ -193,9 +193,8 @@ class Devices extends Admin
 
     private function read(): bool
     {
-        $db = $this->connect();
-        $this->read = $db->selectAllFromTable('devices');
-        return (bool) $this->read;
+        $this->read = $this->db()->selectAllFromTable('devices');
+        return !empty($this->read) ;
     }
 
     private function trim_prefix(): void
