@@ -188,7 +188,7 @@ class MT_Profile extends MT
                 $mbps = $key != 'time';
                 $values[$key] = $this->to_pair($limit, $mbps);
             } else {
-                $values[$key] = $this->to_int($limit);
+                $values[$key] = $this->to_pair($limit,false);
             }
         }
         $order = 'rate,burst,thresh,time,prio,limit';

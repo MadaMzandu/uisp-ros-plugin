@@ -59,7 +59,7 @@ class MT_Queue extends MT
             'burst-limit' => $this->to_pair($limits['burst']),
             'burst-threshold' => $this->to_pair($limits['thresh']),
             'burst-time' => $this->to_pair($limits['time'],false),
-            'priority' => $this->to_int($limits['prio']),
+            'priority' => $this->to_pair($limits['prio'],false),
             'parent' => $this->pq_name(),
             'comment' => $this->comment(),
             '.id' => $this->insertId ?? $this->name(),

@@ -75,26 +75,21 @@ class AdminPlans extends Admin
         return $this->update();
     }
 
-    public function edit(): bool
+    public function edit()
     {
-        return (
-            $this->db()->edit($this->data, 'plans')
-            && $this->set_contention()
-            && $this->set_message('contention ratio has been updated and applied on devices'))
-            or $this->set_error('failed to update contention on one or more devices');
+        if($this->db()->edit($this->data,'plans')){
+            $this->rebuild();
+        }
+        return true ;
     }
 
-    private function set_contention(): bool
+    private function rebuild()
     {
-        if($this->conf->disable_contention){
-            return true ;
-        }
-        $plan = $this->list()[$this->data->id] ?? null;
-        if(!$plan){
-            return $this->set_error('failed to retrieve service plan data');
-        }
-        return (new Admin_Mt_Contention(
-            $plan))->update();
+       $api = new AdminRebuild();
+       $plan = new stdClass();
+       $plan->id = $this->data->id ;
+       $plan->type = 'service';
+       $api->rebuild($plan);
     }
 
 }
