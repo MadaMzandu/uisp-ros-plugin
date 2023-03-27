@@ -17,6 +17,7 @@
 	"cancelEdit" : "kanselleer wysiging",
 	"changedFields" : "velde verander",
 	"changeType" : "tipe verander",
+	"clearField": "skrap",
 	"client" : "kliënt",
 	"clientId" : "kliënt ID",
 	"clientType" : "tipe kliënt",

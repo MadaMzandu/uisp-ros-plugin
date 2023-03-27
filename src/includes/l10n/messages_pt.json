@@ -17,6 +17,7 @@
   "cancelEdit" : "cancelar edição",
   "changedFields" : "campos alterados",
   "changeType" : "tipo de alteração",
+  "clearField": "apague",
   "client" : "cliente",
   "clientId" : "id do cliente",
   "clientType" : "tipo de cliente",
