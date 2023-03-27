@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS "services" (
        "id"    INTEGER NOT NULL,
        "clientId" INTEGER,
        "planId" INTEGER,
+       "device" INTEGER ,
        "status" INTEGER ,
        "price" REAL ,
        "totalPrice" REAL ,
@@ -29,3 +30,4 @@ CREATE INDEX IF NOT EXISTS "net_deviceId" ON "network" ("deviceId");
 CREATE INDEX IF NOT EXISTS "svc_clientId" ON "services" ("clientId");
 CREATE INDEX IF NOT EXISTS "svc_planId" ON "services" ("planId");
 CREATE INDEX IF NOT EXISTS "svc_status" ON "services" ("status");
+CREATE INDEX IF NOT EXISTS "svc_device" ON "services" ("device");
