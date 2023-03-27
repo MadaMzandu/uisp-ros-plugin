@@ -23,6 +23,10 @@ class AdminRebuild{
 
     public function rebuild($data)
     {
+        if(function_exists('fastcgi_finish_request')){
+            fastcgi_finish_request();
+        }
+        set_time_limit(7200);
         $type = $data->type ?? 'all';
         $typeId = $data->id ?? null;
         $clear = $data->clear ?? false ;
