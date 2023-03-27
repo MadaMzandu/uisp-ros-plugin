@@ -7,8 +7,6 @@ CREATE TABLE IF NOT EXISTS "clients" (
 );
 CREATE TABLE IF NOT EXISTS "network" (
          "id"    INTEGER NOT NULL,
-         "deviceId" INTEGER ,
-         "device" TEXT,
          "address" TEXT ,
          "prefix6" TEXT,
          PRIMARY KEY("id")
@@ -22,10 +20,10 @@ CREATE TABLE IF NOT EXISTS "services" (
        "username" TEXT,
        "password" TEXT,
        "mac" TEXT,
+       "hotspot" INTEGER,
        "price" REAL ,
        "totalPrice" REAL ,
        "currencyCode" TEXT ,
-       "attributes" TEXT,
        PRIMARY KEY("id")
 );
 

@@ -1,5 +1,5 @@
 <?php
-const MyCacheVersion = '1.0.1a';
+const MyCacheVersion = '1.0.1b';
 class ApiCache{
 
     private $ref ;
@@ -42,8 +42,8 @@ class ApiCache{
     private function populate_net($id = null)
     {
         if($id == 0) return ;
-        $fields = 'services.id,services.address,services.prefix6,devices.id as deviceId,devices.name as device';
-        $sql = sprintf("SELECT %s FROM services LEFT JOIN devices ON services.device=devices.id ",$fields);
+        $fields = 'services.id,services.address,services.prefix6';
+        $sql = sprintf("SELECT %s FROM services ",$fields);
         if($id) $sql .= "WHERE services.id = ". $id ;
         $data = $this->db()->selectCustom($sql);
         if(!$data) return ;
@@ -77,7 +77,7 @@ class ApiCache{
         }
     }
 
-    private function batch($table,$data)
+    public function batch($table,$data)
     {
         $fields = $this->fields($table);
         $keys = array_values($fields);
@@ -85,11 +85,14 @@ class ApiCache{
         $query = [];
         foreach ($data as $item){
             $entity = $item->extraData->entity ?? $item ;
-            $attributes = $entity->attributes ?? [];
-            $entity->device = $this->find_dev($attributes);
             $values = [];
             foreach(array_keys($fields) as $key){
                 $values[] = $entity->$key ?? null ;
+            }
+            if($table == 'services'){
+                array_splice(
+                    $values,6,5,
+                    $this->fix_attributes($entity->attributes));
             }
             $query[] = $this->toSqlValues($values);
         }
@@ -108,7 +111,7 @@ class ApiCache{
             }
             case 'services':{
                 $map = [];
-                $keys = 'id,status,clientId,price,totalPrice,currencyCode,device';
+                $keys = 'id,status,clientId,price,totalPrice,currencyCode,device,username,password,mac,hotspot';
                 foreach (explode(',',$keys) as $key) $map[$key] = $key ;
                 $map['servicePlanId'] = 'planId';
                 return $map ;
@@ -147,18 +150,24 @@ class ApiCache{
         $this->dbCache()->exec($schema);
     }
 
-    private function find_dev($array): ?string
+    private function fix_attributes($array): ?array
     {//sanitize attributes
-        $key = $this->ref['device_name_attr'] ?? null ;
-        if(empty($key)) throw new Exception("sync: could not find device name attribute");
-        foreach ($array as $item)
-        {
-            if($item->key == $key){
-                $value = $item->value ;
-                if($value) return $this->dev[trim(strtolower($value))];
+        if(!$array) return null ;
+        if(!$this->ref) $this->needs_attributes();
+        if(!$this->dev) $this->get_devices();
+        $map = [];
+        $values = [];
+        foreach ($array as $item){ $map[$item->key] = $item->value; }
+        $roskeys = 'device_name_attr,pppoe_user_attr,pppoe_pass_attr,mac_addr_attr,hs_attr';
+        foreach (explode(',',$roskeys) as $ros){
+            $match = $this->ref[$ros] ?? null ;
+            if($match && $ros == 'device_name_attr'){
+                $values[] = $this->dev[strtolower($map[$match])];
             }
+            else if($match) $values[]  = $map[$match] ?? null ;
+            else $values[] = null ;
         }
-        return null ;
+        return $values ;
     }
 
     private function needs_attributes(): bool
