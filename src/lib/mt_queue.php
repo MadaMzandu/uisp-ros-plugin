@@ -51,6 +51,16 @@ class MT_Queue extends MT
     protected function data(): stdClass
     {
         $limits = $this->svc->plan->limits();
+        if($this->svc->disabled()){
+            return (object)[
+                'name' => $this->name(),
+                'target' => $this->svc->ip(),
+                'max-limit' => $this->disabled_rate(),
+                'limit-at' => $this->disabled_rate(),
+                'comment' => $this->comment(),
+                '.id' => $this->insertId ?? $this->name(),
+            ];
+        }
         return (object)[
             'name' => $this->name(),
             'target' => $this->svc->ip(),
@@ -64,6 +74,12 @@ class MT_Queue extends MT
             'comment' => $this->comment(),
             '.id' => $this->insertId ?? $this->name(),
         ];
+    }
+
+    private function disabled_rate(){
+        $rate = $this->conf->disabled_rate ?? 0;
+        if(!$rate) return null ;
+        return $this->to_pair($rate);
     }
 
     protected function pq_name(): string

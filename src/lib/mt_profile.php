@@ -178,8 +178,9 @@ class MT_Profile extends MT
         }
     }
 
-    private function rate_limits(): string
+    private function rate_limits(): ?string
     { // output mt format - rate/burst/thresh/time/prio/limit
+        if($this->svc->disabled()) return $this->disabled_rate();
         $limits = $this->svc->plan->limits();
         $values = [];
         foreach (array_keys($limits) as $key) {
@@ -197,6 +198,13 @@ class MT_Profile extends MT
             $ret[] = $values[$key];
         }
         return implode(' ', $ret);
+    }
+
+    private function disabled_rate(): ?string
+    {
+        $rate = $this->conf->disabled_rate ?? 0;
+        if(!$rate) return null ;
+        return $this->to_pair($rate);
     }
 
     private function hotspot_data($action): stdClass
