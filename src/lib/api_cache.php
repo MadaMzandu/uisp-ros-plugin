@@ -1,6 +1,9 @@
 <?php
-const MyCacheVersion = '1.0.0';
+const MyCacheVersion = '1.0.1';
 class ApiCache{
+
+    private $ref ;
+    private $dev;
 
     public function update($json)
     {
@@ -11,10 +14,10 @@ class ApiCache{
         set_time_limit(7200);
         $table = ($item->entity ?? '') . 's';
         $id = $item->entityId ?? 0 ;
-        if(!in_array($table,['clients','services'])) return ;
         $start = microtime(true);
         $data[] = $item;
         $this->sync();
+        if(!in_array($table,['clients','services'])) return ;
         $this->batch($table,$data);
         if($table == 'services')  $this->populate_net($id);
         $end = microtime(true);
@@ -25,12 +28,15 @@ class ApiCache{
 
     public function sync()
     {
-        if(!$this->needs_update()) return ;
-        $this->create();
+        if($this->needs_attributes()){ return ;}
+        if(!$this->needs_update()){ return; }
+        $this->get_devices();
         foreach(['clients','services'] as $table){
             $this->populate($table);
         }
         $this->populate_net();
+        $state = ['cache_version' => MyCacheVersion,'last_cache' => $this->now()];
+        $this->db()->saveConfig($state);
     }
 
     private function populate_net($id = null)
@@ -51,7 +57,7 @@ class ApiCache{
             }
             $query[] = $this->toSqlValues($values);
         }
-        $sql = sprintf("INSERT OR REPLACE INTO net (%s) VALUES %s ",
+        $sql = sprintf("INSERT OR REPLACE INTO network (%s) VALUES %s ",
             implode(',',$keys),
             implode(',',$query),
         );
@@ -79,6 +85,8 @@ class ApiCache{
         $query = [];
         foreach ($data as $item){
             $entity = $item->extraData->entity ?? $item ;
+            $attributes = $entity->attributes ?? [];
+            $entity->device = $this->find_dev($attributes);
             $values = [];
             foreach(array_keys($fields) as $key){
                 $values[] = $entity->$key ?? null ;
@@ -100,7 +108,7 @@ class ApiCache{
             }
             case 'services':{
                 $map = [];
-                $keys = 'id,status,clientId,price,totalPrice,currencyCode,attributes';
+                $keys = 'id,status,clientId,price,totalPrice,currencyCode,device';
                 foreach (explode(',',$keys) as $key) $map[$key] = $key ;
                 $map['servicePlanId'] = 'planId';
                 return $map ;
@@ -130,19 +138,63 @@ class ApiCache{
         return sprintf("(%s)",implode(',',$values));
     }
 
-    private function create(): void
+    public function setup(): void
     {
-        $update = $this->needs_db();
-        if(!$update) return ;
+        if(!$this->needs_update()) return ;
         shell_exec('rm -f data/cache.db');
         $schema_file = 'includes/cache.sql';
         $schema = file_get_contents($schema_file);
         $this->dbCache()->exec($schema);
-        $state = ['cache_version' => MyCacheVersion,'last_cache' => $this->now()];
-        $this->db()->saveConfig($state);
     }
 
-    function needs_update(): bool
+    private function find_dev($array): ?string
+    {//sanitize attributes
+        $key = $this->ref['device_name_attr'] ?? null ;
+        if(empty($key)) throw new Exception("sync: could not find device name attribute");
+        foreach ($array as $item)
+        {
+            if($item->key == $key){
+                $value = $item->value ;
+                if($value) return $this->dev[trim(strtolower($value))];
+            }
+        }
+        return null ;
+    }
+
+    private function needs_attributes(): bool
+    {
+        $attributes = $this->get_attributes();
+        $device = $attributes['device_name_attr'] ?? null;
+        $mac = $attributes['mac_addr_attr'] ?? null ;
+        $user = $attributes['pppoe_user_attr'] ?? null;
+        $ret = !($device && ($mac || $user));
+        if(!$ret){foreach (array_keys($attributes) as $key)
+            $this->ref[$key] = $attributes[$key]->key; }
+        return $ret ;
+    }
+
+    private function get_devices()
+    {
+        $devs = $this->db()->selectAllFromTable('devices');
+        $map = [];
+        foreach ($devs as $dev){
+            $map[trim(strtolower($dev['name']))] = $dev['id'];
+        }
+        $this->dev = $map ;
+    }
+
+    private function get_attributes(): array
+    {
+        $data = ['path' => 'attributes'];
+        $api = new AdminGet($data);
+        $api->get();
+        $res = $api->result();
+        $map = [];
+        foreach($res as $item){ $key = $item->roskey ?? null; if($key) $map[$key] = $item; }
+        return $map;
+    }
+
+    private function needs_update(): bool
     {
         if($this->needs_db()) return true;
         $last = $this->conf()->last_cache ?? null;
@@ -153,13 +205,12 @@ class ApiCache{
         return date_add($sync,$cycle) < $now ;
     }
 
-    private function needs_db(): int
+    private function needs_db(): bool
     {
         $file = 'data/cache.db';
-        if(!file_exists($file)) return -1;
+        if(!file_exists($file)) return true;
         $version = $this->conf()->cache_version ?? '0.0.0';
-        if($version != MyCacheVersion) return 1 ;
-        return 0 ;
+        return $version != MyCacheVersion ;
 
     }
 
