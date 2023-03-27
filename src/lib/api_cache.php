@@ -1,5 +1,5 @@
 <?php
-const MyCacheVersion = '1.0.1';
+const MyCacheVersion = '1.0.1a';
 class ApiCache{
 
     private $ref ;
