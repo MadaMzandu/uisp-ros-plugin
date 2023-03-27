@@ -8,12 +8,10 @@ if (isset($_SERVER['REQUEST_METHOD'])
 }
 
 require_once 'vendor/autoload.php';
+include_once 'lib/api_logger.php';
 include_once 'lib/api_sqlite.php';
-include_once 'lib/api_cache.php';
 include_once 'includes/api_setup.php';
 include_once 'lib/api_common.php';
-include_once 'lib/api_logger.php';
-
 
 $json = file_get_contents('php://input') ?? null;
 
@@ -21,6 +19,7 @@ try
 {
     set_error_handler('myErrorHandler');
     run_setup();
+
     MyLog()->Append('public: setup completed');
 
     include_once 'lib/api_router.php';
@@ -42,6 +41,9 @@ try
     $api->http_response();
     MyLog()->Append('api: finished without error : '
         . json_encode($api->status()));
+
+    MyLog()->Append('public: begin cache sync');
+    run_cache($json);
 }
 catch (
 Exception
@@ -53,6 +55,6 @@ Exception
     MyLog()->Append('exeption triggered: '.$err->getMessage().' request: '.$json);
     respond($err->getMessage(),true);
 }
-MyLog()->Append('public: begin cache sync');
 
-run_cache($json);
+
+

@@ -1,13 +1,13 @@
 <?php
+const MyCacheVersion = '1.0.1b';
+const MAX_BACKUPS = 6;
+const MY_VERSION = '1.8.9';
 
 function myErrorHandler($errno, $errstr, $errfile, $errline){
     throw new Exception(sprintf('error no: %s error: %s',$errno,$errstr));
 }
 
-function run_setup(){ $setup = new ApiSetup(); $setup->run();
-    $cache = new ApiCache(); $cache->setup();}
-
-function run_cache($json){ $cache = new ApiCache(); $cache->update($json);}
+function run_setup(){ $setup = new ApiSetup(); $setup->run(); }
 
 function respond($msg,$err = false,$data = [])
 {

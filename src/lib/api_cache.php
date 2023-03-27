@@ -1,5 +1,5 @@
 <?php
-const MyCacheVersion = '1.0.1b';
+
 class ApiCache{
 
     private $ref ;
@@ -141,15 +141,6 @@ class ApiCache{
         return sprintf("(%s)",implode(',',$values));
     }
 
-    public function setup(): void
-    {
-        if(!$this->needs_update()) return ;
-        shell_exec('rm -f data/cache.db');
-        $schema_file = 'includes/cache.sql';
-        $schema = file_get_contents($schema_file);
-        $this->dbCache()->exec($schema);
-    }
-
     private function fix_attributes($array): ?array
     {//sanitize attributes
         if(!$array) return null ;
@@ -203,26 +194,6 @@ class ApiCache{
         return $map;
     }
 
-    private function needs_update(): bool
-    {
-        if($this->needs_db()) return true;
-        $last = $this->conf()->last_cache ?? null;
-        if(empty($last)) return true;
-        $cycle = DateInterval::createFromDateString('30 day');
-        $sync = new DateTime($last);
-        $now = new DateTime();
-        return date_add($sync,$cycle) < $now ;
-    }
-
-    private function needs_db(): bool
-    {
-        $file = 'data/cache.db';
-        if(!file_exists($file)) return true;
-        $version = $this->conf()->cache_version ?? '0.0.0';
-        return $version != MyCacheVersion ;
-
-    }
-
     private function opts(): array
     {
         $json = '{"limit":500,"offset":0}';
@@ -231,8 +202,6 @@ class ApiCache{
 
     private function ucrm(){ return new ApiUcrm(); }
 
-    private function conf(){ return $this->db()->readConfig(); }
-
     private function dbCache(){ return new ApiSqlite('data/cache.db'); }
 
     private function db(){ return new ApiSqlite(); }
@@ -240,3 +209,6 @@ class ApiCache{
     private function now() { return (new DateTime())->format('Y-m-d H:i:s'); }
 
    }
+
+function run_cache($json) { $api = new ApiCache(); $api->update($json);}
+

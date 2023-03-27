@@ -1,6 +1,5 @@
 <?php
-const MAX_BACKUPS = 6;
-const MY_VERSION = '1.8.9';
+
 class ApiSetup
 {
     public function run(){
@@ -16,6 +15,7 @@ class ApiSetup
         if($this->needs_cleanup()){
             $this->file_cleanup();
         }
+        $this->cache_setup();
     }
 
     private function db_update(): bool
@@ -123,6 +123,39 @@ class ApiSetup
     {
         return (new DateTime())->format('Y-m-d H:i:s');
     }
+
+    public function cache_setup(): void
+    {
+        if(!$this->cache_needs_update()) return ;
+        shell_exec('rm -f data/cache.db');
+        $schema_file = 'includes/cache.sql';
+        $schema = file_get_contents($schema_file);
+        $this->dbCache()->exec($schema);
+    }
+
+    private function cache_needs_update(): bool
+    {
+        if($this->cache_needs_db()) return true;
+        $last = $this->conf()->last_cache ?? null;
+        if(empty($last)) return true;
+        $cycle = DateInterval::createFromDateString('7 day');
+        $sync = new DateTime($last);
+        $now = new DateTime();
+        return date_add($sync,$cycle) < $now ;
+    }
+
+    private function cache_needs_db(): bool
+    {
+        $file = 'data/cache.db';
+        if(!file_exists($file)) return true;
+        $version = $this->conf()->cache_version ?? '0.0.0';
+        return $version != MyCacheVersion ;
+
+    }
+
+    private function conf() {return $this->db()->readConfig(); }
+
+    private function dbCache(){ return new ApiSqlite('data/cache.db'); }
 
     private function state(): stdClass
     {
