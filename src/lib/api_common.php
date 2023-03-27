@@ -4,9 +4,10 @@ function myErrorHandler($errno, $errstr, $errfile, $errline){
     throw new Exception(sprintf('error no: %s error: %s',$errno,$errstr));
 }
 
-function run_setup(){ $setup = new ApiSetup(); $setup->run(); }
+function run_setup(){ $setup = new ApiSetup(); $setup->run();
+    $cache = new ApiCache(); $cache->setup();}
 
-function run_cache($json){ $cache = new ApiCache(); $cache->update($json); }
+function run_cache($json){ $cache = new ApiCache(); $cache->update($json);}
 
 function respond($msg,$err = false,$data = [])
 {
