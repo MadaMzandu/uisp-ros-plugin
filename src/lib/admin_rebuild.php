@@ -32,13 +32,13 @@ class AdminRebuild{
         $clear = $data->clear ?? false ;
         $select = [];
         if($type == 'all'){
-            $select = $this->cache()->selectCustom('SELECT id FROM services');
+            $select = $this->cache()->selectCustom('SELECT id FROM services WHERE status < 4');
         }
         if($type == 'service'){
-            $select = $this->cache()->selectCustom('SELECT id from services WHERE planId = '.$typeId);
+            $select = $this->cache()->selectCustom(sprintf("SELECT id from services WHERE planId = %s AND status < 4",$typeId));
         }
         if($type == 'device'){
-            $select = $this->cache()->selectCustom("SELECT id FROM services WHERE device = ".$typeId);
+            $select = $this->cache()->selectCustom(sprintf("SELECT id FROM services WHERE device = %s AND status < 4",$typeId));
         }
         $ids = [];
         foreach ($select as $item) $ids[] = $item['id'];
