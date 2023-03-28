@@ -196,13 +196,16 @@ class ApiCache{
     private function set_attributes(): void
     {
         $attributes = $this->map_attributes();
+        MyLog()->Append('checking for attributes');
         $device = $attributes['device_name_attr'] ?? null;
         $mac = $attributes['mac_addr_attr'] ?? null ;
         $user = $attributes['pppoe_user_attr'] ?? null;
+        MyLog()->Append('attributes found: '. json_encode([$device,$mac,$user]));
         $missing = !($device && ($mac || $user));
         if($missing) {
             $this->throwErr('cache: attributes not configured yet will sync later');
         }
+        MyLog()->Append('attributes found: '. json_encode([$device,$mac,$user]));
         foreach (array_keys($attributes) as $key){
             $this->ref[$key] = $attributes[$key]->key ?? 'notset' ;
         }
