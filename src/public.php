@@ -22,7 +22,7 @@ try
 
     set_error_handler('myErrorHandler');
     run_setup();
-    cache_setup();exit();
+    cache_setup();
 
     include_once 'lib/api_router.php';
 
