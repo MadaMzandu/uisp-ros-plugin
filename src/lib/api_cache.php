@@ -38,7 +38,7 @@ class ApiCache{
     {
         if($this->outdated()){
             $this->set_attributes();
-            $timer = new ApiTimer('sync');
+            $timer = new ApiTimer('sync: ');
             $this->get_devices();
             MyLog()->Append('populating services and clients');
             foreach(['clients','services'] as $table){
@@ -51,6 +51,22 @@ class ApiCache{
             $this->db()->saveConfig($state);
             $timer->stop();
         }
+    }
+
+    public function setup(): void
+    {
+        $timer = new ApiTimer('cache setup: ');
+        if($this->needs_db()){
+            shell_exec('rm -f data/cache.db');
+            $schema_file = 'includes/cache.sql';
+            $schema = file_get_contents($schema_file);
+            if($this->dbCache()->exec($schema)){//reset cache time
+                $state = ['cache_version' => MyCacheVersion,
+                    'last_cache' => '2020-01-01'];
+                $this->db()->saveConfig($state);
+            }
+        }
+        $timer->stop();
     }
 
     private function populate_net($id = null)
@@ -225,8 +241,7 @@ class ApiCache{
 
     private function outdated(): bool
     {
-        $last = $this->conf()->last_cache ?? null;
-        if(empty($last)) return true;
+        $last = $this->conf()->last_cache ?? '2020-01-01';
         $cycle = DateInterval::createFromDateString('7 day');
         $sync = new DateTime($last);
         $now = new DateTime();
@@ -254,20 +269,6 @@ class ApiCache{
     private function db(){ return new ApiSqlite(); }
 
     private function now() { return (new DateTime())->format('Y-m-d H:i:s'); }
-
-    public function setup(): void
-    {
-        if($this->needs_db()){
-            shell_exec('rm -f data/cache.db');
-            $schema_file = 'includes/cache.sql';
-            $schema = file_get_contents($schema_file);
-            if($this->dbCache()->exec($schema)){//reset cache time
-                $state = ['cache_version' => MyCacheVersion,
-                    'last_cache' => '2020-01-01'];
-                $this->db()->saveConfig($state);
-            }
-        }
-    }
 
     private function conf() {return $this->db()->readConfig(); }
 
