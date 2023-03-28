@@ -9,8 +9,7 @@ include_once 'api_timer.php';
 class ApiSetup
 {
     public function run(){
-        MyLog()->Append('starting primary db setup');
-        $timer = new ApiTimer('dbcreate');
+        $timer = new ApiTimer('db setup: ');
         if($this->needs_db()){
             $this->db_create();
         }
