@@ -248,14 +248,14 @@ class ApiSqlite
     public function saveConfig($fields): bool
     {
         $data = (array) $fields ;
-        $ret = true ;
         foreach(array_keys($data) as $key){
             $now = (new DateTime())->format('Y-m-d H:i:s');
             $value = $this->stringify($data[$key] ?? null);
-            $sql = sprintf("UPDATE config SET value = '%s',last = '%s' WHERE key = '%s'",$value,$now,$key);
-            if(!$this->db()->exec($sql)) $ret = false;
+            $sql = sprintf("INSERT OR REPLACE INTO config ('key','value','last','created')".
+                " VALUES ('%s','%s','%s','%s') ",$key,$value,$now,'2020-01-01 00:00:00');
+            if(!$this->db()->exec($sql)) return false;
         }
-        return $ret;
+        return true;
     }
 
     private function db(): SQLite3
