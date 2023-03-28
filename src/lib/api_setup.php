@@ -10,7 +10,7 @@ class ApiSetup
 {
     public function run(){
         MyLog()->Append('starting primary db setup');
-        $timer = new ApiTimer();
+        $timer = new ApiTimer('dbcreate');
         if($this->needs_db()){
             $this->db_create();
         }
@@ -61,9 +61,9 @@ class ApiSetup
         return $done ;
     }
 
-    private  function set_version(): void
+    private  function set_version(): bool
     {
-        $this->db()->saveConfig(['version' => MY_VERSION]);
+        return $this->db()->saveConfig(['version' => MY_VERSION]);
     }
 
     private function db_backup(): bool
@@ -113,7 +113,7 @@ class ApiSetup
 
     private function needs_update(): bool
     {
-        $running = $this->state()->version ?? '1.0.0';
+        $running = $this->db()->readConfig()->version ?? '0.0.0' ;
         return $running < MY_VERSION ;
     }
 
