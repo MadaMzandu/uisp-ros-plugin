@@ -48,12 +48,11 @@ class ApiSqlite
         return (new DateTime())->format('Y-m-d H:i:s');
     }
 
-    public function has_tables($tables = ['services,devices,config'])
+    public function has_tables($tables = ['services','devices','config']): bool
     {
         foreach ($tables as $table){
             $sql = "SELECT name from sqlite_master where type='table' AND name='" . $table ."'";
-            $done = $this->db()->querySingle($sql);
-            if(empty($done)) return false;
+            if(empty($this->db()->querySingle($sql))) return false;
         }
         return true ;
     }
