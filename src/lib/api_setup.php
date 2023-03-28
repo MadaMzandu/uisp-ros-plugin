@@ -11,9 +11,7 @@ class ApiSetup
     public function run(){
         MyLog()->Append('starting primary db setup');
         $timer = new ApiTimer();
-        if($this->needs_db()){
-            $this->db_create();
-        }
+        $this->db_create();
         if($this->needs_update()){
             $this->db_update();
         }
@@ -41,16 +39,18 @@ class ApiSetup
         return false;
     }
 
-    private function db_create(): bool
+    private function db_create(): void
     {
-        $source = 'includes/schema.sql';
-        $schema = file_get_contents($source);
-        if($this->db()->exec($schema)){
-            if($this->config_load()){
-                return $this->set_version();
+        if($this->needs_db()){
+            $source = 'includes/schema.sql';
+            $schema = file_get_contents($source);
+            shell_exec('rm -f data/data.db');
+            if($this->db()->exec($schema)){
+                if($this->config_load()){
+                    $this->set_version();
+                }
             }
         }
-        return false ;
     }
 
     private function config_load(): bool
@@ -60,14 +60,14 @@ class ApiSetup
         return $this->db()->saveConfig($default);
     }
 
-    private  function set_version(): bool
+    private  function set_version(): void
     {
         $state = $this->state() ;
         $state->version = MY_VERSION ;
         $this->save($state);
         $sql = sprintf('UPDATE config SET "value"="%s" WHERE "key"="%s"',
             MY_VERSION,'version');
-        return $this->db()->exec($sql);
+        $this->db()->exec($sql);
     }
 
     private function db_backup(): bool
@@ -124,7 +124,8 @@ class ApiSetup
     private function needs_db(): bool
     {
         $file = 'data/data.db';
-        return !file_exists($file);
+        if(!file_exists($file)) return true ;
+        return !$this->db()->has_tables();
     }
 
     private function now(): string

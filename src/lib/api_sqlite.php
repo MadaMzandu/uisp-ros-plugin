@@ -48,6 +48,16 @@ class ApiSqlite
         return (new DateTime())->format('Y-m-d H:i:s');
     }
 
+    public function has_tables($tables = ['services,devices,config'])
+    {
+        foreach ($tables as $table){
+            $sql = "SELECT name from sqlite_master where type='table' AND name='" . $table ."'";
+            $done = $this->db()->querySingle($sql);
+            if(empty($done)) return false;
+        }
+        return true ;
+    }
+
     public function edit($data, $table = 'services')
     {
         if (!(is_array($data) || is_object($data))) {

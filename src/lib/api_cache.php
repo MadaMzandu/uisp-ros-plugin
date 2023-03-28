@@ -237,6 +237,8 @@ class ApiCache{
     {
         $file = 'data/cache.db';
         if(!file_exists($file)) return true;
+        if(!$this->dbCache()->has_tables(['clients','services','network'])){
+            return true ;}
         $version = $this->conf()->cache_version ?? '0.0.0';
         return $version != MyCacheVersion || $this->outdated() ;
     }

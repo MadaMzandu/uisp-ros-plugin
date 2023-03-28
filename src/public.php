@@ -8,15 +8,14 @@ if (isset($_SERVER['REQUEST_METHOD'])
     && $_SERVER['REQUEST_METHOD'] == 'OPTIONS') { //skip redirect for options
     exit();
 }
-
+require_once 'vendor/autoload.php';
 include_once 'lib/api_logger.php';
 include_once 'lib/api_cache.php';
 include_once 'lib/api_setup.php';
 include_once 'lib/api_common.php';
 include_once 'lib/api_router.php';
 
-//$json = file_get_contents('php://input') ?? null;
-$json = file_get_contents('test.json');
+$json = file_get_contents('php://input') ?? null;
 
 try
 {
