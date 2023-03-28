@@ -2,6 +2,7 @@
 require_once  'vendor/autoload.php';
 
 const API_DEBUG_LEVEL = 7 ;
+
 class ApiLogger
 {
     public function Append($entry, $level = LOG_DEBUG)
