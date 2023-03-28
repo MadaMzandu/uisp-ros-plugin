@@ -3,7 +3,7 @@ const MyCacheVersion = '1.0.1e';
 
 include_once 'api_sqlite.php';
 include_once 'api_ucrm.php';
-//include_once '_web_ucrm.php';
+// include_once '_web_ucrm.php'; //for devel only
 include_once 'api_logger.php';
 include_once 'api_timer.php';
 
@@ -217,7 +217,6 @@ class ApiCache{
         foreach(explode(',',$roskeys) as $roskey){
             $match = $conf->$roskey ;
             if($match){
-                echo $match . PHP_EOL;
                 $rosmap[$roskey] = $keymap[$match] ?? null;
             }
         }

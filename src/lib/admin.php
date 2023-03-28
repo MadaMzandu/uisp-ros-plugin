@@ -14,7 +14,7 @@ include_once 'admin_mt_queue.php';
 include_once 'api_cache.php' ;
 include_once 'api_logger.php';
 include_once 'api_ucrm.php';
-include_once '_web_ucrm.php';
+// include_once '_web_ucrm.php'; //for devel only
 class Admin
 {
 
