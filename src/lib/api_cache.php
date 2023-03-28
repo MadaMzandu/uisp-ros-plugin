@@ -1,4 +1,11 @@
 <?php
+const MyCacheVersion = '1.0.1e';
+
+include_once 'api_sqlite.php';
+include_once 'api_ucrm.php';
+include_once '_web_ucrm.php';
+include_once 'api_logger.php';
+include_once 'api_timer.php';
 
 class ApiCache{
 
@@ -9,6 +16,7 @@ class ApiCache{
     {
         $item = json_decode($json);
         if(function_exists('fastcgi_finish_request')){
+            MyLog()->Append('ending tcp here to go background');
             fastcgi_finish_request();
         }
         set_time_limit(7200);
@@ -28,15 +36,21 @@ class ApiCache{
 
     public function sync()
     {
-        if($this->needs_attributes()){ return ;}
-        if(!$this->needs_update()){ return; }
-        $this->get_devices();
-        foreach(['clients','services'] as $table){
-            $this->populate($table);
+        if($this->outdated()){
+            $this->set_attributes();
+            $timer = new ApiTimer('sync');
+            $this->get_devices();
+            MyLog()->Append('populating services and clients');
+            foreach(['clients','services'] as $table){
+                $this->populate($table);
+                MyLog()->Append('finished populating: '.$table);
+            }
+            MyLog()->Append('populating network skeptically');
+            $this->populate_net();
+            $state = ['last_cache' => $this->now()];
+            $this->db()->saveConfig($state);
+            $timer->stop();
         }
-        $this->populate_net();
-        $state = ['cache_version' => MyCacheVersion,'last_cache' => $this->now()];
-        $this->db()->saveConfig($state);
     }
 
     private function populate_net($id = null)
@@ -79,6 +93,7 @@ class ApiCache{
 
     public function batch($table,$data)
     {
+        MyLog()->Append('starting batch prepare');
         $fields = $this->fields($table);
         $keys = array_values($fields);
         $sql = sprintf('INSERT OR REPLACE INTO %s (%s) VALUES ',$table,implode(',',$keys));
@@ -92,12 +107,13 @@ class ApiCache{
             if($table == 'services'){
                 array_splice(
                     $values,6,5,
-                    $this->fix_attributes($entity->attributes));
+                    $this->extract_attributes($entity->attributes));
             }
             $query[] = $this->toSqlValues($values);
         }
         $sql .= implode(',',$query);
         $this->dbCache()->exec($sql);
+        MyLog()->Append('batch exectued '.$sql);
     }
 
     private function fields($table): array
@@ -141,10 +157,10 @@ class ApiCache{
         return sprintf("(%s)",implode(',',$values));
     }
 
-    private function fix_attributes($array): ?array
+    private function extract_attributes($array): ?array
     {//sanitize attributes
         if(!$array) return null ;
-        if(!$this->ref) $this->needs_attributes();
+        if(!$this->ref) $this->set_attributes();
         if(!$this->dev) $this->get_devices();
         $map = [];
         $values = [];
@@ -152,7 +168,7 @@ class ApiCache{
         $roskeys = 'device_name_attr,pppoe_user_attr,pppoe_pass_attr,mac_addr_attr,hs_attr';
         foreach (explode(',',$roskeys) as $ros){
             $match = $this->ref[$ros] ?? null ;
-            if($match && $ros == 'device_name_attr'){
+            if($match && $ros == 'device_name_attr'){ //device name to device id
                 $values[] = $this->dev[strtolower($map[$match])];
             }
             else if($match) $values[]  = $map[$match] ?? null ;
@@ -161,21 +177,28 @@ class ApiCache{
         return $values ;
     }
 
-    private function needs_attributes(): bool
+    private function set_attributes(): void
     {
-        $attributes = $this->get_attributes();
+        $attributes = $this->map_attributes();
         $device = $attributes['device_name_attr'] ?? null;
         $mac = $attributes['mac_addr_attr'] ?? null ;
         $user = $attributes['pppoe_user_attr'] ?? null;
-        $ret = !($device && ($mac || $user));
-        if(!$ret){foreach (array_keys($attributes) as $key)
-            $this->ref[$key] = $attributes[$key]->key; }
-        return $ret ;
+        $missing = !($device && ($mac || $user));
+        if($missing) {
+            $this->throwErr('cache: attributes not configured yet will sync later');
+        }
+        foreach (array_keys($attributes) as $key){
+            $this->ref[$key] = $attributes[$key]->key ?? 'notset' ;
+        }
     }
 
     private function get_devices()
     {
-        $devs = $this->db()->selectAllFromTable('devices');
+        $devs = json_decode('[{"id":1,"name":"Test1"},{"id":2,"name":"TEST2"}]',true);
+//        $devs = $this->db()->selectAllFromTable('devices');
+        if(empty($devs)) {
+            $this->throwErr('cache: devices not configured sync delayed');
+        }
         $map = [];
         foreach ($devs as $dev){
             $map[trim(strtolower($dev['name']))] = $dev['id'];
@@ -183,15 +206,40 @@ class ApiCache{
         $this->dev = $map ;
     }
 
-    private function get_attributes(): array
+    private function map_attributes(): array
     {
-        $data = ['path' => 'attributes'];
-        $api = new AdminGet($data);
-        $api->get();
-        $res = $api->result();
-        $map = [];
-        foreach($res as $item){ $key = $item->roskey ?? null; if($key) $map[$key] = $item; }
-        return $map;
+        $attrs = $this->ucrm()->get('custom-attributes');
+        $keymap = [];
+        foreach ($attrs as $attr){ $keymap[$attr->key] = $attr; }
+        $conf = $this->conf();
+        $roskeys = 'device_name_attr,pppoe_user_attr,pppoe_pass_attr,mac_addr_attr,hs_attr';
+        $rosmap = [];
+        foreach(explode(',',$roskeys) as $roskey){
+            $match = $conf->$roskey ;
+            if($match){
+                echo $match . PHP_EOL;
+                $rosmap[$roskey] = $keymap[$match] ?? null;
+            }
+        }
+        return $rosmap;
+    }
+
+    private function outdated(): bool
+    {
+        $last = $this->conf()->last_cache ?? null;
+        if(empty($last)) return true;
+        $cycle = DateInterval::createFromDateString('7 day');
+        $sync = new DateTime($last);
+        $now = new DateTime();
+        return date_add($sync,$cycle) < $now ;
+    }
+
+    private function needs_db(): bool
+    {
+        $file = 'data/cache.db';
+        if(!file_exists($file)) return true;
+        $version = $this->conf()->cache_version ?? '0.0.0';
+        return $version != MyCacheVersion || $this->outdated() ;
     }
 
     private function opts(): array
@@ -202,13 +250,32 @@ class ApiCache{
 
     private function ucrm(){ return new ApiUcrm(); }
 
-    private function dbCache(){ return new ApiSqlite('data/cache.db'); }
-
     private function db(){ return new ApiSqlite(); }
 
     private function now() { return (new DateTime())->format('Y-m-d H:i:s'); }
 
+    public function setup(): void
+    {
+        if($this->needs_db()){
+            shell_exec('rm -f data/cache.db');
+            $schema_file = 'includes/cache.sql';
+            $schema = file_get_contents($schema_file);
+            if($this->dbCache()->exec($schema)){//reset cache time
+                $state = ['cache_version' => MyCacheVersion,
+                    'last_cache' => '2020-01-01'];
+                $this->db()->saveConfig($state);
+            }
+        }
+    }
+
+    private function conf() {return $this->db()->readConfig(); }
+
+    private function dbCache(){ return new ApiSqlite('data/cache.db'); }
+
+    private function throwErr($exception){ throw new Exception($exception); }
+
    }
 
-function run_cache($json) { $api = new ApiCache(); $api->update($json);}
+function cache_sync($json) { $api = new ApiCache(); $api->update($json);}
 
+function cache_setup(){ $cache = new ApiCache(); $cache->setup();}
