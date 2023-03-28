@@ -1,5 +1,9 @@
 <?php
-
+include_once 'api_sqlite.php';
+// include_once '_web_ucrm.php';
+include_once 'api_ucrm.php';
+include_once 'api_timer.php';
+include_once 'api_logger.php';
 class AdminRebuild{
 
     private function db(){ return new ApiSqlite(); }
@@ -26,6 +30,7 @@ class AdminRebuild{
         if(function_exists('fastcgi_finish_request')){
             fastcgi_finish_request();
         }
+        $timer = new ApiTimer('rebuild: '.json_encode($data));
         set_time_limit(7200);
         $type = $data->type ?? 'all';
         $typeId = $data->id ?? null;
@@ -41,6 +46,9 @@ class AdminRebuild{
             $select = $this->cache()->selectCustom(sprintf("SELECT id FROM services WHERE device = %s AND status < 4",$typeId));
         }
         $ids = [];
+        if(empty($select)){
+            throw new Exception('no items found to rebuild: '.json_encode($data));
+        }
         foreach ($select as $item) $ids[] = $item['id'];
         if($clear)
         {
@@ -48,9 +56,12 @@ class AdminRebuild{
         }
         $api = $this->ucrm();
         foreach($ids as $id){
-            $api->patch('clients/services/'.$id, []);
+            $done = $api->patch('clients/services/'.$id, []);
+            if($done){ MyLog()->Append(sprintf("rebuild service: %s success",$done->id)); }
         }
+        $timer->stop();
     }
 
 }
 
+function rebuild(){ $api = new AdminRebuild(); $api->rebuild([]);}
