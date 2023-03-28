@@ -11,7 +11,9 @@ class ApiSetup
     public function run(){
         MyLog()->Append('starting primary db setup');
         $timer = new ApiTimer();
-        $this->db_create();
+        if($this->needs_db()){
+            $this->db_create();
+        }
         if($this->needs_update()){
             $this->db_update();
         }
@@ -41,14 +43,12 @@ class ApiSetup
 
     private function db_create(): void
     {
-        if($this->needs_db()){
-            $source = 'includes/schema.sql';
-            $schema = file_get_contents($source);
-            shell_exec('rm -f data/data.db');
-            if($this->db()->exec($schema)){
-                if($this->config_load()){
-                    $this->set_version();
-                }
+        $source = 'includes/schema.sql';
+        $schema = file_get_contents($source);
+        shell_exec('rm -f data/data.db');
+        if($this->db()->exec($schema)){
+            if($this->config_load()){
+                $this->set_version();
             }
         }
     }
@@ -56,18 +56,14 @@ class ApiSetup
     private function config_load(): bool
     {
         $file = file_get_contents('includes/conf_default.json');
-        $default = json_decode($file);
-        return $this->db()->saveConfig($default);
+        $default = json_decode($file,true);
+        $done = $this->db()->saveConfig($default);
+        return $done ;
     }
 
     private  function set_version(): void
     {
-        $state = $this->state() ;
-        $state->version = MY_VERSION ;
-        $this->save($state);
-        $sql = sprintf('UPDATE config SET "value"="%s" WHERE "key"="%s"',
-            MY_VERSION,'version');
-        $this->db()->exec($sql);
+        $this->db()->saveConfig(['version' => MY_VERSION]);
     }
 
     private function db_backup(): bool
