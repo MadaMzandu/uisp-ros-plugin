@@ -1,5 +1,4 @@
 <?php
-
 include_once 'admin_settings.php';
 include_once 'admin_devices.php';
 include_once 'admin_plans.php';
@@ -8,11 +7,14 @@ include_once 'admin_backup.php';
 include_once 'admin_system.php';
 include_once 'admin_rebuild.php';
 include_once 'admin_cache.php';
-include_once 'admin_get.php';
+//include_once 'admin_get.php';
 include_once 'api_jobs.php';
 include_once 'api_lang.php';
 include_once 'admin_mt_queue.php';
-
+include_once 'api_cache.php' ;
+include_once 'api_logger.php';
+include_once 'api_ucrm.php';
+include_once '_web_ucrm.php';
 class Admin
 {
 
@@ -21,7 +23,6 @@ class Admin
     protected $result;
     protected $user;
     protected $read;
-    protected $conf;
 
     public function __construct($data = [])
     {
@@ -29,31 +30,25 @@ class Admin
         $this->init();
     }
 
-    private function toObject($data): stdClass
+    protected function toObject($data): ?stdClass
     {
-        if($data && (is_array($data) || is_object($data))){
-            return is_object($data) ? $data
-                :json_decode(json_encode($data));
-        }
-        return (object)[];
+        if(empty($data)) return null ;
+        if(is_object($data)){return $data; }
+        if(is_array($data)){ json_decode(json_encode($data)); }
+        return null;
     }
 
     protected function init(): void
     {
-        $this->conf = $this->db()->readConfig();
-        $this->status = new stdClass();
-        $this->result = new stdClass();
-        $this->status->error = false;
-        $this->status->message = 'ok';
+        $this->status = json_decode('{"error":false,"message":"ok"}');
     }
 
     public function select()
     {
         $target = $this->data->target ?? null ;
         $request = $this->data ;
-        $data = $this->data->data ;
+        $data = $this->data->data ?? null;
         switch ($target){
-            case 'get': return new AdminGet($request);
             case 'config': return new Settings($data);
             case 'devices': return new Devices($data);
             //case 'stats': return new Stats($data);
@@ -71,6 +66,8 @@ class Admin
 
     public function exec(): void
     {
+        if(empty($this->data)) {
+            throw new Exception('admin: unable to route invalid request'); }
         $api = $this->select();
         $action = $this->data->action ?? null ;
         if($api && method_exists($api,$action)){ //route found
@@ -81,8 +78,7 @@ class Admin
         else{ //assume its a uisp api call
             $data = $this->data->data ?? [];
             $path = $this->data->path ?? null;
-            $ucrm = new ApiUcrm();
-            $this->result = $ucrm->request($path,$action,(array)$data);
+            $this->result = $this->ucrm()->request($path,$action,(array)$data);
         }
     }
 
@@ -91,7 +87,7 @@ class Admin
         return $this->status;
     }
 
-    protected function db(): ?ApiSqlite
+    protected function db()
     {
         return new ApiSqlite();
     }
@@ -99,6 +95,11 @@ class Admin
     protected function ucrm()
     {
         return new ApiUcrm();
+    }
+
+    protected function conf()
+    {
+        return $this->db()->readConfig();
     }
 
     public function result()

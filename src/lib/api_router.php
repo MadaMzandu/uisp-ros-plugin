@@ -1,11 +1,12 @@
 <?php
 
+include_once 'api_sqlite.php';
+include_once 'api_logger.php' ;
 include_once 'admin.php';
 include_once 'api_routes.php';
 include_once 'service.php';
 
 $conf = (new ApiSqlite())->readConfig();
-$debug_log = [];
 
 
 class API_Router
@@ -24,10 +25,9 @@ class API_Router
 
     private function toObject($data): ?stdClass
     {
-        if(is_array($data) || is_object($data)){
-            return is_object($data) ? $data
-                :json_decode(json_encode((object)$data));
-        }
+        if(empty($data)) return null ;
+        if(is_object($data)) return $data ;
+        if(is_array($data)) return json_decode(json_encode((object)$data));
         return null;
     }
 
