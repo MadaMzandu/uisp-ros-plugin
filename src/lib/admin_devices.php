@@ -104,14 +104,14 @@ class Devices extends Admin
 
     private function save_router($id,$enable=false)
     {
-        $list = json_decode($this->conf->disabled_routers,true) ?? [];
+        $list = json_decode($this->conf()->disabled_routers,true) ?? [];
         if($enable){
             unset($list[$id]);
         }else{
             $list[$id] = 1;
         }
-        $this->conf->disabled_routers = json_encode($list) ?? [];
-        return $this->db()->saveConfig($this->conf);
+        $data['disabled_routers'] = json_encode($list) ?? [];
+        return $this->db()->saveConfig($data);
     }
 
     private function set_profile_limit($id,$profile,$plan,$enable=false)
