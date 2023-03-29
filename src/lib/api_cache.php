@@ -121,10 +121,12 @@ class ApiCache{
                 $values[] = $entity->$key ?? null ;
             }
             if($table == 'services'){
+                $attributes = $entity->attributes ?? [];
                 array_splice(
                     $values,6,5,
-                    $this->extract_attributes($entity->attributes));
+                    $this->extract_attributes($attributes));
             }
+            if(sizeof($values) != 12) continue ;
             $query[] = $this->toSqlValues($values);
         }
         $sql .= implode(',',$query);
@@ -183,9 +185,9 @@ class ApiCache{
         foreach ($array as $item){ $map[$item->key] = $item->value; }
         $roskeys = 'device_name_attr,pppoe_user_attr,pppoe_pass_attr,mac_addr_attr,hs_attr';
         foreach (explode(',',$roskeys) as $ros){
-            $match = $this->ref[$ros] ?? null ;
+            $match = $this->ref[$ros] ?? null ; //attribute is configured
             if($match && $ros == 'device_name_attr'){ //device name to device id
-                $values[] = $this->dev[strtolower($map[$match])];
+                $values[] = $this->dev[strtolower($map[$match])] ?? null;
             }
             else if($match) $values[]  = $map[$match] ?? null ;
             else $values[] = null ;
