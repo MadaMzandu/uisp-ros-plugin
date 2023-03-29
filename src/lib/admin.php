@@ -78,7 +78,7 @@ class Admin
         else{ //assume its a uisp api call
             $data = $this->data->data ?? [];
             $path = $this->data->path ?? null;
-            $this->result = $this->ucrm()->request($path,$action,(array)$data);
+            $this->result = $this->ucrm()->$action($path,(array)$data);
         }
     }
 
