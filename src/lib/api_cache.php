@@ -126,7 +126,7 @@ class ApiCache{
                     $values,6,5,
                     $this->extract_attributes($attributes));
             }
-            if(sizeof($values) != 12) continue ;
+            if(sizeof($values) != sizeof($keys)) continue ;
             $query[] = $this->toSqlValues($values);
         }
         $sql .= implode(',',$query);
