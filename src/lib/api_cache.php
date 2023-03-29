@@ -134,6 +134,33 @@ class ApiCache{
         MyLog()->Append('batch exectued '.$sql);
     }
 
+    private function extract_attributes($array): ?array
+    {//sanitize attributes
+        $roskeys = [
+            'device_name_attr',
+            'pppoe_user_attr',
+            'pppoe_user_attr',
+            'pppoe_pass_attr',
+            'mac_addr_attr',
+            'hs_attr',
+        ];
+        if(empty($array)) return $this->make_nulls(sizeof($roskeys)) ;
+        if(!$this->ref) $this->set_attributes();
+        if(!$this->dev) $this->get_devices();
+        $map = [];
+        $values = [];
+        foreach ($array as $item){ $map[$item->key] = $item->value; }
+        foreach ($roskeys as $ros){
+            $match = $this->ref[$ros] ?? null ; //attribute is configured
+            if($match && $ros == 'device_name_attr'){ //device name to device id
+                $values[] = $this->dev[strtolower($map[$match])] ?? null;
+            }
+            else if($match) $values[]  = $map[$match] ?? null ;
+            else $values[] = null ;
+        }
+        return $values ;
+    }
+
     private function fields($table): array
     {
         switch ($table){
@@ -175,24 +202,11 @@ class ApiCache{
         return sprintf("(%s)",implode(',',$values));
     }
 
-    private function extract_attributes($array): ?array
-    {//sanitize attributes
-        if(!$array) return null ;
-        if(!$this->ref) $this->set_attributes();
-        if(!$this->dev) $this->get_devices();
-        $map = [];
-        $values = [];
-        foreach ($array as $item){ $map[$item->key] = $item->value; }
-        $roskeys = 'device_name_attr,pppoe_user_attr,pppoe_pass_attr,mac_addr_attr,hs_attr';
-        foreach (explode(',',$roskeys) as $ros){
-            $match = $this->ref[$ros] ?? null ; //attribute is configured
-            if($match && $ros == 'device_name_attr'){ //device name to device id
-                $values[] = $this->dev[strtolower($map[$match])] ?? null;
-            }
-            else if($match) $values[]  = $map[$match] ?? null ;
-            else $values[] = null ;
-        }
-        return $values ;
+    private function make_nulls(int $qty): array
+    {
+        $nulls = [];
+        for($i = 0; $i < $qty; $i++) $nulls[] = null ;
+        return $nulls;
     }
 
     private function set_attributes(): void
@@ -215,8 +229,7 @@ class ApiCache{
 
     private function get_devices()
     {
-        $devs = json_decode('[{"id":1,"name":"Test1"},{"id":2,"name":"TEST2"}]',true);
-//        $devs = $this->db()->selectAllFromTable('devices');
+        $devs = $this->db()->selectAllFromTable('devices');
         if(empty($devs)) {
             $this->throwErr('cache: devices not configured sync delayed');
         }
