@@ -139,7 +139,6 @@ class ApiCache{
         $roskeys = [
             'device_name_attr',
             'pppoe_user_attr',
-            'pppoe_user_attr',
             'pppoe_pass_attr',
             'mac_addr_attr',
             'hs_attr',
