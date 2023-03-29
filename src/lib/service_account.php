@@ -92,8 +92,8 @@ class Service_Account extends Service_Attributes
 
     public function mac(): ?string
     {
-        return $this->get_value(
-            $this->conf->mac_addr_attr);
+        return strtoupper($this->get_value(
+            $this->conf->mac_addr_attr));
     }
 
     public function save(): bool
