@@ -10,8 +10,8 @@ class Service_Account extends Service_Attributes
 
     public $plan;
     public $client;
-    public $ip; //ip address assignment
-    public $ip6 ; //ip6 assignment
+    //public $ip; //ip address assignment
+    //public $ip6 ; //ip6 assignment
 
     protected function init(): void
     {
@@ -126,13 +126,13 @@ class Service_Account extends Service_Attributes
     public function ip(): ?string
     {
         $ip = $this->get_value($this->conf->ip_addr_attr);
-        if ($ip) {
-            return $ip;
+        if ($ip) { return $ip; } //static attribute ip
+        $service = $this->db()->selectServiceById($this->id());
+        $ip = $service->address ?? null ;
+        if ($ip && !$this->ip_removed()){
+            return $ip ;
         }
-        $rec = $this->db()->selectServiceById($this->id());
-        if ((array)$rec && !$this->ip_removed())
-            $this->ip = $rec->address ?? null ;
-        return $this->ip ?? $this->assign_ip()[0] ?? null;
+        return $this->assign_ip();
     }
 
     public function ip6(): ?string
@@ -140,8 +140,8 @@ class Service_Account extends Service_Attributes
         if($this->accountType != 1) return null ;
         $rec = $this->db()->selectServiceById($this->id());
         $ip = $rec->prefix6 ?? null ;
-        if($ip) $this->ip6 = $ip ;
-        return $this->ip6 ?? $this->assign_ip()[1] ?? null;
+        if($ip) return $ip ;
+        return $this->assign_ip(true);
     }
 
     public function ip6Length(): ?string
@@ -164,16 +164,14 @@ class Service_Account extends Service_Attributes
         return $this->$entity->id;
     }
 
-    protected function assign_ip(): array
+    protected function assign_ip($ip6 = false): ?string
     {
-        $device = false;
+        $device = null;
         if ($this->conf->router_ppp_pool || $this->svc->accountType == 0) {
             $device = $this->get_device();
         }
-        $ips = (new API_IP())->assign($device);
-        $this->ip = $ips[0] ?? null ;
-        $this->ip6 = $ips[1] ?? null ;
-        return [$this->ip,$this->ip6];
+        $api = new ApiIP();
+        return $api->ip($device,$ip6);
     }
 
     public function delete(): bool
