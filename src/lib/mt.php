@@ -12,17 +12,18 @@ class MT extends Device
     protected $device;
     protected $exists;
     protected $batch ;
+    protected $batch_device ;
 
     public function set()
     {
-        $this->path = rtrim($this->getData('path'), '\/') . '/';
-        return $this->write($this->getData('data'), $this->getData('action'));
+        $this->path = rtrim($this->get_data('path'), '\/') . '/';
+        return $this->write($this->get_data('data'), $this->get_data('action'));
     }
 
     public function get(): ?array
     {
-        $this->path = rtrim($this->getData('path'), '\/') . '/';
-        return $this->read($this->getData('filter'));
+        $this->path = rtrim($this->get_data('path'), '\/') . '/';
+        return $this->read($this->get_data('filter'));
     }
 
     protected function write($data=null, $action = 'set')
@@ -38,24 +39,24 @@ class MT extends Device
     {
         $api = $this->connect();
         foreach($this->batch as $data){
-            $action = $data['action'] ?? 'set';
-            $path = $data['path'] ?? null ;
-            if($path){
-                $this->path = $path ;
-                unset($data['path']);
-            }
-            unset($data['action']);
-            if($action == 'add') unset($data['.id']);
-            $api->write($this->path . $action,false);
+            //clean up the data
+            $this->path = $data['path'] ?? $this->path ;
+            $data = $this->clean_data($data);
+            $id = $this->find_id($data);
+            if($id) MyLog()->Append(sprintf('mt id found: %s attempting to set',$id));
+            else MyLog()->Append('mt id not found attempting to add');
+            $action = $id ? 'set' : 'add';
+            if($action == 'set') $data['.id'] = $id ;
+            //write it
+            $api->write(sprintf("/%s/%s",
+                trim($this->path,'/'),$action),false);
             foreach (array_keys($data) as $key ){
                 $api->write('=' . $key . '=' . $data[$key],false);
             }
             $api->write(';');
             $this->read = $api->read();
             if($this->has_error()){
-                $this->batch = [] ;
-                $api->disconnect();
-                return false ;
+                MyLog()->Append('mt write error: '.json_encode([$data,$this->read]));
             }
         }
         $this->batch = [] ;
@@ -63,19 +64,43 @@ class MT extends Device
         return true ;
     }
 
+    protected function find_id($data)
+    {
+        $name = $data['name'] ?? null ;
+        $mac = $data['mac-address'] ?? null ;
+        $filter = null ;
+        if($name) $filter = '?name=' . $name ;
+        if($mac) $filter = '?mac-address=' . $mac ;
+        if($filter){
+            $item  = $this->read($filter)[0] ?? [];
+            $id = $item['.id'] ?? null ;
+            if($id && is_string($id)) return $id;
+        }
+        return null ;
+    }
+
+    protected function clean_data($data){
+        $clean = [];
+        foreach (array_keys($data) as $key){
+            if(in_array($key,['.id','path','action']))continue;
+            $clean[$key] = $data[$key];
+        }
+        return $clean ;
+    }
+
     protected function set_batch($data)
     {
         $this->batch[] = (array)$data ;
     }
 
-    private function getData($property)
+    private function get_data($property)
     { // check and return data object property
         return $this->data->$property ?? null;
     }
 
     private function connect(): ?RouterosAPI
     {
-        if(!$this->getDevice()){
+        if(!$this->get_device()){
             throw new Exception('failed to get device information');
         };
         $api = new Routerosapi();
@@ -90,16 +115,19 @@ class MT extends Device
         return $api;
     }
 
-    protected function getDevice(): bool
+    protected function get_device(): bool
     {
         $this->device = null ;
-        if ($this->svc) {
+        if($this->batch_device){
+            $this->device = $this->batch_device ;
+        }
+        elseif ($this->svc) {
             $this->device = $this->svc->device();
         }
-        elseif ($id = $this->getData('device_id')) {
+        elseif ($id = $this->get_data('device_id')) {
             $this->device = $this->db()->selectDeviceById($id);
         }
-        elseif ($dev = $this->getData('device')) {
+        elseif ($dev = $this->get_data('device')) {
             $this->device = $this->db()->selectDeviceByDeviceName($dev);
         }
         return (bool)$this->device ;
@@ -154,7 +182,7 @@ class MT extends Device
     protected function read($filter = null)
     {  //implements mikrotik print
         $api = $this->connect();
-        $api->write($this->path . 'print', false);
+        $api->write(sprintf('/%s/print',trim($this->path,'/')), false);
         if ($filter) {
             foreach($this->ffilter($filter) as $item){
                 $api->write($item,false);
