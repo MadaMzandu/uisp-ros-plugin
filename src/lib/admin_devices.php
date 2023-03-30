@@ -140,56 +140,105 @@ class Devices extends Admin
         return new ApiSqlite();
     }
 
-    public function services(): void
+    public function services()
     {
-        $this->result = $this->cache();
-        if($this->result){
-            $this->cache_update();
-            return ;
-        }
-        //if cache is not ready load skeleton from db
-        $id = $this->data->id;
-        $limit = $this->data->limit ?? null ;
-        $offset = $this->data->offset ?? null ;
-        $this->result = $this->db()->selectServicesOnDevice($id,$limit,$offset) ?? [];
-        $this->result['skel'] = true ;
-        $this->cache_update();
+        $this->result = $this->get_services();
     }
 
-    public function cache_update(): void
-    {
-        if(!function_exists('fastcgi_finish_request')){
-            shell_exec('php lib/shell.php cache > /dev/null 2>&1 &');
-            return;
-        }else{
-            $this->status->status = 'ok';
-            $this->status->data = $this->result ;
-            header('content-type: application/json');
-            echo json_encode($this->status);
-            fastcgi_finish_request();
-        }
-        set_time_limit(300);
-        (new Admin_Cache())->create();
-    }
+//    public function services(): void
+//    {
+//        $this->result = $this->cache();
+//        if($this->result){
+//            $this->cache_update();
+//            return ;
+//        }
+//        //if cache is not ready load skeleton from db
+//        $id = $this->data->id;
+//        $limit = $this->data->limit ?? null ;
+//        $offset = $this->data->offset ?? null ;
+//        $this->result = $this->db()->selectServicesOnDevice($id,$limit,$offset) ?? [];
+//        $this->result['skel'] = true ;
+//        $this->cache_update();
+//    }
 
-    private function cache(): ?array
+    private function get_services()
     {
-        $file = 'data/cache.json';
-        if(!file_exists($file))return null ;
-        if($this->cache_is_valid()) return [1];
         $id = $this->data->id ?? 0;
-        $cache = json_decode(file_get_contents($file),true) ;
-        $ret = $cache[$id] ?? null;
-        if($ret) $ret['date'] = filemtime('data/cache.json');
-        return $ret;
+        $cached = $this->dbCache()->selectCustom($this->cache_sql()) ?? [];
+        $live = $this->db()->selectServicesOnDevice($id) ?? [];
+        $plans = $this->ucrm()->get('service-plans') ?? [];
+        $plans = json_decode(json_encode($plans),true);
+        $addressMap = [];
+        $planMap = [];
+        foreach ($live as $item)$addressMap[$item['id']] = $item ;
+        foreach ($plans as $plan)$planMap[$plan['id']] = $plan ;
+        foreach ($cached as $item) $addressMap[$item['id']] = $item ;
+        $ret = [];
+        foreach ($cached as $item) {
+            $item['address'] = $addressMap[$item['id']]['address'] ?? null ;
+            $item['prefix6'] = $addressMap[$item['id']]['prefix6'] ?? null ;
+            $item['plan'] = $planMap[$item['planId']]['name'] ?? null ;
+            $ret[$item['id']] = $item ;
+        }
+        return $ret ;
     }
 
-    private function cache_is_valid(): bool
-    { // if last cache is still valid
-        $last = $this->data->lastCache ?? 0 ;
-        $current = filemtime('data/cache.json');
-        return $last == $current ;
+    private function cache_sql(){
+        $sql = "SELECT services.*,clients.company,clients.firstName,clients.lastName ".
+            "FROM services LEFT JOIN clients ON services.clientId=clients.id ";
+        $device = $this->data->id ?? null ;
+        $sql .= sprintf("WHERE services.device = %s ",$device);
+        $sql .= sprintf("AND services.status IN (1,3) ");
+        $query = $this->data->query ?? null ;
+        if($query){
+            if(is_numeric($query)){
+                $sql .= sprintf("AND (services.id=%s OR services.clientId=%s) ",$query,$query);
+            }
+            else{
+                $sql .= sprintf("AND (clients.firstName LIKE '%%%s%%' OR clients.lastName LIKE '%%%s%%' ".
+                    "OR clients.company LIKE '%%%s%%' OR services.username LIKE '%%%s%%' OR services.mac LIKE '%%%s%%') ",
+                    $query,$query,$query,$query,$query);
+            }
+        }
+        $sql .= 'ORDER BY services.id DESC LIMIT 100 ';
+        MyLog()->Append("services sql: ".$sql);
+        return $sql;
     }
+
+//    public function cache_update(): void
+//    {
+//        if(!function_exists('fastcgi_finish_request')){
+//            shell_exec('php lib/shell.php cache > /dev/null 2>&1 &');
+//            return;
+//        }else{
+//            $this->status->status = 'ok';
+//            $this->status->data = $this->result ;
+//            header('content-type: application/json');
+//            echo json_encode($this->status);
+//            fastcgi_finish_request();
+//        }
+//        set_time_limit(300);
+//        (new Admin_Cache())->create();
+//    }
+//
+//    private function cache(): ?array
+//    {
+//        $file = 'data/cache.json';
+//        if(!file_exists($file))return null ;
+//        if($this->cache_is_valid()) return [1];
+//        $id = $this->data->id ?? 0;
+//        $cache = json_decode(file_get_contents($file),true) ;
+//        $ret = $cache[$id] ?? null;
+//        if($ret) $ret['date'] = filemtime('data/cache.json');
+//        return $ret;
+//    }
+//
+//    private function cache_is_valid(): bool
+//    { // if last cache is still valid
+//        $last = $this->data->lastCache ?? 0 ;
+//        $current = filemtime('data/cache.json');
+//        return $last == $current ;
+//    }
 
     private function read(): bool
     {

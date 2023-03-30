@@ -92,6 +92,12 @@ class Admin
         return new ApiSqlite();
     }
 
+    protected function dbCache()
+    {
+        return new ApiSqlite('data/cache.db');
+    }
+
+
     protected function ucrm()
     {
         return new ApiUcrm();
