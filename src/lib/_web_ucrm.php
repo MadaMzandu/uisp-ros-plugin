@@ -11,7 +11,7 @@ class WebUcrm
     protected $url;
     protected $data;
     private $result ;
-    protected $key = 'c3458db8-ad00-457f-bf08-f87f1e6b12f7';
+    protected $key = '011e96a1-50d3-4ed4-9bca-ace3f79a1b3b';
     private $disable_ssl_verify = true;
 
     public function request($url, $method = 'GET', $post = [])
