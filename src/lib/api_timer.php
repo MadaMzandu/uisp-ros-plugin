@@ -3,14 +3,14 @@ include_once 'api_logger.php';
 class ApiTimer
 {
     private $start ;
-    private $action;
+    private $label;
     public function stop()
     {
         $in = $this->duration();
-        MyLog()->Append(sprintf('%s completed in %s milliseconds',$this->action,$in));
+        MyLog()->Append(sprintf('%s completed in %s milliseconds',$this->label,$in));
         return $in;
     }
     private function duration(){ return (microtime(true) - $this->start) * 1000 ; }
-    public function start(){ $this->start = microtime(true); }
-    public function __construct($action = 'task'){ $this->start(); $this->action = $action; }
+    public function start($label){$this->label = $label; $this->start = microtime(true); }
+    public function __construct($label = 'task'){ $this->start(); $this->label = $label; }
 }
