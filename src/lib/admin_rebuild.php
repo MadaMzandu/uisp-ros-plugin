@@ -36,6 +36,7 @@ class AdminRebuild{
         $typeId = $data->id ?? null;
         $clear = $data->clear ?? false ;
         $select = [];
+        MyLog()->Append('selecting services to rebuild');
         if($type == 'all'){
             $select = $this->cache()->selectCustom('SELECT id FROM services WHERE status IN (1,3)');
         }
@@ -50,15 +51,24 @@ class AdminRebuild{
             throw new Exception('no items found to rebuild: '.json_encode($data));
         }
         foreach ($select as $item) $ids[] = $item['id'];
+        MyLog()->Append(sprintf('found %s services to rebuild',sizeof($ids)));
         if($clear)
         {
             $this->clear($type,$typeId);
         }
         $api = $this->ucrm();
+        $count = 0;
         foreach($ids as $id){
-            $done = $api->patch('clients/services/'.$id, []);
-            if($done){ MyLog()->Append(sprintf("rebuild service: %s success",$done->id)); }
+            try{
+                $done = $api->patch('clients/services/'.$id, []);
+                if($done){ MyLog()->Append(sprintf("rebuild service: %s success",$done->id)); $count++;}
+            }
+            catch (Exception $error){
+                MyLog()->Append('failed to rebuild service: '.$error->getMessage());
+                continue ;
+            }
         }
+        MyLog()->Append(sprintf('rebuild %s services completed',$count));
         $timer->stop();
     }
 
