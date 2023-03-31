@@ -265,14 +265,14 @@ class ApiSqlite
         return $db ;
     }
     
-    private function execQuery($sql)
+    public function execQuery($sql)
     {
         return $this->db()->exec($sql);
     }
 
-    private function singleQuery($sql,$entireRow=false)
+    public function singleQuery($sql,$entireRow=false)
     {
-        return $this->query($sql,API_SQLT_SINGLE,$entireRow);
+        return $this->db()->querySingle($sql,$entireRow);
     }
 
     private function query($sql,$mode=2,$entireRow=null)
