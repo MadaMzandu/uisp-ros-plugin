@@ -4,6 +4,7 @@ include_once 'api_sqlite.php';
 include_once 'api_ucrm.php';
 include_once 'api_timer.php';
 include_once 'api_logger.php';
+include_once 'mt_batch.php';
 class AdminRebuild{
 
     private function db(){ return new ApiSqlite(); }
@@ -52,23 +53,25 @@ class AdminRebuild{
         }
         foreach ($select as $item) $ids[] = $item['id'];
         MyLog()->Append(sprintf('found %s services to rebuild',sizeof($ids)));
-        if($clear)
-        {
-            $this->clear($type,$typeId);
-        }
-        $api = $this->ucrm();
-        $count = 0;
-        foreach($ids as $id){
-            try{
-                $done = $api->patch('clients/services/'.$id, []);
-                if($done){ MyLog()->Append(sprintf("rebuild service: %s success",$done->id)); $count++;}
-            }
-            catch (Exception $error){
-                MyLog()->Append('failed to rebuild service: '.$error->getMessage());
-                continue ;
-            }
-        }
-        MyLog()->Append(sprintf('rebuild %s services completed',$count));
+        $batch = new MtBatch();
+        $batch->set_ids($ids);
+//        if($clear)
+//        {
+//            $this->clear($type,$typeId);
+//        }
+//        $api = $this->ucrm();
+//        $count = 0;
+//        foreach($ids as $id){
+//            try{
+//                $done = $api->patch('clients/services/'.$id, []);
+//                if($done){ MyLog()->Append(sprintf("rebuild service: %s success",$done->id)); $count++;}
+//            }
+//            catch (Exception $error){
+//                MyLog()->Append('failed to rebuild service: '.$error->getMessage());
+//                continue ;
+//            }
+//        }
+//        MyLog()->Append(sprintf('rebuild %s services completed',$count));
         $timer->stop();
     }
 
