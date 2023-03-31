@@ -35,9 +35,10 @@ class MT extends Device
         return $this->write_batch();
     }
 
-    protected function write_batch(): bool
+    protected function write_batch(): int
     {
        $api = $this->connect();
+       $writes = 0 ;
         foreach($this->batch as $data){
             $timer = new ApiTimer('single write');
             //clean up the data
@@ -53,15 +54,18 @@ class MT extends Device
                 $api->write('=' . $key . '=' . $data[$key],false);
             }
             $api->write(';');
-            $this->read = $api->read();
+            $result = $api->read();
             $timer->stop();
             if($this->has_error()){
-                MyLog()->Append('mt write error: '.json_encode([$data,$this->read]));
+                MyLog()->Append('mt write error: '.json_encode([$data,$result]),6);
+            }
+            else{
+                $writes++ ;
             }
         }
         $this->batch = [] ;
         $api->disconnect();
-        return true ;
+        return $writes ;
     }
 
     protected function find_id($data): ?string
