@@ -145,47 +145,35 @@ class Devices extends Admin
         $this->result = $this->get_services();
     }
 
-//    public function services(): void
-//    {
-//        $this->result = $this->cache();
-//        if($this->result){
-//            $this->cache_update();
-//            return ;
-//        }
-//        //if cache is not ready load skeleton from db
-//        $id = $this->data->id;
-//        $limit = $this->data->limit ?? null ;
-//        $offset = $this->data->offset ?? null ;
-//        $this->result = $this->db()->selectServicesOnDevice($id,$limit,$offset) ?? [];
-//        $this->result['skel'] = true ;
-//        $this->cache_update();
-//    }
-
     private function get_services()
     {
-        $id = $this->data->id ?? 0;
         $cached = $this->dbCache()->selectCustom($this->cache_sql()) ?? [];
-        $live = $this->db()->selectServicesOnDevice($id) ?? [];
         $plans = $this->ucrm()->get('service-plans') ?? [];
         $plans = json_decode(json_encode($plans),true);
         $addressMap = [];
         $planMap = [];
-        foreach ($live as $item)$addressMap[$item['id']] = $item ;
         foreach ($plans as $plan)$planMap[$plan['id']] = $plan ;
         foreach ($cached as $item) $addressMap[$item['id']] = $item ;
         $ret = [];
         foreach ($cached as $item) {
-            $item['address'] = $addressMap[$item['id']]['address'] ?? null ;
-            $item['prefix6'] = $addressMap[$item['id']]['prefix6'] ?? null ;
             $item['plan'] = $planMap[$item['planId']]['name'] ?? null ;
             $ret[$item['id']] = $item ;
         }
+        $ret[] = $this->get_count();
         return $ret ;
     }
 
+    private function get_count()
+    {
+        $id = $this->data->id ?? 0 ;
+        $count = $this->dbCache()->countServicesByDeviceId($id) ?? 0;
+        return ['count' => $count] ;
+    }
+
     private function cache_sql(){
-        $sql = "SELECT services.*,clients.company,clients.firstName,clients.lastName ".
-            "FROM services LEFT JOIN clients ON services.clientId=clients.id ";
+        $sql = "SELECT services.*,network.address,network.prefix6,clients.company,".
+            "clients.firstName,clients.lastName FROM services LEFT JOIN clients ON ".
+            "services.clientId=clients.id LEFT JOIN network ON services.id=network.id ";
         $device = $this->data->id ?? null ;
         $sql .= sprintf("WHERE services.device = %s ",$device);
         $sql .= sprintf("AND services.status IN (1,3) ");
@@ -200,7 +188,7 @@ class Devices extends Admin
                     $query,$query,$query,$query,$query);
             }
         }
-        $sql .= 'ORDER BY services.id DESC LIMIT 100 ';
+        $sql .= 'ORDER BY services.id DESC LIMIT 300';
         MyLog()->Append("services sql: ".$sql);
         return $sql;
     }
