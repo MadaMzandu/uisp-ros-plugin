@@ -1,6 +1,7 @@
 <?php
-include_once 'lib/admin_cache.php';
-class Devices extends Admin
+include_once 'admin.php';
+include_once 'admin_cache.php';
+class AdminDevices extends Admin
 {
     public function disable()
     { // disables/enables plan limits on device
@@ -159,7 +160,7 @@ class Devices extends Admin
             $item['plan'] = $planMap[$item['planId']]['name'] ?? null ;
             $ret[$item['id']] = $item ;
         }
-        $ret[] = $this->get_count();
+        $ret['count'] = $this->get_count();
         return $ret ;
     }
 
@@ -174,7 +175,7 @@ class Devices extends Admin
         $sql = "SELECT services.*,network.address,network.prefix6,clients.company,".
             "clients.firstName,clients.lastName FROM services LEFT JOIN clients ON ".
             "services.clientId=clients.id LEFT JOIN network ON services.id=network.id ";
-        $device = $this->data->id ?? null ;
+        $device = $this->data->did ?? $this->data->id ?? $this->data->device ?? 0 ;
         $sql .= sprintf("WHERE services.device = %s ",$device);
         $sql .= sprintf("AND services.status IN (1,3) ");
         $query = $this->data->query ?? null ;
@@ -192,41 +193,6 @@ class Devices extends Admin
         MyLog()->Append("services sql: ".$sql);
         return $sql;
     }
-
-//    public function cache_update(): void
-//    {
-//        if(!function_exists('fastcgi_finish_request')){
-//            shell_exec('php lib/shell.php cache > /dev/null 2>&1 &');
-//            return;
-//        }else{
-//            $this->status->status = 'ok';
-//            $this->status->data = $this->result ;
-//            header('content-type: application/json');
-//            echo json_encode($this->status);
-//            fastcgi_finish_request();
-//        }
-//        set_time_limit(300);
-//        (new Admin_Cache())->create();
-//    }
-//
-//    private function cache(): ?array
-//    {
-//        $file = 'data/cache.json';
-//        if(!file_exists($file))return null ;
-//        if($this->cache_is_valid()) return [1];
-//        $id = $this->data->id ?? 0;
-//        $cache = json_decode(file_get_contents($file),true) ;
-//        $ret = $cache[$id] ?? null;
-//        if($ret) $ret['date'] = filemtime('data/cache.json');
-//        return $ret;
-//    }
-//
-//    private function cache_is_valid(): bool
-//    { // if last cache is still valid
-//        $last = $this->data->lastCache ?? 0 ;
-//        $current = filemtime('data/cache.json');
-//        return $last == $current ;
-//    }
 
     private function read(): bool
     {
