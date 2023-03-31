@@ -9,16 +9,6 @@ CREATE TABLE IF NOT EXISTS "services"(
              "last" TEXT,
              "created" TEXT
 );
-CREATE TABLE IF NOT EXISTS "users" (
-           "id"    INTEGER NOT NULL,
-           "name"  TEXT,
-           "username"      TEXT,
-           "password"      TEXT,
-           "session"       TEXT,
-           "last"  TEXT,
-           "created"       TEXT,
-           PRIMARY KEY("id" AUTOINCREMENT)
-);
 CREATE TABLE IF NOT EXISTS "devices" (
              "id"    INTEGER NOT NULL,
              "name"  TEXT,
@@ -57,9 +47,9 @@ CREATE TABLE IF NOT EXISTS "config" (
             "created"       TEXT,
             PRIMARY KEY("key")
 );
+
 CREATE INDEX "xsvc_address" ON "services" ("address");
+CREATE INDEX "xsvc_prefix6" ON "services" ("prefix6");
 CREATE INDEX "xsvc_device" ON "services" ("device");
 CREATE INDEX "xsvc_planId" ON "services" ("planId");
-CREATE INDEX "xusers_session" ON "users" ("session");
 CREATE INDEX "xdev_name" ON "devices" ("name" COLLATE nocase);
-CREATE INDEX "xusers_username" ON "users" ("username" COLLATE nocase);
