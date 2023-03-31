@@ -40,7 +40,6 @@ class Api_Jobs extends Admin
             $this->status->status = 'ok';
             $this->status->data = [];
             header('content-type: application/json');
-            echo json_encode($this->status);
             fastcgi_finish_request();
         }
         set_time_limit(300);
