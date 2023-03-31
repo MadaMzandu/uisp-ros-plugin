@@ -12,7 +12,7 @@ class Admin_System extends Admin
     public function recache()
     {
         $api = new ApiCache();
-        $this->db()->saveConfig((object)['last_cache' =>'2020-01-01']);
+        $this->db()->saveConfig(['last_cache' =>'2020-01-01']);
         $api->setup();
         $api->sync();
     }

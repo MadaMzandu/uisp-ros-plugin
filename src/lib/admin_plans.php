@@ -1,5 +1,5 @@
 <?php
-include_once 'admin.php';
+
 include_once 'admin_mt_contention.php';
 class AdminPlans extends Admin
 {

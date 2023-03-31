@@ -1,6 +1,4 @@
 <?php
-include_once 'admin.php';
-include_once 'admin_cache.php';
 class AdminDevices extends Admin
 {
     public function disable()

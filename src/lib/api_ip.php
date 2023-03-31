@@ -1,6 +1,4 @@
 <?php
-include_once 'api_sqlite.php';
-include_once 'api_logger.php';
 
 class ApiIP
 {
