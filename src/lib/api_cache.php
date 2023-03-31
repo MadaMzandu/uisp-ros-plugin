@@ -1,9 +1,9 @@
 <?php
-const MyCacheVersion = '1.0.1e';
+const MyCacheVersion = '1.0.1a';
 
 include_once 'api_sqlite.php';
 include_once 'api_ucrm.php';
-// include_once '_web_ucrm.php'; //for devel only
+include_once '_web_ucrm.php'; //for devel only
 include_once 'api_logger.php';
 include_once 'api_timer.php';
 
@@ -27,7 +27,7 @@ class ApiCache{
         $this->sync();
         if(!in_array($table,['clients','services'])) return ;
         $this->batch($table,$data);
-        if($table == 'services')  $this->populate_net($id);
+        if($table == 'services')  $this->net_update($id);
         $end = microtime(true);
         $duration = ($end - $start) / 60 ; //in seconds
         if($duration > 5)
@@ -45,8 +45,8 @@ class ApiCache{
                 $this->populate($table);
                 MyLog()->Append('finished populating: '.$table);
             }
-            MyLog()->Append('populating network skeptically');
-            $this->populate_net();
+            MyLog()->Append('populating network');
+            $this->net_update();
             $state = ['last_cache' => $this->now()];
             $this->db()->saveConfig($state);
             $timer->stop();
@@ -62,36 +62,25 @@ class ApiCache{
             $schema = file_get_contents($schema_file);
             if($this->dbCache()->exec($schema)){//reset cache time
                 $state = ['cache_version' => MyCacheVersion,
-                    'last_cache' => '2020-01-01'];
+                    'last_cache' => '2020-01-01','last_net' => '2020-01-01'];
                 $this->db()->saveConfig($state);
             }
         }
         $timer->stop();
     }
 
-    private function populate_net($id = null)
+    public function net_update()
     {
-        if($id == 0) return ;
-        $fields = 'services.id,services.address,services.prefix6';
-        $sql = sprintf("SELECT %s FROM services ",$fields);
-        if($id) $sql .= "WHERE services.id = ". $id ;
-        $data = $this->db()->selectCustom($sql);
-        if(!$data) return ;
-        $first = $data[0] ?? null;
-        $keys = array_keys($first);
-        $query = [];
-        foreach($data as $item){
-            $values = [];
-            foreach ($keys as $key){
-                $values[] = $item[$key];
-            }
-            $query[] = $this->toSqlValues($values);
-        }
-        $sql = sprintf("INSERT OR REPLACE INTO network (%s) VALUES %s ",
-            implode(',',$keys),
-            implode(',',$query),
-        );
-        $this->dbCache()->exec($sql);
+       if($this->needs_net()){
+           $db = new SQLite3('data/data.db');
+           $db->enableExceptions(true);
+           $db->exec(sprintf("ATTACH '%s/data/cache.db'",__DIR__));
+           $sql = "INSERT OR REPLACE INTO cache.network (id,address,prefix6) ".
+               "SELECT id,address,prefix6 from services ";
+           if($db->exec($sql)){
+               $this->db()->saveConfig(['last_net' => $this->now()]);
+           }
+       }
     }
 
     private function populate($table)
@@ -122,13 +111,14 @@ class ApiCache{
             }
             if($table == 'services'){
                 $attributes = $entity->attributes ?? [];
-                $attr_size = sizeof($keys);
-                $offset = sizeof($fields) - $attr_size - 1;
-                array_splice(
-                    $values,$offset,$attr_size,
-                    $this->extract_attributes($attributes));
+                $extract = $this->extract_attributes($attributes);
+                $attr_size = sizeof($extract);
+                $offset = sizeof($keys) - $attr_size - 1;
+                array_splice($values,$offset,$attr_size,$extract);
             }
-            if(sizeof($values) != sizeof($keys)) continue ;
+            if(sizeof($values) != sizeof($keys)){
+                continue;
+            } ;
             $query[] = $this->toSqlValues($values);
         }
         $sql .= implode(',',$query);
@@ -144,8 +134,9 @@ class ApiCache{
             'pppoe_pass_attr',
             'mac_addr_attr',
             'hs_attr',
+            'pppoe_caller_attr',
         ];
-        if(empty($array)) return $this->make_nulls(sizeof($roskeys)) ;
+        if(empty($array)) return array_fill(0,sizeof($roskeys),null);
         if(!$this->ref) $this->set_attributes();
         if(!$this->dev) $this->get_devices();
         $map = [];
@@ -267,6 +258,15 @@ class ApiCache{
         return date_add($sync,$cycle) < $now ;
     }
 
+    private function needs_net(): bool
+    {
+        $last = $this->conf()->last_net ?? '2020-01-01';
+        $cycle = DateInterval::createFromDateString('30 minute');
+        $sync = new DateTime($last);
+        $now = new DateTime();
+        return date_add($sync,$cycle) < $now ;
+    }
+
     private function needs_db(): bool
     {
         $file = 'data/cache.db';
@@ -300,3 +300,5 @@ class ApiCache{
 function cache_sync($json) { $api = new ApiCache(); $api->update($json);}
 
 function cache_setup(){ $cache = new ApiCache(); $cache->setup();}
+
+function net_update(){ $cache = new ApiCache(); $cache->net_update();}
