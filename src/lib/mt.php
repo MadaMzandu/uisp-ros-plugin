@@ -13,6 +13,7 @@ class MT extends Device
     protected $exists;
     protected $batch ;
     protected $batch_device ;
+    protected $batch_failed ;
 
     public function set()
     {
@@ -41,6 +42,7 @@ class MT extends Device
        $writes = 0 ;
         foreach($this->batch as $data){
             $timer = new ApiTimer('single write');
+            //if($writes >= 10){ $this->batch_failed[] = $data; continue;}; //testing limit to 10
             //clean up the data
             $this->path = $data['path'] ?? $this->path ;
             $data = $this->prep_data($data);
@@ -57,6 +59,7 @@ class MT extends Device
             $result = $api->read();
             $timer->stop();
             if($this->has_error()){
+                $this->batch_failed[] = $data ;
                 MyLog()->Append('mt write error: '.json_encode([$data,$result]),6);
             }
             else{
@@ -243,12 +246,6 @@ class MT extends Device
             $str[] = $value . $unit ;
         }
         return implode('/',$str);
-    }
-
-    protected function to_int($value)
-    {
-        if(!$value || !is_numeric($value)) return 0 ;
-        return $value;
     }
 
 }
