@@ -240,7 +240,7 @@ class Admin_Queue extends MT
                 break ;
             }
         }
-        return $address ?? (new API_IP())->local();  // or generate one
+        return $address ?? (new ApiIP())->local();  // or generate one
     }
 
     private function readDevice()

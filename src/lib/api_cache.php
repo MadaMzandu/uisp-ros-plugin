@@ -3,7 +3,7 @@ const MyCacheVersion = '1.0.1a';
 
 include_once 'api_sqlite.php';
 include_once 'api_ucrm.php';
-include_once '_web_ucrm.php'; //for devel only
+//include_once '_web_ucrm.php'; //for devel only
 include_once 'api_logger.php';
 include_once 'api_timer.php';
 
@@ -283,7 +283,7 @@ class ApiCache{
         return json_decode($json,true);
     }
 
-    private function ucrm(){ return new WebUcrm(); }
+    private function ucrm(){ return new ApiUcrm(); }
 
     private function db(){ return new ApiSqlite(); }
 
