@@ -155,10 +155,11 @@ class MtBatch extends MT
         $router_pool = $this->conf->router_ppp_pool ?? true ;
         $type = $this->type($service);
         $api = new ApiIP();
+        $sid = $service['id'];
         if($device && ($type == BATCH_DHCP || $router_pool)){
-            return $api->ip((object) $device);
+            return $api->ip($sid,(object) $device);
         }
-        return $api->ip();
+        return $api->ip($sid);
     }
 
     private function profile_name($service, $plan)

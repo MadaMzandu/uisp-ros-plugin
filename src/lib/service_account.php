@@ -171,7 +171,7 @@ class Service_Account extends Service_Attributes
             $device = $this->get_device();
         }
         $api = new ApiIP();
-        return $api->ip($device,$ip6);
+        return $api->ip($this->id(),$device,$ip6);
     }
 
     public function delete(): bool

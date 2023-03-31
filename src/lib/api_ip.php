@@ -4,10 +4,10 @@ include_once 'api_logger.php';
 
 class ApiIP
 {
-    private $alen ;
-    private $ip6 = false;
+    private int $alen ;
+    private bool $ip6 = false;
 
-    public function ip($device = null,$ip6 = false): ?string
+    public function ip($sid,$device = null,$ip6 = false): ?string
     {
         $this->ip6 = $ip6;
         $this->alen = $device->pfxLength ?? 64;
@@ -16,13 +16,16 @@ class ApiIP
             $pool = $ip6 ? $device->pool6 : $device->pool ;
         }
         if(!$pool){
-            throw new Exception('ip: unable to retrive an ip address pool');
+            throw new Exception('ip: cannot find an address pool');
         }
         $prefixes = explode(',',$pool);
         foreach ($prefixes as $prefix){
             $address = $this->findUnused($prefix);
             MyLog()->Append('ip assignment: '.$address);
-            if($address) return $address ;
+            if($address){
+                $this->set_ip($sid,$address);
+                return $address;
+            }
         }
         $name = $device->name ?? 'global';
         throw new Exception(sprintf(
@@ -43,6 +46,25 @@ class ApiIP
             }
         }
         return $address ;
+    }
+
+    public function set_ip($sid,$address)
+    {
+        if($this->type($address) == 'ip6'){ $this->set_ip6($sid,$address); }
+        else{
+            $cache = sprintf("insert or replace into network (id,address) values (%s,'%s') ",$sid,$address);
+            $main = sprintf("update or ignore services set address='%s' where id=%s ",$address,$sid);
+            $this->db()->exec($main);
+            $this->dbCache()->exec($cache);
+        }
+    }
+
+    public function set_ip6($sid,$address)
+    {
+        $cache = sprintf("insert or replace into network (id,prefix6) values (%s,'%s') ",$sid,$address);
+        $main = sprintf("update or ignore services set prefix6='%s' where id=%s ",$address,$sid);
+        $this->db()->exec($main);
+        $this->dbCache->exec($cache);
     }
 
     private function findUnused($prefix): ?string
@@ -80,6 +102,31 @@ class ApiIP
         return $odd ;
     }
 
+    private function is_used($address): bool
+    {
+        MyLog()->Append('checking if used');
+        if($this->type($address) == 'ip6') return $this->is_used6($address);
+        $main = $this->db()->singleQuery(sprintf("select id from services where address='%s'",$address));
+        $cache = $this->dbCache()->singleQuery(sprintf("select id from network where address='%s'",$address));
+        return $main || $cache ;
+    }
+
+    private function type($address): ?string
+    {
+        $prefix = explode('/',$address)[0] ?? null;
+        if(filter_var($prefix,FILTER_VALIDATE_IP,FILTER_FLAG_IPV4)) return 'ip4';
+        if(filter_var($prefix,FILTER_VALIDATE_IP,FILTER_FLAG_IPV6)) return 'ip6';
+        return null ;
+    }
+
+    private function is_used6($address): bool
+    {
+        $address .= sprintf('/',$this->alen);
+        $main = $this->db()->singleQuery(sprintf("select id from services where prefix6=",$address));
+        $cache = $this->dbCache()->singleQuery(sprintf("select id from network where prefix6=",$address));
+        return $main || $cache ;
+    }
+
     private function iterate($prefix): ?string
     {
         $gmp_last = $this->gmp_bcast($prefix);
@@ -90,7 +137,7 @@ class ApiIP
             if($this->excluded($gmp_first)) continue; //skip excluded
             $ip = $this->gmp2ip($gmp_first);
             if($this->is_odd($ip)) continue ; // skip zeros and xFFFF
-            if ($this->db()->ifIpAddressIsUsed($ip)) continue; // skip used
+            if ($this->is_used($ip)) continue; // skip used
             return $ip ;
         }
         return null ;
@@ -160,6 +207,11 @@ class ApiIP
     private function db()
     {
         return new ApiSqlite();
+    }
+
+    private function dbCache()
+    {
+        return new ApiSqlite('data/cache.db');
     }
 
     private function conf()
