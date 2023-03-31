@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS "services" (
        "price" REAL ,
        "totalPrice" REAL ,
        "currencyCode" TEXT ,
+       "callerId" TEXT,
        PRIMARY KEY("id")
 );
 
