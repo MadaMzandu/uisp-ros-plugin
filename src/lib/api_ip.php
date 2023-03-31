@@ -4,16 +4,10 @@ include_once 'api_logger.php';
 
 class ApiIP
 {
-
-//    private $addr; //assign
-//    private $prefix;
-//    private $len;
     private $alen ;
-//    private $pools; // active configured pool
-//    private $type ; // 0 - v4 , 1 - v6
     private $ip6 = false;
 
-    public function ip($device = null,$ip6 = false)
+    public function ip($device = null,$ip6 = false): ?string
     {
         $this->ip6 = $ip6;
         $this->alen = $device->pfxLength ?? 64;
@@ -27,26 +21,13 @@ class ApiIP
         $prefixes = explode(',',$pool);
         foreach ($prefixes as $prefix){
             $address = $this->findUnused($prefix);
+            MyLog()->Append('ip assignment: '.$address);
             if($address) return $address ;
         }
         $name = $device->name ?? 'global';
         throw new Exception(sprintf(
             'ip: no addresses available pool: %s device: %s',$pool,$name));
     }
-
-//    public function assign($device = false): ?array
-//    {
-//        $p4 = $device->pool ?? null ;
-//        $p6 = $device->pool6 ?? null ;
-//        $this->alen = empty($device->pfxLength) ? 64 : $device->pfxLength ;
-//        foreach([$p4,$p6] as $pool){
-//            if($pool){
-//                $this->pools = explode(',', $pool . ',') ?? [];
-//                $this->findUnused();
-//            }
-//        }
-//        return $this->addr;
-//    }
 
     public function local(): string
     {
@@ -85,15 +66,6 @@ class ApiIP
         }
     }
 
-//    private function setType(): void
-//    {
-//        if(filter_var($this->prefix,FILTER_VALIDATE_IP,FILTER_FLAG_IPV6))
-//            $this->type = 1 ;
-//        elseif(filter_var($this->prefix,FILTER_VALIDATE_IP,FILTER_FLAG_IPV4))
-//            $this->type = 0 ;
-//        else $this->type = -1 ;
-//    }
-
     private function is_odd($address): bool
     {
         $s = !$this->ip6 ? '.' : ':';
@@ -117,11 +89,9 @@ class ApiIP
             if($gmp_first == $gmp_last) break ;
             if($this->excluded($gmp_first)) continue; //skip excluded
             $ip = $this->gmp2ip($gmp_first);
-            MyLog()->Append("current ip: ".$ip);
             if($this->is_odd($ip)) continue ; // skip zeros and xFFFF
             if ($this->db()->ifIpAddressIsUsed($ip)) continue; // skip used
-            //$this->addr[$this->type] = $ip ;
-            //return $ip ;
+            return $ip ;
         }
         return null ;
     }
