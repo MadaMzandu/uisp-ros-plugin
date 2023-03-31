@@ -104,10 +104,17 @@ class ApiIP
 
     private function is_used($address): bool
     {
-        MyLog()->Append('checking if used');
         if($this->type($address) == 'ip6') return $this->is_used6($address);
         $main = $this->db()->singleQuery(sprintf("select id from services where address='%s'",$address));
         $cache = $this->dbCache()->singleQuery(sprintf("select id from network where address='%s'",$address));
+        return $main || $cache ;
+    }
+
+    private function is_used6($address): bool
+    {
+        $address .= sprintf('/',$this->alen);
+        $main = $this->db()->singleQuery(sprintf("select id from services where prefix6=",$address));
+        $cache = $this->dbCache()->singleQuery(sprintf("select id from network where prefix6=",$address));
         return $main || $cache ;
     }
 
@@ -117,14 +124,6 @@ class ApiIP
         if(filter_var($prefix,FILTER_VALIDATE_IP,FILTER_FLAG_IPV4)) return 'ip4';
         if(filter_var($prefix,FILTER_VALIDATE_IP,FILTER_FLAG_IPV6)) return 'ip6';
         return null ;
-    }
-
-    private function is_used6($address): bool
-    {
-        $address .= sprintf('/',$this->alen);
-        $main = $this->db()->singleQuery(sprintf("select id from services where prefix6=",$address));
-        $cache = $this->dbCache()->singleQuery(sprintf("select id from network where prefix6=",$address));
-        return $main || $cache ;
     }
 
     private function iterate($prefix): ?string
