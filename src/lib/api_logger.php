@@ -1,15 +1,15 @@
 <?php
 require_once  'vendor/autoload.php';
 
-const API_DEBUG_LEVEL = 7 ;
+const API_DEBUG_LEVEL = 7;
 
 class ApiLogger
 {
     public function Append($entry, $level = LOG_DEBUG)
     {
         if ($level > API_DEBUG_LEVEL) return;
-//        echo sprintf("%s: %s",$this->Time(), $entry) . PHP_EOL;
-       $this->ULog()->appendLog(sprintf("%s: %s",$this->Time(), $entry));
+        echo sprintf("%s: %s",$this->Time(), $entry) . PHP_EOL;
+//       $this->ULog()->appendLog(sprintf("%s: %s",$this->Time(), $entry));
     }
 
     private function Debug(): bool
