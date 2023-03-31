@@ -37,14 +37,13 @@ class MT extends Device
 
     protected function write_batch(): bool
     {
-        $api = $this->connect();
+       $api = $this->connect();
         foreach($this->batch as $data){
+            $timer = new ApiTimer('single write');
             //clean up the data
             $this->path = $data['path'] ?? $this->path ;
-            $data = $this->clean_data($data);
+            $data = $this->prep_data($data);
             $id = $this->find_id($data);
-            if($id) MyLog()->Append(sprintf('mt id found: %s attempting to set',$id));
-            else MyLog()->Append('mt id not found attempting to add');
             $action = $id ? 'set' : 'add';
             if($action == 'set') $data['.id'] = $id ;
             //write it
@@ -55,6 +54,7 @@ class MT extends Device
             }
             $api->write(';');
             $this->read = $api->read();
+            $timer->stop();
             if($this->has_error()){
                 MyLog()->Append('mt write error: '.json_encode([$data,$this->read]));
             }
@@ -64,7 +64,7 @@ class MT extends Device
         return true ;
     }
 
-    protected function find_id($data)
+    protected function find_id($data): ?string
     {
         $name = $data['name'] ?? null ;
         $mac = $data['mac-address'] ?? null ;
@@ -72,19 +72,35 @@ class MT extends Device
         if($name) $filter = '?name=' . $name ;
         if($mac) $filter = '?mac-address=' . $mac ;
         if($filter){
-            $item  = $this->read($filter)[0] ?? [];
+            $read = $this->read($filter);
+            $item  = $read[0] ?? [];
             $id = $item['.id'] ?? null ;
             if($id && is_string($id)) return $id;
         }
         return null ;
     }
 
-    protected function clean_data($data){
+    protected function find_local(): ?string
+    {
+        $tmp = $this->path;
+        $this->path = '/ip/address/';
+        $filter = '?disabled=false,?dynamic=false,?invalid=false';
+        $list = $this->read($filter);
+        $prefix = $list[0]['address'] ?? null ;
+        $this->path = $tmp;
+        $address = explode('/',$prefix)[0] ?? null ;
+        return $address ?? (new ApiIP())->local();
+    }
+
+    protected function prep_data($data): array
+    {
         $clean = [];
         foreach (array_keys($data) as $key){
             if(in_array($key,['.id','path','action']))continue;
             $clean[$key] = $data[$key];
         }
+        if(key_exists('local-address',$data))
+            $clean['local-address'] = $this->find_local();
         return $clean ;
     }
 
@@ -184,7 +200,7 @@ class MT extends Device
         $api = $this->connect();
         $api->write(sprintf('/%s/print',trim($this->path,'/')), false);
         if ($filter) {
-            foreach($this->ffilter($filter) as $item){
+            foreach($this->format_filter($filter) as $item){
                 $api->write($item,false);
             }
         }
@@ -194,7 +210,7 @@ class MT extends Device
         return $this->has_error() ? [] : $this->read;
     }
 
-    protected function ffilter($filter): array
+    protected function format_filter($filter): array
     {
         $return = [];
         if(is_string($filter)){
