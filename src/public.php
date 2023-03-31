@@ -9,7 +9,6 @@ if (isset($_SERVER['REQUEST_METHOD'])
     exit();
 }
 
-
 $json = file_get_contents('php://input') ?? null;
 
 try
@@ -47,6 +46,7 @@ try
     MyLog()->Append('api: finished without error : ' . json_encode($api->status()));
     MyLog()->Append('public: begin cache sync');
     cache_sync($json);
+    net_update();
 }
 catch (
 Exception

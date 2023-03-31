@@ -28,7 +28,6 @@ CREATE TABLE IF NOT EXISTS "services" (
        PRIMARY KEY("id")
 );
 
-CREATE INDEX IF NOT EXISTS "net_deviceId" ON "network" ("deviceId");
 CREATE INDEX IF NOT EXISTS "svc_clientId" ON "services" ("clientId");
 CREATE INDEX IF NOT EXISTS "svc_planId" ON "services" ("planId");
 CREATE INDEX IF NOT EXISTS "svc_status" ON "services" ("status");
