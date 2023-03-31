@@ -29,14 +29,14 @@ class ApiCache{
         $this->batch($table,$data);
         if($table == 'services')  $this->populate_net($id);
         $end = microtime(true);
-        $duration = ($end - $start) / 60 ; //in minutes
+        $duration = ($end - $start) / 60 ; //in seconds
         if($duration > 5)
-        MyLog()->Append('cache: sync completed in minutes: '.$duration,6);
+        MyLog()->Append('cache: sync completed in seconds: '.$duration,6);
     }
 
     public function sync()
     {
-        if($this->outdated()){
+        if($this->needs_update()){
             $this->set_attributes();
             $timer = new ApiTimer('sync: ');
             $this->get_devices();
@@ -122,8 +122,10 @@ class ApiCache{
             }
             if($table == 'services'){
                 $attributes = $entity->attributes ?? [];
+                $attr_size = sizeof($keys);
+                $offset = sizeof($fields) - $attr_size - 1;
                 array_splice(
-                    $values,6,5,
+                    $values,$offset,$attr_size,
                     $this->extract_attributes($attributes));
             }
             if(sizeof($values) != sizeof($keys)) continue ;
@@ -171,7 +173,7 @@ class ApiCache{
             }
             case 'services':{
                 $map = [];
-                $keys = 'id,status,clientId,price,totalPrice,currencyCode,device,username,password,mac,hotspot';
+                $keys = 'id,status,clientId,price,totalPrice,currencyCode,device,username,password,mac,hotspot,callerId';
                 foreach (explode(',',$keys) as $key) $map[$key] = $key ;
                 $map['servicePlanId'] = 'planId';
                 return $map ;
@@ -245,7 +247,7 @@ class ApiCache{
         $keymap = [];
         foreach ($attrs as $attr){ $keymap[$attr->key] = $attr; }
         $conf = $this->conf();
-        $roskeys = 'device_name_attr,pppoe_user_attr,pppoe_pass_attr,mac_addr_attr,hs_attr';
+        $roskeys = 'device_name_attr,pppoe_user_attr,pppoe_pass_attr,mac_addr_attr,hs_attr,pppoe_caller_attr';
         $rosmap = [];
         foreach(explode(',',$roskeys) as $roskey){
             $match = $conf->$roskey ;
@@ -256,7 +258,7 @@ class ApiCache{
         return $rosmap;
     }
 
-    private function outdated(): bool
+    private function needs_update(): bool
     {
         $last = $this->conf()->last_cache ?? '2020-01-01';
         $cycle = DateInterval::createFromDateString('7 day');
@@ -272,7 +274,7 @@ class ApiCache{
         if(!$this->dbCache()->has_tables(['clients','services','network'])){
             return true ;}
         $version = $this->conf()->cache_version ?? '0.0.0';
-        return $version != MyCacheVersion || $this->outdated() ;
+        return $version != MyCacheVersion ;
     }
 
     private function opts(): array
@@ -281,7 +283,7 @@ class ApiCache{
         return json_decode($json,true);
     }
 
-    private function ucrm(){ return new ApiUcrm(); }
+    private function ucrm(){ return new WebUcrm(); }
 
     private function db(){ return new ApiSqlite(); }
 
