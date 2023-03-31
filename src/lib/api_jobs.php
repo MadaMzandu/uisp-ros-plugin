@@ -33,16 +33,13 @@ class Api_Jobs extends Admin
 
     public function run()
     {
-        if (!function_exists('fastcgi_finish_request')) {
-            shell_exec('php lib/shell.php jobs > /dev/null 2>&1 &');
-            return;
-        } else {
+        if(function_exists('fastcgi_finish_request')) {
             $this->status->status = 'ok';
             $this->status->data = [];
             header('content-type: application/json');
             fastcgi_finish_request();
         }
-        set_time_limit(300);
+        set_time_limit(7200);
         if (is_object($this->queue)) {
             $ids = array_keys((array)$this->queue);
             foreach ($ids as $id) {
