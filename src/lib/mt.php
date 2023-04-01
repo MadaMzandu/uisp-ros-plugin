@@ -45,7 +45,8 @@ class MT extends Device
             //check and prepare
             $id = $this->find_id($data);
             $action = $id ? 'set' : 'add';
-            if($data['action'] == 'remove'){
+            $wants = $data['action'] ?? null ;
+            if($wants == 'remove'){
                 if($this->find_deps($data)) continue ;
                 else $action = 'remove';
             }
