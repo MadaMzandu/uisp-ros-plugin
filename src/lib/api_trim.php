@@ -60,7 +60,7 @@ class ApiTrim
         $dev_name = $entity['device'] ?? null ;
         if($dev_name){
             $dev_name = strtolower($dev_name);
-            $entity['device'] = $this->device[$dev_name]['id'] ?? null ;
+            $entity['device'] = $this->devices[$dev_name]['id'] ?? null ;
         }
         $return['action'] = $action ;
         $return['entity'] = $entity ;
@@ -110,6 +110,11 @@ class ApiTrim
         foreach ($attributes as $attribute){
             $key = $this->map_attr_key($attribute->key);
             if($key) $previous[$key] = $attribute->value ;
+        }
+        $dev_name = $previous['device'] ?? null ;
+        if($dev_name){
+            $dev_name = strtolower($dev_name);
+            $previous['device'] = $this->devices[$dev_name]['id'] ?? null ;
         }
         return empty($previous) ? null : $previous ;
     }
