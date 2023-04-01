@@ -42,13 +42,17 @@ class MT extends Device
        $writes = 0 ;
         foreach($this->batch as $data){
             $timer = new ApiTimer('single write');
-            //if($writes >= 10){ $this->batch_failed[] = $data; continue;}; //testing limit to 10
-            //clean up the data
-            $this->path = $data['path'] ?? $this->path ;
-            $data = $this->prep_data($data);
+            //check and prepare
             $id = $this->find_id($data);
             $action = $id ? 'set' : 'add';
-            if($action == 'set') $data['.id'] = $id ;
+            if($data['action'] == 'remove'){
+                if($this->find_deps($data)) continue ;
+                else $action = 'remove';
+            }
+            $this->path = $data['path'] ;
+            $data = $this->prep_data($data);
+            if($action != 'add') $data['.id'] = $id ;
+
             //write it
             $api->write(sprintf("/%s/%s",
                 trim($this->path,'/'),$action),false);
@@ -69,6 +73,59 @@ class MT extends Device
         $this->batch = [] ;
         $api->disconnect();
         return $writes ;
+    }
+
+    public function find_deps($data)
+    {
+        $action = $data['action'];
+        if($action != 'remove') return false ;
+        $path = trim($data['path'],'/') ;
+        if(!$this->needs_dep_check($path)) return false;
+        $name = $data['name'] ?? null ;
+        if(!$name) return true ; //we dont delete unless we are sure
+        $tmp = $this->path ;
+        foreach($this->dep_paths($path) as $dep_path)
+        {
+            $this->path = $dep_path;
+            $filter = sprintf('?%s=%s',$this->dep_filter_key($dep_path),$name);
+            $read = $this->read($filter);
+            if(!empty($read)){
+                $this->path = $tmp ;
+                return true ;
+            }
+        }
+        $this->path = $tmp;
+        return false ;
+    }
+
+    protected function dep_filter_key($path)
+    {
+        switch (trim($path,'/'))
+        {
+            case 'ppp/secret':
+            case 'ip/hotspot/user': return 'profile';
+            case 'queue/simple': return 'parent';
+            default: return 'parent-queue';
+        }
+    }
+
+    protected function dep_paths($path): array
+    {
+        switch (trim($path,'/'))
+        {
+            case 'ppp/profile': return ['/ppp/secret'];
+            case 'ip/hotspot/user/profile': return ['/ip/hotspot/user'];
+            default: return ['/ppp/profile','/ip/hotspot/user/profile','/queue/simple'];
+        }
+    }
+
+    protected function needs_dep_check($path)
+    {
+        return in_array($path,[
+            'ppp/profile',
+            'ip/hotspot/user/profile',
+            'queue/simple'
+        ]);
     }
 
     protected function find_id($data): ?string
@@ -102,6 +159,8 @@ class MT extends Device
     protected function prep_data($data): array
     {
         $clean = [];
+        $action = $data['action'] ?? null;
+        if($action == 'remove') { return $clean ;} // return blank for remove
         foreach (array_keys($data) as $key){
             if(in_array($key,['.id','path','action']))continue;
             $clean[$key] = $data[$key];
