@@ -31,7 +31,7 @@ class ApiAction
             }
             case ACTION_DELETE:{
                 $delete = $this->get('id',$data);
-                $api->set_ids([$delete]);
+                $api->delete_ids([$delete]);
                 break ;
             }
         }
@@ -41,10 +41,18 @@ class ApiAction
     {
         $return = ACTION_SET;
         if($this->has_moved($data)
-            || $this->has_upgraded($data)) $return = ACTION_DOUBLE;
+            || $this->has_upgraded($data)
+            || $this->has_renamed($data)) $return = ACTION_DOUBLE;
         else if($this->has_ended($data)) $return = ACTION_DELETE;
         MyLog()->Append("action code selected: ". $return);
         return $return ;
+    }
+
+    private function has_renamed($data)
+    {
+        $new = $this->get('mac',$data) ?? $this->get('username',$data);
+        $old = $this->get('mac',$data,'old') ?? $this->get('username',$data,'old');
+        return $new && $old && $new != $old ;
     }
 
     private function has_ended($data)
