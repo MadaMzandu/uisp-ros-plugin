@@ -1,45 +1,34 @@
 <?php
-const MyCacheVersion = '1.0.1a';
-
-include_once 'api_sqlite.php';
-include_once 'api_ucrm.php';
-//include_once '_web_ucrm.php'; //for devel only
-include_once 'api_logger.php';
-include_once 'api_timer.php';
+const MyCacheVersion = '1.0.1q';
 
 class ApiCache{
 
-    private $ref ;
     private $dev;
 
     public function update($json)
-    {
-        $item = json_decode($json);
+    { //trigger a sync when conditions or update a single service
         if(function_exists('fastcgi_finish_request')){
             MyLog()->Append('ending tcp here to go background');
             fastcgi_finish_request();
         }
         set_time_limit(7200);
-        $table = ($item->entity ?? '') . 's';
-        $id = $item->entityId ?? 0 ;
-        $start = microtime(true);
-        $data[] = $item;
+        $timer = new ApiTimer('cache sync');
         $this->sync();
-        if(!in_array($table,['clients','services'])) return ;
-        $this->batch($table,$data);
-        if($table == 'services')  $this->net_update($id);
-        $end = microtime(true);
-        $duration = ($end - $start) / 60 ; //in seconds
-        if($duration > 5)
-        MyLog()->Append('cache: sync completed in seconds: '.$duration,6);
+        $item = json_decode($json);
+        if($this->valid($item)){ //if relevant cache the request
+            $table = ($item->entity ?? '') . 's';
+            $data[] = $item;
+            $this->batch($table,$data);
+        }
+        $timer->stop();
     }
 
     public function sync()
     {
         if($this->needs_update()){
-            $this->set_attributes();
+            $this->check_attributes();
+            $this->check_devices();
             $timer = new ApiTimer('sync: ');
-            $this->get_devices();
             MyLog()->Append('populating services and clients');
             foreach(['clients','services'] as $table){
                 $this->populate($table);
@@ -74,9 +63,11 @@ class ApiCache{
        if($this->needs_net()){
            $db = new SQLite3('data/data.db');
            $db->enableExceptions(true);
-           $db->exec(sprintf("ATTACH '%s/data/cache.db'",__DIR__));
+           MyLog()->Append('attaching cache to main');
+           $db->exec(sprintf("ATTACH 'data/cache.db' as cache"));
            $sql = "INSERT OR REPLACE INTO cache.network (id,address,prefix6) ".
                "SELECT id,address,prefix6 from services ";
+           MyLog()->Append('cache attach sql: '.$sql);
            if($db->exec($sql)){
                $this->db()->saveConfig(['last_net' => $this->now()]);
            }
@@ -96,81 +87,48 @@ class ApiCache{
         }
     }
 
-    public function batch($table,$data)
+    public function batch($table, $request)
     {
         MyLog()->Append('starting batch prepare');
-        $fields = $this->fields($table);
-        $keys = array_values($fields);
-        $sql = sprintf('INSERT OR REPLACE INTO %s (%s) VALUES ',$table,implode(',',$keys));
         $query = [];
-        foreach ($data as $item){
-            $entity = $item->extraData->entity ?? $item ;
-            $values = [];
-            foreach(array_keys($fields) as $key){
-                $values[] = $entity->$key ?? null ;
-            }
-            if($table == 'services'){
-                $attributes = $entity->attributes ?? [];
-                $extract = $this->extract_attributes($attributes);
-                $attr_size = sizeof($extract);
-                $offset = sizeof($keys) - $attr_size - 1;
-                array_splice($values,$offset,$attr_size,$extract);
-            }
-            if(sizeof($values) != sizeof($keys)){
+        $fields = null ;
+        foreach ($request as $item){
+            $trimmed = $this->trimmer()->trim($table,$item) ;
+            $entity = $trimmed['entity'] ?? null ;
+            if(!$entity){
+                MyLog()->Append('batch: wrong data format: '.json_encode($item));
                 continue;
-            } ;
-            $query[] = $this->toSqlValues($values);
+            }
+            $query[] = $this->to_sql(array_values($entity));
+            $fields = implode(',',array_keys($entity));
         }
+        $sql = sprintf('INSERT OR REPLACE INTO %s (%s) VALUES ',$table,$fields);
         $sql .= implode(',',$query);
+        MyLog()->Append('batch sql '.$sql);
         $this->dbCache()->exec($sql);
-        MyLog()->Append('batch exectued '.$sql);
+        MyLog()->Append('batch executed');
     }
 
-    private function extract_attributes($array): ?array
-    {//sanitize attributes
-        $roskeys = [
-            'device_name_attr',
-            'pppoe_user_attr',
-            'pppoe_pass_attr',
-            'mac_addr_attr',
-            'hs_attr',
-            'pppoe_caller_attr',
-        ];
-        if(empty($array)) return array_fill(0,sizeof($roskeys),null);
-        if(!$this->ref) $this->set_attributes();
-        if(!$this->dev) $this->get_devices();
-        $map = [];
-        $values = [];
-        foreach ($array as $item){ $map[$item->key] = $item->value; }
-        foreach ($roskeys as $ros){
-            $match = $this->ref[$ros] ?? null ; //attribute is configured
-            if($match && $ros == 'device_name_attr'){ //device name to device id
-                $values[] = $this->dev[strtolower($map[$match])] ?? null;
-            }
-            else if($match) $values[]  = $map[$match] ?? null ;
-            else $values[] = null ;
-        }
-        return $values ;
-    }
-
-    private function fields($table): array
+    private function valid($data): bool
     {
-        switch ($table){
-            case 'clients':{
-                $keys = 'id,company,firstName,lastName';
-                $map = [];
-                foreach (explode(',',$keys) as $key) $map[$key] = $key ;
-                return $map ;
-            }
-            case 'services':{
-                $map = [];
-                $keys = 'id,status,clientId,price,totalPrice,currencyCode,device,username,password,mac,hotspot,callerId';
-                foreach (explode(',',$keys) as $key) $map[$key] = $key ;
-                $map['servicePlanId'] = 'planId';
-                return $map ;
-            }
+        $entity = $data->entity ?? null ;
+        if(!in_array($entity,['client','service'])) return false;
+        $action = $data->changeType ?? 'insert' ;
+        if($action == 'insert') return true ;
+        $status = $data->extraData->entity->status ?? 0;
+        if(in_array($action,['end','cancel','delete']) || in_array($status,[5,8]))
+        {//we need to delete to release ip addresses
+            $this->delete($data);
+            return false ;
         }
-        return [];
+        return false ;
+    }
+
+    private function delete($data)
+    {
+        $id = $data->entityId ?? 0 ;
+        $cache = 'delete from services where id=' . $id;
+        $this->dbCache()->exec($cache);
     }
 
     private function path($table): ?string
@@ -182,7 +140,7 @@ class ApiCache{
         return null ;
     }
 
-    private function toSqlValues($array): string
+    private function to_sql($array): string
     {
         $values = [];
         foreach ($array as $item){
@@ -194,14 +152,7 @@ class ApiCache{
         return sprintf("(%s)",implode(',',$values));
     }
 
-    private function make_nulls(int $qty): array
-    {
-        $nulls = [];
-        for($i = 0; $i < $qty; $i++) $nulls[] = null ;
-        return $nulls;
-    }
-
-    private function set_attributes(): void
+    private function check_attributes(): void
     {
         $attributes = $this->map_attributes();
         MyLog()->Append('checking for attributes');
@@ -211,25 +162,18 @@ class ApiCache{
         MyLog()->Append('attributes found: '. json_encode([$device,$mac,$user]));
         $missing = !($device && ($mac || $user));
         if($missing) {
-            $this->throwErr('cache: attributes not configured yet will sync later');
+            $this->throwErr('attributes not configured sync delayed');
         }
-        MyLog()->Append('attributes found: '. json_encode([$device,$mac,$user]));
-        foreach (array_keys($attributes) as $key){
-            $this->ref[$key] = $attributes[$key]->key ?? 'notset' ;
-        }
+        MyLog()->Append('cache attributes found: '. json_encode([$device,$mac,$user]));
     }
 
-    private function get_devices()
+    private function check_devices(): void
     {
-        $devs = $this->db()->selectAllFromTable('devices');
-        if(empty($devs)) {
-            $this->throwErr('cache: devices not configured sync delayed');
+        $devices = $this->db()->selectAllFromTable('devices');
+        if(empty($devices)) {
+            $this->throwErr('devices not configured sync delayed');
         }
-        $map = [];
-        foreach ($devs as $dev){
-            $map[trim(strtolower($dev['name']))] = $dev['id'];
-        }
-        $this->dev = $map ;
+        MyLog()->Append('cache devices found: '. json_encode($devices));
     }
 
     private function map_attributes(): array
@@ -279,11 +223,13 @@ class ApiCache{
 
     private function opts(): array
     {
-        $json = '{"limit":500,"offset":0}';
+        $json = '{"limit":500,"offset":0,"statuses":[0,1,3,4,6,7,8]}';
         return json_decode($json,true);
     }
 
-    private function ucrm(){ return new ApiUcrm(); }
+    private function trimmer(){ return new ApiTrim(); }
+
+    private function ucrm(){ return new WebUcrm(); }
 
     private function db(){ return new ApiSqlite(); }
 
@@ -293,7 +239,7 @@ class ApiCache{
 
     private function dbCache(){ return new ApiSqlite('data/cache.db'); }
 
-    private function throwErr($exception){ throw new Exception($exception); }
+    private function throwErr(string $exception){ throw new Exception('cache: '. $exception); }
 
    }
 
