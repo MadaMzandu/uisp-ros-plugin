@@ -1,12 +1,11 @@
 <?php
-include_once 'api_sqlite.php';
 include_once 'mt.php';
-include_once 'admin_plans.php';
-const BATCH_DHCP = 0 ;
-const BATCH_PPP = 1 ;
-const BATCH_HOTSPOT = 0 ;
+include_once 'api_sqlite.php';
+
 class MtBatch extends MT
 {
+    private array $sent ;
+
     public function set_ids(array $ids)
     {
         $deviceServices = $this->select_ids($ids);
@@ -15,6 +14,7 @@ class MtBatch extends MT
         $deviceData = [];
         foreach (array_keys($deviceServices) as $did){
             foreach ($deviceServices[$did] as $service){
+                $sid = $service['id'];
                 $plan = $plans[$service['planId']] ;
                 $device = $devices[$service['device']] ?? null;
                 $service['address'] = $this->ip($service,$device);
@@ -27,6 +27,7 @@ class MtBatch extends MT
             }
         }
         $this->run_batch($deviceData);
+        $this->save_batch($deviceServices);
     }
 
     private function run_batch($deviceData)
@@ -35,6 +36,7 @@ class MtBatch extends MT
         $devices = $this->select_devices();
         $sent = 0 ;
         $writes = 0 ;
+        $this->batch_failed = [];
         foreach (array_keys($deviceData) as $did)
         {
             $this->batch_device = (object) $devices[$did];
@@ -51,21 +53,82 @@ class MtBatch extends MT
         MyLog()->Append(sprintf('batch sent: %s written: %s',$sent,$writes));
     }
 
+    private function save_batch($deviceServices)
+    {
+        $failed = [];
+        $fields = [
+            'id',
+            'device',
+            'address',
+            'prefix6',
+            'clientId',
+            'planId',
+            'status',
+        ];
+        $save = [];
+        foreach ($this->batch_failed as $item){
+            $key = $item['mac-address'] ?? $item['name'];
+            $key =strtolower($key);
+            $failed[$key] = 1 ;
+        }
+        foreach ($deviceServices as $services){
+            foreach ($services as $service){
+                $values = [];
+                if($this->is_success($service,$failed)){
+                    foreach ($fields as $key){ $values[] = $service[$key] ?? null ;}
+                    $values['last'] = $this->now();
+                    $save[] = $values;
+                }
+            }
+        }
+        $sql = sprintf("insert or replace into services (%s,last) values ",implode(',',$fields));
+        $sql .= $this->to_sql($save);
+        MyLog()->Append('batch: saving data '.$sql);
+        $this->db()->exec($sql);
+    }
+
+    private function to_sql($array): string
+    {
+        $query = [];
+        foreach ($array as $row){
+            $values = [];
+            foreach($row as $value){
+                if(is_null($value)) $values[] = 'null';
+                else if(is_numeric($value)) $values[] = $value;
+                else $values[] = sprintf("'%s'",$value);
+            }
+            $query[] = sprintf("(%s)",implode(',',$values));
+        }
+        return implode(',',$query);
+    }
+    private function is_success($service, $failed)
+    {
+        $key = $service['mac'] ?? $service['username'];
+        $key = strtolower($key);
+        $sent = $this->sent[$service['id']] ?? null ;
+        $fail = $failed[$key] ?? null ;
+        return $sent && !$fail ;
+    }
+
     private function account($service,$plan): ?array
     {
+       $data = null ;
         switch ($this->type($service)){
-            case BATCH_DHCP: return $this->dhcp($service);
-            case BATCH_PPP: return $this->ppp($service,$plan);
-            case BATCH_HOTSPOT: return $this->hotspot($service,$plan);
+            case 'dhcp': $data = $this->dhcp($service);break ;
+            case 'ppp': $data = $this->ppp($service,$plan); break ;
+            case 'hotspot': $data = $this->hotspot($service,$plan); break ;
         }
-        return null ;
+        if($data){ //register as sent
+            $this->sent[$service['id']] = 1;
+        }
+        return $data ;
     }
 
     private function profile($service,$plan): ?array
     {
         $type = $this->type($service);
-        if($type < BATCH_PPP) return null ;
-        $path = $type == BATCH_HOTSPOT ? '/ip/hotspot/user/profile/' : '/ppp/profile';
+        if($type == 'dhcp') return null ;
+        $path = $type == 'hotspot' ? '/ip/hotspot/user/profile/' : '/ppp/profile';
         $data = [
             'path' => $path,
             'name' => $this->profile_name($service,$plan),
@@ -73,7 +136,7 @@ class MtBatch extends MT
             //'parent-queue' => $this->pq_name(),
             'address-list' => $this->addr_list($service),
         ];
-        if($type == BATCH_PPP) $data['local-address'] = null;
+        if($type == 'ppp') $data['local-address'] = null;
         return $data;
     }
 
@@ -91,7 +154,7 @@ class MtBatch extends MT
 
     private function queue($service,$plan)
     {
-        if($this->type($service) != BATCH_DHCP) return null ;
+        if($this->type($service) != 'dhcp') return null ;
         $address = $service['address'] ?? null ;
         if(!$address) return null ;
         $limits = $this->limits($plan);
@@ -146,6 +209,7 @@ class MtBatch extends MT
         ];
     }
 
+
     private function ip($service,$device)
     {
         $ip = $service['address'] ?? null ;
@@ -156,7 +220,7 @@ class MtBatch extends MT
         $type = $this->type($service);
         $api = new ApiIP();
         $sid = $service['id'];
-        if($device && ($type == BATCH_DHCP || $router_pool)){
+        if($device && ($type == 'dhcp' || $router_pool)){
             return $api->ip($sid,(object) $device);
         }
         return $api->ip($sid);
@@ -271,15 +335,15 @@ class MtBatch extends MT
         return $this->to_pair([$rate,$rate]);
     }
 
-    private function type($service): int
+    private function type($service): string
     {
         $mac = $service['mac'] ?? null ;
         $user = $service['username'] ?? null ;
         $hotspot = $service['hotspot'] ?? null ;
-        if(filter_var($mac,FILTER_VALIDATE_MAC)) return 0 ;
-        if($user && $hotspot) return 2 ;
-        if($user) return 1;
-        return -1;
+        if(filter_var($mac,FILTER_VALIDATE_MAC)) return 'dhcp' ;
+        if($user && $hotspot) return 'hotspot' ;
+        if($user) return 'ppp';
+        return 'invalid';
     }
 
     private function select_plans()
@@ -299,11 +363,8 @@ class MtBatch extends MT
             sprintf("SELECT %s FROM services LEFT JOIN clients ON services.clientId=clients.id ".
                 "LEFT JOIN network ON services.id=network.id ".
                 "WHERE services.id IN (%s) ",$fields,implode(',',$ids)));
-//        $data = $this->dbCache()->selectCustom(sprintf(
-//            "select %s from services left join clients on ".
-//            "services.clientId=clients.id left join network on services.id=network.id",$fields));
-        $deviceMap = [];
-        foreach ($data as $item){ $deviceMap[$item['device']][] = $item ; }
+       $deviceMap = [];
+        foreach ($data as $item){ $id = $item['device'] ?? 'nodev'; $deviceMap[$id][] = $item ; }
         return $deviceMap ;
     }
 
@@ -314,6 +375,8 @@ class MtBatch extends MT
         foreach ($devs as $dev){ $map[$dev['id']] = $dev; }
         return $map ;
     }
+
+    private function now(){$date = new DateTime(); return $date->format('Y-m-d H:i:s'); }
 
 
 }
