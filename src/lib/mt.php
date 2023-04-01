@@ -135,12 +135,18 @@ class MT extends Device
         $filter = null ;
         if($name) $filter = '?name=' . $name ;
         if($mac) $filter = '?mac-address=' . $mac ;
+        $tmp = $this->path ;
         if($filter){
+            $this->path = $data['path'];
             $read = $this->read($filter);
             $item  = $read[0] ?? [];
             $id = $item['.id'] ?? null ;
-            if($id && is_string($id)) return $id;
+            if($id && is_string($id)){
+                $this->path = $tmp ;
+                return $id ;
+            }
         }
+        $this->path = $tmp ;
         return null ;
     }
 
