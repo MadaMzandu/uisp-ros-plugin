@@ -45,8 +45,11 @@ try
     $api->http_response();
     MyLog()->Append('api: finished without error : ' . json_encode($api->status()));
     MyLog()->Append('public: begin cache sync');
-    cache_sync($json);
+    cache_sync();
     net_update();
+}
+catch (NoActionException $noError){
+    respond($noError->getMessage());
 }
 catch (
 Exception
@@ -55,7 +58,7 @@ Exception
 | \Ubnt\UcrmPluginSdk\Exception\ConfigurationException
 | \Ubnt\UcrmPluginSdk\Exception\InvalidPluginRootPathException
 | \Ubnt\UcrmPluginSdk\Exception\JsonException $err){
-    MyLog()->Append('exception triggered: '.$err->getMessage().' request: '.$json);
+    MyLog()->Append('Exception triggered: '.$err->getMessage().' request: '.$json);
     respond($err->getMessage(),true);
 }
 
