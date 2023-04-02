@@ -173,17 +173,17 @@ class AdminDevices extends Admin
         $sql = sprintf("SELECT COUNT(services.id) FROM services LEFT JOIN clients ON ".
             "services.clientId=clients.id WHERE services.device = %s AND services.status ".
             "NOT IN (2,5,8) ",$device);
-        $query = $this->data->query ?? null ;
-        if($query){
-            if(is_numeric($query)){
-                $sql .= sprintf("AND (services.id=%s OR services.clientId=%s) ",$query,$query);
-            }
-            else{
-                $sql .= sprintf("AND (clients.firstName LIKE '%%%s%%' OR clients.lastName LIKE '%%%s%%' ".
-                    "OR clients.company LIKE '%%%s%%' OR services.username LIKE '%%%s%%' OR services.mac LIKE '%%%s%%') ",
-                    $query,$query,$query,$query,$query);
-            }
-        }
+//        $query = $this->data->query ?? null ;
+//        if($query){
+//            if(is_numeric($query)){
+//                $sql .= sprintf("AND (services.id=%s OR services.clientId=%s) ",$query,$query);
+//            }
+//            else{
+//                $sql .= sprintf("AND (clients.firstName LIKE '%%%s%%' OR clients.lastName LIKE '%%%s%%' ".
+//                    "OR clients.company LIKE '%%%s%%' OR services.username LIKE '%%%s%%' OR services.mac LIKE '%%%s%%') ",
+//                    $query,$query,$query,$query,$query);
+//            }
+//        }
         return $this->dbCache()->singleQuery($sql) ;
     }
 

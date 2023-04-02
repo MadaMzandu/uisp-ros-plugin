@@ -1,7 +1,7 @@
 <?php
 
 // a very lazy effort since we only have two object classes to validate
-// will probably move these to their respective object classes
+// will probably move these to client side
 
 class Validation extends Admin
 {

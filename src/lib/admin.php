@@ -13,7 +13,6 @@ include_once 'admin_backup.php';
 include_once 'admin_system.php';
 include_once 'admin_rebuild.php';
 include_once 'api_jobs.php';
-include_once 'admin_mt_queue.php';
 include_once 'api_cache.php' ;
 //include_once '_web_ucrm.php';
 include_once 'api_action.php';
@@ -54,15 +53,12 @@ class Admin
         switch ($target){
             case 'config': return new Settings($data);
             case 'devices': return new AdminDevices($data);
-            //case 'stats': return new Stats($data);
             case 'plans': return new AdminPlans($data);
             case 'validation': return new Validation($data);
-            //case 'users': return new Users($data);
             case 'jobs': return new Api_Jobs($data);
             case 'system': return new Admin_System($data);
             case 'backup': return new Admin_Backup($data);
             case 'lang': return new Api_Lang($data);
-            case 'queue': return new Admin_Queue($data);
         }
         return null ;
     }
