@@ -1,7 +1,13 @@
 <?php
+const ACTION_OBSOLETE = 5 ;
+const ACTION_ENDED = 2;
+const ACTION_SUSPENDED = 3;
+const ACTION_DEFERRED = 6;
+const ACTION_INACTIVE = 8;
 const ACTION_DOUBLE = 2 ;
 const ACTION_DELETE = -1 ;
 const ACTION_SET = 1 ;
+const ACTION_NULL = 99 ;
 class NoActionException extends Exception{}
 
 class ApiAction
@@ -56,6 +62,9 @@ class ApiAction
                     $api->delete_ids([$delete]);
                     break ;
                 }
+                case ACTION_DEFERRED: {
+                    MyLog()->Append('No action for deferred action');
+                }
             }
         }
 
@@ -64,13 +73,20 @@ class ApiAction
     private function select_action($data): int
     {
         $return = ACTION_SET;
-        if($this->has_moved($data)
+        if($this->has_deferred($data)) $return = ACTION_DEFERRED;
+        else if($this->has_moved($data)
             || $this->has_flipped($data)
             || $this->has_upgraded($data)
             || $this->has_renamed($data)) $return = ACTION_DOUBLE;
         else if($this->has_ended($data)) $return = ACTION_DELETE;
         MyLog()->Append("action code selected: ". $return);
         return $return ;
+    }
+
+    private function has_deferred($data)
+    {
+        $status = $this->get('status',$data) ;
+        return $status == ACTION_DEFERRED ;
     }
 
     private function has_renamed($data)
@@ -85,7 +101,7 @@ class ApiAction
         $action = $data['action'] ?? null ;
         if(in_array($action,['end','cancel','delete'])) return 'delete';
         $status = $this->get('status',$data);
-        return in_array($status,[5]);
+        return in_array($status,[ACTION_OBSOLETE,ACTION_ENDED,ACTION_INACTIVE]);
     }
 
     private function has_flipped($data)
