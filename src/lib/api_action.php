@@ -2,45 +2,70 @@
 const ACTION_DOUBLE = 2 ;
 const ACTION_DELETE = -1 ;
 const ACTION_SET = 1 ;
+class NoActionException extends Exception{}
+
 class ApiAction
 {
     private $request ;
 
-    public function exec()
+    public function submit()
     {
         $type = $this->request->entity ?? 'none';
-        if($type != 'service'){
-            throw new Exception(sprintf('no action for %s data: %s',$type,json_encode($this->request)));
+        if(!in_array($type,['client','service'])){
+            throw new NoActionException(
+                sprintf('no action for %s data',$type));
         }
-        $data = $this->trimmer()->trim('service',$this->request);
-        $api = new MtBatch();
-        switch ($this->action($data))
-        {
-            case ACTION_DOUBLE:{
-                $delete = $this->get('id',$data,'old');
-                $api->delete_ids([$delete]);
-                $set = $this->get('id',$data);
-                $api->set_ids([$set]);
-                break ;
-
-            }
-            case ACTION_SET:{
-                $set = $this->get('id',$data);
-                $api->set_ids([$set]);
-                break;
-            }
-            case ACTION_DELETE:{
-                $delete = $this->get('id',$data);
-                $api->delete_ids([$delete]);
-                break ;
-            }
+        if(function_exists('fastcgi_finish_request')){
+            MyLog()->Append('releasing webhook to fork into background');
+            respond('service will be updated');
+            fastcgi_finish_request();
         }
+        $this->execute();
     }
 
-    private function action($data)
+    private function execute()
+    {
+        $type = $this->request->entity ?? 'none';
+        $cache = new ApiCache();
+        $data = $this->trimmer()->trim('service',$this->request);
+        if($type == 'client'){
+            $cache->save($data['entity'],'client');
+        }
+        else{
+            $api = new MtBatch();
+            switch ($this->select_action($data))
+            {
+                case ACTION_DOUBLE:{
+                    $cache->save($data['previous']);
+                    $delete = $this->get('id',$data,'old');
+                    $api->delete_ids([$delete]);
+                    $cache->save($data['entity']);
+                    $set = $this->get('id',$data);
+                    $api->set_ids([$set]);
+                    break ;
+                }
+                case ACTION_SET:{
+                    $cache->save($data['entity']);
+                    $set = $this->get('id',$data);
+                    $api->set_ids([$set]);
+                    break;
+                }
+                case ACTION_DELETE:{
+                    $cache->save($data['entity']);
+                    $delete = $this->get('id',$data);
+                    $api->delete_ids([$delete]);
+                    break ;
+                }
+            }
+        }
+
+    }
+
+    private function select_action($data): int
     {
         $return = ACTION_SET;
         if($this->has_moved($data)
+            || $this->has_flipped($data)
             || $this->has_upgraded($data)
             || $this->has_renamed($data)) $return = ACTION_DOUBLE;
         else if($this->has_ended($data)) $return = ACTION_DELETE;
@@ -61,6 +86,15 @@ class ApiAction
         if(in_array($action,['end','cancel','delete'])) return 'delete';
         $status = $this->get('status',$data);
         return in_array($status,[5]);
+    }
+
+    private function has_flipped($data)
+    {
+        $action = $data['action'] ?? null;
+        if(in_array($action,['suspend','unsuspend'])) return true ;
+        $new = $this->get('status',$data);
+        $old = $this->get('status',$data,'old');
+        return $new && $old && $new != $old ;
     }
 
     private function has_upgraded($data)
@@ -90,6 +124,7 @@ class ApiAction
     }
 
     private function trimmer(){ return new ApiTrim(); }
+
 
     public function __construct($data = null)
     {
