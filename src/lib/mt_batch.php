@@ -30,7 +30,7 @@ class MtBatch extends MT
                     $profile['action'] = 'remove';
                     $deviceData[$did]['profiles'][$profile['name']] = $profile ;
                 }
-                $parent = $this->parent($plan);
+                $parent = $this->parent($service,$plan);
                 if($parent){
                     $parent['action'] = 'remove';
                     $deviceData[$did]['parents'][$parent['name']] = $parent ;
@@ -59,7 +59,7 @@ class MtBatch extends MT
                 if($queue){ $deviceData[$did]['queues'][] = $queue ; }
                 $profile = $this->profile($service,$plan);
                 if($profile){ $deviceData[$did]['profiles'][$profile['name']] = $profile ; }
-                $parent = $this->parent($plan);
+                $parent = $this->parent($service,$plan);
                 if($parent){ $deviceData[$did]['parents'][$parent['name']] = $parent ; }
             }
         }
@@ -181,7 +181,7 @@ class MtBatch extends MT
     {
        $data = null ;
         switch ($this->type($service)){
-            case 'dhcp': $data = $this->dhcp($service);break ;
+            case 'dhcp': $data = $this->dhcp($service,$plan);break ;
             case 'ppp': $data = $this->ppp($service,$plan); break ;
             case 'hotspot': $data = $this->hotspot($service,$plan); break ;
         }
@@ -214,6 +214,7 @@ class MtBatch extends MT
             'name' => $service['username'],
             'password' => $service['password'],
             'address' => $service['address'],
+            'parent-queue' => $this->parent_name($plan),
             'profile' => $this->profile_name($service,$plan),
             'comment' => $this->account_comment($service),
         ];
@@ -231,6 +232,7 @@ class MtBatch extends MT
                 'name' => $this->account_name($service),
                 'target' => $service['address'],
                 'max-limit' => $this->disabled_rate(),
+                'parent-queue' => $this->parent_name($plan),
                 'limit-at' => $this->disabled_rate(),
                 'comment' => $this->account_comment($service),
             ];
@@ -264,32 +266,34 @@ class MtBatch extends MT
         //REMEMBER IP6 ADDRESSING HERE
     }
 
-    private function dhcp($service)
+    private function dhcp($service,$plan)
     {
         return [
             'path' => '/ip/dhcp-server/lease',
             'address' => $service['address'],
             'mac-address' => strtoupper($service['mac']),
             'insert-queue-before' => 'bottom',
+            'parent' => $this->parent_name($plan),
             'address-lists' => $this->addr_list($service),
             'comment' => $this->account_comment($service),
         ];
     }
 
-    private function parent($plan): ?array
+    private function parent($service,$plan): ?array
     {
         if($this->conf->disable_contention) return null ;
+        if($this->disabled($service)) return null ;
         return [
             'path' => '/queue/simple',
             'name' => $this->parent_name($plan),
-            'target' => $this->target($plan),
+            'target' => $this->parent_target($plan),
             'max-limit' => $this->parent_total($plan),
             'limit-at' => $this->parent_total($plan),
             'comment' => 'do not delete',
         ];
     }
 
-    private function target($plan): ?string
+    private function parent_target($plan): ?string
     {
         $sql = sprintf("select network.address from services left join network on services.id=network.id ".
         "where services.planId=%s",$plan['id']);
@@ -299,13 +303,13 @@ class MtBatch extends MT
         return implode(',',$addresses);
     }
 
-    private function parent_name($plan)
+    private function parent_name($plan): ?string
     {
         if($this->conf->disable_contention) return null ;
         return sprintf('servicePlan-%s-parent',$plan['id']);
     }
 
-    private function parent_total($plan)
+    private function parent_total($plan): string
     {
         $children = $this->parent_children($plan);
         $ratio = $plan['ratio'];
@@ -317,10 +321,10 @@ class MtBatch extends MT
         return sprintf("%sM/%sM",$upload,$download);
     }
 
-    private function parent_children($plan)
+    private function parent_children($plan): int
     {
         $sql = sprintf("select count(services.id) from services left join ".
-            "network on services.id=netword.id where planId=%s",$plan['id']);
+            "network on services.id=network.id where planId=%s",$plan['id']);
         $count = $this->dbCache()->singleQuery($sql);
         return max($count,1);
     }
