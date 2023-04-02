@@ -107,16 +107,16 @@ class ApiIP
     {
         if($this->type($address) == 'ip6') return $this->is_used6($address);
         $main = $this->db()->singleQuery(sprintf("select id from services where address='%s'",$address));
-        $cache = $this->dbCache()->singleQuery(sprintf("select id from network where address='%s'",$address));
-        return $main || $cache ;
+        //$cache = $this->dbCache()->singleQuery(sprintf("select id from network where address='%s'",$address));
+        return (bool) $main ;
     }
 
     private function is_used6($address): bool
     {
         $address .= sprintf('/%s',$this->length6);
         $main = $this->db()->singleQuery(sprintf("select id from services where prefix6=%s",$address));
-        $cache = $this->dbCache()->singleQuery(sprintf("select id from network where prefix6=%s",$address));
-        return $main || $cache ;
+        //$cache = $this->dbCache()->singleQuery(sprintf("select id from network where prefix6=%s",$address));
+        return (bool) $main ;
     }
 
     private function type($address): ?string
