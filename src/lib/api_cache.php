@@ -228,7 +228,7 @@ class ApiCache{
 
    }
 
-function cache_sync($json) { $api = new ApiCache(); $api->update($json);}
+function cache_sync() { $api = new ApiCache(); $api->sync();}
 
 function cache_setup(){ $cache = new ApiCache(); $cache->setup();}
 
