@@ -1,14 +1,18 @@
 <?php
-
+const IP_BASE2 = 2;
+const IP_BASE16 = 16;
+const IP_BASE10 = 10;
+const IP_PWR2 = 2;
+const IP_PAD0 = '0';
 class ApiIP
 {
-    private int $alen ;
+    private int $length6 ;
     private bool $ip6 = false;
 
     public function ip($sid,$device = null,$ip6 = false): ?string
     {
         $this->ip6 = $ip6;
-        $this->alen = $device->pfxLength ?? 64;
+        $this->length6 = $device->pfxLength ?? 64;
         $pool = $this->conf()->ppp_pool ;
         if($device || $this->conf()->router_ppp_pool){
             $pool = $ip6 ? $device->pool6 : $device->pool ;
@@ -46,7 +50,7 @@ class ApiIP
         return $address ;
     }
 
-    public function set_ip($sid,$address)
+    public function set_ip($sid,$address): void
     {
         if($this->type($address) == 'ip6'){ $this->set_ip6($sid,$address); }
         else{
@@ -57,12 +61,12 @@ class ApiIP
         }
     }
 
-    public function set_ip6($sid,$address)
+    public function set_ip6($sid,$address): void
     {
         $cache = sprintf("insert or replace into network (id,prefix6) values (%s,'%s') ",$sid,$address);
         $main = sprintf("update or ignore services set prefix6='%s' where id=%s ",$address,$sid);
         $this->db()->exec($main);
-        $this->dbCache->exec($cache);
+        $this->dbCache()->exec($cache);
     }
 
     private function findUnused($prefix): ?string
@@ -72,7 +76,7 @@ class ApiIP
 
     }
 
-    private function valid($prefix)
+    private function valid($prefix): bool
     {
         $arr = explode('/',$prefix);
         if(sizeof($arr) < 2) return false ;
@@ -91,13 +95,12 @@ class ApiIP
         $s = !$this->ip6 ? '.' : ':';
         $a = explode($s,$address); //address into array
         $last = $a[sizeof($a)-1] ?? '0' ; //last byte or word
-        if(!$this->ip6)$last = base_convert($last,10,16);
+        if(!$this->ip6)$last = base_convert($last,IP_BASE10,IP_BASE16);
         $zero = '/^0+$/';
         $ff = '/^[fF]+$/';
-        $odd = !$this->ip6
+        return !$this->ip6
             ? preg_match($zero,$last) || preg_match($ff,$last)
-            : preg_match($ff,$last) ;
-        return $odd ;
+            : preg_match($ff,$last);
     }
 
     private function is_used($address): bool
@@ -110,9 +113,9 @@ class ApiIP
 
     private function is_used6($address): bool
     {
-        $address .= sprintf('/',$this->alen);
-        $main = $this->db()->singleQuery(sprintf("select id from services where prefix6=",$address));
-        $cache = $this->dbCache()->singleQuery(sprintf("select id from network where prefix6=",$address));
+        $address .= sprintf('/%s',$this->length6);
+        $main = $this->db()->singleQuery(sprintf("select id from services where prefix6=%s",$address));
+        $cache = $this->dbCache()->singleQuery(sprintf("select id from network where prefix6=%s",$address));
         return $main || $cache ;
     }
 
@@ -140,25 +143,24 @@ class ApiIP
         return null ;
     }
 
-    private function gmp_hosts($length)
+    private function gmp_hosts($length): GMP
     {
         $max = $this->ip6 ? 128 :32 ;
         $host_len = $max - $length;
-        $base = 2;
-        return gmp_pow($base, $host_len);
+        return gmp_pow(IP_BASE2, $host_len);
     }
 
-    private function gmp2ip($address)
+    private function gmp2ip($gmp): string
     {
-        $hex = gmp_strval($address, 16);
-        if (strlen($hex) % 2) {
-            $newlen = strlen($hex) + 1;
-            $hex = str_pad('0', $newlen, $hex, STR_PAD_RIGHT);
-        };
+        $hex = gmp_strval($gmp, IP_BASE16);
+        if(strlen($hex) % IP_PWR2){
+            $len = strlen($hex) + 1;
+            $hex = str_pad($hex,$len,IP_PAD0,STR_PAD_LEFT);
+        }
         return inet_ntop(hex2bin($hex));
     }
 
-    private function gmp_bcast($prefix)
+    private function gmp_bcast($prefix): GMP
     {
         [$address,$length] = explode('/',$prefix);
         $hosts_qty = $this->gmp_hosts($length);
@@ -169,14 +171,14 @@ class ApiIP
         return gmp_add($net_addr,$hosts_qty);
     }
 
-    private function gmp_next($addr)
+    private function gmp_next($addr): GMP
     {
         $next = !$this->ip6 ? 1
-            : gmp_pow(2,$this->alen);
+            : gmp_pow(IP_PWR2,$this->length6);
         return gmp_add($addr,$next);
     }
 
-    private function ip2gmp($prefix)
+    private function ip2gmp($prefix): GMP
     {
         $address = explode('/',$prefix)[0];
         return gmp_init(bin2hex(inet_pton($address)),16);
@@ -203,17 +205,17 @@ class ApiIP
             : [];
     }
 
-    private function db()
+    private function db(): ApiSqlite
     {
         return new ApiSqlite();
     }
 
-    private function dbCache()
+    private function dbCache(): ApiSqlite
     {
         return new ApiSqlite('data/cache.db');
     }
 
-    private function conf()
+    private function conf(): stdClass
     {
         return $this->db()->readConfig();
     }
