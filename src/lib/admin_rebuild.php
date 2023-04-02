@@ -1,10 +1,5 @@
 <?php
-include_once 'api_sqlite.php';
-//include_once '_web_ucrm.php'; //for devel only
-include_once 'api_ucrm.php';
-include_once 'api_timer.php';
-include_once 'api_logger.php';
-include_once 'mt_batch.php';
+
 class AdminRebuild{
 
     private function db(){ return new ApiSqlite(); }
@@ -21,7 +16,7 @@ class AdminRebuild{
         if ($type == 'device'){
             $this->db()->exec("DELETE FROM services WHERE device = " . $id);
         }
-        if ($type == 'plan'){
+        if ($type == 'service'){
             $this->db()->exec('DELETE FROM services WHERE planId =' . $id);
         }
     }
@@ -31,21 +26,21 @@ class AdminRebuild{
         if(function_exists('fastcgi_finish_request')){
             fastcgi_finish_request();
         }
-        $timer = new ApiTimer('rebuild: '.json_encode($data));
         set_time_limit(7200);
         $type = $data->type ?? 'all';
-        $typeId = $data->id ?? null;
+        $typeId = $data->id ?? $data->did ?? $data->sid ?? null;
         $clear = $data->clear ?? false ;
         $select = [];
+        $timer = new ApiTimer($type . ' rebuild: '.json_encode($data));
         MyLog()->Append('selecting services to rebuild');
         if($type == 'all'){
             $select = $this->cache()->selectCustom('SELECT id FROM services WHERE status IN (1,3)');
         }
         if($type == 'service'){
-            $select = $this->cache()->selectCustom(sprintf("SELECT id from services WHERE planId = %s AND status IN (1,3)",$typeId));
+            $select = $this->cache()->selectCustom(sprintf("SELECT id from services WHERE planId = %s AND status IN (1,3) ",$typeId));
         }
         if($type == 'device'){
-            $select = $this->cache()->selectCustom(sprintf("SELECT id FROM services WHERE device = %s AND status IN (1,3)",$typeId));
+            $select = $this->cache()->selectCustom(sprintf("SELECT id FROM services WHERE device = %s AND status IN (1,3) ",$typeId)); //test limit 15
         }
         $ids = [];
         if(empty($select)){
@@ -53,25 +48,12 @@ class AdminRebuild{
         }
         foreach ($select as $item) $ids[] = $item['id'];
         MyLog()->Append(sprintf('found %s services to rebuild',sizeof($ids)));
+        if($clear)
+        {
+            $this->clear($type,$typeId);
+        }
         $batch = new MtBatch();
         $batch->set_ids($ids);
-//        if($clear)
-//        {
-//            $this->clear($type,$typeId);
-//        }
-//        $api = $this->ucrm();
-//        $count = 0;
-//        foreach($ids as $id){
-//            try{
-//                $done = $api->patch('clients/services/'.$id, []);
-//                if($done){ MyLog()->Append(sprintf("rebuild service: %s success",$done->id)); $count++;}
-//            }
-//            catch (Exception $error){
-//                MyLog()->Append('failed to rebuild service: '.$error->getMessage());
-//                continue ;
-//            }
-//        }
-//        MyLog()->Append(sprintf('rebuild %s services completed',$count));
         $timer->stop();
     }
 
