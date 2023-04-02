@@ -107,15 +107,15 @@ class MtBatch extends MT
         ];
         $save = [];
         foreach ($this->batch_success as $item){
-            $key = $item['mac-address'] ?? $item['name'];
+            $key = $item['mac-address'] ?? $item['name'] ?? 'nokey';
             $key =strtolower($key);
             $successes[$key] = 1 ;
         }
         foreach ($deviceServices as $services){
             foreach ($services as $service){
                 $values = [];
-                $key = $service['mac-address'] ?? $service['name'] ;
-                $success = $successes[$key] ?? null ;
+                $key = $service['mac'] ?? $service['username'] ?? 'nokey';
+                $success = $successes[strtolower($key)] ?? null ;
                 if($success){
                     foreach ($fields as $key){ $values[] = $service[$key] ?? null ;}
                     $values['last'] = $this->now();
@@ -134,14 +134,14 @@ class MtBatch extends MT
         $successes = [];
         $ids = [];
         foreach ($this->batch_success as $item){
-            $key = $item['mac-address'] ?? $item['name'];
+            $key = $item['mac-address'] ?? $item['name'] ?? 'nokey';
             $key =strtolower($key);
             $successes[$key] = 1 ;
         }
         foreach ($deviceServices as $services){
             foreach ($services as $service){
-                $key = $service['mac-address'] ?? $service['name'] ;
-                $success = $successes[$key] ?? null ;
+                $key = $service['mac'] ?? $service['username'] ?? 'nokey' ;
+                $success = $successes[strtolower($key)] ?? null ;
                 if($success){
                     $ids[] = $service['id'];
                 }
