@@ -36,7 +36,7 @@ class ApiTrim
         $item = $request->extraData->entity ?? $request;
         $previous = $request->extraData->entityBeforeEdit ?? null ;
         $return = [];
-        $entity = [];
+        $entity = $this->default_service();
         $fields = [
             'id',
             'servicePlanId',
@@ -95,7 +95,7 @@ class ApiTrim
 
     private function trim_previous($data): ?array
     {
-        $previous = [];
+        $previous = $this->default_service();
         $fields = [
             'id',
             'status',
@@ -128,6 +128,16 @@ class ApiTrim
             $map[$name] = $device;
         }
         return $this->devices = $map;
+    }
+
+    private function default_service():array
+    {
+        $keys = ["id","planId","clientId","status","price","totalPrice",
+            "currencyCode","device","username","password","mac","hotspot",
+            "address","callerId"];
+        $entity = [];
+        foreach ($keys as $key) { $entity[$key] = null; }
+        return $entity ;
     }
 
     private function db(){ return new ApiSqlite(); }
