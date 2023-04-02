@@ -6,6 +6,36 @@ class MtBatch extends MT
 {
     private array $sent ;
 
+    public function delete_ids(array $ids)
+    {
+        $deviceServices = $this->select_ids($ids);
+        $plans = $this->select_plans();
+        $deviceData = [];
+        foreach (array_keys($deviceServices) as $did){
+            foreach($deviceServices[$did] as $service){
+                $plan = $plans[$service['planId']] ;
+                $account = $this->account($service,$plan);
+                if($account){
+                    $account['action'] = 'remove';
+                    $deviceData[$did]['accounts'][] = $account ;
+                }
+                $queue = $this->queue($service,$plan);
+                if($queue){
+                    $queue['action'] = 'remove';
+                    $deviceData[$did]['queues'][] = $queue ;
+                }
+                $profile = $this->profile($service,$plan);
+                if($profile){
+                    $profile['action'] = 'remove';
+                    $deviceData[$did]['profiles'][$profile['name']] = $profile ;
+                }
+            }
+        }
+        MyLog()->Append('services ready to delete');
+        $this->run_batch($deviceData,true);
+        //$this->save_batch($deviceServices);
+    }
+
     public function set_ids(array $ids)
     {
         $deviceServices = $this->select_ids($ids);
@@ -14,7 +44,6 @@ class MtBatch extends MT
         $deviceData = [];
         foreach (array_keys($deviceServices) as $did){
             foreach ($deviceServices[$did] as $service){
-                $sid = $service['id'];
                 $plan = $plans[$service['planId']] ;
                 $device = $devices[$service['device']] ?? null;
                 $service['address'] = $this->ip($service,$device);
@@ -30,7 +59,7 @@ class MtBatch extends MT
         $this->save_batch($deviceServices);
     }
 
-    private function run_batch($deviceData)
+    private function run_batch($deviceData,$delete = false)
     {
         $timer = new ApiTimer("mt batch write");
         $devices = $this->select_devices();
@@ -42,6 +71,7 @@ class MtBatch extends MT
             $this->batch_device = (object) $devices[$did];
             MyLog()->Append('executing batch for device: '.$this->batch_device->name);
             $keys = ['parents','profiles','queues','accounts'];
+            if($delete) $keys = array_reverse($keys);
             foreach ($keys as $key){
                 $item = $deviceData[$did][$key] ?? [];
                 $this->batch = array_values($item);
@@ -109,6 +139,7 @@ class MtBatch extends MT
         $fail = $failed[$key] ?? null ;
         return $sent && !$fail ;
     }
+
 
     private function account($service,$plan): ?array
     {
@@ -269,7 +300,7 @@ class MtBatch extends MT
         return $values ;
     }
 
-    private function profile_limits($service,$plan): string
+    private function profile_limits($service,$plan): ?string
     {
         if($this->disabled($service)) return $this->disabled_rate();
         $limits = $this->limits($plan);
@@ -317,7 +348,7 @@ class MtBatch extends MT
             $name = $co ;
         }
         else if($fn && $ln){
-            $name = sprintf('%s %s',$fn,$fn);
+            $name = sprintf('%s %s',$fn,$ln);
         }
         return $name ;
     }
@@ -325,7 +356,7 @@ class MtBatch extends MT
     private function disabled($service)
     {
         $status = $service['status'] ?? 1 ;
-        return $status != 1;
+        return in_array($status,[3,5,2,8]);
     }
 
     private function disabled_rate()
