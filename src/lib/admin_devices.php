@@ -1,26 +1,6 @@
 <?php
 class AdminDevices extends Admin
 {
-    public function disable()
-    { // disables/enables plan limits on device
-        $id = $this->data->id ;
-        $enable = $this->data->enable ?? false ;
-        $data = (object)[
-            'device_id' => $this->data->id,
-            'path' => '/ppp/profile'
-        ];
-        $profiles = (new MT_Profile($data))->get();
-        $plans = $this->get_plans();
-        foreach($profiles as $profile)
-        {
-            if(isset($plans[$profile['name']])){
-                $this->set_profile_limit($id,$profile,$plans[$profile['name']],$enable);
-            }
-        }
-        $this->save_router($id,$enable);
-        $this->reset_pppoe($id);
-    }
-
     public function delete(): bool
     {
 
