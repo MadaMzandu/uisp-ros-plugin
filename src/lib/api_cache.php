@@ -214,7 +214,7 @@ class ApiCache{
 
     private function trimmer(){ return new ApiTrim(); }
 
-    private function ucrm(){ return new WebUcrm(); }
+    private function ucrm(){ return new ApiUcrm(); }
 
     private function db(){ return new ApiSqlite(); }
 
