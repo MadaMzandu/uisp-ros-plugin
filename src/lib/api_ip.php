@@ -150,10 +150,12 @@ class ApiIP
 
     private function gmp2ip($address)
     {
-        $str = gmp_strval($address, 16);
-        if (strlen($str) % 2) $str =
-            str_pad('0', strlen($str) + 1, $str, STR_PAD_RIGHT);
-        return inet_ntop(hex2bin($str));
+        $hex = gmp_strval($address, 16);
+        if (strlen($hex) % 2) {
+            $newlen = strlen($hex) + 1;
+            $hex = str_pad('0', $newlen, $hex, STR_PAD_RIGHT);
+        };
+        return inet_ntop(hex2bin($hex));
     }
 
     private function gmp_bcast($prefix)
