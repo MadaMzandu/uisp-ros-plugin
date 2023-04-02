@@ -14,6 +14,7 @@ class MT extends Device
     protected $batch ;
     protected $batch_device ;
     protected $batch_failed ;
+    protected $batch_success;
 
     public function set()
     {
@@ -68,6 +69,7 @@ class MT extends Device
                 MyLog()->Append('mt write error: '.json_encode([$data,$result]),6);
             }
             else{
+                $this->batch_success[] = $data;
                 $writes++ ;
             }
         }

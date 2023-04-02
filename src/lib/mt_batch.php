@@ -1,5 +1,6 @@
 <?php
 include_once 'mt.php';
+include_once 'api_ip.php';
 include_once 'api_sqlite.php';
 
 class MtBatch extends MT
@@ -33,7 +34,7 @@ class MtBatch extends MT
         }
         MyLog()->Append('services ready to delete');
         $this->run_batch($deviceData,true);
-        //$this->save_batch($deviceServices);
+        $this->delete_batch($deviceServices);
     }
 
     public function set_ids(array $ids)
@@ -55,6 +56,7 @@ class MtBatch extends MT
                 if($profile){ $deviceData[$did]['profiles'][$profile['name']] = $profile ; }
             }
         }
+        MyLog()->Append('services ready to add or set');
         $this->run_batch($deviceData);
         $this->save_batch($deviceServices);
     }
@@ -66,6 +68,7 @@ class MtBatch extends MT
         $sent = 0 ;
         $writes = 0 ;
         $this->batch_failed = [];
+        $this->batch_success = [];
         foreach (array_keys($deviceData) as $did)
         {
             $this->batch_device = (object) $devices[$did];
@@ -85,7 +88,7 @@ class MtBatch extends MT
 
     private function save_batch($deviceServices)
     {
-        $failed = [];
+        $successes = [];
         $fields = [
             'id',
             'device',
@@ -96,15 +99,17 @@ class MtBatch extends MT
             'status',
         ];
         $save = [];
-        foreach ($this->batch_failed as $item){
+        foreach ($this->batch_success as $item){
             $key = $item['mac-address'] ?? $item['name'];
             $key =strtolower($key);
-            $failed[$key] = 1 ;
+            $successes[$key] = 1 ;
         }
         foreach ($deviceServices as $services){
             foreach ($services as $service){
                 $values = [];
-                if($this->is_success($service,$failed)){
+                $key = $service['mac-address'] ?? $service['name'] ;
+                $success = $successes[$key] ?? null ;
+                if($success){
                     foreach ($fields as $key){ $values[] = $service[$key] ?? null ;}
                     $values['last'] = $this->now();
                     $save[] = $values;
@@ -114,6 +119,30 @@ class MtBatch extends MT
         $sql = sprintf("insert or replace into services (%s,last) values ",implode(',',$fields));
         $sql .= $this->to_sql($save);
         MyLog()->Append('batch: saving data '.$sql);
+        $this->db()->exec($sql);
+    }
+
+    private function delete_batch($deviceServices)
+    {
+        $successes = [];
+        $ids = [];
+        foreach ($this->batch_success as $item){
+            $key = $item['mac-address'] ?? $item['name'];
+            $key =strtolower($key);
+            $successes[$key] = 1 ;
+        }
+        foreach ($deviceServices as $services){
+            foreach ($services as $service){
+                $key = $service['mac-address'] ?? $service['name'] ;
+                $success = $successes[$key] ?? null ;
+                if($success){
+                    $ids[] = $service['id'];
+                }
+            }
+        }
+        $sql = sprintf("delete from services where id in (%s)",
+        implode(',',$ids));
+        MyLog()->Append('batch delete sql: '.$sql);
         $this->db()->exec($sql);
     }
 
