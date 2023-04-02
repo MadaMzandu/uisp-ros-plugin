@@ -1,5 +1,5 @@
 <?php
-include_once 'admin_mt_contention.php';
+
 class Settings extends Admin
 {
 
@@ -24,19 +24,28 @@ class Settings extends Admin
 
     public function attributes(): bool
     {
-        $ros_keys = "pppoe_user_attr,pppoe_pass_attr,device_name_attr,mac_addr_attr,ip_addr_attr,".
-            "auto_ppp_user,pppoe_caller_attr,hs_attr";
-        $map = [];
-        foreach(explode(',',$ros_keys) as $ros_key){
-            $ukey = $this->conf()->$ros_key ?? null;
-            if($ukey) $map[$ukey] = $ros_key;
+        $native_keys = [
+            'pppoe_user_attr',
+            'pppoe_pass_attr',
+            'device_name_attr',
+            'mac_addr_attr',
+            'ip_addr_attr',
+            'auto_ppp_user',
+            'pppoe_caller_attr',
+            'hs_attr',
+        ];
+        $native_map = [];
+        foreach($native_keys as $native_key){
+            $defined = $this->conf()->$native_key ?? null;
+            if($defined) $native_map[$defined] = $native_key;
         }
         $attributes = $this->ucrm()->get('custom-attributes') ?? [];
         $return = [];
         foreach ($attributes as $item){
-            $match = $map[$item->key] ?? null ;
-            if($match){
-                $item->roskey = $match ;
+            $native_key = $native_map[$item->key] ?? null ;
+            if($native_key){
+                $item->roskey = $native_key ;
+                $item->native_key = $native_key ;
             }
             $return[] = $item;
         }
@@ -49,24 +58,20 @@ class Settings extends Admin
         $keys = array_keys((array)$this->data);
         $ret = true ;
         foreach($keys as $key){
-            if(method_exists($this,$key)){
+            $method = 'apply_' . $key ;
+            if(method_exists($this,$method)){
                 $ret &= $this->$key();
             }
         }
         return $ret ;
     }
 
-    private function disable_contention(): bool
+    private function apply_disable_contention(): bool
     {
         $this->db()->saveConfig($this->data);
-        $data = [];
-        $mt = new Admin_Mt_Contention($data);
-        $action = $this->data->disable_contention
-            ? 'disable'
-            : 'enable' ;
-        $ret = $mt->$action();
-        $this->status = $mt->status();
-        return $ret ;
+        $sys = new AdminRebuild();
+        $sys->rebuild(['type' => 'all']);
+        return true ;
     }
 
 }
