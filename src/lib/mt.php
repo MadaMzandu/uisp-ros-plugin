@@ -41,18 +41,18 @@ class MT extends Device
     {
        $api = $this->connect();
        $writes = 0 ;
-        foreach($this->batch as $data){
+        foreach($this->batch as $post){
             $timer = new ApiTimer('single write');
             //check and prepare
-            $id = $this->find_id($data);
+            $id = $this->find_id($post);
             $action = $id ? 'set' : 'add';
-            $wants = $data['action'] ?? null ;
+            $wants = $post['action'] ?? null ;
             if($wants == 'remove'){
-                if($this->find_deps($data)) continue ;
+                if($this->find_deps($post)) continue ;
                 else $action = 'remove';
             }
-            $this->path = $data['path'] ;
-            $data = $this->prep_data($data);
+            $this->path = $post['path'] ;
+            $data = $this->prep_data($post);
             if($action != 'add') $data['.id'] = $id ;
 
             //write it
@@ -65,20 +65,55 @@ class MT extends Device
             $result = $api->read();
             $timer->stop();
             if($this->has_error()){
-                $this->batch_failed[] = $data ;
+                $this->batch_failed[] = $post ;
                 MyLog()->Append('mt write error: '.json_encode([$data,$result]),6);
             }
             else{
-                $this->batch_success[] = $data;
+                $this->batch_success[] = $post;
                 $writes++ ;
             }
+        }
+        if(empty($this->batch_success)){
+            //requeue batch here
         }
         $this->batch = [] ;
         $api->disconnect();
         return $writes ;
     }
 
-    public function find_deps($data)
+    protected function read($filter = null)
+    {  //implements mikrotik print
+        $api = $this->connect();
+        $api->write(sprintf('/%s/print',trim($this->path,'/')), false);
+        if ($filter) {
+            foreach($this->format_filter($filter) as $item){
+                $api->write($item,false);
+            }
+        }
+        $api->write(";");
+        $this->read = $api->read() ?? [];
+        $api->disconnect();
+        return $this->has_error() ? [] : $this->read;
+    }
+
+    private function connect(): ?RouterosAPI
+    {
+        if(!$this->get_device()){
+            throw new Exception('failed to get device information');
+        };
+        $api = new Routerosapi();
+        $api->timeout = 1;
+        $api->attempts = 1;
+        //$api->debug = true;
+        if (!$api->connect($this->device->ip,
+            $this->device->user, $this->device->password)) {
+            $this->queueMe('device connect failed');
+            throw new Exception('device connect failed: batch has been queued');
+        }
+        return $api;
+    }
+
+    protected function find_deps($data)
     {
         $action = $data['action'];
         if($action != 'remove') return false ;
@@ -179,31 +214,9 @@ class MT extends Device
         return $clean ;
     }
 
-    protected function set_batch($data)
-    {
-        $this->batch[] = (array)$data ;
-    }
-
     private function get_data($property)
     { // check and return data object property
         return $this->data->$property ?? null;
-    }
-
-    private function connect(): ?RouterosAPI
-    {
-        if(!$this->get_device()){
-            throw new Exception('failed to get device information');
-        };
-        $api = new Routerosapi();
-        $api->timeout = 1;
-        $api->attempts = 1;
-        //$api->debug = true;
-        if (!$api->connect($this->device->ip,
-            $this->device->user, $this->device->password)) {
-            $this->queueMe('device connect failed');
-            throw new Exception('device connect failed: job has been queued');
-        }
-        return $api;
     }
 
     protected function get_device(): bool
@@ -234,55 +247,6 @@ class MT extends Device
             $this->setErr($error);
         }
         return (bool)$error;
-    }
-
-    protected function init(): void
-    {
-        parent::init();
-        $this->entity = null;
-        $this->insertId = null;
-        $this->batch = [];
-    }
-
-    protected function comment(): string
-    {
-        return $this->svc->client->id() . " - "
-            . $this->svc->client->name() . " - "
-            . $this->svc->id();
-    }
-
-    protected function exists(): bool
-    {
-        $check_modes = ['delete' => 1, 'rename' => 1, 'move' => 1];
-        $action_modes = ['delete' => 1, 'move' => 1];
-        $action = $this->svc->action;
-        $check_mode = $check_modes[$action] ?? 0;
-        $action_mode = $action_modes[$action] ?? 0;
-        $this->svc->mode($check_mode); // set check mode
-        $this->entity = $this->read($this->filter())[0] ?? null;
-        $this->svc->mode($action_mode); // set action mode
-        $this->insertId = $this->entity['.id'] ?? null;
-        return (bool)$this->insertId;
-    }
-
-    protected function filter(): ?string
-    {
-        return null;
-    }
-
-    protected function read($filter = null)
-    {  //implements mikrotik print
-        $api = $this->connect();
-        $api->write(sprintf('/%s/print',trim($this->path,'/')), false);
-        if ($filter) {
-            foreach($this->format_filter($filter) as $item){
-                $api->write($item,false);
-            }
-        }
-        $api->write(";");
-        $this->read = $api->read() ?? [];
-        $api->disconnect();
-        return $this->has_error() ? [] : $this->read;
     }
 
     protected function format_filter($filter): array
