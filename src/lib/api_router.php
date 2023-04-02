@@ -4,7 +4,8 @@ include_once 'api_sqlite.php';
 include_once 'api_logger.php' ;
 include_once 'admin.php';
 include_once 'api_routes.php';
-include_once 'service.php';
+//include_once 'service.php';
+include_once 'api_action.php';
 
 $conf = (new ApiSqlite())->readConfig();
 
@@ -48,13 +49,15 @@ class API_Router
             return;
         }
         MyLog()->Append('router: begin device provisioning');
-        $service = new Service($this->data);
-        if (!$service->ready) { // invalid service data
-            throw new Exception('router: failed to create service object'
-                .json_encode($service->status()));
-        }
-        $route = new API_Routes($service); //execute
-        $this->status = $route->status();
+        $api = new ApiAction($this->data);
+        $api->submit();
+//        $service = new Service($this->data);
+//        if (!$service->ready) { // invalid service data
+//            throw new Exception('router: failed to create service object'
+//                .json_encode($service->status()));
+//        }
+//        $route = new API_Routes($service); //execute
+//        $this->status = $route->status();
         MyLog()->Append('router: routing completed');
     }
 
