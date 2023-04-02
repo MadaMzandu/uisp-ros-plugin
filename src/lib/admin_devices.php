@@ -158,24 +158,17 @@ class AdminDevices extends Admin
             $item['plan'] = $planMap[$item['planId']]['name'] ?? null ;
             $ret[$item['id']] = $item ;
         }
-        $ret['count'] = $this->get_count();
+        $ret['count'] = $this->cache_count();
         return $ret ;
     }
 
-    private function get_count()
-    {
-        $id = $this->data->id ?? 0 ;
-        $count = $this->dbCache()->countServicesByDeviceId($id) ?? 0;
-        return ['count' => $count] ;
-    }
-
     private function cache_sql(){
-        $sql = "SELECT services.*,network.address,network.prefix6,clients.company,".
-            "clients.firstName,clients.lastName FROM services LEFT JOIN clients ON ".
-            "services.clientId=clients.id LEFT JOIN network ON services.id=network.id ";
-        $device = $this->data->did ?? $this->data->id ?? $this->data->device ?? 0 ;
-        $sql .= sprintf("WHERE services.device = %s ",$device);
-        $sql .= sprintf("AND services.status IN (1,3) ");
+        $fields = "services.*,network.address,network.prefix6,clients.company,".
+            "clients.firstName,clients.lastName";
+        $did = $this->data->did ?? $this->data->id ?? $this->data->device ?? 0 ;
+        $sql = sprintf("SELECT %s FROM services LEFT JOIN clients ON ".
+            "services.clientId=clients.id LEFT JOIN network ON services.id=network.id ".
+            "WHERE services.device = %s AND services.status NOT IN (2,5,8) ",$fields,$did);
         $query = $this->data->query ?? null ;
         if($query){
             if(is_numeric($query)){
@@ -187,9 +180,31 @@ class AdminDevices extends Admin
                     $query,$query,$query,$query,$query);
             }
         }
-        $sql .= 'ORDER BY services.id DESC LIMIT 300';
+        $limit = $this->data->limit ?? 100 ;
+        $offset = $this->data->offset ?? 0 ;
+        $sql .= sprintf("ORDER BY services.id DESC LIMIT %s OFFSET %s",$limit,$offset);
         MyLog()->Append("services sql: ".$sql);
         return $sql;
+    }
+
+    private function cache_count()
+    {
+        $device = $this->data->did ?? $this->data->id ?? $this->data->device ?? 0 ;
+        $sql = sprintf("SELECT COUNT(services.id) FROM services LEFT JOIN clients ON ".
+            "services.clientId=clients.id WHERE services.device = %s AND services.status ".
+            "NOT IN (2,5,8) ",$device);
+        $query = $this->data->query ?? null ;
+        if($query){
+            if(is_numeric($query)){
+                $sql .= sprintf("AND (services.id=%s OR services.clientId=%s) ",$query,$query);
+            }
+            else{
+                $sql .= sprintf("AND (clients.firstName LIKE '%%%s%%' OR clients.lastName LIKE '%%%s%%' ".
+                    "OR clients.company LIKE '%%%s%%' OR services.username LIKE '%%%s%%' OR services.mac LIKE '%%%s%%') ",
+                    $query,$query,$query,$query,$query);
+            }
+        }
+        return $this->dbCache()->singleQuery($sql) ;
     }
 
     private function read(): bool
