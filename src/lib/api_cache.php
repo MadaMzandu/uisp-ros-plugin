@@ -3,23 +3,13 @@ const MyCacheVersion = '1.0.1q';
 
 class ApiCache{
 
-    private $dev;
-
-    public function update($json)
+    public function save($request,$type = 'service')
     { //trigger a sync when conditions or update a single service
-        if(function_exists('fastcgi_finish_request')){
-            MyLog()->Append('ending tcp here to go background');
-            fastcgi_finish_request();
-        }
-        set_time_limit(7200);
-        $timer = new ApiTimer('cache sync');
-        $this->sync();
-        $item = json_decode($json);
-        if($this->valid($item)){ //if relevant cache the request
-            $table = ($item->entity ?? '') . 's';
-            $data[] = $item;
-            $this->batch($table,$data);
-        }
+        $timer = new ApiTimer('cache update');
+        $table = $type . 's';
+        $batch[] = $request ;
+        $this->batch($table,$batch);
+        if($table == 'services')$this->batch_network($batch);
         $timer->stop();
     }
 
@@ -89,46 +79,41 @@ class ApiCache{
 
     public function batch($table, $request)
     {
-        MyLog()->Append('starting batch prepare');
         $query = [];
         $fields = null ;
         foreach ($request as $item){
-            $trimmed = $this->trimmer()->trim($table,$item) ;
-            $entity = $trimmed['entity'] ?? null ;
-            if(!$entity){
-                MyLog()->Append('batch: wrong data format: '.json_encode($item));
-                continue;
-            }
-            $query[] = $this->to_sql(array_values($entity));
-            $fields = implode(',',array_keys($entity));
+            $item = array_diff_key($item,['address' => null]);
+            $query[] = $this->to_sql(array_values($item));
+            $fields = implode(',',array_keys($item));
         }
         $sql = sprintf('INSERT OR REPLACE INTO %s (%s) VALUES ',$table,$fields);
         $sql .= implode(',',$query);
-        MyLog()->Append('batch sql '.$sql);
+        MyLog()->Append("cache update sql: ".$sql);
         $this->dbCache()->exec($sql);
-        MyLog()->Append('batch executed');
     }
 
-    private function valid($data): bool
+    private function batch_network($request)
     {
-        $entity = $data->entity ?? null ;
-        if(!in_array($entity,['client','service'])) return false;
-        $action = $data->changeType ?? 'insert' ;
-        if($action == 'insert') return true ;
-        $status = $data->extraData->entity->status ?? 0;
-        if(in_array($action,['end','cancel','delete']) || in_array($status,[5,8]))
-        {//we need to delete to release ip addresses
-            $this->delete($data);
-            return false ;
+        $deleted = [];
+        $network = [];
+        foreach($request as $item){
+            if(in_array($item['status'],[2,5,8])) $deleted[] = $item['id'];
+            else if($item['address']) $network[$item['id']] = $item['address'];
         }
-        return false ;
-    }
-
-    private function delete($data)
-    {
-        $id = $data->entityId ?? 0 ;
-        $cache = 'delete from services where id=' . $id;
-        $this->dbCache()->exec($cache);
+        if(!empty($deleted)){
+            $sql = sprintf("delete from network where id in (%s)",
+                implode(',',$deleted));
+            MyLog()->Append('cache: network delete sql: '.$sql);
+            $this->dbCache()->exec($sql); //clear inactive addresses
+        }
+        if(!empty($network)){
+            $query = [];
+            foreach(array_keys($network) as $id){ $query[]= sprintf("(%s,'%s')",$id,$network[$id]); }
+            $sql = sprintf("insert or replace into network (id,address) values %s ",
+                implode(',',$query));
+            MyLog()->Append("cache: network sql: ".$sql);
+            $this->dbCache()->exec($sql); //update statically assigned addresses
+        }
     }
 
     private function path($table): ?string
