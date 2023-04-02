@@ -1,4 +1,10 @@
 <?php
+include_once 'api_logger.php';
+include_once 'api_timer.php';
+include_once 'api_ucrm.php';
+include_once 'api_trim.php';
+include_once 'api_lang.php';
+include_once 'api_sqlite.php';
 include_once 'admin_settings.php';
 include_once 'admin_devices.php';
 include_once 'admin_plans.php';
@@ -6,15 +12,12 @@ include_once 'admin_validation.php';
 include_once 'admin_backup.php';
 include_once 'admin_system.php';
 include_once 'admin_rebuild.php';
-include_once 'admin_cache.php';
-//include_once 'admin_get.php';
 include_once 'api_jobs.php';
-include_once 'api_lang.php';
 include_once 'admin_mt_queue.php';
 include_once 'api_cache.php' ;
-include_once 'api_logger.php';
-include_once 'api_ucrm.php';
-//include_once '_web_ucrm.php'; //for devel only
+//include_once '_web_ucrm.php';
+include_once 'api_action.php';
+include_once 'mt_batch.php';//for devel only
 class Admin
 {
 
@@ -50,7 +53,7 @@ class Admin
         $data = $this->data->data ?? null;
         switch ($target){
             case 'config': return new Settings($data);
-            case 'devices': return new Devices($data);
+            case 'devices': return new AdminDevices($data);
             //case 'stats': return new Stats($data);
             case 'plans': return new AdminPlans($data);
             case 'validation': return new Validation($data);
