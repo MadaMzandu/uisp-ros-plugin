@@ -72,7 +72,11 @@ class ApiCache{
         while($data){
             $data = $this->ucrm()->get($path,$opts);
             if(empty($data)) continue ;
-            $this->batch($table,$data);
+            $request = [];
+            foreach($data as $item){
+                $request[] = $this->trimmer()->trim($table,$item)['entity'];
+            }
+            $this->batch($table,$request);
             $opts['offset'] += 500 ;
         }
     }
