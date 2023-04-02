@@ -19,7 +19,7 @@ try
     include_once 'lib/api_setup.php';
     include_once 'lib/api_common.php';
 
-    set_error_handler('myErrorHandler');
+    //set_error_handler('myErrorHandler');
     run_setup();
     cache_setup();
 
@@ -46,7 +46,7 @@ try
     MyLog()->Append('api: finished without error : ' . json_encode($api->status()));
     MyLog()->Append('public: begin cache sync');
     cache_sync();
-    net_update();
+    net_sync();
 }
 catch (NoActionException $noError){
     respond($noError->getMessage());
