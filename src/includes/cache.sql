@@ -8,7 +8,9 @@ CREATE TABLE IF NOT EXISTS "clients" (
 CREATE TABLE IF NOT EXISTS "network" (
          "id"    INTEGER NOT NULL,
          "address" TEXT ,
-         "prefix6" TEXT,
+         "address6" TEXT,
+         "routes" TEXT,
+         "routes6" TEXT,
          PRIMARY KEY("id")
 );
 CREATE TABLE IF NOT EXISTS "services" (
@@ -28,7 +30,11 @@ CREATE TABLE IF NOT EXISTS "services" (
        PRIMARY KEY("id")
 );
 
-CREATE INDEX IF NOT EXISTS "svc_clientId" ON "services" ("clientId");
-CREATE INDEX IF NOT EXISTS "svc_planId" ON "services" ("planId");
-CREATE INDEX IF NOT EXISTS "svc_status" ON "services" ("status");
-CREATE INDEX IF NOT EXISTS "svc_device" ON "services" ("device");
+CREATE INDEX IF NOT EXISTS "client_index" ON "services" ("clientId");
+CREATE INDEX IF NOT EXISTS "plan_index" ON "services" ("planId");
+CREATE INDEX IF NOT EXISTS "status_index" ON "services" ("status");
+CREATE INDEX IF NOT EXISTS "did_index" ON "services" ("device");
+CREATE INDEX IF NOT EXISTS "user_index" ON "services" ("username");
+CREATE INDEX IF NOT EXISTS "mac_index" ON "services" ("mac");
+CREATE INDEX IF NOT EXISTS "address_index" ON "network" ("address");
+CREATE INDEX IF NOT EXISTS "address6_index" ON "network" ("address6");
