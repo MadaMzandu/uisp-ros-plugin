@@ -69,6 +69,12 @@ class ApiSqlite
         return $this->execQuery($this->prepareUpdate());
     }
 
+    public function exists($id,$table = 'network'): ?int
+    {
+        return $this->db()->querySingle(
+            sprintf('select id from %s where id = %s',$table,$id));
+    }
+
     public function exec($sql): ?bool
     {
         return $this->db()->exec($sql);

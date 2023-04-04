@@ -25,7 +25,7 @@ class ApiIP
             $address = $this->findUnused($prefix);
             MyLog()->Append('ip assignment: '.$address);
             if($address){
-                $this->set_ip($sid,$address);
+                $this->set_ip($sid,$address,$ip6);
                 return $address;
             }
         }
@@ -50,23 +50,15 @@ class ApiIP
         return $address ;
     }
 
-    public function set_ip($sid,$address): void
+    public function set_ip($sid,$address,$ip6 = false): void
     {
-        if($this->type($address) == 'ip6'){ $this->set_ip6($sid,$address); }
-        else{
-            $cache = sprintf("insert or replace into network (id,address) values (%s,'%s') ",$sid,$address);
-            $main = sprintf("update or ignore services set address='%s' where id=%s ",$address,$sid);
-            $this->db()->exec($main);
-            $this->dbCache()->exec($cache);
+        $field = 'address';
+        if($ip6) $field = 'address6';
+        $sql = sprintf("INSERT INTO network (id,%s) VALUES (%s,'%s')",$field,$sid,$address);
+        if($this->db()->exists($sid)){
+            $sql = sprintf("UPDATE network SET %s='%s' WHERE id=%s",$field,$address,$sid);
         }
-    }
-
-    public function set_ip6($sid,$address): void
-    {
-        $cache = sprintf("insert or replace into network (id,prefix6) values (%s,'%s') ",$sid,$address);
-        $main = sprintf("update or ignore services set prefix6='%s' where id=%s ",$address,$sid);
-        $this->db()->exec($main);
-        $this->dbCache()->exec($cache);
+        $this->db()->exec($sql);
     }
 
     private function findUnused($prefix): ?string
