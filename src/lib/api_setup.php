@@ -1,5 +1,5 @@
 <?php
-const MY_VERSION = '1.8.9';
+const MY_VERSION = '1.8.8.11';
 const MAX_BACKUPS = 6 ;
 
 include_once 'api_sqlite.php';
@@ -32,10 +32,11 @@ class ApiSetup
         }
         $source = 'includes/update_schema.sql';
         $schema = file_get_contents($source);
+        shell_exec('rm -f data/tmp.db');
         if($this->db()->exec($schema)){
-            if($this->config_load()){
-                return $this->set_version();
-            }
+            copy('data/tmp.db','data/data.db');
+            shell_exec('rm -f data/tmp.db');
+            $this->set_version();
         }
         return false;
     }
