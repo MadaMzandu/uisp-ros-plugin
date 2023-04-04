@@ -330,9 +330,10 @@ class MtBatch extends MT
     }
 
 
-    private function ip($service,$device)
+    private function ip($service,$device,$ip6 = false)
     {
-        $ip = $service['address'] ?? null ;
+        $saved = $this->db()->selectIp($service['id'],$ip6);
+        $ip = $service['address'] ?? $saved ?? null ;
         if(filter_var($ip,FILTER_VALIDATE_IP,FILTER_FLAG_IPV4)){
             return $ip ;
         }
@@ -478,7 +479,8 @@ class MtBatch extends MT
 
     private function select_ids(array $ids): array
     {
-        $fields = 'services.*,network.address,network.prefix6,clients.company,clients.firstName,clients.lastName';
+        $fields = 'services.*,network.address,network.address6,clients.company,".
+        "clients.firstName,clients.lastName';
         $data = $this->dbCache()->selectCustom(
             sprintf("SELECT %s FROM services LEFT JOIN clients ON services.clientId=clients.id ".
                 "LEFT JOIN network ON services.id=network.id ".
