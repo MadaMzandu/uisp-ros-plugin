@@ -1,5 +1,8 @@
 <?php
-const MyCacheVersion = '1.0.1q';
+include_once 'api_trim.php';
+const MyCacheVersion = '1.8.8.10';
+
+class NoConfigException extends Exception {}
 
 class ApiCache{
 
@@ -55,8 +58,8 @@ class ApiCache{
            $db->enableExceptions(true);
            MyLog()->Append('attaching cache to main');
            $db->exec(sprintf("ATTACH 'data/cache.db' as cache"));
-           $sql = "INSERT OR REPLACE INTO cache.network (id,address,prefix6) ".
-               "SELECT id,address,prefix6 from services ";
+           $sql = "INSERT OR REPLACE INTO cache.network (id,address,address6,routes,routes6) ".
+               "SELECT id,address,address6,routes,routes6 from network ";
            MyLog()->Append('cache attach sql: '.$sql);
            if($db->exec($sql)){
                $this->db()->saveConfig(['last_net' => $this->now()]);
@@ -74,7 +77,9 @@ class ApiCache{
             if(empty($data)) continue ;
             $request = [];
             foreach($data as $item){
-                $request[] = $this->trimmer()->trim($table,$item)['entity'];
+                $trim = $this->trimmer()->trim($table,$item)['entity'] ?? null;
+                if(!$trim){ continue ; }
+                $request[] = $trim ;
             }
             $this->batch($table,$request);
             $opts['offset'] += 500 ;
@@ -83,15 +88,15 @@ class ApiCache{
 
     public function batch($table, $request)
     {
-        $query = [];
+        $values = [];
         $fields = null ;
         foreach ($request as $item){
-            $item = array_diff_key($item,['address' => null]);
-            $query[] = $this->to_sql(array_values($item));
+            $item = array_diff_key($item,['network' => null]);
+            $values[] = $this->to_sql(array_values($item));
             $fields = implode(',',array_keys($item));
         }
         $sql = sprintf('INSERT OR REPLACE INTO %s (%s) VALUES ',$table,$fields);
-        $sql .= implode(',',$query);
+        $sql .= implode(',',$values);
         MyLog()->Append("cache update sql: ".$sql);
         $this->dbCache()->exec($sql);
     }
@@ -99,10 +104,16 @@ class ApiCache{
     private function batch_network($request)
     {
         $deleted = [];
-        $network = [];
+        $values = [];
+        $fields = null ;
         foreach($request as $item){
-            if(in_array($item['status'],[2,5,8])) $deleted[] = $item['id'];
-            else if($item['address']) $network[$item['id']] = $item['address'];
+            $net = $item['network'] ?? [];
+            $net['id'] = $item['id'];
+            if(in_array($item['status'],[2,5,8])) { $deleted[] = $item['id']; }
+            else {
+                $values[] = $this->to_sql(array_values($net));
+                $fields = implode(',',array_keys($net));
+            }
         }
         if(!empty($deleted)){
             $sql = sprintf("delete from network where id in (%s)",
@@ -110,13 +121,11 @@ class ApiCache{
             MyLog()->Append('cache: network delete sql: '.$sql);
             $this->dbCache()->exec($sql); //clear inactive addresses
         }
-        if(!empty($network)){
-            $query = [];
-            foreach(array_keys($network) as $id){ $query[]= sprintf("(%s,'%s')",$id,$network[$id]); }
-            $sql = sprintf("insert or replace into network (id,address) values %s ",
-                implode(',',$query));
+        if(!empty($values)){
+            $sql = sprintf("insert or replace into network (%s) values %s ",$fields,
+                implode(',',$values));
             MyLog()->Append("cache: network sql: ".$sql);
-            $this->dbCache()->exec($sql); //update statically assigned addresses
+            $this->dbCache()->exec($sql);
         }
     }
 
@@ -218,7 +227,7 @@ class ApiCache{
 
     private function trimmer(){ return new ApiTrim(); }
 
-    private function ucrm(){ return new ApiUcrm(); }
+    private function ucrm(){ return new WebUcrm(); }
 
     private function db(){ return new ApiSqlite(); }
 
@@ -228,7 +237,7 @@ class ApiCache{
 
     private function dbCache(){ return new ApiSqlite('data/cache.db'); }
 
-    private function throwErr(string $exception){ throw new Exception('cache: '. $exception); }
+    private function throwErr(string $exception){ throw new NoConfigException('cache: '. $exception); }
 
    }
 
