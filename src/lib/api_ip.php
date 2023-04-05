@@ -18,12 +18,13 @@ class ApiIP
             $pool = $ip6 ? $device->pool6 : $device->pool ;
         }
         if(!$pool){
-            throw new Exception('ip: cannot find an address pool');
+            throw new Exception('ip: cannot find an address pool: '.json_encode($device));
         }
         $prefixes = explode(',',$pool);
         foreach ($prefixes as $prefix){
             $address = $this->findUnused($prefix);
-            MyLog()->Append('ip assignment: '.$address);
+            $name = $device->name ?? null;
+            MyLog()->Append(sprintf("ip assignment: %s",$address));
             if($address){
                 $this->set_ip($sid,$address,$ip6);
                 return $address;
