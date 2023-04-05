@@ -12,9 +12,9 @@ class ApiIP
     public function ip($sid,$device = null,$ip6 = false): ?string
     {
         $this->ip6 = $ip6;
-        $this->length6 = $device->pfxLength ?? 64;
         $pool = $this->conf()->ppp_pool ;
-        if($device || $this->conf()->router_ppp_pool){
+        if($device){
+            $this->length6 = $device->pfxLength ?? 64;
             $pool = $ip6 ? $device->pool6 : $device->pool ;
         }
         if(!$pool){
@@ -23,7 +23,6 @@ class ApiIP
         $prefixes = explode(',',$pool);
         foreach ($prefixes as $prefix){
             $address = $this->findUnused($prefix);
-            $name = $device->name ?? null;
             MyLog()->Append(sprintf("ip assignment: %s",$address));
             if($address){
                 $this->set_ip($sid,$address,$ip6);
