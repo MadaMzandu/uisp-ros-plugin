@@ -52,10 +52,16 @@ class ApiTrim
             $entity[$db_key] = $item->$field ?? null;
         }
         $attributes = $item->attributes ?? [];
-        foreach($this->native_map() as $db_key){ $entity[$db_key] = null; } //for db fill keys will nulls
         foreach ($attributes as $attribute) {
             $key = $this->map_attr_key($attribute->key);
-            if($key){$entity[$key] = $attribute->value ?? null; }
+            if($key){
+                if(in_array($key,['address','address6','routes','routes6'])){// network
+                    $entity['network'][$key] = $attribute->value ?? null;
+                }
+                else{
+                    $entity[$key] = $attribute->value ?? null;
+                }
+            }
         }
         $dev_name = $entity['device'] ?? null ;
         if($dev_name){
@@ -89,6 +95,9 @@ class ApiTrim
             'mac_addr_attr' => 'mac',
             'hs_attr' => 'hotspot',
             'ip_addr_attr' => 'address',
+            'ip_addr6_attr' => 'address6',
+            'ip_routes_attr' => 'routes',
+            'ip_routes6_attr' => 'routes6',
             'pppoe_caller_attr' => 'callerId',
         ];
     }
@@ -109,7 +118,14 @@ class ApiTrim
         $attributes = $data->attributes ?? [];
         foreach ($attributes as $attribute){
             $key = $this->map_attr_key($attribute->key);
-            if($key) $previous[$key] = $attribute->value ;
+            if($key){
+                if(in_array($key,['address','address6'])){// network
+                    $entity['network'][$key] = $attribute->value ?? null;
+                }
+                else{
+                    $entity[$key] = $attribute->value ?? null;
+                }
+            }
         }
         $dev_name = $previous['device'] ?? null ;
         if($dev_name){
@@ -121,7 +137,7 @@ class ApiTrim
 
     private function set_devices(): array
     {
-        $data = $this->db()->selectAllFromTable('devices');
+        $data = $this->db()->selectAllFromTable('devices') ?? [];
         $map = [];
         foreach ($data as $device) {
             $name = strtolower($device['name']);
@@ -133,11 +149,21 @@ class ApiTrim
     private function default_service():array
     {
         $keys = ["id","planId","clientId","status","price","totalPrice",
-            "currencyCode","device","username","password","mac","hotspot",
-            "address","callerId"];
+            "currencyCode","device","username","password","mac","hotspot","callerId"];
         $entity = [];
         foreach ($keys as $key) { $entity[$key] = null; }
+        $entity['network'] = $this->default_network();
         return $entity ;
+    }
+
+    private function default_network(): array
+    {
+        $keys = [
+            'address','address6','routes','routes6'
+        ];
+        $net = [];
+        foreach ($keys as $key){ $net[$key] = null; }
+        return $net ;
     }
 
     private function db(){ return new ApiSqlite(); }
