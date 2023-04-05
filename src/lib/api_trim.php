@@ -30,7 +30,7 @@ class ApiTrim
         return ['entity' => $entity];
     }
 
-    private function trim_service($request): array
+    private function trim_service($request): ?array
     {
         $action = $request->changeType ?? 'insert';
         $item = $request->extraData->entity ?? $request;
@@ -68,6 +68,7 @@ class ApiTrim
             $dev_name = strtolower($dev_name);
             $entity['device'] = $this->devices[$dev_name]['id'] ?? null ;
         }
+        if(!$this->check_attributes($entity)){ return null; }
         $return['action'] = $action ;
         $return['entity'] = $entity ;
         if($previous) { $return['previous'] = $this->trim_previous($previous); }
@@ -84,6 +85,13 @@ class ApiTrim
             }
         }
         return null ;
+    }
+
+    private function check_attributes($entity)
+    {
+        $dev = $entity['device'] ?? null;
+        $account = $entity['mac'] ?? $entity['username'] ?? null;
+        return $dev && $account ;
     }
 
     private function native_map(): array
