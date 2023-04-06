@@ -61,9 +61,9 @@ class ApiSetup
         return $done ;
     }
 
-    private  function set_version(): bool
+    private  function set_version(): void
     {
-        return $this->db()->saveConfig(['version' => MY_VERSION]);
+        $this->db()->saveConfig(['version' => MY_VERSION]);
     }
 
     private function db_backup(): bool
