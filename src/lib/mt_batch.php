@@ -99,8 +99,6 @@ class MtBatch extends MT
         $fields = [
             'id',
             'device',
-            'address',
-            'prefix6',
             'clientId',
             'planId',
             'status',
@@ -147,10 +145,15 @@ class MtBatch extends MT
                 }
             }
         }
-        $sql = sprintf("delete from services where id in (%s)",
-        implode(',',$ids));
-        MyLog()->Append('batch delete sql: '.$sql);
-        $this->db()->exec($sql);
+        foreach(['services','network'] as $table) {
+            $sql = sprintf("delete from %s where id in (%s)",$table,
+                implode(',',$ids));
+            MyLog()->Append(sprintf("batch delete from %s sql: %s",$table,$sql));
+            $this->db()->exec($sql);
+        }
+
+
+
     }
 
     private function to_sql($array): string
@@ -176,7 +179,6 @@ class MtBatch extends MT
         return $sent && !$fail ;
     }
 
-
     private function account($service,$plan): ?array
     {
        $data = null ;
@@ -200,7 +202,7 @@ class MtBatch extends MT
             'path' => $path,
             'name' => $this->profile_name($service,$plan),
             'rate-limit' => $this->profile_limits($service,$plan),
-            //'parent-queue' => $this->pq_name(),
+            'parent-queue' => $this->parent_name($plan),
             'address-list' => $this->addr_list($service),
         ];
         if($type == 'ppp') $data['local-address'] = null;
@@ -273,7 +275,6 @@ class MtBatch extends MT
             'address' => $service['address'],
             'mac-address' => strtoupper($service['mac']),
             'insert-queue-before' => 'bottom',
-            'parent' => $this->parent_name($plan),
             'address-lists' => $this->addr_list($service),
             'comment' => $this->account_comment($service),
         ];
@@ -332,8 +333,7 @@ class MtBatch extends MT
 
     private function ip($service,$device,$ip6 = false)
     {
-        $saved = $this->db()->selectIp($service['id'],$ip6);
-        $ip = $service['address'] ?? $saved ?? null ;
+        $ip = $this->db()->selectIp($service['id'],$ip6);
         if(filter_var($ip,FILTER_VALIDATE_IP,FILTER_FLAG_IPV4)){
             return $ip ;
         }
@@ -479,13 +479,12 @@ class MtBatch extends MT
 
     private function select_ids(array $ids): array
     {
-        $fields = 'services.*,network.address,network.address6,clients.company,".
-        "clients.firstName,clients.lastName';
-        $data = $this->dbCache()->selectCustom(
-            sprintf("SELECT %s FROM services LEFT JOIN clients ON services.clientId=clients.id ".
-                "LEFT JOIN network ON services.id=network.id ".
-                "WHERE services.id IN (%s) ",$fields,implode(',',$ids)));
-       $deviceMap = [];
+        $fields = 'services.*,clients.company,clients.firstName,clients.lastName';
+        $sql = sprintf("SELECT %s FROM services LEFT JOIN clients ON services.clientId=clients.id ".
+            "LEFT JOIN network ON services.id=network.id ".
+            "WHERE services.id IN (%s) ",$fields,implode(',',$ids));
+        $data = $this->dbCache()->selectCustom($sql);
+        $deviceMap = [];
         foreach ($data as $item){ $id = $item['device'] ?? 'nodev'; $deviceMap[$id][] = $item ; }
         return $deviceMap ;
     }

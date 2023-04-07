@@ -20,12 +20,17 @@ try
     include_once 'lib/api_common.php';
 
     //set_error_handler('myErrorHandler');
+    MyLog()->Append('public: checking databases');
     run_setup();
     cache_setup();
+    MyLog()->Append('public: checking cache sync');
+    cache_sync();
+    net_sync();
+    MyLog()->Append('public: setup completed');
 
     include_once 'lib/api_router.php';
 
-    MyLog()->Append('public: setup completed');
+
 
     if(!$json)
     {
@@ -38,28 +43,22 @@ try
     }
 
 
-    MyLog()->Append('public: begin api request: '.$json);
+    MyLog()->Append('public: begin api request: ');
     $data = json_decode($json);
     $api = new API_Router($data);
     $api->route();
     $api->http_response();
     MyLog()->Append('api: finished without error : ' . json_encode($api->status()));
-    MyLog()->Append('public: begin cache sync');
-    cache_sync();
-    net_sync();
 }
-catch (NoActionException $noError){
-    respond($noError->getMessage());
-}
+catch (NoActionException $noError){ respond($noError->getMessage()); }
 catch (
-Exception
-| Error
-| GuzzleHttp\Exception\GuzzleException
+Exception | Error | GuzzleHttp\Exception\GuzzleException
 | \Ubnt\UcrmPluginSdk\Exception\ConfigurationException
 | \Ubnt\UcrmPluginSdk\Exception\InvalidPluginRootPathException
-| \Ubnt\UcrmPluginSdk\Exception\JsonException $err){
-    MyLog()->Append('Exception triggered: '.$err->getMessage().' request: '.$json);
-    respond($err->getMessage(),true);
+| \Ubnt\UcrmPluginSdk\Exception\JsonException $error )
+{
+    MyLog()->Append('Exception triggered: '.$error->getMessage().' request: '.$json);
+    respond($error->getMessage(),true);
 }
 
 
