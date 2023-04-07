@@ -6,16 +6,18 @@ include_once 'api_ucrm.php';
 class ApiAttributes
 {
 
-    public function check($request): bool
+    public function check($request): int
     {
-        if(!$this->check_config()) return false ;
+        if(!$this->check_config()) return 0 ;
         $entity = $request->extraData->entity ?? $request ;
         $attributes = $entity->attributes ?? null ;
         $values = $this->extract($attributes);
-        if(empty($values)) return false ;
-        if(!$this->check_device($values)) return false ;
-        if($this->check_mac($values)) return true ;
-        return $this->check_username($values);
+        if(empty($values)) return 0 ;
+        if(!$this->check_device($values)) return 0 ;
+        if($this->check_mac($values)) return 1;
+        if($this->check_username($values)) return 1 ;
+        if($this->check_auto($values)) return 2;
+        return 0 ;
     }
 
     private function check_username($values):bool
@@ -24,7 +26,7 @@ class ApiAttributes
         return (bool) $user ;
     }
 
-    private function auto_user($values): bool
+    public function check_auto($values): bool
     {
         $conf = $this->conf();
         $hotspot = $values['hotspot'] ?? false ;
