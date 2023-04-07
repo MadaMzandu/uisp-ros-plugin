@@ -1,6 +1,9 @@
 <?php
-include_once 'api_trim.php';
 const MyCacheVersion = '1.8.8.10';
+
+include_once 'api_trim.php';
+include_once 'api_ucrm.php';
+include_once '_web_ucrm.php';
 
 class NoConfigException extends Exception {}
 
