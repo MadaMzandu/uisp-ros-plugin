@@ -147,12 +147,12 @@ class ApiSqlite
         return (object)$this->singleQuery($sql,true) ?? null;
     }
 
-    public function selectIp($id,$ip6)
+    public function selectIp($id,$ip6): ?string
     {
         $field = 'address';
         if($ip6) $field = 'address6';
         $sql = sprintf("SELECT %s FROM network WHERE id=%s",$field,$id);
-        $this->db()->querySingle($sql);
+        return $this->db()->querySingle($sql);
     }
 
     public function selectDeviceByDeviceName($name)
