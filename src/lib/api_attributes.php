@@ -89,11 +89,11 @@ class ApiAttributes
 
     public function extract($attributes): array
     {//extract attribute values and map to database keys
-        if(empty($attributes)){ return [] ;}
+        if(empty($attributes)){ $attributes = []; }
         $assigned = array_flip($this->assigned_map());
         $native = $this->native_map();
         $devices = $this->device_map();
-        $map = [];
+        $map = array_fill_keys(array_values($native),null);
         foreach($attributes as $attribute){
             $key = $assigned[$attribute->key] ?? null ;
             $db_key = $native[$key] ?? null ;
