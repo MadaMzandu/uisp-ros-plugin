@@ -35,6 +35,8 @@ class MtBatch extends MT
                     $parent['action'] = 'remove';
                     $deviceData[$did]['parents'][$parent['name']] = $parent ;
                 }
+                $disconnect = $this->disconnect($service);
+                if($disconnect){$deviceData[$did]['disconn'][] = $disconnect; }
             }
         }
         MyLog()->Append('services ready to delete');
@@ -61,6 +63,8 @@ class MtBatch extends MT
                 if($profile){ $deviceData[$did]['profiles'][$profile['name']] = $profile ; }
                 $parent = $this->parent($service,$plan);
                 if($parent){ $deviceData[$did]['parents'][$parent['name']] = $parent ; }
+                $disconnect = $this->disconnect($service);
+                if($disconnect){$deviceData[$did]['disconn'][] = $disconnect; }
             }
         }
         MyLog()->Append('services ready to add or set');
@@ -80,7 +84,7 @@ class MtBatch extends MT
         {
             $this->batch_device = (object) $devices[$did];
             MyLog()->Append('executing batch for device: '.$this->batch_device->name);
-            $keys = ['parents','profiles','queues','accounts'];
+            $keys = ['parents','profiles','queues','accounts','disconn'];
             if($delete) $keys = array_reverse($keys);
             foreach ($keys as $key){
                 $item = $deviceData[$did][$key] ?? [];
@@ -95,7 +99,7 @@ class MtBatch extends MT
 
     private function save_batch($deviceServices)
     {
-        $successes = [];
+        $successes = $this->find_success();
         $fields = [
             'id',
             'device',
@@ -104,15 +108,10 @@ class MtBatch extends MT
             'status',
         ];
         $save = [];
-        foreach ($this->batch_success as $item){
-            $key = $item['mac-address'] ?? $item['name'] ?? 'nokey';
-            $key =strtolower($key);
-            $successes[$key] = 1 ;
-        }
         foreach ($deviceServices as $services){
             foreach ($services as $service){
                 $values = [];
-                $key = $service['mac'] ?? $service['username'] ?? 'nokey';
+                $key = $service['mac'] ?? $service['username'] ?? null;
                 $success = $successes[strtolower($key)] ?? null ;
                 if($success){
                     foreach ($fields as $key){ $values[] = $service[$key] ?? null ;}
@@ -129,16 +128,11 @@ class MtBatch extends MT
 
     private function delete_batch($deviceServices)
     {
-        $successes = [];
+        $successes = $this->find_success();
         $ids = [];
-        foreach ($this->batch_success as $item){
-            $key = $item['mac-address'] ?? $item['name'] ?? 'nokey';
-            $key =strtolower($key);
-            $successes[$key] = 1 ;
-        }
         foreach ($deviceServices as $services){
             foreach ($services as $service){
-                $key = $service['mac'] ?? $service['username'] ?? 'nokey' ;
+                $key = $service['mac'] ?? $service['username'] ?? null ;
                 $success = $successes[strtolower($key)] ?? null ;
                 if($success){
                     $ids[] = $service['id'];
@@ -154,6 +148,17 @@ class MtBatch extends MT
 
 
 
+    }
+
+    private function find_success(): array
+    {
+        $successes = [];
+        foreach ($this->batch_success as $item){
+            $key = $item['mac-address'] ?? $item['name'] ?? 'nokey';
+            $key =strtolower($key);
+            $successes[$key] = 1 ;
+        }
+        return $successes ;
     }
 
     private function to_sql($array): string
@@ -202,7 +207,7 @@ class MtBatch extends MT
             'path' => $path,
             'name' => $this->profile_name($service,$plan),
             'rate-limit' => $this->profile_limits($service,$plan),
-            'parent-queue' => $this->parent_name($plan),
+            'parent-queue' => $this->parent_name($service,$plan),
             'address-list' => $this->addr_list($service),
         ];
         if($type == 'ppp') $data['local-address'] = null;
@@ -234,7 +239,6 @@ class MtBatch extends MT
                 'name' => $this->account_name($service),
                 'target' => $service['address'],
                 'max-limit' => $this->disabled_rate(),
-                'parent-queue' => $this->parent_name($plan),
                 'limit-at' => $this->disabled_rate(),
                 'comment' => $this->account_comment($service),
             ];
@@ -249,7 +253,7 @@ class MtBatch extends MT
             'burst-threshold' => $this->to_pair($limits['thresh']),
             'burst-time' => $this->to_pair($limits['time'],false),
             'priority' => $this->to_pair($limits['prio'],false),
-//            'parent' => $this->pq_name(),
+            'parent' => $this->parent_name($service,$plan),
             'comment' => $this->account_comment($service),
         ];
     }
@@ -266,6 +270,18 @@ class MtBatch extends MT
             'comment' => $this->account_comment($service),
         ];
         //REMEMBER IP6 ADDRESSING HERE
+    }
+
+    private function disconnect($service)
+    {
+        $type = $this->type($service);
+        if($type == 'dhcp') return null ;
+        $path = $type == 'ppp' ? '/ppp/active' : '/ip/hotspot/active';
+        return [
+            'path' => $path,
+            'action' => 'remove',
+            'name' => $service['username'],
+        ];
     }
 
     private function dhcp($service,$plan)
@@ -286,7 +302,7 @@ class MtBatch extends MT
         if($this->disabled($service)) return null ;
         return [
             'path' => '/queue/simple',
-            'name' => $this->parent_name($plan),
+            'name' => $this->parent_name($service,$plan),
             'target' => $this->parent_target($plan),
             'max-limit' => $this->parent_total($plan),
             'limit-at' => $this->parent_total($plan),
@@ -304,9 +320,10 @@ class MtBatch extends MT
         return implode(',',$addresses);
     }
 
-    private function parent_name($plan): ?string
+    private function parent_name($service,$plan): ?string
     {
-        if($this->conf->disable_contention) return null ;
+        if($this->conf->disable_contention) return 'none' ;
+        if($this->disabled($service)) return 'none';
         return sprintf('servicePlan-%s-parent',$plan['id']);
     }
 
@@ -331,7 +348,7 @@ class MtBatch extends MT
     }
 
 
-    private function ip($service,$device,$ip6 = false)
+    private function ip($service,$device,$ip6 = false): string
     {
         $ip = $this->db()->selectIp($service['id'],$ip6);
         if(filter_var($ip,FILTER_VALIDATE_IP,FILTER_FLAG_IPV4)){
@@ -347,7 +364,7 @@ class MtBatch extends MT
         return $api->ip($sid);
     }
 
-    private function profile_name($service, $plan)
+    private function profile_name($service, $plan): string
     {
         if($this->disabled($service))
             return $this->conf->disabled_profile ?? 'default';
