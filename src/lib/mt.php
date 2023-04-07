@@ -64,7 +64,7 @@ class MT extends Device
             $api->write(';');
             $result = $api->read();
             $timer->stop();
-            if($this->has_error()){
+            if($this->find_error($result)){
                 $this->batch_failed[] = $post ;
                 MyLog()->Append('mt write error: '.json_encode([$data,$result]),6);
             }
@@ -79,6 +79,19 @@ class MT extends Device
         $this->batch = [] ;
         $api->disconnect();
         return $writes ;
+    }
+
+    protected function find_error($result): bool
+    {
+        if(is_array($result) && !empty($result)){
+            $error = $result['!trap'][0]['message'] ?? null ;
+            if($error){
+                MyLog()->Append('mt write error: '.$error);
+                $this->setErr($error);
+                return true ;
+            }
+        }
+        return false;
     }
 
     protected function read($filter = null)
