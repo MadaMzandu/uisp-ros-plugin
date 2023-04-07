@@ -1,13 +1,16 @@
 <?php
+include_once 'api_attributes.php';
+include_once 'api_trim.php';
+
 const ACTION_OBSOLETE = 5 ;
 const ACTION_ENDED = 2;
-const ACTION_SUSPENDED = 3;
 const ACTION_DEFERRED = 6;
 const ACTION_INACTIVE = 8;
 const ACTION_DOUBLE = 2 ;
 const ACTION_DELETE = -1 ;
 const ACTION_SET = 1 ;
-const ACTION_NULL = 99 ;
+const ACTION_CACHE = 10;
+const ACTION_AUTO = 11;
 class NoActionException extends Exception{}
 
 class ApiAction
@@ -32,6 +35,7 @@ class ApiAction
     private function execute()
     {
         $type = $this->request->entity ?? 'none';
+        $clientId = $this->request->entity->clientId ?? 0 ;
         $cache = new ApiCache();
         $data = $this->trimmer()->trim('service',$this->request);
         if($type == 'client'){
@@ -64,23 +68,40 @@ class ApiAction
                 }
                 case ACTION_DEFERRED: {
                     MyLog()->Append('No action for deferred action');
+                    break ;
+                }
+                case ACTION_CACHE: {
+                    MyLog()->Append('attribute check failed - caching only');
+                    $cache->save($data['entity']);
+                    break;
+                }
+                case ACTION_AUTO:{
+                    MyLog()->Append('generating username and password for service');
+                    $this->attributes()->set_username($clientId);
+                    break ;
                 }
             }
         }
-
     }
 
     private function select_action($data): int
     {
-        $return = ACTION_SET;
-        if($this->has_deferred($data)) $return = ACTION_DEFERRED;
+        switch ($this->has_attributes()){
+            case 0: return ACTION_CACHE;
+            case 2: return ACTION_AUTO;
+        }
+        if($this->has_deferred($data)) { return ACTION_DEFERRED; }
         else if($this->has_moved($data)
             || $this->has_flipped($data)
             || $this->has_upgraded($data)
-            || $this->has_renamed($data)) $return = ACTION_DOUBLE;
-        else if($this->has_ended($data)) $return = ACTION_DELETE;
-        MyLog()->Append("action code selected: ". $return);
-        return $return ;
+            || $this->has_renamed($data)) { return ACTION_DOUBLE; }
+        else if($this->has_ended($data)) { return ACTION_DELETE; }
+        return ACTION_SET ;
+    }
+
+    private function has_attributes(): int
+    {
+        return $this->attributes()->check($this->request);
     }
 
     private function has_deferred($data)
@@ -141,12 +162,10 @@ class ApiAction
 
     private function trimmer(){ return new ApiTrim(); }
 
+    private function attributes() { return new ApiAttributes(); }
 
     public function __construct($data = null)
     {
-        if(!is_object($data)){
-            throw new Exception('action: wrong data format: '.json_encode($data));
-        }
         $this->request = $data ;
     }
 
