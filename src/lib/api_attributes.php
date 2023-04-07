@@ -33,7 +33,7 @@ class ApiAttributes
         return $conf->auto_ppp_user || ($hotspot && $conf->auto_hs_user);
     }
 
-    public function set_username($cid): void
+    public function set_username($clientId): void
     {
         $ids = $this->attribute_id_map();
         $uid = $ids['pppoe_user_attr'] ?? null ;
@@ -41,9 +41,9 @@ class ApiAttributes
         $post = [];
         if($uid)
         $post['attributes'][] = ['customAttributeId' => $uid, 'value' =>
-            sprintf('%s-%s',$this->string(5),$cid)] ;
+            sprintf('%s-%s',$this->string(5),$clientId)] ;
         if($pid) $post['attributes'][] = ['customAttributeId' => $pid, 'value' => $this->string()];
-        if($post) $this->ucrm()->patch('clients/'.$cid,$post);
+        if($post) $this->ucrm()->patch('clients/'.$clientId,$post);
     }
 
     public function check_config(): bool
