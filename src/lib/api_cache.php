@@ -21,7 +21,7 @@ class ApiCache{
     {
         if($this->needs_update()){
             if(!$this->check_attributes()
-                || $this->check_devices()){
+                || !$this->check_devices()){
                 return ;
             }
             $timer = new ApiTimer('sync: ');
