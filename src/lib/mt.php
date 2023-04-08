@@ -6,7 +6,6 @@ include_once 'device.php';
 class MT extends Device
 {
 
-    protected $insertId;
     protected $path;
     protected $entity;
     protected $device;
