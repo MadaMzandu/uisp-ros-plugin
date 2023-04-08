@@ -4,8 +4,6 @@ class AdminRebuild{
 
     private function db(){ return new ApiSqlite(); }
 
-    private function ucrm() { return new ApiUcrm(); }
-
     private function cache(){ return new ApiSqlite('data/cache.db'); }
 
     private function clear($type,$ids = [])
@@ -35,7 +33,7 @@ class AdminRebuild{
         $timer = new ApiTimer($type . ' rebuild: '.json_encode($data));
         MyLog()->Append('selecting services to rebuild');
         if($type == 'all'){
-            $select = $this->cache()->selectCustom('SELECT id FROM services WHERE status NOT IN (2,5,8) limit 10');
+            $select = $this->cache()->selectCustom('SELECT id FROM services WHERE status NOT IN (2,5,8)');
         }
         if($type == 'service'){
             $select = $this->cache()->selectCustom(sprintf("SELECT id from services WHERE planId = %s AND status NOT IN (2,5,8) ",$typeId));
