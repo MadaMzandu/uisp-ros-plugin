@@ -60,7 +60,7 @@ class Settings extends Admin
         foreach($keys as $key){
             $method = 'apply_' . $key ;
             if(method_exists($this,$method)){
-                $ret &= $this->$key();
+                $ret &= $this->$method();
             }
         }
         return $ret ;
