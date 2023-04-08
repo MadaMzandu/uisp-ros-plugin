@@ -133,7 +133,7 @@ class MtData extends MT
             "where services.planId=%s",$plan['id']);
         $data = $this->dbCache()->selectCustom($sql);
         $addresses = [];
-        foreach ($data as $item){ $addresses[] = $item['address']; }
+        foreach ($data as $item){ if($item['address']) $addresses[] = $item['address']; }
         return implode(',',$addresses);
     }
 
