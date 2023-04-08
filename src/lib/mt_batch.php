@@ -6,6 +6,24 @@ include_once 'api_sqlite.php';
 
 class MtBatch extends MT
 {
+    public function delete_parents()
+    {
+        $plans = $this->select_plans();
+        $devices = $this->select_devices();
+        $deviceData = [];
+        foreach(array_keys($devices) as $did){
+            foreach ($plans as $plan){
+                $plan = [
+                    'path' => '/queue/simple',
+                    'action' => 'remove',
+                    'name' => sprintf('servicePlan-%s-parent',$plan['id']),
+                ];
+                $deviceData[$did]['parents'][] = $plan ;
+            }
+        }
+        $this->run_batch($deviceData,true);
+    }
+
     public function delete_ids(array $ids)
     {
         $deviceServices = $this->select_ids($ids);
@@ -13,6 +31,7 @@ class MtBatch extends MT
         $deviceData = [];
         $mt = new MtData();
         foreach (array_keys($deviceServices) as $did){
+            if($did == 'nodev'){ continue; }
             foreach($deviceServices[$did] as $service){
                 $plan = $plans[$service['planId']] ;
                 $account = $mt->account($service,$plan);
@@ -41,7 +60,7 @@ class MtBatch extends MT
         }
         MyLog()->Append('services ready to delete');
         $this->run_batch($deviceData,true);
-        $this->delete_batch($deviceServices);
+        $this->unsave_batch($deviceServices);
     }
 
     public function set_ids(array $ids)
@@ -53,6 +72,7 @@ class MtBatch extends MT
         $mt = new MtData();
         foreach (array_keys($deviceServices) as $did){
             foreach ($deviceServices[$did] as $service){
+                if($did == 'nodev'){ continue; }
                 $plan = $plans[$service['planId']] ;
                 $device = $devices[$service['device']] ?? null;
                 $service['address'] = $mt->ip($service,$device);
@@ -83,7 +103,6 @@ class MtBatch extends MT
         $this->batch_success = [];
         foreach (array_keys($deviceData) as $did)
         {
-            if($did == 'nokey') { continue; }
             $this->batch_device = (object) $devices[$did];
             MyLog()->Append('executing batch for device: '.$this->batch_device->name);
             $keys = ['parents','profiles','queues','accounts','disconn'];
@@ -128,7 +147,7 @@ class MtBatch extends MT
         $this->db()->exec($sql);
     }
 
-    private function delete_batch($deviceServices)
+    private function unsave_batch($deviceServices)
     {
         $successes = $this->find_success();
         $ids = [];
