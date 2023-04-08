@@ -68,10 +68,17 @@ class Settings extends Admin
 
     private function apply_disable_contention(): bool
     {
-        $this->db()->saveConfig($this->data);
+        $enable = !$this->data->disable_contention ?? false ;
         $sys = new AdminRebuild();
-        $sys->rebuild(['type' => 'all']);
-        return true ;
+        if($enable){
+            $sys->rebuild(['type' => 'all']);
+        }
+        else{
+            $sys->rebuild(['type' => 'all']);
+            $batch = new MtBatch();
+            $batch->delete_parents();
+        }
+        return true;
     }
 
 }
