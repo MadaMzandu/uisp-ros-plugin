@@ -1,5 +1,5 @@
 <?php
-const MY_VERSION = '1.8.8.11';
+const MY_VERSION = '1.8.8.12';
 const MAX_BACKUPS = 6 ;
 
 include_once 'api_sqlite.php';
@@ -37,6 +37,7 @@ class ApiSetup
             copy('data/tmp.db','data/data.db');
             shell_exec('rm -f data/tmp.db');
             $this->set_version();
+            $this->config_load();
         }
         return false;
     }
@@ -53,11 +54,13 @@ class ApiSetup
         }
     }
 
-    private function config_load(): bool
+    public function config_load(): bool
     {
         $file = file_get_contents('includes/conf_default.json');
         $default = json_decode($file,true);
-        $done = $this->db()->saveConfig($default);
+        $conf = (array) $this->db()->readConfig();
+        $diff = array_diff_key($default,$conf);
+        $done = $this->db()->saveConfig($diff);
         return $done ;
     }
 
