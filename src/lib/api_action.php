@@ -71,7 +71,9 @@ class ApiAction
                     break ;
                 }
                 case ACTION_CACHE: {
-                    MyLog()->Append('attribute check failed - caching only');
+                    MyLog()->Append('service has missing attributes - delete before cache');
+                    $delete = $this->get('id',$data);
+                    $api->delete_ids([$delete]);
                     $cache->save($data['entity']);
                     break;
                 }
