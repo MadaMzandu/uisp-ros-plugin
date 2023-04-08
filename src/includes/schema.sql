@@ -20,7 +20,7 @@ CREATE TABLE IF NOT EXISTS "network"(
 );
 CREATE TABLE IF NOT EXISTS "devices" (
     "id"    INTEGER NOT NULL,
-    "name"  TEXT,
+    "name"  TEXT COLLATE NOCASE,
     "ip"    TEXT,
     "type"  TEXT,
     "user"  TEXT,

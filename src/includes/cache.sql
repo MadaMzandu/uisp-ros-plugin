@@ -1,8 +1,8 @@
 CREATE TABLE IF NOT EXISTS "clients" (
        "id"    INTEGER NOT NULL,
-       "company" TEXT,
-       "firstName" TEXT,
-       "lastName" TEXT ,
+       "company" TEXT COLLATE NOCASE,
+       "firstName" TEXT COLLATE NOCASE,
+       "lastName" TEXT COLLATE NOCASE,
        PRIMARY KEY("id")
 );
 CREATE TABLE IF NOT EXISTS "network" (
