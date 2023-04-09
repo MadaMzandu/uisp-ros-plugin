@@ -61,7 +61,7 @@ SELECT id,device,clientId,planId,status,"last",created FROM services ;
 INSERT INTO tmp."devices" (id,name,ip,type,user,password,dbname,pool,pool6,pfxLength,"last",created)
 SELECT id,name,ip,type,user,password,dbname,pool,pool6,pfxLength,"last",created FROM devices ;
 INSERT INTO tmp."plans" ("id","ratio","last","created") SELECT "id","ratio","last","created" FROM plans ;
-INSERT INTO tmp."network" (id,address,routes6) SELECT "id","address","prefix6" FROM services ;
+INSERT INTO tmp."network" (id,address,address6) SELECT "id","address","prefix6" FROM services ;
 
 CREATE INDEX tmp."address_index" ON "network" ("address");
 CREATE INDEX tmp."address6_index" ON "network" ("address6");
