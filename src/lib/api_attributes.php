@@ -108,7 +108,7 @@ class ApiAttributes
 
     private function split($values): array
     {// split for network table
-        $keys = ['address','address6','routes','routes6'];
+        $keys = ['address','address6'];
         $map = array_diff_key($values,array_fill_keys($keys,null));
         foreach ($keys as $key){ $map['network'][$key] = $values[$key] ?? null; }
         return $map ;
