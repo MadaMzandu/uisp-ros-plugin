@@ -270,6 +270,22 @@
       "type": null,
       "isAttribute": true
    },
+   "config_dhcp6_duid_attr" :
+   {
+      "name" : "dhcp6_duid_attr",
+      "label" : "Custom attribute for dhcp6 duid",
+      "describe" : true,
+      "description" : "A duid and iaid are required to access dhcp6 services",
+      "isAttribute" : true
+   },
+   "config_dhcp6_iaid_attr" :
+   {
+      "name" : "dhcp6_iaid_attr",
+      "label" : "Custom attribute for dhcp6 iaid",
+      "describe" : true,
+      "description" : "A duid and iaid are required to access dhcp6 services",
+      "isAttribute" : true
+   },
    "config_ip_addr_attr": {
       "name": "ip_addr_attr",
       "label": "Sifa maalum ya anwani ya ip ya mwongozo",
