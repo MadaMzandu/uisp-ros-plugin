@@ -12,8 +12,6 @@ CREATE TABLE IF NOT EXISTS "network"(
      "id" INT,
      "address" TEXT,
      "address6" TEXT,
-     "routes"   TEXT,
-     "routes6" TEXT,
      "last" TEXT,
      "created" TEXT,
      PRIMARY KEY("id")

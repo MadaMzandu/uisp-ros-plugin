@@ -9,8 +9,6 @@ CREATE TABLE IF NOT EXISTS "network" (
          "id"    INTEGER NOT NULL,
          "address" TEXT ,
          "address6" TEXT,
-         "routes" TEXT,
-         "routes6" TEXT,
          PRIMARY KEY("id")
 );
 CREATE TABLE IF NOT EXISTS "services" (
@@ -22,6 +20,8 @@ CREATE TABLE IF NOT EXISTS "services" (
        "username" TEXT COLLATE NOCASE,
        "password" TEXT,
        "mac" TEXT COLLATE NOCASE,
+       "duid" TEXT COLLATE NOCASE,
+       "iaid" INTEGER ,
        "hotspot" INTEGER,
        "price" REAL ,
        "totalPrice" REAL ,
