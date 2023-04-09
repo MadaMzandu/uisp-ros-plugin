@@ -13,12 +13,12 @@ class MtBatch extends MT
         $deviceData = [];
         foreach(array_keys($devices) as $did){
             foreach ($plans as $plan){
-                $plan = [
+                $parent = [
                     'path' => '/queue/simple',
                     'action' => 'remove',
                     'name' => sprintf('servicePlan-%s-parent',$plan['id']),
                 ];
-                $deviceData[$did]['parents'][] = $plan ;
+                $deviceData[$did]['parents'][] = $parent ;
             }
         }
         $this->run_batch($deviceData,true);
@@ -34,27 +34,28 @@ class MtBatch extends MT
             if($did == 'nodev'){ continue; }
             foreach($deviceServices[$did] as $service){
                 $plan = $plans[$service['planId']] ;
-                $account = $mt->account($service,$plan);
+                $mt->set_data($service,$plan);
+                $account = $mt->account();
                 if($account){
                     $account['action'] = 'remove';
                     $deviceData[$did]['accounts'][] = $account ;
                 }
-                $queue = $mt->queue($service,$plan);
+                $queue = $mt->queue();
                 if($queue){
                     $queue['action'] = 'remove';
                     $deviceData[$did]['queues'][] = $queue ;
                 }
-                $profile = $mt->profile($service,$plan);
+                $profile = $mt->profile();
                 if($profile){
                     $profile['action'] = 'remove';
                     $deviceData[$did]['profiles'][$profile['name']] = $profile ;
                 }
-                $parent = $mt->parent($service,$plan);
+                $parent = $mt->parent();
                 if($parent){
                     $parent['action'] = 'remove';
                     $deviceData[$did]['parents'][$parent['name']] = $parent ;
                 }
-                $disconnect = $mt->disconnect($service);
+                $disconnect = $mt->disconnect();
                 if($disconnect){$deviceData[$did]['disconn'][] = $disconnect; }
             }
         }
@@ -66,7 +67,6 @@ class MtBatch extends MT
     public function set_ids(array $ids)
     {
         $deviceServices = $this->select_ids($ids);
-        $devices = $this->select_devices();
         $plans = $this->select_plans();
         $deviceData = [];
         $mt = new MtData();
@@ -74,17 +74,17 @@ class MtBatch extends MT
             foreach ($deviceServices[$did] as $service){
                 if($did == 'nodev'){ continue; }
                 $plan = $plans[$service['planId']] ;
-                $device = $devices[$service['device']] ?? null;
-                $service['address'] = $mt->ip($service,$device);
-                $account = $mt->account($service,$plan);
+                $service['address'] = $mt->ip();
+                $mt->set_data($service,$plan);
+                $account = $mt->account();
                 if($account){ $deviceData[$did]['accounts'][] = $account ; }
-                $queue = $mt->queue($service,$plan);
+                $queue = $mt->queue();
                 if($queue){ $deviceData[$did]['queues'][] = $queue ; }
-                $profile = $mt->profile($service,$plan);
+                $profile = $mt->profile();
                 if($profile){ $deviceData[$did]['profiles'][$profile['name']] = $profile ; }
-                $parent = $mt->parent($service,$plan);
+                $parent = $mt->parent();
                 if($parent){ $deviceData[$did]['parents'][$parent['name']] = $parent ; }
-                $disconnect = $mt->disconnect($service);
+                $disconnect = $mt->disconnect();
                 if($disconnect){$deviceData[$did]['disconn'][] = $disconnect; }
             }
         }

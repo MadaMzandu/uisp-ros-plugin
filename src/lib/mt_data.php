@@ -1,193 +1,204 @@
 <?php
 class MtData extends MT
 {
-    public function account($service,$plan): ?array
+    private array $service = [];
+    private array $plan = [];
+    
+    public function set_data($service,$plan)
+    {
+        $this->service = $service ;
+        $this->plan = $plan ;
+    }
+    
+    public function account(): ?array
     {
         $data = null ;
-        switch ($this->type($service)){
-            case 'dhcp': $data = $this->dhcp($service,$plan);break ;
-            case 'ppp': $data = $this->ppp($service,$plan); break ;
-            case 'hotspot': $data = $this->hotspot($service,$plan); break ;
-        }
-        if($data){ //register as sent
-            $this->sent[$service['id']] = 1;
+        switch ($this->type()){
+            case 'dhcp': $data = $this->dhcp();break ;
+            case 'ppp': $data = $this->ppp(); break ;
+            case 'hotspot': $data = $this->hotspot(); break ;
         }
         return $data ;
     }
 
-    public function profile($service,$plan): ?array
+    public function profile(): ?array
     {
-        $type = $this->type($service);
+        $type = $this->type();
         if($type == 'dhcp') return null ;
         $path = $type == 'hotspot' ? '/ip/hotspot/user/profile/' : '/ppp/profile';
         $data = [
             'path' => $path,
-            'name' => $this->profile_name($service,$plan),
-            'rate-limit' => $this->profile_limits($service,$plan),
-            'parent-queue' => $this->parent_name($service,$plan),
-            'address-list' => $this->addr_list($service),
+            'name' => $this->profile_name(),
+            'rate-limit' => $this->profile_limits(),
+            'parent-queue' => $this->parent_name(),
+            'address-list' => $this->addr_list(),
         ];
         if($type == 'ppp') $data['local-address'] = null;
         return $data;
     }
 
-    private function hotspot($service,$plan): array
+    private function hotspot(): array
     {
         return [
             'path' => '/ip/hotspot/user/',
-            'name' => $service['username'],
-            'password' => $service['password'],
-            'address' => $service['address'],
-            'parent-queue' => $this->parent_name($service,$plan),
-            'profile' => $this->profile_name($service,$plan),
-            'comment' => $this->account_comment($service),
+            'name' => $this->service['username'],
+            'password' => $this->service['password'],
+            'address' => $this->service['address'],
+            'parent-queue' => $this->parent_name(),
+            'profile' => $this->profile_name(),
+            'comment' => $this->account_comment(),
         ];
     }
 
-    public function queue($service,$plan): ?array
+    public function queue(): ?array
     {
-        if($this->type($service) != 'dhcp') return null ;
-        $address = $service['address'] ?? null ;
+        if($this->type() != 'dhcp') return null ;
+        $address = $this->service['address'] ?? null ;
         if(!$address) return null ;
-        $limits = $this->limits($plan);
-        if($this->disabled($service)){
+        $limits = $this->limits();
+        if($this->disabled()){
             return [
                 'path' => '/queue/simple',
-                'name' => $this->account_name($service),
-                'target' => $service['address'],
+                'name' => $this->account_name(),
+                'target' => $this->service['address'],
                 'max-limit' => $this->disabled_rate(),
                 'limit-at' => $this->disabled_rate(),
-                'comment' => $this->account_comment($service),
+                'comment' => $this->account_comment(),
             ];
         }
         return [
             'path' => '/queue/simple',
-            'name' => $this->account_name($service),
-            'target' => $service['address'],
+            'name' => $this->account_name(),
+            'target' => $this->service['address'],
             'max-limit' => $this->to_pair($limits['rate']),
             'limit-at' => $this->to_pair($limits['limit']),
             'burst-limit' => $this->to_pair($limits['burst']),
             'burst-threshold' => $this->to_pair($limits['thresh']),
             'burst-time' => $this->to_pair($limits['time'],false),
             'priority' => $this->to_pair($limits['prio'],false),
-            'parent' => $this->parent_name($service,$plan),
-            'comment' => $this->account_comment($service),
+            'parent' => $this->parent_name(),
+            'comment' => $this->account_comment(),
         ];
     }
 
-    private function ppp($service,$plan): array
+    private function ppp(): array
     {
         return[
             'path' => '/ppp/secret',
-            'remote-address' => $service['address'],
-            'name' => $service['username'],
-            'caller-id' => $service['callerId'] ?? null,
-            'password' => $service['password'] ?? null,
-            'profile' => $this->profile_name($service,$plan),
-            'comment' => $this->account_comment($service),
+            'remote-address' => $this->service['address'],
+            'name' => $this->service['username'],
+            'caller-id' => $this->service['callerId'] ?? null,
+            'password' => $this->service['password'] ?? null,
+            'profile' => $this->profile_name(),
+            'comment' => $this->account_comment(),
         ];
         //REMEMBER IP6 ADDRESSING HERE
     }
 
-    public function disconnect($service): ?array
+    public function disconnect(): ?array
     {
-        $type = $this->type($service);
+        $type = $this->type();
         if($type == 'dhcp') return null ;
         $path = $type == 'ppp' ? '/ppp/active' : '/ip/hotspot/active';
         return [
             'path' => $path,
             'action' => 'remove',
-            'name' => $service['username'],
+            'name' => $this->service['username'],
         ];
     }
 
-    private function dhcp($service,$plan)
+    private function dhcp(): array
     {
         return [
             'path' => '/ip/dhcp-server/lease',
-            'address' => $service['address'],
-            'mac-address' => strtoupper($service['mac']),
+            'address' => $this->service['address'],
+            'mac-address' => strtoupper($this->service['mac']),
             'insert-queue-before' => 'bottom',
-            'address-lists' => $this->addr_list($service),
-            'comment' => $this->account_comment($service),
+            'address-lists' => $this->addr_list(),
+            'comment' => $this->account_comment(),
         ];
     }
 
-    public function parent($service,$plan): ?array
+    public function parent(): ?array
     {
         if($this->conf->disable_contention) return null ;
-        if($this->disabled($service)) return null ;
+        if($this->disabled()) return null ;
         return [
             'path' => '/queue/simple',
-            'name' => $this->parent_name($service,$plan),
-            'target' => $this->parent_target($plan),
-            'max-limit' => $this->parent_total($plan),
-            'limit-at' => $this->parent_total($plan),
+            'name' => $this->parent_name(),
+            'target' => $this->parent_target(),
+            'max-limit' => $this->parent_total(),
+            'limit-at' => $this->parent_total(),
             'comment' => 'do not delete',
         ];
     }
 
-    private function parent_target($plan): ?string
+    private function parent_target(): ?string
     {
-        $sql = sprintf("select network.address from services left join network on services.id=network.id ".
-            "where services.planId=%s",$plan['id']);
+        $did = $this->service['device'] ?? 0 ;
+        $sql = sprintf("SELECT network.address FROM services LEFT JOIN network ".
+            "ON services.id=network.id WHERE services.planId=%s AND services.device=%s ",
+            $this->plan['id'],$did);
         $data = $this->dbCache()->selectCustom($sql);
         $addresses = [];
         foreach ($data as $item){ if($item['address']) $addresses[] = $item['address']; }
         return implode(',',$addresses);
     }
 
-    private function parent_name($service,$plan): ?string
+    private function parent_name(): ?string
     {
         if($this->conf->disable_contention) return 'none' ;
-        if($this->disabled($service)) return 'none';
-        return sprintf('servicePlan-%s-parent',$plan['id']);
+        if($this->disabled()) return 'none';
+        return sprintf('servicePlan-%s-parent',$this->plan['id']);
     }
 
-    private function parent_total($plan): string
+    private function parent_total(): string
     {
-        $children = $this->parent_children($plan);
-        $ratio = $plan['ratio'];
+        $children = $this->parent_children();
+        $ratio = $this->plan['ratio'];
         $ratio = max($ratio,1);
         $shares = intdiv($children,$ratio);
         if($children % $ratio > 0) $shares++ ;
-        $upload = $plan['uploadSpeed'] * $shares ;
-        $download = $plan['downloadSpeed'] * $shares;
+        $upload = $this->plan['uploadSpeed'] * $shares ;
+        $download = $this->plan['downloadSpeed'] * $shares;
         return sprintf("%sM/%sM",$upload,$download);
     }
 
-    private function parent_children($plan): int
+    private function parent_children(): int
     {
-        $sql = sprintf("select count(services.id) from services left join ".
-            "network on services.id=network.id where planId=%s",$plan['id']);
+        $did = $this->service['device'] ?? 0 ;
+        $sql = sprintf("SELECT COUNT(services.id) FROM services WHERE ".
+            "services.planId=%s AND services.device=%s ",$this->plan['id'],$did);
         $count = $this->dbCache()->singleQuery($sql);
         return max($count,1);
     }
 
-    public function ip($service,$device,$ip6 = false): string
+    public function ip($ip6 = false): string
     {
-        $ip = $this->db()->selectIp($service['id'],$ip6);
+        $ip = $this->db()->selectIp($this->service['id'],$ip6);
         if(filter_var($ip,FILTER_VALIDATE_IP,FILTER_FLAG_IPV4)){
             return $ip ;
         }
         $router_pool = $this->conf->router_ppp_pool ?? true ;
-        $type = $this->type($service);
+        $type = $this->type();
         $api = new ApiIP();
-        $sid = $service['id'];
+        $sid = $this->service['id'];
+        $did = $this->service['device'] ?? 0 ;
+        $device = $this->db()->selectDeviceById($did);
         if($device && ($type == 'dhcp' || $router_pool)){
-            return $api->ip($sid,(object) $device);
+            return $api->ip($sid,$device);
         }
         return $api->ip($sid);
     }
 
-    private function profile_name($service, $plan): string
+    private function profile_name(): string
     {
-        if($this->disabled($service))
+        if($this->disabled())
             return $this->conf->disabled_profile ?? 'default';
-        return $plan['name'] ?? 'default';
+        return $this->plan['name'] ?? 'default';
     }
 
-    private function limits($plan): array
+    private function limits(): array
     {
         $keys = [
             'ratio',
@@ -207,26 +218,26 @@ class MtData extends MT
         foreach($keys as $key){
             switch ($key)
             {
-                case 'priority': $values['prio'] = $plan[$key]; break;
+                case 'priority': $values['prio'] = $this->plan[$key]; break;
                 case 'limitUpload':
-                case 'limitDownload': $values['limit'][] = $plan[$key];break;
+                case 'limitDownload': $values['limit'][] = $this->plan[$key];break;
                 case 'uploadSpeed':
-                case 'downloadSpeed': $values['rate'][] = $plan[$key];break;
+                case 'downloadSpeed': $values['rate'][] = $this->plan[$key];break;
                 case 'burstUpload':
-                case 'burstDownload': $values['burst'][] = $plan[$key];break;
+                case 'burstDownload': $values['burst'][] = $this->plan[$key];break;
                 case 'threshUpload':
-                case 'threshDownload': $values['thresh'][] = $plan[$key];break;
+                case 'threshDownload': $values['thresh'][] = $this->plan[$key];break;
                 case 'timeUpload':
-                case 'timeDownload': $values['time'][] = $plan[$key];break;
+                case 'timeDownload': $values['time'][] = $this->plan[$key];break;
             }
         }
         return $values ;
     }
 
-    private function profile_limits($service,$plan): ?string
+    private function profile_limits(): ?string
     {
-        if($this->disabled($service)) return $this->disabled_rate();
-        $limits = $this->limits($plan);
+        if($this->disabled()) return $this->disabled_rate();
+        $limits = $this->limits();
         $values = [];
         foreach (array_keys($limits) as $key) {
             $limit = $limits[$key];
@@ -245,28 +256,28 @@ class MtData extends MT
         return implode(' ', $ret);
     }
 
-    private function addr_list($service)
+    private function addr_list()
     {
-        if($this->disabled($service)){
+        if($this->disabled()){
             return $this->conf->disabled_list ?? null ;
         }
         return $this->conf->active_list ?? null ;
     }
 
-    private function account_comment($service): string
+    private function account_comment(): string
     {
-        $id = $service['id'];
-        return $service['clientId'] . " - "
-            . $this->account_name($service) . " - "
+        $id = $this->service['id'];
+        return $this->service['clientId'] . " - "
+            . $this->account_name() . " - "
             . $id;
     }
 
-    private function account_name($service): string
+    private function account_name(): string
     {
-        $name = sprintf('Client-%s',$service['id']);
-        $co = $service['company'];
-        $fn = $service['firstName'];
-        $ln = $service['lastName'];
+        $name = sprintf('Client-%s',$this->service['id']);
+        $co = $this->service['company'];
+        $fn = $this->service['firstName'];
+        $ln = $this->service['lastName'];
         if($co){
             $name = $co ;
         }
@@ -276,9 +287,9 @@ class MtData extends MT
         return $name ;
     }
 
-    private function disabled($service): bool
+    private function disabled(): bool
     {
-        $status = $service['status'] ?? 1 ;
+        $status = $this->service['status'] ?? 1 ;
         return in_array($status,[3,5,2,8]);
     }
 
@@ -289,11 +300,11 @@ class MtData extends MT
         return $this->to_pair([$rate,$rate]);
     }
 
-    private function type($service): string
+    private function type(): string
     {
-        $mac = $service['mac'] ?? null ;
-        $user = $service['username'] ?? null ;
-        $hotspot = $service['hotspot'] ?? null ;
+        $mac = $this->service['mac'] ?? null ;
+        $user = $this->service['username'] ?? null ;
+        $hotspot = $this->service['hotspot'] ?? null ;
         if(filter_var($mac,FILTER_VALIDATE_MAC)) return 'dhcp' ;
         if($user && $hotspot) return 'hotspot' ;
         if($user) return 'ppp';
