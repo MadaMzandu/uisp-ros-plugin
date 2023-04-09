@@ -57,6 +57,16 @@ class MtBatch extends MT
                 }
                 $disconnect = $mt->disconnect();
                 if($disconnect){$deviceData[$did]['disconn'][] = $disconnect; }
+                $pool = $mt->pool();
+                if ($pool){
+                    $pool['action'] = 'remove';
+                    $deviceData[$did]['pool']['uisp_pool'] = $pool;
+                }
+                $dhcp6 = $mt->dhcp6();
+                if($dhcp6){
+                    $pool['action'] = 'remove';
+                    $deviceData[$did]['pool']['uisp_pool'] = $pool;
+                }
             }
         }
         MyLog()->Append('services ready to delete');
@@ -74,7 +84,6 @@ class MtBatch extends MT
             foreach ($deviceServices[$did] as $service){
                 if($did == 'nodev'){ continue; }
                 $plan = $plans[$service['planId']] ;
-                $service['address'] = $mt->ip();
                 $mt->set_data($service,$plan);
                 $account = $mt->account();
                 if($account){ $deviceData[$did]['accounts'][] = $account ; }
@@ -86,6 +95,10 @@ class MtBatch extends MT
                 if($parent){ $deviceData[$did]['parents'][$parent['name']] = $parent ; }
                 $disconnect = $mt->disconnect();
                 if($disconnect){$deviceData[$did]['disconn'][] = $disconnect; }
+                $pool = $mt->pool();
+                if ($pool){$deviceData[$did]['pool']['uisp_pool'] = $pool; }
+                $dhcp6 = $mt->dhcp6();
+                if($dhcp6){$deviceData[$did]['pool']['uisp_pool'] = $pool; }
             }
         }
         MyLog()->Append('services ready to add or set');
@@ -105,8 +118,11 @@ class MtBatch extends MT
         {
             $this->batch_device = (object) $devices[$did];
             MyLog()->Append('executing batch for device: '.$this->batch_device->name);
-            $keys = ['parents','profiles','queues','accounts','disconn'];
-            if($delete) $keys = array_reverse($keys);
+            $keys = ['pool','parents','profiles','queues','accounts','dhcp6','disconn'];
+            if($delete) {
+                $keys = array_reverse(array_diff($keys,['disconn']));
+                $keys[] = 'disconn'; //disconnect at the end
+            }
             foreach ($keys as $key){
                 $item = $deviceData[$did][$key] ?? [];
                 $this->batch = array_values($item);
