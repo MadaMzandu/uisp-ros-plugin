@@ -29,6 +29,8 @@ class Settings extends Admin
             'pppoe_pass_attr',
             'device_name_attr',
             'mac_addr_attr',
+            'dhcp6_duid_attr',
+            'dhcp6_iaid_attr',
             'ip_addr_attr',
             'auto_ppp_user',
             'pppoe_caller_attr',
