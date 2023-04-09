@@ -64,8 +64,8 @@ class MtBatch extends MT
                 }
                 $dhcp6 = $mt->dhcp6();
                 if($dhcp6){
-                    $pool['action'] = 'remove';
-                    $deviceData[$did]['pool']['uisp_pool'] = $pool;
+                    $dhcp6['action'] = 'remove';
+                    $deviceData[$did]['accounts'][] = $dhcp6;
                 }
             }
         }
@@ -96,9 +96,9 @@ class MtBatch extends MT
                 $disconnect = $mt->disconnect();
                 if($disconnect){$deviceData[$did]['disconn'][] = $disconnect; }
                 $pool = $mt->pool();
-                if ($pool){$deviceData[$did]['pool']['uisp_pool'] = $pool; }
+                if($pool){$deviceData[$did]['pool']['uisp_pool'] = $pool; }
                 $dhcp6 = $mt->dhcp6();
-                if($dhcp6){$deviceData[$did]['pool']['uisp_pool'] = $pool; }
+                if($dhcp6){$deviceData[$did]['accounts'][] = $dhcp6; }
             }
         }
         MyLog()->Append('services ready to add or set');
