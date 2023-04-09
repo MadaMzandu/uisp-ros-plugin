@@ -3,7 +3,7 @@ const MyCacheVersion = '1.8.8.10';
 
 include_once 'api_trim.php';
 include_once 'api_ucrm.php';
-//include_once '_web_ucrm.php';
+include_once '_web_ucrm.php';
 
 class ApiCache{
 
@@ -20,7 +20,7 @@ class ApiCache{
     public function sync()
     {
         if($this->needs_update()){
-            if(!$this->check_attributes()
+            if(!$this->attributes()->check_config()
                 || !$this->check_devices()){
                 return ;
             }
@@ -153,23 +153,6 @@ class ApiCache{
         return sprintf("(%s)",implode(',',$values));
     }
 
-    private function check_attributes(): bool
-    {
-        $attributes = $this->map_attributes();
-        MyLog()->Append('checking for attributes');
-        $device = $attributes['device_name_attr'] ?? null;
-        $mac = $attributes['mac_addr_attr'] ?? null ;
-        $user = $attributes['pppoe_user_attr'] ?? null;
-        MyLog()->Append('attributes found: '. json_encode([$device,$mac,$user]));
-        $missing = !($device && ($mac || $user));
-        if($missing) {
-            MyLog()->Append('attributes not configured sync delayed');
-            return false ;
-        }
-        MyLog()->Append('cache attributes found: '. json_encode([$device,$mac,$user]));
-        return true ;
-    }
-
     private function check_devices(): bool
     {
         $devices = $this->db()->selectAllFromTable('devices');
@@ -179,31 +162,6 @@ class ApiCache{
         }
         MyLog()->Append('cache devices found: '. json_encode($devices));
         return true ;
-    }
-
-    private function map_attributes(): array
-    {
-        $attrs = $this->ucrm()->get('custom-attributes');
-        $keymap = [];
-        foreach ($attrs as $attr){ $keymap[$attr->key] = $attr; }
-        $conf = $this->conf();
-        $native_keys = [
-            'device_name_attr',
-            'pppoe_user_attr',
-            'pppoe_pass_attr',
-            'mac_addr_attr',
-            'hs_attr',
-            'pppoe_caller_attr',
-            'ip_addr_attr'
-        ];
-        $native_map = [];
-        foreach($native_keys as $native_key){
-            $assigned = $conf->$native_key ;
-            if($assigned){
-                $native_map[$native_key] = $keymap[$assigned] ?? null;
-            }
-        }
-        return $native_map;
     }
 
     private function needs_update(): bool
@@ -240,9 +198,11 @@ class ApiCache{
         return json_decode($json,true);
     }
 
+    private function attributes() { return new ApiAttributes(); }
+
     private function trimmer(){ return new ApiTrim(); }
 
-    private function ucrm(){ return new ApiUcrm(); }
+    private function ucrm(){ return new WebUcrm(); }
 
     private function db(){ return new ApiSqlite(); }
 
@@ -253,6 +213,7 @@ class ApiCache{
     private function dbCache(){ return new ApiSqlite('data/cache.db'); }
 
    }
+
 
 function cache_sync() { $api = new ApiCache(); $api->sync();}
 
