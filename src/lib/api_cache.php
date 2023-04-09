@@ -1,5 +1,5 @@
 <?php
-const MyCacheVersion = '1.8.8.10';
+const MyCacheVersion = '1.8.8.11';
 
 include_once 'api_trim.php';
 include_once 'api_ucrm.php';
@@ -61,8 +61,8 @@ class ApiCache{
            $db->enableExceptions(true);
            MyLog()->Append('attaching cache to main');
            $db->exec(sprintf("ATTACH 'data/cache.db' as cache"));
-           $sql = "INSERT OR REPLACE INTO cache.network (id,address,address6,routes,routes6) ".
-               "SELECT id,address,address6,routes,routes6 from network ";
+           $sql = "INSERT OR REPLACE INTO cache.network (id,address,address6) ".
+               "SELECT id,address,address6 from network ";
            MyLog()->Append('cache attach sql: '.$sql);
            if($db->exec($sql)){
                $this->db()->saveConfig(['last_net' => $this->now()]);
