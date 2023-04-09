@@ -1,6 +1,6 @@
 <?php
 include_once 'api_sqlite.php';
-//include_once '_web_ucrm.php';
+include_once '_web_ucrm.php';
 include_once 'api_ucrm.php';
 
 class ApiAttributes
@@ -172,8 +172,8 @@ class ApiAttributes
             'hs_attr' => 'hotspot',
             'ip_addr_attr' => 'address',
             'ip_addr6_attr' => 'address6',
-            'ip_routes_attr' => 'routes',
-            'ip_routes6_attr' => 'routes6',
+            'dhcp6_duid_attr' => 'duid',
+            'dhcp6_iaid_attr' => 'iaid',
             'pppoe_caller_attr' => 'callerId',
         ];
     }
@@ -182,6 +182,6 @@ class ApiAttributes
 
     private function conf(){ return $this->db()->readConfig(); }
 
-    private function ucrm(){ return new ApiUcrm(); }
+    private function ucrm(){ return new WebUcrm(); }
 
 }
