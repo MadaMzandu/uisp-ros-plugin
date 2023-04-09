@@ -155,6 +155,7 @@ class MT extends Device
             case 'ppp/secret':
             case 'ip/hotspot/user': return 'profile';
             case 'queue/simple': return 'parent';
+            case 'ipv6/dhcp-server/binding': return 'prefix-pool';
             default: return 'parent-queue';
         }
     }
@@ -165,6 +166,7 @@ class MT extends Device
         {
             case 'ppp/profile': return ['/ppp/secret'];
             case 'ip/hotspot/user/profile': return ['/ip/hotspot/user'];
+            case 'ipv6/pool': return ['/ipv6/dhcp-server/binding'];
             default: return ['/ppp/profile','/ip/hotspot/user/profile','/queue/simple'];
         }
     }
@@ -174,7 +176,8 @@ class MT extends Device
         return in_array($path,[
             'ppp/profile',
             'ip/hotspot/user/profile',
-            'queue/simple'
+            'queue/simple',
+            'ipv6/pool',
         ]);
     }
 
@@ -182,9 +185,11 @@ class MT extends Device
     {
         $name = $data['name'] ?? null ;
         $mac = $data['mac-address'] ?? null ;
+        $duid = $data['duid'] ?? null;
         $filter = null ;
         if($name) $filter = '?name=' . $name ;
         if($mac) $filter = '?mac-address=' . $mac ;
+        if($duid) $filter = '?duid=' . $duid ;
         $tmp = $this->path ;
         if($filter){
             $this->path = $data['path'];
