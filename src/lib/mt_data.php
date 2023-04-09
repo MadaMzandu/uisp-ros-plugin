@@ -126,27 +126,28 @@ class MtData extends MT
     public function dhcp6(): ?array
     {
         if(!$this->has_dhcp6()) return null ;
-        return [
+        $data =  [
             'path' => '/ipv6/dhcp-server/binding',
             'address' => $this->ip(true),
             'duid' => $this->strip_duid(),
             'iaid' => $this->service['iaid'],
-            'life-time' => '5m',
+            'life-time' => '3m',
             'prefix-pool' => $this->pool_name(),
         ];
+        return $data ;
     }
 
     private function strip_duid(): ?string
     {
         $str = $this->service['duid'] ;
-        if(preg_match('/([\da-fA-F]{1,2}\-{0,1})+/',$str)){ //microsoft type 00-00
+        if(strlen($str) == 22 && preg_match('/0x[\da-fA-F]+/',$str)){ // mikrotik type 0x000
+            return '0x' . strtolower(substr($str,10)); //crop 4 octets plus 0x
+        }
+        if(strlen($str) == 41 && preg_match('/([\da-fA-F]{1,2}\-{0,1})+/',$str)){ //microsoft type 00-00
             return '0x' . strtolower(
                 implode('',
                     array_slice(
                         explode('-',$str), 4))); // crop 4 octets
-        }
-        if(preg_match('/0x[\da-fA-F]+/',$str)){ // mikrotik type 0x000
-            return '0x' . strtolower(substr($str,10)); //crop 4 octets plus 0x
         }
         return $str ;
     }
@@ -156,10 +157,10 @@ class MtData extends MT
         if(!$this->has_dhcp6()) return null ;
         $did = $this->service['device'] ?? 0 ;
         $device = $this->db()->selectDeviceById($did) ?? [];
-        $pool_str = $device['pool6'] ?? null ;
+        $pool_str = $device->pool6 ?? null ;
         if(!$pool_str) return null ;
         $pool = explode(',',$pool_str)[0] ;
-        $len = $device['pfxLength'] ?? 64 ;
+        $len = $device->pfxLength ?? 64 ;
         return [
             'path' => '/ipv6/pool',
             'name' => $this->pool_name(),
@@ -230,9 +231,11 @@ class MtData extends MT
         return max($count,1);
     }
 
-    private function ip($ip6 = false): string
+    private function ip($ip6 = false): ?string
     {
-        $ip = $this->db()->selectIp($this->service['id'],$ip6);
+        $preset = $ip6 ? $this->service['address6'] ?? null
+            : $this->service['address'] ?? null;
+        $ip = $preset ?? $this->db()->selectIp($this->service['id'],$ip6);
         if(filter_var($ip,FILTER_VALIDATE_IP)){
             return $ip ;
         }
@@ -243,9 +246,9 @@ class MtData extends MT
         $did = $this->service['device'] ?? 0 ;
         $device = $this->db()->selectDeviceById($did);
         if($device && ($type == 'dhcp' || $router_pool)){
-            return $api->ip($sid,$device);
+            return $api->ip($sid,$device,$ip6);
         }
-        return $api->ip($sid);
+        return $api->ip($sid,null,$ip6);
     }
 
     private function profile_name(): string
