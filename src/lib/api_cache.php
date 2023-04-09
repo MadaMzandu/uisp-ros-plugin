@@ -214,7 +214,6 @@ class ApiCache{
 
    }
 
-
 function cache_sync() { $api = new ApiCache(); $api->sync();}
 
 function cache_setup(){ $cache = new ApiCache(); $cache->setup();}
