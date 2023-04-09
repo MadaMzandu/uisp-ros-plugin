@@ -43,7 +43,7 @@ class MtData extends MT
             'path' => '/ip/hotspot/user/',
             'name' => $this->service['username'],
             'password' => $this->service['password'],
-            'address' => $this->service['address'],
+            'address' => $this->ip(),
             'parent-queue' => $this->parent_name(),
             'profile' => $this->profile_name(),
             'comment' => $this->account_comment(),
@@ -52,24 +52,22 @@ class MtData extends MT
 
     public function queue(): ?array
     {
-        if($this->type() != 'dhcp') return null ;
-        $address = $this->service['address'] ?? null ;
-        if(!$address) return null ;
+        if(!in_array($this->type(),['dhcp','dhcp6'])) return null ;
         $limits = $this->limits();
         if($this->disabled()){
             return [
                 'path' => '/queue/simple',
                 'name' => $this->account_name(),
-                'target' => $this->service['address'],
+                'target' => $this->ip(),
                 'max-limit' => $this->disabled_rate(),
                 'limit-at' => $this->disabled_rate(),
                 'comment' => $this->account_comment(),
             ];
         }
-        return [
+        $data = [
             'path' => '/queue/simple',
             'name' => $this->account_name(),
-            'target' => $this->service['address'],
+            'target' => $this->ip(),
             'max-limit' => $this->to_pair($limits['rate']),
             'limit-at' => $this->to_pair($limits['limit']),
             'burst-limit' => $this->to_pair($limits['burst']),
@@ -79,20 +77,26 @@ class MtData extends MT
             'parent' => $this->parent_name(),
             'comment' => $this->account_comment(),
         ];
+        if($this->type() == 'dhcp6'){
+            $data['target'] .= ',' . $this->ip(true);
+        }
+        return $data ;
     }
 
     private function ppp(): array
     {
-        return[
+       $data = [
             'path' => '/ppp/secret',
-            'remote-address' => $this->service['address'],
+            'remote-address' => $this->ip(),
             'name' => $this->service['username'],
             'caller-id' => $this->service['callerId'] ?? null,
             'password' => $this->service['password'] ?? null,
             'profile' => $this->profile_name(),
             'comment' => $this->account_comment(),
         ];
-        //REMEMBER IP6 ADDRESSING HERE
+        $prefix = $this->ip(true);
+        if($prefix) $data['remote-ipv6-prefix'] = $prefix ;
+        return $data ;
     }
 
     public function disconnect(): ?array
@@ -111,12 +115,62 @@ class MtData extends MT
     {
         return [
             'path' => '/ip/dhcp-server/lease',
-            'address' => $this->service['address'],
+            'address' => $this->ip(),
             'mac-address' => strtoupper($this->service['mac']),
             'insert-queue-before' => 'bottom',
             'address-lists' => $this->addr_list(),
             'comment' => $this->account_comment(),
         ];
+    }
+
+    public function dhcp6(): ?array
+    {
+        if(!$this->has_dhcp6()) return null ;
+        return [
+            'path' => '/ipv6/dhcp-server/binding',
+            'address' => $this->ip(true),
+            'duid' => $this->strip_duid(),
+            'iaid' => $this->service['iaid'],
+            'life-time' => '5m',
+            'prefix-pool' => $this->pool_name(),
+        ];
+    }
+
+    private function strip_duid(): ?string
+    {
+        $str = $this->service['duid'] ;
+        if(preg_match('/([\da-fA-F]{1,2}\-{0,1})+/',$str)){ //microsoft type 00-00
+            return '0x' . strtolower(
+                implode('',
+                    array_slice(
+                        explode('-',$str), 4))); // crop 4 octets
+        }
+        if(preg_match('/0x[\da-fA-F]+/',$str)){ // mikrotik type 0x000
+            return '0x' . strtolower(substr($str,10)); //crop 4 octets plus 0x
+        }
+        return $str ;
+    }
+
+    public function pool(): ?array
+    {
+        if(!$this->has_dhcp6()) return null ;
+        $did = $this->service['device'] ?? 0 ;
+        $device = $this->db()->selectDeviceById($did) ?? [];
+        $pool_str = $device['pool6'] ?? null ;
+        if(!$pool_str) return null ;
+        $pool = explode(',',$pool_str)[0] ;
+        $len = $device['pfxLength'] ?? 64 ;
+        return [
+            'path' => '/ipv6/pool',
+            'name' => $this->pool_name(),
+            'prefix' => $pool,
+            'prefix-length' => $len,
+        ];
+    }
+
+    private function pool_name(): string
+    {
+        return 'uisp-pool' ;
     }
 
     public function parent(): ?array
@@ -136,12 +190,15 @@ class MtData extends MT
     private function parent_target(): ?string
     {
         $did = $this->service['device'] ?? 0 ;
-        $sql = sprintf("SELECT network.address FROM services LEFT JOIN network ".
+        $sql = sprintf("SELECT network.address,network.address6 FROM services LEFT JOIN network ".
             "ON services.id=network.id WHERE services.planId=%s AND services.device=%s ",
             $this->plan['id'],$did);
         $data = $this->dbCache()->selectCustom($sql);
         $addresses = [];
-        foreach ($data as $item){ if($item['address']) $addresses[] = $item['address']; }
+        foreach ($data as $item){
+            if($item['address']) $addresses[] = $item['address'];
+            if($item['address6']) $addresses[] = $item['address6'];
+        }
         return implode(',',$addresses);
     }
 
@@ -173,10 +230,10 @@ class MtData extends MT
         return max($count,1);
     }
 
-    public function ip($ip6 = false): string
+    private function ip($ip6 = false): string
     {
         $ip = $this->db()->selectIp($this->service['id'],$ip6);
-        if(filter_var($ip,FILTER_VALIDATE_IP,FILTER_FLAG_IPV4)){
+        if(filter_var($ip,FILTER_VALIDATE_IP)){
             return $ip ;
         }
         $router_pool = $this->conf->router_ppp_pool ?? true ;
@@ -305,10 +362,19 @@ class MtData extends MT
         $mac = $this->service['mac'] ?? null ;
         $user = $this->service['username'] ?? null ;
         $hotspot = $this->service['hotspot'] ?? null ;
+
         if(filter_var($mac,FILTER_VALIDATE_MAC)) return 'dhcp' ;
+
         if($user && $hotspot) return 'hotspot' ;
         if($user) return 'ppp';
         return 'invalid';
+    }
+
+    private function has_dhcp6(): string
+    {
+        $duid = $this->service['duid'] ?? null ;
+        $iaid = $this->service['iaid'] ?? null ;
+        return $duid && $iaid ;
     }
 
 
