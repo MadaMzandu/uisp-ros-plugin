@@ -129,27 +129,12 @@ class MtData extends MT
         $data =  [
             'path' => '/ipv6/dhcp-server/binding',
             'address' => $this->ip(true),
-            'duid' => $this->strip_duid(),
-            'iaid' => $this->service['iaid'],
+            'duid' => $this->make_duid(),
+            'iaid' => $this->service['iaid'] ?? 1,
             'life-time' => '3m',
             'prefix-pool' => $this->pool_name(),
         ];
         return $data ;
-    }
-
-    private function strip_duid(): ?string
-    {
-        $str = $this->service['duid'] ;
-        if(strlen($str) == 22 && preg_match('/0x[\da-fA-F]+/',$str)){ // mikrotik type 0x000
-            return '0x' . strtolower(substr($str,10)); //crop 4 octets plus 0x
-        }
-        if(strlen($str) == 41 && preg_match('/([\da-fA-F]{1,2}\-{0,1})+/',$str)){ //microsoft type 00-00
-            return '0x' . strtolower(
-                implode('',
-                    array_slice(
-                        explode('-',$str), 4))); // crop 4 octets
-        }
-        return $str ;
     }
 
     public function pool(): ?array
@@ -233,10 +218,10 @@ class MtData extends MT
 
     private function ip($ip6 = false): ?string
     {
-        $preset = $ip6 ? $this->service['address6'] ?? null
-            : $this->service['address'] ?? null;
+        $preset = $this->service['address'] ?? null;
+        if($ip6) $preset = $this->service['address6'] ?? null;
         $ip = $preset ?? $this->db()->selectIp($this->service['id'],$ip6);
-        if(filter_var($ip,FILTER_VALIDATE_IP)){
+        if($ip){
             return $ip ;
         }
         $router_pool = $this->conf->router_ppp_pool ?? true ;
@@ -361,9 +346,7 @@ class MtData extends MT
         $mac = $this->service['mac'] ?? null ;
         $user = $this->service['username'] ?? null ;
         $hotspot = $this->service['hotspot'] ?? null ;
-
         if(filter_var($mac,FILTER_VALIDATE_MAC)) return 'dhcp' ;
-
         if($user && $hotspot) return 'hotspot' ;
         if($user) return 'ppp';
         return 'invalid';
@@ -371,9 +354,20 @@ class MtData extends MT
 
     private function has_dhcp6(): string
     {
-        $duid = $this->service['duid'] ?? null ;
-        $iaid = $this->service['iaid'] ?? null ;
+        $duid = $this->make_duid() ;
+        $iaid = $this->service['iaid'] ?? 1 ;
         return $duid && $iaid ;
+    }
+
+    private function make_duid(): ?string
+    {
+        $val = $this->service['duid'] ?? $this->service['mac'] ?? null ;
+        $mac = preg_replace('/\W/',':',$val);
+        if(filter_var($mac,FILTER_VALIDATE_MAC)){
+            $duid = '0x' . preg_replace('/:/','',$mac);
+            return strtolower($duid);
+        }
+        return null ;
     }
 
 

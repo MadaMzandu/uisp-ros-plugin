@@ -1,7 +1,8 @@
 <?php
+include_once 'api_logger.php';
 
 function myErrorHandler($errno, $errstr, $errfile, $errline){
-    throw new Exception(sprintf('error no: %s error: %s',$errno,$errstr));
+    MyLog()->Append(sprintf('error no: %s error: %s',$errno,$errstr));
 }
 
 function respond($msg,$err = false,$data = [])
