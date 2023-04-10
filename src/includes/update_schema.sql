@@ -55,13 +55,17 @@ CREATE TABLE IF NOT EXISTS tmp."config" (
     "created"       TEXT,
     PRIMARY KEY("key")
 );
-INSERT INTO tmp."config" ("key","value","last","created") SELECT "key","value","last","created" FROM config;
+INSERT INTO tmp."plans" SELECT * FROM plans ;
+INSERT INTO tmp."network" SELECT * FROM network ;
+INSERT INTO tmp."config" SELECT * FROM config;
+INSERT INTO tmp."devices" SELECT * FROM devices ;
+INSERT INTO tmp."services" SELECT * FROM services ;
+
 INSERT INTO tmp."services" (id,device,clientId,planId,status,last,created)
 SELECT id,device,clientId,planId,status,"last",created FROM services ;
-INSERT INTO tmp."devices" (id,name,ip,type,user,password,dbname,pool,pool6,pfxLength,"last",created)
-SELECT id,name,ip,type,user,password,dbname,pool,pool6,pfxLength,"last",created FROM devices ;
-INSERT INTO tmp."plans" ("id","ratio","last","created") SELECT "id","ratio","last","created" FROM plans ;
-INSERT INTO tmp."network" (id,address,address6) SELECT "id","address","prefix6" FROM services ;
+INSERT INTO tmp."plans" ("id","ratio") SELECT "id","ratio" FROM plans ;
+INSERT INTO tmp."network" (id,address,address6) SELECT id,address,prefix6 FROM services ;
+
 
 CREATE INDEX tmp."address_index" ON "network" ("address");
 CREATE INDEX tmp."address6_index" ON "network" ("address6");
