@@ -30,8 +30,6 @@ class ApiCache{
                 $this->populate($table);
                 MyLog()->Append('finished populating: '.$table);
             }
-            MyLog()->Append('populating network');
-            $this->net_sync();
             $state = ['last_cache' => $this->now()];
             $this->db()->saveConfig($state);
             $timer->stop();
@@ -52,22 +50,6 @@ class ApiCache{
             }
         }
         $timer->stop();
-    }
-
-    public function net_sync()
-    {
-       if($this->needs_net()){
-           $db = new SQLite3('data/data.db');
-           $db->enableExceptions(true);
-           MyLog()->Append('attaching cache to main');
-           $db->exec(sprintf("ATTACH 'data/cache.db' as cache"));
-           $sql = "INSERT OR REPLACE INTO cache.network (id,address,address6) ".
-               "SELECT id,address,address6 from network ";
-           MyLog()->Append('cache attach sql: '.$sql);
-           if($db->exec($sql)){
-               $this->db()->saveConfig(['last_net' => $this->now()]);
-           }
-       }
     }
 
     private function populate($table)
@@ -218,4 +200,4 @@ function cache_sync() { $api = new ApiCache(); $api->sync();}
 
 function cache_setup(){ $cache = new ApiCache(); $cache->setup();}
 
-function net_sync(){ $cache = new ApiCache(); $cache->net_sync();}
+//function net_sync(){ $cache = new ApiCache(); $cache->net_sync();}
