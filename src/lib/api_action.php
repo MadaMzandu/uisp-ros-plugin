@@ -46,6 +46,7 @@ class ApiAction
             switch ($this->select_action($data))
             {
                 case ACTION_DOUBLE:{
+                    MyLog()->Append('action delete then set');
                     $cache->save($data['previous']);
                     $delete = $this->get('id',$data,'old');
                     $api->delete_ids([$delete]);
@@ -55,12 +56,14 @@ class ApiAction
                     break ;
                 }
                 case ACTION_SET:{
+                    MyLog()->Append('action set');
                     $cache->save($data['entity']);
                     $set = $this->get('id',$data);
                     $api->set_ids([$set]);
                     break;
                 }
                 case ACTION_DELETE:{
+                    MyLog()->Append('action delete');
                     $cache->save($data['entity']);
                     $delete = $this->get('id',$data);
                     $api->delete_ids([$delete]);
@@ -114,9 +117,15 @@ class ApiAction
 
     private function has_renamed($data)
     {
-        $new = $this->get('mac',$data) ?? $this->get('username',$data);
-        $old = $this->get('mac',$data,'old') ?? $this->get('username',$data,'old');
-        return $new && $old && $new != $old ;
+        $fields = ['mac','username','duid','iaid'];
+        foreach ($fields as $field){
+            $new = $this->get($field,$data);
+            $old = $this->get($field,$data,'previous');
+            if($old && $new != $old){
+                return true ;
+            }
+        }
+        return false ;
     }
 
     private function has_ended($data)
@@ -152,11 +161,10 @@ class ApiAction
 
     private function get($key,$data,$entity = 'entity')
     {
-        if($entity == 'entity'
-            && array_key_exists('entity',$data)){
+        if($entity == 'entity'){
             return $data['entity'][$key] ?? null ;
         }
-        if(array_key_exists('previous',$data)){
+        else {
             return $data['previous'][$key] ?? null ;
         }
         return null ;
