@@ -278,7 +278,7 @@ class MtData extends MT
         foreach($keys as $key){
             switch ($key)
             {
-                case 'priority': $values['prio'] = $this->plan[$key]; break;
+                case 'priority': $values['prio'] = array_fill(0,2,$this->plan[$key]); break;
                 case 'limitUpload':
                 case 'limitDownload': $values['limit'][] = $this->plan[$key];break;
                 case 'uploadSpeed':
@@ -301,12 +301,8 @@ class MtData extends MT
         $values = [];
         foreach (array_keys($limits) as $key) {
             $limit = $limits[$key];
-            if (is_array($limit)) {
-                $mbps = $key != 'time';
-                $values[$key] = $this->to_pair($limit, $mbps);
-            } else {
-                $values[$key] = $this->to_pair($limit,false);
-            }
+            $mbps = !in_array($key,['time','prio']);
+            $values[$key] = $this->to_pair($limit, $mbps);
         }
         $order = 'rate,burst,thresh,time,prio,limit';
         $ret = [];

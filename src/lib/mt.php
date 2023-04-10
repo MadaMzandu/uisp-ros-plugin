@@ -285,10 +285,6 @@ class MT extends Device
     protected function to_pair($array, $mbps = true): ?string
     {
         $str = [];
-        if(!is_array($array)){
-            $double = [$array,$array];
-            $array = $double ;
-        }
         foreach($array as $value){
             $unit = $mbps ? 'M' : null;
             if(!$value){ $value = 0; $unit = null; }
