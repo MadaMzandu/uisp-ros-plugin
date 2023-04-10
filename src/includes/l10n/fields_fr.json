@@ -273,17 +273,17 @@
   "config_dhcp6_duid_attr" :
   {
     "name" : "dhcp6_duid_attr",
-    "label" : "Custom attribute for dhcp6 duid",
+    "label" : "Custom attribute for dhcp6 mac address",
     "describe" : true,
-    "description" : "A duid and iaid are required to access dhcp6 services",
+    "description" : "Mac address used for duid - ether1 on mikrotiks",
     "isAttribute" : true
   },
   "config_dhcp6_iaid_attr" :
   {
     "name" : "dhcp6_iaid_attr",
-    "label" : "Custom attribute for dhcp6 iaid",
+    "label" : "Custom attribute for dhcp6 wan interface number",
     "describe" : true,
-    "description" : "A duid and iaid are required to access dhcp6 services",
+    "description" : "Used for iaid - hex or decimal",
     "isAttribute" : true
   },
   "config_ip_addr_attr": {
