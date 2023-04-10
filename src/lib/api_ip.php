@@ -18,13 +18,15 @@ class ApiIP
             $pool = $ip6 ? $device->pool6 : $device->pool ;
         }
         if(!$pool){
-            throw new Exception('ip: cannot find an address pool: '.json_encode($device));
+            MyLog()->Append('ip: no ip pool defined');
+            return null ;
         }
         $prefixes = explode(',',$pool);
         foreach ($prefixes as $prefix){
             $address = $this->findUnused($prefix);
             MyLog()->Append(sprintf("ip assignment: %s",$address));
             if($address){
+                if($ip6) $address = $address . '/' . $this->length6 ;
                 $this->set_ip($sid,$address,$ip6);
                 return $address;
             }
@@ -97,10 +99,12 @@ class ApiIP
 
     private function is_used($address): bool
     {
-       $field = 'address';
+       if($this->ip6) $address = $address . '/' . $this->length6 ;
+        $field = 'address';
        if($this->ip6) $field = 'address6';
-        return (bool)$this->db()->singleQuery(
+        $address = $this->db()->singleQuery(
            sprintf("SELECT id FROM network WHERE %s = '%s'",$field,$address));
+        return (bool) $address ;
     }
 
     private function type($address): ?string
