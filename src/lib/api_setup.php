@@ -1,5 +1,5 @@
 <?php
-const MY_VERSION = '1.8.8.12';
+const MY_VERSION = '1.8.8.1';
 const MAX_BACKUPS = 6 ;
 
 include_once 'api_sqlite.php';
@@ -28,18 +28,26 @@ class ApiSetup
     private function db_update(): bool
     {
         if(!$this->db_backup()){
-            $this->throwErr('setup: failed to backup - not updating');
+            MyLog()->Append('setup: failed to backup - not updating');
+            return false ;
         }
-        $source = 'includes/update_schema.sql';
-        $schema = file_get_contents($source);
+        MyLog()->Append('starting db update');
+        $schema = $this->update_schema();
         shell_exec('rm -f data/tmp.db');
-        if($this->db()->exec($schema)){
+        $db = new SQLite3('data/data.db');
+        $count = 0 ;
+        foreach($schema as $stm){
+            if($db->exec($stm)){ $count++; }
+        }
+        if($count > 10){
+            MyLog()->Append(sprintf('update: %s of %s statements executed',$count,sizeof($schema)));
             copy('data/tmp.db','data/data.db');
             shell_exec('rm -f data/tmp.db');
             $this->set_version();
             $this->config_load();
+            return true;
         }
-        return false;
+        return false ;
     }
 
     private function db_create(): void
@@ -62,6 +70,16 @@ class ApiSetup
         $diff = array_diff_key($default,$conf);
         $done = $this->db()->saveConfig($diff);
         return $done ;
+    }
+
+    private function update_schema(): ?array
+    {
+        $source = 'includes/update_schema.sql';
+        $str = file_get_contents($source);
+        $arr = explode("\n",
+            preg_replace('/;/',";\n",
+                preg_replace('/\v+/',"",$str))); //convert to array
+        return array_diff($arr,[""]);
     }
 
     private  function set_version(): void
@@ -162,11 +180,6 @@ class ApiSetup
     private function db(): ApiSqlite
     {
         return new ApiSqlite();
-    }
-
-    private function throwErr($msg): void
-    {
-        throw new Exception("setup: ". $msg);
     }
 }
 
