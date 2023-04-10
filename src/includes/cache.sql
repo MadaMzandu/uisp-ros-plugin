@@ -21,7 +21,7 @@ CREATE TABLE IF NOT EXISTS "services" (
        "password" TEXT,
        "mac" TEXT COLLATE NOCASE,
        "duid" TEXT COLLATE NOCASE,
-       "iaid" INTEGER ,
+       "iaid" TEXT COLLATE NOCASE,
        "hotspot" INTEGER,
        "price" REAL ,
        "totalPrice" REAL ,
