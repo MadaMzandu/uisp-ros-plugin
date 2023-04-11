@@ -6,78 +6,84 @@ include_once 'device.php';
 class MT extends Device
 {
 
-    protected $path;
-    protected $entity;
-    protected $device;
-    protected $exists;
-    protected $batch ;
-    protected $batch_device ;
-    protected $batch_failed ;
-    protected $batch_success;
+    protected ?string $path;
+    protected ?stdClass $device;
+    protected ?array $batch ;
+    protected ?stdClass $batch_device ;
+    protected ?array $batch_failed ;
+    protected ?array $batch_success;
+    protected ?RouterosAPI $api ;
 
     public function set()
     {
         $this->path = rtrim($this->get_data('path'), '\/') . '/';
-        return $this->write($this->get_data('data'), $this->get_data('action'));
+        ///return $this->write($this->get_data('data'), $this->get_data('action'));
     }
 
     public function get(): ?array
     {
-        $this->path = rtrim($this->get_data('path'), '\/') . '/';
-        return $this->read($this->get_data('filter'));
+        $path = rtrim($this->get_data('path'), '\/') . '/';
+        return $this->read($path,$this->get_data('filter'));
     }
 
-    protected function write($data=null, $action = 'set')
+    protected function write($post)
     {
-        if(is_object($data)){
-            $data->action = $action ;
-            $this->batch[] = (array)$data;
+        $opened = $this->needs_open();
+        $timer = new ApiTimer('single write');
+        //check and prepare
+        $id = $this->find_id($post);
+        $action = $id ? 'set' : 'add';
+        $wants = $post['action'] ?? null;
+        if ($wants == 'remove') {
+            if ($this->find_deps($post)) return null;
+            else $action = 'remove';
         }
-        return $this->write_batch();
+        $path = $post['path'];
+        $data = $this->prep_data($post);
+        if ($action != 'add') $data['.id'] = $id;
+        //begin write
+        $this->api->write(sprintf("/%s/%s",
+            trim($path, '/'), $action), false);
+        foreach (array_keys($data) as $key) {
+            $this->api->write('=' . $key . '=' . $data[$key], false);
+        }
+        $this->api->write(';');
+        $timer->stop();
+        $read = $this->api->read() ;
+        if($opened) $this->disconnect();
+        return $read ;
+    }
+
+    protected function needs_open(): bool
+    {
+        if(!$this->api){
+            $this->api = $this->connect() ;
+            if($this->api) return true;
+        }
+        return false ;
     }
 
     protected function write_batch(): int
     {
-       $api = $this->connect();
-       $writes = 0 ;
-        foreach($this->batch as $post){
-            $timer = new ApiTimer('single write');
-            //check and prepare
-            $id = $this->find_id($post);
-            $action = $id ? 'set' : 'add';
-            $wants = $post['action'] ?? null ;
-            if($wants == 'remove'){
-                if($this->find_deps($post)) continue ;
-                else $action = 'remove';
-            }
-            $this->path = $post['path'] ;
-            $data = $this->prep_data($post);
-            if($action != 'add') $data['.id'] = $id ;
-
-            //write it
-            $api->write(sprintf("/%s/%s",
-                trim($this->path,'/'),$action),false);
-            foreach (array_keys($data) as $key ){
-                $api->write('=' . $key . '=' . $data[$key],false);
-            }
-            $api->write(';');
-            $result = $api->read();
-            $timer->stop();
-            if($this->find_error($result)){
-                $this->batch_failed[] = $post ;
-                MyLog()->Append('mt write error: '.json_encode([$data,$result]),6);
-            }
-            else{
+        $api = $this->connect();
+        if (!$api) { return 0; }
+        $this->api = $api ;
+        $writes = 0;
+        foreach ($this->batch as $post) {
+            $result = $this->write($post);
+            if ($this->find_error($result)) {
+                $post['error'] = json_encode($result);
+                $this->batch_failed[] = $post;
+                MyLog()->Append('mt write error: ' . json_encode([$post, $result]), 6);
+            } else {
                 $this->batch_success[] = $post;
-                $writes++ ;
+                $writes++;
             }
         }
-        if(empty($this->batch_success)){
-            //requeue batch here
-        }
-        $this->batch = [] ;
+        $this->batch = null;
+        $this->api = null ;
         $api->disconnect();
-        return $writes ;
+        return $writes;
     }
 
     protected function find_error($result): bool
@@ -93,39 +99,45 @@ class MT extends Device
         return false;
     }
 
-    protected function read($filter = null)
+    protected function read($path,$filter = null): ?array
     {  //implements mikrotik print
-        $api = $this->connect();
-        $api->write(sprintf('/%s/print',trim($this->path,'/')), false);
+        $opened = $this->needs_open() ;
+        if(!$this->api) return  null ;
+        $this->api->write(sprintf('/%s/print',trim($path,'/')), false);
         if ($filter) {
             foreach($this->format_filter($filter) as $item){
-                $api->write($item,false);
+                $this->api->write($item,false);
             }
         }
-        $api->write(";");
-        $this->read = $api->read() ?? [];
-        $api->disconnect();
-        return $this->has_error() ? [] : $this->read;
+        $this->api->write(";");
+        $read = $this->api->read() ;
+        if($opened) $this->disconnect();
+        return $this->find_error($read) ? null : $read;
     }
 
-    private function connect(): ?RouterosAPI
+    protected function connect(): ?RouterosAPI
     {
         if(!$this->get_device()){
             throw new Exception('failed to get device information');
-        };
+        }
         $api = new Routerosapi();
         $api->timeout = 1;
         $api->attempts = 1;
         //$api->debug = true;
         if (!$api->connect($this->device->ip,
             $this->device->user, $this->device->password)) {
-            $this->queueMe('device connect failed');
-            throw new Exception('device connect failed: batch has been queued');
+            return null ;
         }
         return $api;
     }
 
-    protected function find_deps($data)
+    protected function disconnect(): void
+    {
+        if($this->api) $this->api->disconnect();
+        $this->api = null ;
+    }
+
+    protected function find_deps($data): bool
     {
         $action = $data['action'];
         if($action != 'remove') return false ;
@@ -133,22 +145,19 @@ class MT extends Device
         if(!$this->needs_dep_check($path)) return false;
         $name = $data['name'] ?? null ;
         if(!$name) return true ; //we dont delete unless we are sure
-        $tmp = $this->path ;
         foreach($this->dep_paths($path) as $dep_path)
         {
-            $this->path = $dep_path;
+            $path = $dep_path;
             $filter = sprintf('?%s=%s',$this->dep_filter_key($dep_path),$name);
-            $read = $this->read($filter);
+            $read = $this->read($path,$filter);
             if(!empty($read)){
-                $this->path = $tmp ;
                 return true ;
             }
         }
-        $this->path = $tmp;
         return false ;
     }
 
-    protected function dep_filter_key($path)
+    protected function dep_filter_key($path): string
     {
         switch (trim($path,'/'))
         {
@@ -171,7 +180,7 @@ class MT extends Device
         }
     }
 
-    protected function needs_dep_check($path)
+    protected function needs_dep_check($path): bool
     {
         return in_array($path,[
             'ppp/profile',
@@ -190,29 +199,24 @@ class MT extends Device
         if($name) $filter = '?name=' . $name ;
         if($mac) $filter = '?mac-address=' . $mac ;
         if($duid) $filter = '?duid=' . $duid ;
-        $tmp = $this->path ;
         if($filter){
-            $this->path = $data['path'];
-            $read = $this->read($filter);
+            $path = $data['path'];
+            $read = $this->read($path,$filter);
             $item  = $read[0] ?? [];
             $id = $item['.id'] ?? null ;
             if($id && is_string($id)){
-                $this->path = $tmp ;
                 return $id ;
             }
         }
-        $this->path = $tmp ;
         return null ;
     }
 
     protected function find_local(): ?string
     {
-        $tmp = $this->path;
-        $this->path = '/ip/address/';
+        $path = '/ip/address/';
         $filter = '?disabled=false,?dynamic=false,?invalid=false';
-        $list = $this->read($filter);
+        $list = $this->read($path,$filter);
         $prefix = $list[0]['address'] ?? null ;
-        $this->path = $tmp;
         $address = explode('/',$prefix)[0] ?? null ;
         return $address ?? (new ApiIP())->local();
     }
@@ -252,18 +256,6 @@ class MT extends Device
             $this->device = $this->db()->selectDeviceByDeviceName($dev);
         }
         return (bool)$this->device ;
-    }
-
-    private function has_error(): bool
-    {
-        $error = null ;
-        if(is_array($this->read)){
-            $error = $this->read['!trap'][0]['message'] ?? null;
-        }
-        if ($error) {
-            $this->setErr($error);
-        }
-        return (bool)$error;
     }
 
     protected function format_filter($filter): array
