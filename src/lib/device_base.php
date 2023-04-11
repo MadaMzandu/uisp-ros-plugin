@@ -52,15 +52,6 @@ class Device_Base
         return new ApiSqlite('data/cache.db');
     }
 
-    protected function queueMe($msg): void
-    {
-        $this->setErr($msg);
-        $this->status->status = 'failed';
-        if($this->svc){
-            $this->svc->queue_job($this->status);
-        }
-    }
-
     protected function setErr($msg): void
     {
         $this->status->error = true;
