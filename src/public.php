@@ -25,7 +25,6 @@ try
     cache_setup();
     MyLog()->Append('public: checking cache sync');
     cache_sync();
-    net_sync();
     MyLog()->Append('public: setup completed');
 
     include_once 'lib/api_router.php';
@@ -43,7 +42,7 @@ try
     }
 
 
-    MyLog()->Append('public: begin api request: ');
+    MyLog()->Append('public: begin api request: '.$json);
     $data = json_decode($json);
     $api = new API_Router($data);
     $api->route();

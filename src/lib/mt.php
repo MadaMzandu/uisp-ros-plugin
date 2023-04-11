@@ -6,7 +6,6 @@ include_once 'device.php';
 class MT extends Device
 {
 
-    protected ?string $path;
     protected ?stdClass $device;
     protected ?array $batch ;
     protected ?stdClass $batch_device ;
@@ -16,7 +15,7 @@ class MT extends Device
 
     public function set()
     {
-        $this->path = rtrim($this->get_data('path'), '\/') . '/';
+        $path = rtrim($this->get_data('path'), '\/') . '/';
         ///return $this->write($this->get_data('data'), $this->get_data('action'));
     }
 
@@ -28,7 +27,7 @@ class MT extends Device
 
     protected function write($post)
     {
-        $opened = $this->needs_open();
+        $opened = $this->xor_connect();
         $timer = new ApiTimer('single write');
         //check and prepare
         $id = $this->find_id($post);
@@ -50,14 +49,14 @@ class MT extends Device
         $this->api->write(';');
         $timer->stop();
         $read = $this->api->read() ;
-        if($opened) $this->disconnect();
+        if($opened) $this->api_disconnect();
         return $read ;
     }
 
-    protected function needs_open(): bool
-    {
+    protected function xor_connect(): bool
+    {// connect if not already connected
         if(!$this->api){
-            $this->api = $this->connect() ;
+            $this->api = $this->api_connect() ;
             if($this->api) return true;
         }
         return false ;
@@ -65,7 +64,7 @@ class MT extends Device
 
     protected function write_batch(): int
     {
-        $api = $this->connect();
+        $api = $this->api_connect();
         if (!$api) { return 0; }
         $this->api = $api ;
         $writes = 0;
@@ -101,7 +100,7 @@ class MT extends Device
 
     protected function read($path,$filter = null): ?array
     {  //implements mikrotik print
-        $opened = $this->needs_open() ;
+        $opened = $this->xor_connect() ;
         if(!$this->api) return  null ;
         $this->api->write(sprintf('/%s/print',trim($path,'/')), false);
         if ($filter) {
@@ -111,14 +110,15 @@ class MT extends Device
         }
         $this->api->write(";");
         $read = $this->api->read() ;
-        if($opened) $this->disconnect();
+        if($opened) $this->api_disconnect();
         return $this->find_error($read) ? null : $read;
     }
 
-    protected function connect(): ?RouterosAPI
+    protected function api_connect(): ?RouterosAPI
     {
         if(!$this->get_device()){
-            throw new Exception('failed to get device information');
+            MyLog()->Append('mt: failed to get device information');
+            return null ;
         }
         $api = new Routerosapi();
         $api->timeout = 1;
@@ -131,7 +131,7 @@ class MT extends Device
         return $api;
     }
 
-    protected function disconnect(): void
+    protected function api_disconnect(): void
     {
         if($this->api) $this->api->disconnect();
         $this->api = null ;

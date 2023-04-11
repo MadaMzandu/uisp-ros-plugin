@@ -8,6 +8,7 @@ class ApiLogger
     public function Append($entry, $level = LOG_DEBUG)
     {
         if ($level > API_DEBUG_LEVEL) return;
+//        error_log(sprintf("%s: %s",$this->Time(), $entry) . PHP_EOL,3,'data/plugin.log');
 //      echo sprintf("%s: %s",$this->Time(), $entry) . PHP_EOL;
        $this->ULog()->appendLog(sprintf("%s: %s",$this->Time(), $entry));
     }

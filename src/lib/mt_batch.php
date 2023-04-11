@@ -55,7 +55,7 @@ class MtBatch extends MT
                     $parent['action'] = 'remove';
                     $deviceData[$did]['parents'][$parent['name']] = $parent ;
                 }
-                $disconnect = $mt->disconnect();
+                $disconnect = $mt->account_reset();
                 if($disconnect){$deviceData[$did]['disconn'][] = $disconnect; }
                 $pool = $mt->pool();
                 if ($pool){
@@ -93,7 +93,7 @@ class MtBatch extends MT
                 if($profile){ $deviceData[$did]['profiles'][$profile['name']] = $profile ; }
                 $parent = $mt->parent();
                 if($parent){ $deviceData[$did]['parents'][$parent['name']] = $parent ; }
-                $disconnect = $mt->disconnect();
+                $disconnect = $mt->account_reset();
                 if($disconnect){$deviceData[$did]['disconn'][] = $disconnect; }
                 $pool = $mt->pool();
                 if($pool){$deviceData[$did]['pool']['uisp_pool'] = $pool; }
@@ -182,9 +182,6 @@ class MtBatch extends MT
             MyLog()->Append(sprintf("batch delete from %s sql: %s",$table,$sql));
             $this->db()->exec($sql);
         }
-
-
-
     }
 
     private function find_success(): array

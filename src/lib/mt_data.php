@@ -99,7 +99,7 @@ class MtData extends MT
         return $data ;
     }
 
-    public function disconnect(): ?array
+    public function account_reset(): ?array
     {
         $type = $this->type();
         if($type == 'dhcp') return null ;
@@ -130,9 +130,10 @@ class MtData extends MT
             'path' => '/ipv6/dhcp-server/binding',
             'address' => $this->ip(true),
             'duid' => $this->make_duid(),
-            'iaid' => $this->service['iaid'] ?? 1,
+            'iaid' => $this->make_iaid(),
             'life-time' => '3m',
             'prefix-pool' => $this->pool_name(),
+            'comment' => $this->account_comment(),
         ];
     }
 
@@ -360,13 +361,20 @@ class MtData extends MT
 
     private function make_duid(): ?string
     {
+        $MAC_LENGTH = 12 ;
         $val = $this->service['duid'] ?? $this->service['mac'] ?? null ;
-        $mac = preg_replace('/\W/',':',$val);
-        if(filter_var($mac,FILTER_VALIDATE_MAC)){
-            $duid = '0x' . preg_replace('/:/','',$mac);
-            return strtolower($duid);
+        $stripped = preg_replace('/\W/','',strtolower($val));
+        if(strlen($stripped) < 12) return null ;
+        return '0x' . substr($stripped,strlen($stripped) - $MAC_LENGTH);
+    }
+
+    private function make_iaid(): int
+    {
+        $val = $this->service['iaid'] ?? 1 ;
+        if(preg_match('/^0x/',$val)){ //value hex
+            return hexdec($val);
         }
-        return null ;
+        return $val ;
     }
 
 

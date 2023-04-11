@@ -9,7 +9,7 @@ class Validation extends Admin
     private $keys;
     private $subnet;
 
-    public function __construct(&$data)
+    public function __construct($data)
     {
         parent::__construct($data);
         $this->keys = array_keys((array)$this->data);
@@ -130,7 +130,7 @@ class Validation extends Admin
         global $conf;
         $savedToken = $conf->{$field};
         $conf->{$field} = $this->data->{$field};
-        $test = (new ApiUcrm())->get('/service-plans');
+        $test = (.new ApiUcrm())->get('/service-plans');
         if (!$test) {
             $this->setFieldError($field, 'token may be invalid - services plans not found using token');
             $this->set_error('could not access service plans with token');
@@ -239,7 +239,7 @@ class Validation extends Admin
     private function netIsValid($prefix, $len)
     {
         $this->subnet = long2ip(ip2long($prefix) & (-1 << (32 - $len)));
-        return $this->subnet == $prefix ? true : false;
+        return $this->subnet == $prefix;
     }
 
     private function checkIpAddress()

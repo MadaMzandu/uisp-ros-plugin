@@ -212,7 +212,7 @@ class ApiSqlite
 
     public function selectCustom($sql) : ?array
     {
-        $res = $this->query($sql);
+        $res = $this->db()->query($sql);
         $return = null;
         while ($row = $res->fetchArray(SQLITE3_ASSOC)) {
             $return[] = $row;
