@@ -126,7 +126,14 @@ class AdminDevices extends Admin
 
     private function get_services()
     {
-        $cached = $this->dbCache()->selectCustom($this->cache_sql()) ?? [];
+        $db = new SQLite3('data/cache.db');
+        $db->exec("ATTACH 'data/data.db' as svc");
+        $result = $db->query($this->cache_sql()) ?? [];
+        $cached = [];
+        while ($row = $result->fetchArray(SQLITE3_ASSOC)){
+            $cached[] = $row ;
+        }
+        $db->close();
         $plans = $this->ucrm()->get('service-plans') ?? [];
         $plans = json_decode(json_encode($plans),true);
         $addressMap = [];
@@ -147,7 +154,7 @@ class AdminDevices extends Admin
             "clients.firstName,clients.lastName";
         $did = $this->data->did ?? $this->data->id ?? $this->data->device ?? 0 ;
         $sql = sprintf("SELECT %s FROM services LEFT JOIN clients ON ".
-            "services.clientId=clients.id LEFT JOIN network ON services.id=network.id ".
+            "services.clientId=clients.id LEFT JOIN svc.network ON services.id=network.id ".
             "WHERE services.device = %s AND services.status NOT IN (2,5,8) ",$fields,$did);
         $query = $this->data->query ?? null ;
         if($query){
