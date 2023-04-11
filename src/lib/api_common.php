@@ -2,7 +2,7 @@
 include_once 'api_logger.php';
 
 function myErrorHandler($errno, $errstr, $errfile, $errline){
-    MyLog()->Append(sprintf('error no: %s error: %s',$errno,$errstr));
+    MyLog()->Append(sprintf('error no: %s error: %s',$errno,$errstr),6);
 }
 
 function respond($msg,$err = false,$data = [])
