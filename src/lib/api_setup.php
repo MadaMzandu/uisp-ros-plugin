@@ -68,8 +68,7 @@ class ApiSetup
         $default = json_decode($file,true);
         $conf = (array) $this->db()->readConfig();
         $diff = array_diff_key($default,$conf);
-        $done = $this->db()->saveConfig($diff);
-        return $done ;
+        return $this->db()->saveConfig($diff);
     }
 
     private function update_schema(): ?array
@@ -79,7 +78,7 @@ class ApiSetup
         $arr = explode("\n",
             preg_replace('/;/',";\n",
                 preg_replace('/\v+/',"",$str))); //convert to array
-        return array_diff($arr,[""]);
+        return array_diff($arr,["",null]);
     }
 
     private  function set_version(): void
