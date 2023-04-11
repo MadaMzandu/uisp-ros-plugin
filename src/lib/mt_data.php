@@ -126,7 +126,7 @@ class MtData extends MT
     public function dhcp6(): ?array
     {
         if(!$this->has_dhcp6()) return null ;
-        $data =  [
+        return [
             'path' => '/ipv6/dhcp-server/binding',
             'address' => $this->ip(true),
             'duid' => $this->make_duid(),
@@ -134,7 +134,6 @@ class MtData extends MT
             'life-time' => '3m',
             'prefix-pool' => $this->pool_name(),
         ];
-        return $data ;
     }
 
     public function pool(): ?array
