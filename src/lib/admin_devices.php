@@ -24,7 +24,14 @@ class AdminDevices extends Admin
             return false;
         }
         $this->set_message('device has been added');
+        $this->recache();
         return true;
+    }
+
+    private function recache(): void
+    {
+        $api = new Admin_System();
+        $api->recache();
     }
 
     public function edit(): bool
