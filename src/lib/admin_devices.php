@@ -4,8 +4,7 @@ class AdminDevices extends Admin
     public function delete(): bool
     {
 
-        $db = $this->connect();
-        if (!$db->delete($this->data->id, 'devices')) {
+        if (!$this->db()->delete($this->data->id, 'devices')) {
             $this->set_error('database error');
             return false;
         }
@@ -15,11 +14,9 @@ class AdminDevices extends Admin
 
     public function insert(): bool
     {
-
-        $db = $this->connect();
         unset($this->data->id);
         $this->trim_prefix();
-        if (!$db->insert($this->data, 'devices')) {
+        if (!$this->db()->insert($this->data, 'devices')) {
             $this->set_error('database error');
             return false;
         }
@@ -37,9 +34,8 @@ class AdminDevices extends Admin
     public function edit(): bool
     {
 
-        $db = $this->connect();
         $this->trim_prefix();
-        if (!$db->edit($this->data, 'devices')) {
+        if (!$this->db()->edit($this->data, 'devices')) {
             $this->set_error('database error');
             return false;
         }
@@ -121,11 +117,6 @@ class AdminDevices extends Admin
         return (new MT($data))->set();
     }
 
-    private function connect(): ApiSqlite
-    {
-        return new ApiSqlite();
-    }
-
     public function services()
     {
         $this->result = $this->get_services();
@@ -133,8 +124,8 @@ class AdminDevices extends Admin
 
     private function get_services()
     {
-        $db = new SQLite3('data/cache.db');
-        $db->exec("ATTACH 'data/data.db' as svc");
+        $db = new SQLite3('data/data.db');
+        $db->exec("ATTACH 'data/cache.db' as cache");
         $result = $db->query($this->cache_sql()) ?? [];
         $cached = [];
         while ($row = $result->fetchArray(SQLITE3_ASSOC)){
@@ -157,11 +148,12 @@ class AdminDevices extends Admin
     }
 
     private function cache_sql(){
-        $fields = "services.*,network.address,network.address6,clients.company,".
-            "clients.firstName,clients.lastName";
+        $fields = "services.*,cache.services.username,cache.services.mac,cache.services.price,".
+            "network.address,network.address6,clients.company,clients.firstName,clients.lastName";
         $did = $this->data->did ?? $this->data->id ?? $this->data->device ?? 0 ;
-        $sql = sprintf("SELECT %s FROM services LEFT JOIN clients ON ".
-            "services.clientId=clients.id LEFT JOIN svc.network ON services.id=network.id ".
+        $sql = sprintf("SELECT %s FROM services LEFT JOIN cache.clients ON ".
+            "services.clientId=clients.id LEFT JOIN network ON services.id=network.id ".
+            "LEFT JOIN cache.services ON services.id=services.id ".
             "WHERE services.device = %s AND services.status NOT IN (2,5,8) ",$fields,$did);
         $query = $this->data->query ?? null ;
         if($query){
