@@ -109,13 +109,13 @@ class ApiAction
         return $this->attributes()->check($this->request);
     }
 
-    private function has_deferred($data)
+    private function has_deferred($data): bool
     {
         $status = $this->get('status',$data) ;
         return $status == ACTION_DEFERRED ;
     }
 
-    private function has_renamed($data)
+    private function has_renamed($data): bool
     {
         $fields = ['mac','username','duid','iaid'];
         foreach ($fields as $field){
@@ -128,15 +128,15 @@ class ApiAction
         return false ;
     }
 
-    private function has_ended($data)
+    private function has_ended($data): bool
     {
         $action = $data['action'] ?? null ;
-        if(in_array($action,['end','cancel','delete'])) return 'delete';
+        if(in_array($action,['end','cancel','delete'])) return true ;
         $status = $this->get('status',$data);
         return in_array($status,[ACTION_OBSOLETE,ACTION_ENDED,ACTION_INACTIVE]);
     }
 
-    private function has_flipped($data)
+    private function has_flipped($data): bool
     {
         $action = $data['action'] ?? null;
         if(in_array($action,['suspend','unsuspend'])) return true ;
@@ -145,7 +145,7 @@ class ApiAction
         return $new && $old && $new != $old ;
     }
 
-    private function has_upgraded($data)
+    private function has_upgraded($data): bool
     {
         $new = $this->get('planId',$data);
         $old = $this->get('planId',$data,'old');
