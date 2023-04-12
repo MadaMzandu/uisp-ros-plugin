@@ -86,23 +86,31 @@ class MtBatch extends MT
                 if($did == 'nodev'){ continue; }
                 $plan = $plans[$service['planId']] ;
                 $mt->set_data($service,$plan);
+                MyLog()->Append("processing service: ".json_encode($service),5);
                 $account = $mt->account();
                 if($account){ $deviceData[$did]['accounts'][] = $account ; }
+                MyLog()->Append("done",5);
                 $queue = $mt->queue();
                 if($queue){ $deviceData[$did]['queues'][] = $queue ; }
+                MyLog()->Append("queue done",5);
                 $profile = $mt->profile();
                 if($profile){ $deviceData[$did]['profiles'][$profile['name']] = $profile ; }
+                MyLog()->Append("profile done",5);
                 $parent = $mt->parent();
                 if($parent){ $deviceData[$did]['parents'][$parent['name']] = $parent ; }
+                MyLog()->Append("parent done",5);
                 $disconnect = $mt->account_reset();
                 if($disconnect){$deviceData[$did]['disconn'][] = $disconnect; }
+                MyLog()->Append("disconnect done",5);
                 $pool = $mt->pool();
                 if($pool){$deviceData[$did]['pool']['uisp_pool'] = $pool; }
+                MyLog()->Append("pool done",5);
                 $dhcp6 = $mt->dhcp6();
                 if($dhcp6){$deviceData[$did]['accounts'][] = $dhcp6; }
+                MyLog()->Append("dhcp6 done",5);
             }
         }
-        MyLog()->Append('services ready to add or set');
+        MyLog()->Append('services ready to add or set',5);
         $this->run_batch($deviceData);
         $this->save_batch($deviceServices);
         $this->queue_failed($deviceServices);
@@ -152,6 +160,7 @@ class MtBatch extends MT
                 $id = $service['batch'] ?? null ;
                 $success = $this->batch_success[$id] ?? null ;
                 if($success){
+                    $values = [];
                     foreach ($fields as $key){ $values[] = $service[$key] ?? null ;}
                     $values['last'] = $this->now();
                     $save[] = $values;

@@ -13,11 +13,13 @@ class MtData extends MT
     public function account(): ?array
     {
         $data = null ;
+        MyLog()->Append('requesting account',5);
         switch ($this->type()){
             case 'dhcp': $data = $this->dhcp();break ;
             case 'ppp': $data = $this->ppp(); break ;
             case 'hotspot': $data = $this->hotspot(); break ;
         }
+        MyLog()->Append('received account: '. json_encode($data),5);
         return $data ;
     }
 
@@ -135,7 +137,7 @@ class MtData extends MT
             'address' => $this->ip(true),
             'duid' => $this->make_duid(),
             'iaid' => $this->make_iaid(),
-            'life-time' => null,
+            //'life-time' => null,
             'prefix-pool' => $this->pool_name(),
             'comment' => $this->account_comment(),
         ];
@@ -226,8 +228,10 @@ class MtData extends MT
         if($ip6) $preset = $this->service['address6'] ?? null;
         $ip = $preset ?? $this->db()->selectIp($this->service['id'],$ip6);
         if($ip){
+            MyLog()->Append('ip address found ' . $ip,5);
             return $ip ;
         }
+        MyLog()->Append('requesting ip');
         $router_pool = $this->conf->router_ppp_pool ?? true ;
         $type = $this->type();
         $api = new ApiIP();
@@ -235,8 +239,10 @@ class MtData extends MT
         $did = $this->service['device'] ?? 0 ;
         $device = $this->db()->selectDeviceById($did);
         if($device && ($type == 'dhcp' || $router_pool)){
+            MyLog()->Append('requesting from device pool');
             return $api->ip($sid,$device,$ip6);
         }
+        MyLog()->Append('requesting from global pool');
         return $api->ip($sid,null,$ip6);
     }
 
@@ -360,7 +366,7 @@ class MtData extends MT
     {
         $duid = $this->make_duid() ;
         $iaid = $this->service['iaid'] ?? 1 ;
-        return $duid && $iaid ;
+        return $duid && $iaid  && $this->ip(true);
     }
 
     private function make_duid(): ?string
