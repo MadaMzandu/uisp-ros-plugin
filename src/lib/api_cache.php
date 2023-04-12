@@ -8,7 +8,7 @@ include_once '_web_ucrm.php';
 class ApiCache{
 
     public function save($request,$type = 'service')
-    { //trigger a sync when conditions or update a single service
+    { //update a single service
         $timer = new ApiTimer('cache update');
         $table = $type . 's';
         $batch[] = $request ;
@@ -184,7 +184,7 @@ class ApiCache{
 
     private function trimmer(){ return new ApiTrim(); }
 
-    private function ucrm(){ return .new ApiUcrm(); }
+    private function ucrm(){ return new ApiUcrm(); }
 
     private function db(){ return new ApiSqlite(); }
 

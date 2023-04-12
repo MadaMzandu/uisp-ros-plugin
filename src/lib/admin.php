@@ -99,7 +99,7 @@ class Admin
 
     protected function ucrm()
     {
-        return .new ApiUcrm();
+        return new ApiUcrm();
     }
 
     protected function conf()

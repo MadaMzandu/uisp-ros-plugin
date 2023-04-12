@@ -63,7 +63,7 @@ class Device_Fix extends Device_Account
     {
         $clientId = $this->svc->client->id();
         $id = $this->svc->id();
-        $u = .new ApiUcrm();
+        $u = new ApiUcrm();
         $u->assoc = true ;
         if ($u->request('/clients/services/' . $id . '/end', 'PATCH')) {//end service
             $u->request('/clients/services/' . $id, 'DELETE'); //delete service

@@ -182,6 +182,6 @@ class ApiAttributes
 
     private function conf(){ return $this->db()->readConfig(); }
 
-    private function ucrm(){ return .new ApiUcrm(); }
+    private function ucrm(){ return new ApiUcrm(); }
 
 }
