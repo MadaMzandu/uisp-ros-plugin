@@ -24,10 +24,10 @@ class ApiIP
         $prefixes = explode(',',$pool);
         foreach ($prefixes as $prefix){
             $address = $this->findUnused($prefix);
-            MyLog()->Append(sprintf("ip assignment: %s",$address));
             if($address){
+                MyLog()->Append(sprintf("ip assignment: %s",$address));
                 if($ip6) $address = $address . '/' . $this->length6 ;
-                $this->set_ip($sid,$address,$ip6);
+                $this->set_ip($sid,$address);
                 return $address;
             }
         }
@@ -52,8 +52,10 @@ class ApiIP
         return $address ;
     }
 
-    public function set_ip($sid,$address,$ip6 = false): void
+    public function set_ip($sid,$address): void
     {
+        $check = preg_replace('/\/.*/','',$address);
+        $ip6 = filter_var($check,FILTER_VALIDATE_IP,FILTER_FLAG_IPV6);
         $field = 'address';
         if($ip6) $field = 'address6';
         $sql = sprintf("INSERT INTO network (id,%s) VALUES (%s,'%s')",$field,$sid,$address);
@@ -72,6 +74,7 @@ class ApiIP
 
     private function valid($prefix): bool
     {
+        if(!preg_match('/[\da-fA-F\.\:]+\/\d{1,3}/',$prefix)) return false ;
         $arr = explode('/',$prefix);
         if(sizeof($arr) < 2) return false ;
         if($this->ip6){
@@ -119,11 +122,11 @@ class ApiIP
     {
         $gmp_last = $this->gmp_bcast($prefix);
         $gmp_first = $this->ip2gmp($prefix);
-        while($gmp_first != $gmp_last){
+        while(gmp_cmp($gmp_first,$gmp_last) < 1){
             $gmp_first = $this->gmp_next($gmp_first);
-            if($gmp_first == $gmp_last) break ;
             if($this->excluded($gmp_first)) continue; //skip excluded
             $ip = $this->gmp2ip($gmp_first);
+            if(!$ip) continue ;
             if($this->is_odd($ip)) continue ; // skip zeros and xFFFF
             if ($this->is_used($ip)) continue; // skip used
             return $ip ;
@@ -131,8 +134,9 @@ class ApiIP
         return null ;
     }
 
-    private function gmp_hosts($length): GMP
+    private function gmp_hosts($length)
     {
+        if(!is_int($length)) return null ;
         $max = $this->ip6 ? 128 :32 ;
         $host_len = $max - $length;
         return gmp_pow(IP_BASE2, $host_len);
@@ -148,8 +152,9 @@ class ApiIP
         return inet_ntop(hex2bin($hex));
     }
 
-    private function gmp_bcast($prefix): GMP
+    private function gmp_bcast($prefix)
     {
+        if(!$this->valid($prefix)) return null ;
         [$address,$length] = explode('/',$prefix);
         $hosts_qty = $this->gmp_hosts($length);
         $net_addr = $this->ip2gmp($address);
@@ -159,20 +164,20 @@ class ApiIP
         return gmp_add($net_addr,$hosts_qty);
     }
 
-    private function gmp_next($addr): GMP
+    private function gmp_next($gmp_addr)
     {
         $next = !$this->ip6 ? 1
             : gmp_pow(IP_PWR2,$this->length6);
-        return gmp_add($addr,$next);
+        return gmp_add($gmp_addr,$next);
     }
 
-    private function ip2gmp($prefix): GMP
+    private function ip2gmp($prefix)
     {
-        $address = explode('/',$prefix)[0];
+        $address = preg_replace('/\/\d*/','',$prefix);
         return gmp_init(bin2hex(inet_pton($address)),16);
     }
 
-    private function excluded($address): bool
+    private function excluded($gmp_addr): bool
     {
         $read = $this->exclusions();
         foreach ($read as $range) {
@@ -181,7 +186,8 @@ class ApiIP
             if (!$e) $e = $s;
             $start = $this->ip2gmp($s);
             $end = $this->ip2gmp($e) ;
-            if($address >= $start && $address <= $end) return true ;
+            if(gmp_cmp($gmp_addr,$start) >= 0 && gmp_cmp($gmp_addr,$end) <= 0) return true ;
+            //if($gmp_addr >= $start && $gmp_addr <= $end) return true ;
         }
         return false;
     }
