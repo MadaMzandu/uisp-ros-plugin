@@ -40,6 +40,7 @@ class MtData extends MT
     private function hotspot(): array
     {
         return [
+            'batch' => $this->service['batch'] ?? null ,
             'path' => '/ip/hotspot/user/',
             'name' => $this->service['username'],
             'password' => $this->service['password'],
@@ -86,6 +87,7 @@ class MtData extends MT
     private function ppp(): array
     {
        $data = [
+           'batch' => $this->service['batch'] ?? null ,
             'path' => '/ppp/secret',
             'remote-address' => $this->ip(),
             'name' => $this->service['username'],
@@ -114,6 +116,7 @@ class MtData extends MT
     private function dhcp(): array
     {
         return [
+            'batch' => $this->service['batch'] ?? null ,
             'path' => '/ip/dhcp-server/lease',
             'address' => $this->ip(),
             'mac-address' => strtoupper($this->service['mac']),
@@ -127,11 +130,12 @@ class MtData extends MT
     {
         if(!$this->has_dhcp6()) return null ;
         return [
+            'batch' => $this->service['batch'] ?? null ,
             'path' => '/ipv6/dhcp-server/binding',
             'address' => $this->ip(true),
             'duid' => $this->make_duid(),
             'iaid' => $this->make_iaid(),
-            'life-time' => '3m',
+            'life-time' => null,
             'prefix-pool' => $this->pool_name(),
             'comment' => $this->account_comment(),
         ];

@@ -65,17 +65,23 @@ class MT extends Device
     protected function write_batch(): int
     {
         $api = $this->api_connect();
-        if (!$api) { return 0; }
+        if (!$api) {
+            MyLog()->Append("mt failed to connect sending batch to queue");
+            $this->send_to_queue();
+            return 0;
+        }
         $this->api = $api ;
         $writes = 0;
         foreach ($this->batch as $post) {
             $result = $this->write($post);
             if ($this->find_error($result)) {
                 $post['error'] = json_encode($result);
-                $this->batch_failed[] = $post;
+                $id = $post['batch'] ?? null ;
+                if($id)$this->batch_failed[$id] = 1;
                 MyLog()->Append('mt write error: ' . json_encode([$post, $result]), 6);
             } else {
-                $this->batch_success[] = $post;
+                $id = $post['batch'] ?? null ;
+                if($id) $this->batch_success[$id] = 1;
                 $writes++;
             }
         }
@@ -83,6 +89,15 @@ class MT extends Device
         $this->api = null ;
         $api->disconnect();
         return $writes;
+    }
+
+    protected function send_to_queue(): void
+    {
+        foreach ($this->batch as $item) {
+            $id = $item['batch'] ?? null ;
+            if($id) $this->batch_failed[$id] = 1;
+        }
+        $this->batch = null ;
     }
 
     protected function find_error($result): bool
@@ -195,10 +210,12 @@ class MT extends Device
         $name = $data['name'] ?? null ;
         $mac = $data['mac-address'] ?? null ;
         $duid = $data['duid'] ?? null;
-        $filter = null ;
-        if($name) $filter = '?name=' . $name ;
-        if($mac) $filter = '?mac-address=' . $mac ;
-        if($duid) $filter = '?duid=' . $duid ;
+        $address = $data['address'] ?? null ;
+        $filter = [] ;
+        if($name) $filter['name'] = $name;
+        if($mac) $filter['mac-address'] = $mac ;
+        //if($address) $filter['address'] = $address ;
+        if($duid) $filter['duid'] = $duid ;
         if($filter){
             $path = $data['path'];
             $read = $this->read($path,$filter);
@@ -226,10 +243,8 @@ class MT extends Device
         $clean = [];
         $action = $data['action'] ?? null;
         if($action == 'remove') { return $clean ;} // return blank for remove
-        foreach (array_keys($data) as $key){
-            if(in_array($key,['.id','path','action']))continue;
-            $clean[$key] = $data[$key];
-        }
+        $diff = ['.id' => null,'action' => null,'path' => null,'batch' => null] ;
+        $clean = array_diff_key($data,$diff) ;
         if(key_exists('local-address',$data))
             $clean['local-address'] = $this->find_local();
         return $clean ;

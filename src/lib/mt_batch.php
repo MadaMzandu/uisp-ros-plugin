@@ -72,6 +72,7 @@ class MtBatch extends MT
         MyLog()->Append('services ready to delete');
         $this->run_batch($deviceData,true);
         $this->unsave_batch($deviceServices);
+        $this->queue_failed($deviceServices);
     }
 
     public function set_ids(array $ids)
@@ -104,6 +105,7 @@ class MtBatch extends MT
         MyLog()->Append('services ready to add or set');
         $this->run_batch($deviceData);
         $this->save_batch($deviceServices);
+        $this->queue_failed($deviceServices);
     }
 
     private function run_batch($deviceData,$delete = false)
@@ -136,7 +138,7 @@ class MtBatch extends MT
 
     private function save_batch($deviceServices)
     {
-        $successes = $this->find_success();
+        if(empty($this->batch_success)) return ;
         $fields = [
             'id',
             'device',
@@ -147,9 +149,8 @@ class MtBatch extends MT
         $save = [];
         foreach ($deviceServices as $services){
             foreach ($services as $service){
-                $values = [];
-                $key = $service['mac'] ?? $service['username'] ?? null;
-                $success = $successes[strtolower($key)] ?? null ;
+                $id = $service['batch'] ?? null ;
+                $success = $this->batch_success[$id] ?? null ;
                 if($success){
                     foreach ($fields as $key){ $values[] = $service[$key] ?? null ;}
                     $values['last'] = $this->now();
@@ -165,12 +166,12 @@ class MtBatch extends MT
 
     private function unsave_batch($deviceServices)
     {
-        $successes = $this->find_success();
+        if(empty($this->batch_success)) return ;
         $ids = [];
         foreach ($deviceServices as $services){
             foreach ($services as $service){
-                $key = $service['mac'] ?? $service['username'] ?? null ;
-                $success = $successes[strtolower($key)] ?? null ;
+                $id = $service['batch'] ?? null ;
+                $success = $this->batch_success[$id] ?? null ;
                 if($success){
                     $ids[] = $service['id'];
                 }
@@ -184,15 +185,23 @@ class MtBatch extends MT
         }
     }
 
-    private function find_success(): array
+    private function queue_failed($deviceServices)
     {
-        $successes = [];
-        foreach ($this->batch_success as $item){
-            $key = $item['mac-address'] ?? $item['name'] ?? 'nokey';
-            $key =strtolower($key);
-            $successes[$key] = 1 ;
+        if(empty($this->batch_failed)) return ;
+        MyLog()->Append("batch queueing failed: ".sizeof($this->batch_failed));
+        $file = file_get_contents('data/queue.json') ?? '[]';
+        $queue = json_decode($file,true);
+        foreach ($deviceServices as $services){
+            foreach ($services as $service){
+                $id = $service['batch'] ?? null ;
+                $failed = $this->batch_failed[$id] ?? null ;
+                if($failed){
+                    $queue[]= ['data' => $service,'last' =>
+                        date_create()->format('Y-m-d H:i:s')];
+                }
+            }
         }
-        return $successes ;
+        file_put_contents('data/queue.json',json_encode($queue));
     }
 
     private function to_sql($array): string
@@ -228,7 +237,11 @@ class MtBatch extends MT
             "WHERE services.id IN (%s) ",$fields,implode(',',$ids));
         $data = $this->dbCache()->selectCustom($sql);
         $deviceMap = [];
-        foreach ($data as $item){ $id = $item['device'] ?? 'nodev'; $deviceMap[$id][] = $item ; }
+        foreach ($data as $item){
+            $item['batch'] = rand(2222,222222) + 44444 ;
+            $id = $item['device'] ?? 'nodev';
+            $deviceMap[$id][] = $item ;
+        }
         return $deviceMap ;
     }
 
