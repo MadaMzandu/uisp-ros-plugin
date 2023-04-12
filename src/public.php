@@ -3,6 +3,9 @@
 
 chdir(__DIR__);
 include_once 'includes/cors.php';
+require_once 'vendor/autoload.php';
+include_once 'lib/api_logger.php';
+include_once 'lib/api_common.php';
 
 if (isset($_SERVER['REQUEST_METHOD'])
     && $_SERVER['REQUEST_METHOD'] == 'OPTIONS') { //skip redirect for options
@@ -11,13 +14,11 @@ if (isset($_SERVER['REQUEST_METHOD'])
 
 $json = file_get_contents('php://input') ?? null;
 
+
 try
 {
-    require_once 'vendor/autoload.php';
-    include_once 'lib/api_logger.php';
     include_once 'lib/api_cache.php';
     include_once 'lib/api_setup.php';
-    include_once 'lib/api_common.php';
 
     //set_error_handler('myErrorHandler');
     MyLog()->Append('public: checking databases');
