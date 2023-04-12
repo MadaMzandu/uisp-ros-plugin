@@ -13,7 +13,7 @@ class ApiIP
     {
         $this->ip6 = $ip6;
         $pool = $this->conf()->ppp_pool ;
-        if($device){
+        if((array) $device){
             $this->length6 = $device->pfxLength ?? 64;
             $pool = $ip6 ? $device->pool6 : $device->pool ;
         }
@@ -126,7 +126,6 @@ class ApiIP
             $gmp_first = $this->gmp_next($gmp_first);
             if($this->excluded($gmp_first)) continue; //skip excluded
             $ip = $this->gmp2ip($gmp_first);
-            if(!$ip) continue ;
             if($this->is_odd($ip)) continue ; // skip zeros and xFFFF
             if ($this->is_used($ip)) continue; // skip used
             return $ip ;
@@ -136,7 +135,6 @@ class ApiIP
 
     private function gmp_hosts($length)
     {
-        if(!is_int($length)) return null ;
         $max = $this->ip6 ? 128 :32 ;
         $host_len = $max - $length;
         return gmp_pow(IP_BASE2, $host_len);
@@ -156,7 +154,7 @@ class ApiIP
     {
         if(!$this->valid($prefix)) return null ;
         [$address,$length] = explode('/',$prefix);
-        $hosts_qty = $this->gmp_hosts($length);
+        $hosts_qty = $this->gmp_hosts((int)$length);
         $net_addr = $this->ip2gmp($address);
         if(!$this->ip6) {
             return gmp_add($net_addr, gmp_sub($hosts_qty, 1));
