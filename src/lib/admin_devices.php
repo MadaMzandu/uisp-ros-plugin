@@ -148,17 +148,17 @@ class AdminDevices extends Admin
     }
 
     private function cache_sql(){
-        $fields = "services.*,cache.services.username,cache.services.mac,cache.services.price,".
+        $fields = "services.*,services.username,services.mac,services.price,".
             "network.address,network.address6,clients.company,clients.firstName,clients.lastName";
         $did = $this->data->did ?? $this->data->id ?? $this->data->device ?? 0 ;
         $sql = sprintf("SELECT %s FROM services LEFT JOIN cache.clients ON ".
-            "services.clientId=clients.id LEFT JOIN network ON services.id=network.id ".
-            "LEFT JOIN cache.services ON services.id=services.id ".
-            "WHERE services.device = %s AND services.status NOT IN (2,5,8) ",$fields,$did);
+            "main.services.clientId=clients.id LEFT JOIN network ON main.services.id=network.id ".
+            "LEFT JOIN cache.services ON main.services.id=cache.services.id ".
+            "WHERE main.services.device = %s AND main.services.status NOT IN (2,5,8) ",$fields,$did);
         $query = $this->data->query ?? null ;
         if($query){
             if(is_numeric($query)){
-                $sql .= sprintf("AND (services.id=%s OR services.clientId=%s) ",$query,$query);
+                $sql .= sprintf("AND (main.services.id=%s OR main.services.clientId=%s) ",$query,$query);
             }
             else{
                 $sql .= sprintf("AND (clients.firstName LIKE '%%%s%%' OR clients.lastName LIKE '%%%s%%' ".
@@ -168,7 +168,7 @@ class AdminDevices extends Admin
         }
         $limit = $this->data->limit ?? 100 ;
         $offset = $this->data->offset ?? 0 ;
-        $sql .= sprintf("ORDER BY services.id DESC LIMIT %s OFFSET %s",$limit,$offset);
+        $sql .= sprintf("ORDER BY main.services.id DESC LIMIT %s OFFSET %s",$limit,$offset);
         MyLog()->Append("services sql: ".$sql);
         return $sql;
     }
