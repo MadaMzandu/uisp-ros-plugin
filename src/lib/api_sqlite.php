@@ -250,7 +250,7 @@ class ApiSqlite
 
     public function readConfig(): ?stdClass
     {
-        $this->read = $this->selectAllFromTable('config');
+        $this->read = $this->selectAllFromTable('config') ?? [];
         $return = null;
         foreach ($this->read as $row) {
             $return[$row['key']] = $this->unStringify($row['value']);
