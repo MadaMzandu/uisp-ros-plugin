@@ -10,13 +10,10 @@ class AdminRebuild{
     {
         if($type == 'all'){
             $this->db()->deleteAll('services');
-            $this->db()->deleteAll('network');
         }
         else{
-            foreach(['services','network'] as $table){
-                $this->db()->exec(sprintf("DELETE FROM %s WHERE id IN (%s)",
-                    $table,implode(',',$ids) ));
-            }
+            $this->db()->exec(sprintf("DELETE FROM 'services' WHERE id IN (%s)",
+                implode(',',$ids) ));
         }
     }
 
