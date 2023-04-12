@@ -117,6 +117,7 @@ class MtData extends MT
 
     private function dhcp(): array
     {
+        $lease = $this->conf->dhcp_lease_time ?? 60 ;
         return [
             'batch' => $this->service['batch'] ?? null ,
             'path' => '/ip/dhcp-server/lease',
@@ -124,6 +125,7 @@ class MtData extends MT
             'mac-address' => strtoupper($this->service['mac']),
             'insert-queue-before' => 'bottom',
             'address-lists' => $this->addr_list(),
+            'lease-time' => $lease . 'm',
             'comment' => $this->account_comment(),
         ];
     }
@@ -131,13 +133,14 @@ class MtData extends MT
     public function dhcp6(): ?array
     {
         if(!$this->has_dhcp6()) return null ;
+        $lease = $this->conf->dhcp_lease_time ?? 60;
         return [
             'batch' => $this->service['batch'] ?? null ,
             'path' => '/ipv6/dhcp-server/binding',
             'address' => $this->ip(true),
             'duid' => $this->make_duid(),
             'iaid' => $this->make_iaid(),
-            //'life-time' => null,
+            'life-time' => $lease . 'm',
             'prefix-pool' => $this->pool_name(),
             'comment' => $this->account_comment(),
         ];
