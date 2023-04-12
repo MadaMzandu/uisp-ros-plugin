@@ -55,7 +55,7 @@ class ApiCache{
     private function populate($table)
     {
         $data = ['starter'];
-        $opts = $this->opts();
+        $opts = $this->opts($table);
         $path = $this->path($table);
         while($data){
             $data = $this->ucrm()->get($path,$opts);
@@ -174,10 +174,11 @@ class ApiCache{
         return $version != MyCacheVersion ;
     }
 
-    private function opts(): array
+    private function opts($table = 'services'): array
     {
-        $json = '{"limit":500,"offset":0,"statuses":[0,1,3,4,6,7,8]}';
-        return json_decode($json,true);
+        $opts = ['limit' => 500,'offset' => 0,'statuses' => [0,1,3,4,6,7]];
+        if($table == 'services') return $opts ;
+        else return array_diff_key($opts,['statuses' => null]);
     }
 
     private function attributes() { return new ApiAttributes(); }
