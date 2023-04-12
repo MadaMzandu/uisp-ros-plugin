@@ -13,18 +13,6 @@ class MT extends Device
     protected ?array $batch_success;
     protected ?RouterosAPI $api ;
 
-    public function set()
-    {
-        $path = rtrim($this->get_data('path'), '\/') . '/';
-        ///return $this->write($this->get_data('data'), $this->get_data('action'));
-    }
-
-    public function get(): ?array
-    {
-        $path = rtrim($this->get_data('path'), '\/') . '/';
-        return $this->read($path,$this->get_data('filter'));
-    }
-
     protected function write($post)
     {
         $opened = $this->xor_connect();

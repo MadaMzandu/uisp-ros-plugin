@@ -63,60 +63,6 @@ class AdminDevices extends Admin
         return true;
     }
 
-    private function reset_pppoe($id)
-    {
-        $data = (object)[
-            'device_id' => $id,
-            'path' => '/interface/pppoe-server/server'
-        ];
-        $servers = (new MT($data))->get();
-        foreach ($servers as $server)
-        {
-            $edit = (object)[
-                'device_id'=> $id,
-                'path' => '/interface/pppoe-server/server',
-                'action' => 'disable',
-                'data' => (object) ['.id' => $server['.id'],],];
-            (new MT($edit))->set();
-            $edit->action = 'enable';
-            (new MT($edit))->set();
-        }
-
-    }
-
-    private function save_router($id,$enable=false)
-    {
-        $list = json_decode($this->conf()->disabled_routers,true) ?? [];
-        if($enable){
-            unset($list[$id]);
-        }else{
-            $list[$id] = 1;
-        }
-        $data['disabled_routers'] = json_encode($list) ?? [];
-        return $this->db()->saveConfig($data);
-    }
-
-    private function set_profile_limit($id,$profile,$plan,$enable=false)
-    {
-        $rate = $enable
-            ? $plan['uploadSpeed']. 'M/'.$plan['downloadSpeed'] .'M'
-            : null ;
-        $parent = $enable
-            ? 'servicePlan-'.$plan['id'].'-parent'
-            : 'none';
-        $data = (object)[
-            'device_id' => $id,
-            'action' => 'set',
-            'path' => '/ppp/profile',
-            'data' => (object)[
-                '.id' => $profile['.id'],
-                'rate-limit' => $rate,
-                'parent-queue' => $parent,
-            ],
-        ];
-        return (new MT($data))->set();
-    }
-
     public function services()
     {
         $this->result = $this->get_services();
