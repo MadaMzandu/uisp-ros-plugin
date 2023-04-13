@@ -147,7 +147,7 @@ class MT extends Device
         $path = trim($data['path'],'/') ;
         if(!$this->needs_dep_check($path)) return false;
         $name = $data['name'] ?? null ;
-        if(!$name) return true ; //we dont delete unless we are sure
+        if(!$name) return false ; //we dont delete unless we are sure
         foreach($this->dep_paths($path) as $dep_path)
         {
             $path = $dep_path;
