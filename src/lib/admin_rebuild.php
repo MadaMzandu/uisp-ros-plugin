@@ -6,16 +6,16 @@ class AdminRebuild{
 
     private function cache(){ return new ApiSqlite('data/cache.db'); }
 
-    private function clear($type,$ids = [])
-    {
-        if($type == 'all'){
-            $this->db()->deleteAll('services');
-        }
-        else{
-            $this->db()->exec(sprintf("DELETE FROM 'services' WHERE id IN (%s)",
-                implode(',',$ids) ));
-        }
-    }
+//    private function clear($type,$ids = [])
+//    {
+//        if($type == 'all'){
+//            $this->db()->deleteAll('services');
+//        }
+//        else{
+//            $this->db()->exec(sprintf("DELETE FROM 'services' WHERE id IN (%s)",
+//                implode(',',$ids) ));
+//        }
+//    }
 
     public function rebuild($data)
     {
@@ -36,7 +36,7 @@ class AdminRebuild{
             $select = $this->cache()->selectCustom(sprintf("SELECT id from services WHERE planId = %s AND status NOT IN (2,5,8) ",$typeId));
         }
         if($type == 'device'){
-            $select = $this->cache()->selectCustom(sprintf("SELECT id FROM services WHERE device = %s AND status NOT IN (2,5,8) ",$typeId)); //test limit 15
+            $select = $this->cache()->selectCustom(sprintf("SELECT id FROM services WHERE device = %s AND status NOT IN (2,5,8) ",$typeId));
         }
         $ids = [];
         if(empty($select)){
@@ -44,10 +44,10 @@ class AdminRebuild{
         }
         foreach ($select as $item) $ids[] = $item['id'];
         MyLog()->Append(sprintf('found %s services to rebuild',sizeof($ids)));
-        if($clear)
-        {
-            $this->clear($type,$ids);
-        }
+//        if($clear)
+//        {
+//            $this->clear($type,$ids);
+//        }
         $batch = new MtBatch();
         $batch->set_ids($ids);
         $timer->stop();
