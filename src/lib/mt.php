@@ -55,7 +55,7 @@ class MT extends Device
         $api = $this->api_connect();
         if (!$api) {
             MyLog()->Append("mt failed to connect sending batch to queue");
-            $this->send_to_queue();
+            $this->send_to_queue('device connect failed');
             return 0;
         }
         $this->api = $api ;
@@ -63,9 +63,8 @@ class MT extends Device
         foreach ($this->batch as $post) {
             $result = $this->write($post);
             if ($this->find_error($result)) {
-                $post['error'] = json_encode($result);
                 $id = $post['batch'] ?? null ;
-                if($id)$this->batch_failed[$id] = 1;
+                if($id)$this->batch_failed[$id] = json_encode($result);
                 MyLog()->Append('mt write error: ' . json_encode([$post, $result]), 6);
             } else {
                 $id = $post['batch'] ?? null ;
@@ -79,11 +78,11 @@ class MT extends Device
         return $writes;
     }
 
-    protected function send_to_queue(): void
+    protected function send_to_queue($error): void
     {
         foreach ($this->batch as $item) {
             $id = $item['batch'] ?? null ;
-            if($id) $this->batch_failed[$id] = 1;
+            if($id) $this->batch_failed[$id] = $error;
         }
         $this->batch = null ;
     }
