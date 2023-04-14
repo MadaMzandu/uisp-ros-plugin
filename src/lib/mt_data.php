@@ -241,12 +241,16 @@ class MtData extends MT
         $sid = $this->service['id'];
         $did = $this->service['device'] ?? 0 ;
         $device = $this->db()->selectDeviceById($did);
-        if($device && ($type == 'dhcp' || $router_pool)){
+        if($type == 'ppp' && !$router_pool){
+            MyLog()->Append('requesting from global pool');
+            $test = $api->ip($sid,null,$ip6);
+            return $test ;
+
+        }
+        else{
             MyLog()->Append('requesting from device pool');
             return $api->ip($sid,$device,$ip6);
         }
-        MyLog()->Append('requesting from global pool');
-        return $api->ip($sid,null,$ip6);
     }
 
     private function profile_name(): string
