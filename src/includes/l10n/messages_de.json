@@ -93,6 +93,7 @@
   "rebuildDesc" : "Dadurch wird der Cache des Plugins neu erstellt und fehlende Konten auf Routern aufgefüllt. Kann verwendet werden, um Router oder das Plugin selbst wiederherzustellen. Vorhandene Konten auf Routern werden nicht geändert.",
   "rebuildFork": "Der Wiederherstellungsprozess wird weiterhin im Hintergrund ausgeführt",
   "rebuildTitle" : "Plugin-Daten neu erstellen",
+  "clearConfirm": "Remove accounts from the device?",
   "restore" : "wiederherstellen",
   "restoreTip" : "Wiederherstellung",
   "restoreTitle" : "Wiederherstellen oder Herunterladen einer Sicherung",

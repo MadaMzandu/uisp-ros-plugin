@@ -94,7 +94,7 @@
   "rebuildDesc" : "Cela reconstruira le cache du plugin et remplira les comptes manquants sur les routeurs. Peut être utilisé pour récupérer les routeurs ou le plugin lui-même. Les comptes existants sur les routeurs ne sont pas modifiés.",
   "rebuildFork": "Le processus de reconstruction continuera à s'exécuter en arrière-plan",
   "rebuildTitle" : "Reconstruire les données du plug-in",
-  "resetConfirm": "Remove accounts on the router before rebuild?",
+  "clearConfirm": "Remove accounts from the device?",
   "restore" : "rétablir",
   "restoreTip" : "sauvegarde de restauration",
   "restoreTitle" : "Restaurer ou télécharger une sauvegarde",
