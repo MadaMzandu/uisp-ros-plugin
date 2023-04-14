@@ -59,7 +59,7 @@ class ApiCache{
         $path = $this->path($table);
         while($data){
             $data = $this->ucrm()->get($path,$opts);
-            if(empty($data)) continue ;
+            if(empty((array)$data)) continue ;
             $request = [];
             foreach($data as $item){
                 $trim = $this->trimmer()->trim($table,$item)['entity'] ?? null;
