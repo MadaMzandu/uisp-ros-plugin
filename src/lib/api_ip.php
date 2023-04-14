@@ -6,7 +6,7 @@ const IP_PWR2 = 2;
 const IP_PAD0 = '0';
 class ApiIP
 {
-    private int $length6 ;
+    private int $length6 = 64;
     private bool $ip6 = false;
 
     public function ip($sid,$device = null,$ip6 = false): ?string
@@ -32,8 +32,9 @@ class ApiIP
             }
         }
         $name = $device->name ?? 'global';
-        throw new Exception(sprintf(
-            'ip: no addresses available pool: %s device: %s',$pool,$name));
+        $type = $ip6 ? 'ipv6' : 'ipv4';
+        MyLog()->Append(sprintf('ip: no addresses available type: %s pool: %s device: %s',$type,$pool,$name));
+        return null ;
     }
 
     public function local(): string
