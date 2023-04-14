@@ -221,6 +221,14 @@
     "description" : "Defines a manually assigned ip address. Ip address can be from an external pool that is not defined in this api",
     "isAttribute" : true
   },
+  "config_lease_time" :
+  {
+    "name" : "lease_time",
+    "label" : "Lease duration for dhcpv4 and dhcpv6",
+    "width" : "75",
+    "describe" : true,
+    "description" : "Specify lease duration in minutes. Applies for dhcpv4 and dhcpv6."
+  },
   "config_disable_contention" :
   {
     "name" : "disable_contention",
