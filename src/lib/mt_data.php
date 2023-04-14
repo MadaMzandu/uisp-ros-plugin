@@ -13,13 +13,11 @@ class MtData extends MT
     public function account(): ?array
     {
         $data = null ;
-        MyLog()->Append('requesting account',5);
         switch ($this->type()){
             case 'dhcp': $data = $this->dhcp();break ;
             case 'ppp': $data = $this->ppp(); break ;
             case 'hotspot': $data = $this->hotspot(); break ;
         }
-        MyLog()->Append('received account: '. json_encode($data),5);
         return $data ;
     }
 

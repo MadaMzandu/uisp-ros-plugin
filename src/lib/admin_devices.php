@@ -31,6 +31,17 @@ class AdminDevices extends Admin
         $api->recache();
     }
 
+    public function clear()
+    {
+        $id = $this->data->id ?? 0 ;
+        $ids = [];
+        $select = $this->dbCache()->selectCustom(sprintf
+            ("SELECT id FROM services WHERE device = %s AND status NOT IN (2,5,8) ",$id));
+        foreach ($select as $item) $ids[] = $item['id'];
+        $api = new MtBatch();
+        $api->delete_ids($ids);
+    }
+
     public function edit(): bool
     {
 
