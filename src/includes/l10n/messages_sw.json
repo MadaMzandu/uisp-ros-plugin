@@ -93,6 +93,7 @@
   "rebuildDesc" : "Hii itaunda upya akiba ya programu-jalizi na kujaza akaunti zinazokosekana kwenye vipanga njia. Inaweza kutumika kurejesha ruta au programu-jalizi yenyewe. Akaunti zilizopo kwenye ruta hazibadilishwa.",
   "rebuildFork": "Mchakato wa kuunda upya utaendelea kufanya kazi chinichini",
   "rebuildTitle" : "Unda upya data ya programu-jalizi",
+  "resetConfirm": "Remove accounts on the router before rebuild?",
   "restore" : "kurejesha",
   "restoreTip" : "kurejesha nakala rudufu",
   "restoreTitle" : "Rejesha au pakua nakala rudufu",

@@ -93,6 +93,7 @@
   "rebuildDesc": "This will rebuild the plugin's cache and populate missing accounts on routers. Can be used to recover routers or the plugin itself. Existing accounts on routers are not modified.",
   "rebuildFork": "The rebuild process will continue to run in the background",
   "rebuildTitle": "Rebuild plugin data",
+  "resetConfirm": "Remove accounts on the router before rebuild?",
   "restore": "restore",
   "restoreTip": "restore backup",
   "restoreTitle": "Restore or download a backup",
