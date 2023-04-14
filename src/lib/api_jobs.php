@@ -31,46 +31,40 @@ class Api_Jobs extends Admin
         $this->save();
     }
 
-    public function run()
+    public function run(): void
     {
         if(function_exists('fastcgi_finish_request')) {
-            $this->status->status = 'ok';
-            $this->status->data = [];
-            header('content-type: application/json');
             fastcgi_finish_request();
         }
         set_time_limit(7200);
-        if (is_object($this->queue)) {
-            $ids = array_keys((array)$this->queue);
-            foreach ($ids as $id) {
-                $status = $this->run_item($this->queue->$id);
-                if ($status->error) {
-                    $this->queue->$id->last = (new DateTime())->format('Y-m-d H:i:s');
-                    $this->queue->$id->status = $status;
-                } else {
-                    unset($this->queue->$id);
-                }
-            }
-            $this->save();
+        $delete = [];
+        $set = [];
+        $this->clear();
+        foreach ($this->queue as $item){
+            $action = $item['action'] ??  null;
+            if($action == 'update'){ $set[] = $item['id']; }
+            if($action == 'delete'){ $delete[] = $item['id'] ;}
         }
+        $api = new MtBatch();
+        $api->set_ids($set);
+        $api->delete_ids($delete);
     }
 
-    private function run_item($item): object
-    {
-        $item->data->queued = true ; // in case it fails again
-        $api = new API_Router($item->data);
-        $api->route();
-        return $api->status();
-    }
+//    private function run_item($item): object
+//    {
+//        $item->data->queued = true ; // in case it fails again
+//        $api = new API_Router($item->data);
+//        $api->route();
+//        return $api->status();
+//    }
 
-    private function read(): ?object
+    private function read()
     {
-        $json = null ;
+        $json = '{}' ;
         if(file_exists($this->file)){
-            $read = file_get_contents($this->file) ;
-            $json = is_string($read) ? $read: null;
+            $json = file_get_contents('data/queue.json') ?? '{}';
         }
-        return json_decode($json);
+        return json_decode($json,true);
     }
 
     private function save(): bool
