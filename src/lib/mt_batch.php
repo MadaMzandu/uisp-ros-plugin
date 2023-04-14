@@ -26,7 +26,7 @@ class MtBatch extends MT
 
     public function delete_ids(array $ids)
     {
-        $deviceServices = $this->select_ids($ids);
+        $deviceServices = $this->select_ids($ids,'delete');
         $plans = $this->select_plans();
         $deviceData = [];
         $mt = new MtData();
@@ -77,7 +77,7 @@ class MtBatch extends MT
 
     public function set_ids(array $ids)
     {
-        $deviceServices = $this->select_ids($ids);
+        $deviceServices = $this->select_ids($ids,'update');
         $plans = $this->select_plans();
         $deviceData = [];
         $mt = new MtData();
@@ -86,31 +86,22 @@ class MtBatch extends MT
                 if($did == 'nodev'){ continue; }
                 $plan = $plans[$service['planId']] ;
                 $mt->set_data($service,$plan);
-                MyLog()->Append("processing service: ".json_encode($service),5);
                 $account = $mt->account();
                 if($account){ $deviceData[$did]['accounts'][] = $account ; }
-                MyLog()->Append("done",5);
                 $queue = $mt->queue();
                 if($queue){ $deviceData[$did]['queues'][] = $queue ; }
-                MyLog()->Append("queue done",5);
                 $profile = $mt->profile();
                 if($profile){ $deviceData[$did]['profiles'][$profile['name']] = $profile ; }
-                MyLog()->Append("profile done",5);
                 $parent = $mt->parent();
                 if($parent){ $deviceData[$did]['parents'][$parent['name']] = $parent ; }
-                MyLog()->Append("parent done",5);
                 $disconnect = $mt->account_reset();
                 if($disconnect){$deviceData[$did]['disconn'][] = $disconnect; }
-                MyLog()->Append("disconnect done",5);
                 $pool = $mt->pool();
                 if($pool){$deviceData[$did]['pool']['uisp_pool'] = $pool; }
-                MyLog()->Append("pool done",5);
                 $dhcp6 = $mt->dhcp6();
                 if($dhcp6){$deviceData[$did]['accounts'][] = $dhcp6; }
-                MyLog()->Append("dhcp6 done",5);
             }
         }
-        MyLog()->Append('services ready to add or set',5);
         $this->run_batch($deviceData);
         $this->save_batch($deviceServices);
         $this->queue_failed($deviceServices);
@@ -204,9 +195,10 @@ class MtBatch extends MT
             foreach ($services as $service){
                 $id = $service['batch'] ?? null ;
                 $failed = $this->batch_failed[$id] ?? null ;
-                if($failed){
-                    $queue[]= ['data' => $service,'last' =>
-                        date_create()->format('Y-m-d H:i:s')];
+                if($failed){ //do not requeue
+                    $service['error'] = $failed ;
+                    $service['last'] = date_create()->format('Y-m-d H:i:s');
+                    $queue[]= $service ;
                 }
             }
         }
@@ -238,7 +230,7 @@ class MtBatch extends MT
         return $map ;
     }
 
-    private function select_ids(array $ids): array
+    private function select_ids(array $ids,$action): array
     {
         $fields = 'services.*,clients.company,clients.firstName,clients.lastName';
         $sql = sprintf("SELECT %s FROM services LEFT JOIN clients ON services.clientId=clients.id ".
@@ -247,6 +239,7 @@ class MtBatch extends MT
         $data = $this->dbCache()->selectCustom($sql);
         $deviceMap = [];
         foreach ($data as $item){
+            $item['action'] = $action ;
             $item['batch'] = rand(2222,222222) + 44444 ;
             $id = $item['device'] ?? 'nodev';
             $deviceMap[$id][] = $item ;
