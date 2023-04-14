@@ -17,7 +17,7 @@
   "cancelEdit" : "bearbeiten",
   "changedFields" : "Geänderte Felder",
   "changeType" : "Änderungsart",
-  "clearDevice": "clear device",
+  "clearDevice": "remove accounts",
   "clearConfirm": "Remove accounts from the device?",
   "clearField": "löschen",
   "client" : "Klient",
