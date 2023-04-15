@@ -1,7 +1,6 @@
 <?php
 
 include_once 'lib/admin.php';
-include_once 'lib/api_sqlite.php';
 include_once 'lib/admin_subnets.php';
 
 use PHPUnit\Framework\TestCase;
@@ -12,7 +11,7 @@ class SubnetsTest extends TestCase
 
     public function setUp(): void
     {
-        $db = new API_SQLite();
+        $db = new ApiSqlite();
         $device = ['id'=>99 ,'name' =>'Device99','pool'=>'192.168.99.0/24','pool6'=>'fd99:1111:2222::/48'];
         $plan =['id'=>99,'name' => 'Plan99'];
         $db->insert($device,'devices');
@@ -23,7 +22,7 @@ class SubnetsTest extends TestCase
 
     public function tearDown(): void
     {
-        $db = new API_SQLite();
+        $db = new ApiSqlite();
         $db->delete(99,'devices');
         $db->delete(99,'plans');
         $db->deleteWhere('did=99','subnets');
@@ -39,7 +38,7 @@ class SubnetsTest extends TestCase
 
     public function testAssignNext(): void
     {
-        $db = new API_SQLite();
+        $db = new ApiSqlite();
         $sn = ['planId'=>99,'did'=>99,'address'=>'192.168.99.0'];
         $db->insert($sn,'subnets');
         for($i=1;$i<16;$i++){
@@ -53,7 +52,7 @@ class SubnetsTest extends TestCase
 
     public function testAssignIPOnly(): void
     {
-        $db = new API_SQLite();
+        $db = new ApiSqlite();
         $d = ['id' => 99, 'pool6' => ""];
         $db->edit($d,'devices');
         $a = $this->subnets->assign(99,99);
@@ -64,7 +63,7 @@ class SubnetsTest extends TestCase
 
     public function testAssignNoPool()
     {
-        $db = new API_SQLite();
+        $db = new ApiSqlite();
         $d = ['id' => 99,'pool' => "" ,'pool6' => ""];
         $db->edit($d,'devices');
         $a = $this->subnets->assign(99,99);
@@ -73,7 +72,7 @@ class SubnetsTest extends TestCase
 
     public function testUsed(): void
     {
-        $db = new API_SQLite();
+        $db = new ApiSqlite();
         $addr = '192.168.99.';
         $net = 0 ;
         while($net <= 64){
@@ -90,7 +89,7 @@ class SubnetsTest extends TestCase
 
     public function testTargets(): void
     {
-        $db = new API_SQLite();
+        $db = new ApiSqlite();
         $addr = '192.168.99.';
         $net = 0 ;
         while($net <= 64){

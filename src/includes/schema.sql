@@ -1,80 +1,62 @@
 CREATE TABLE IF NOT EXISTS "services"(
-                                         "id" INT,
-                                         "device" INT,
-                                         "address" TEXT,
-                                         "prefix6"   TEXT,
-                                         "clientId" INT,
-                                         "planId" INT,
-                                         "status" INT,
-                                         "last" TEXT,
-                                         "created" TEXT
+     "id" INT,
+     "device" INT,
+     "clientId" INT,
+     "planId" INT,
+     "status" INT,
+     "last" TEXT,
+     "created" TEXT,
+     PRIMARY KEY("id")
 );
-CREATE TABLE IF NOT EXISTS "users" (
-                                       "id"    INTEGER NOT NULL,
-                                       "name"  TEXT,
-                                       "username"      TEXT,
-                                       "password"      TEXT,
-                                       "session"       TEXT,
-                                       "last"  TEXT,
-                                       "created"       TEXT,
-                                       PRIMARY KEY("id" AUTOINCREMENT)
-    );
+CREATE TABLE IF NOT EXISTS "network"(
+     "id" INT,
+     "address" TEXT,
+     "address6" TEXT,
+     "last" TEXT,
+     "created" TEXT,
+     PRIMARY KEY("id")
+);
 CREATE TABLE IF NOT EXISTS "devices" (
-                                         "id"    INTEGER NOT NULL,
-                                         "name"  TEXT,
-                                         "ip"    TEXT,
-                                         "type"  TEXT,
-                                         "user"  TEXT,
-                                         "password"      TEXT,
-                                         "dbname"        TEXT,
-                                         "pool"  TEXT,
-                                         "pool6"  TEXT,
-                                         "pfxLength" INT,
-                                         "last"  TEXT,
-                                         "created"       TEXT,
-                                         PRIMARY KEY("id" AUTOINCREMENT)
-    );
+    "id"    INTEGER NOT NULL,
+    "name"  TEXT COLLATE NOCASE,
+    "ip"    TEXT,
+    "type"  TEXT,
+    "user"  TEXT,
+    "password"      TEXT,
+    "dbname"        TEXT,
+    "pool"  TEXT,
+    "pool6"  TEXT,
+    "pfxLength" INT,
+    "last"  TEXT,
+    "created"       TEXT,
+    PRIMARY KEY("id" AUTOINCREMENT)
+);
 CREATE TABLE IF NOT EXISTS "plans" (
-                                       "id"    INTEGER NOT NULL,
-                                       "name"  TEXT,
-                                       "downloadSpeed" INTEGER,
-                                       "uploadSpeed"   INTEGER,
-                                       "downloadBurst" INTEGER,
-                                       "uploadBurst"   INTEGER,
-                                       "downloadLimit" INTEGER ,
-                                       "uploadLimit" INTEGER ,
-                                       "downloadTime" FLOAT ,
-                                       "uploadTime" FLOAT ,
-                                       "downloadThresh" INTEGER ,
-                                       "uploadThresh" INTEGER
-                                       "dataUsageLimit"        INTEGER,
-                                       "ratio" INTEGER,
-                                       "last"  TEXT,
-                                       "created"       TEXT,
-                                       PRIMARY KEY("id")
-    );
+    "id"    INTEGER NOT NULL,
+    "ratio" INTEGER,
+    "priority" INTEGER,
+    "limitUpload" INTEGER ,
+    "limitDownload" INTEGER ,
+    "burstUpload" INTEGER ,
+    "burstDownload" INTEGER ,
+    "threshUpload" INTEGER,
+    "threshDownload" INTEGER ,
+    "timeUpload" FLOAT,
+    "timeDownload" FLOAT,
+    "last"  TEXT,
+    "created"       TEXT,
+    PRIMARY KEY("id")
+);
 CREATE TABLE IF NOT EXISTS "config" (
-                                        "key"   TEXT NOT NULL,
-                                        "value" TEXT,
-                                        "last"  TEXT,
-                                        "created"       TEXT,
-                                        PRIMARY KEY("key")
-    );
-CREATE INDEX "xsvc_address" ON "services" (
-                                           "address"
-    );
-CREATE INDEX "xsvc_device" ON "services" (
-                                          "device"
-    );
-CREATE INDEX "xsvc_planId" ON "services" (
-                                          "planId"
-    );
-CREATE INDEX "xusers_session" ON "users" (
-                                          "session"
-    );
-CREATE INDEX "xdev_name" ON "devices" (
-                                       "name" COLLATE nocase
-    );
-CREATE INDEX "xusers_username" ON "users" (
-                                           "username" COLLATE nocase
-    );
+    "key"   TEXT NOT NULL,
+    "value" TEXT,
+    "last"  TEXT,
+    "created"       TEXT,
+    PRIMARY KEY("key")
+);
+
+CREATE INDEX "address_index" ON "network" ("address");
+CREATE INDEX "address6_index" ON "network" ("address6");
+CREATE INDEX "device_index" ON "services" ("device");
+CREATE INDEX "plan_index" ON "services" ("planId");
+CREATE INDEX "dev_name_index" ON "devices" ("name" COLLATE nocase);

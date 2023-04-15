@@ -1,32 +1,10 @@
 <?php
-include_once 'lib/admin_cache.php';
-class Devices extends Admin
+class AdminDevices extends Admin
 {
-    public function disable()
-    { // disables/enables plan limits on device
-        $id = $this->data->id ;
-        $enable = $this->data->enable ?? false ;
-        $data = (object)[
-            'device_id' => $this->data->id,
-            'path' => '/ppp/profile'
-        ];
-        $profiles = (new MT_Profile($data))->get();
-        $plans = $this->get_plans();
-        foreach($profiles as $profile)
-        {
-            if(isset($plans[$profile['name']])){
-                $this->set_profile_limit($id,$profile,$plans[$profile['name']],$enable);
-            }
-        }
-        $this->save_router($id,$enable);
-        $this->reset_pppoe($id);
-    }
-
     public function delete(): bool
     {
 
-        $db = $this->connect();
-        if (!$db->delete($this->data->id, 'devices')) {
+        if (!$this->db()->delete($this->data->id, 'devices')) {
             $this->set_error('database error');
             return false;
         }
@@ -36,24 +14,39 @@ class Devices extends Admin
 
     public function insert(): bool
     {
-
-        $db = $this->connect();
         unset($this->data->id);
         $this->trim_prefix();
-        if (!$db->insert($this->data, 'devices')) {
+        if (!$this->db()->insert($this->data, 'devices')) {
             $this->set_error('database error');
             return false;
         }
         $this->set_message('device has been added');
+        $this->recache();
         return true;
+    }
+
+    private function recache(): void
+    {
+        $api = new Admin_System();
+        $api->recache();
+    }
+
+    public function clear()
+    {
+        $id = $this->data->id ?? 0 ;
+        $ids = [];
+        $select = $this->dbCache()->selectCustom(sprintf
+            ("SELECT id FROM services WHERE device = %s AND status NOT IN (2,5,8) ",$id));
+        foreach ($select as $item) $ids[] = $item['id'];
+        $api = new MtBatch();
+        $api->delete_ids($ids);
     }
 
     public function edit(): bool
     {
 
-        $db = $this->connect();
         $this->trim_prefix();
-        if (!$db->edit($this->data, 'devices')) {
+        if (!$this->db()->edit($this->data, 'devices')) {
             $this->set_error('database error');
             return false;
         }
@@ -70,9 +63,9 @@ class Devices extends Admin
 
     public function get(): bool
     {
-        if (!$this->read()) {
-            $this->set_error('unable to retrieve list of devices');
-            return false;
+        if(!$this->read()){ //it's not an error if no devices
+            $this->result = [];
+            return true ;
         }
         $this->setStatus();
         $this->setUsers();
@@ -81,121 +74,75 @@ class Devices extends Admin
         return true;
     }
 
-    private function reset_pppoe($id)
+    public function services()
     {
-        $data = (object)[
-            'device_id' => $id,
-            'path' => '/interface/pppoe-server/server'
-        ];
-        $servers = (new MT($data))->get();
-        foreach ($servers as $server)
-        {
-            $edit = (object)[
-                'device_id'=> $id,
-                'path' => '/interface/pppoe-server/server',
-                'action' => 'disable',
-                'data' => (object) ['.id' => $server['.id'],],];
-            (new MT($edit))->set();
-            $edit->action = 'enable';
-            (new MT($edit))->set();
+        $this->result = $this->get_services();
+    }
+
+    private function get_services()
+    {
+        $db = new SQLite3('data/data.db');
+        $db->exec("ATTACH 'data/cache.db' as cache");
+        $result = $db->query($this->cache_sql()) ?? [];
+        $cached = [];
+        while ($row = $result->fetchArray(SQLITE3_ASSOC)){
+            $cached[] = $row ;
         }
-
-    }
-
-    private function save_router($id,$enable=false)
-    {
-        $list = json_decode($this->conf->disabled_routers,true) ?? [];
-        if($enable){
-            unset($list[$id]);
-        }else{
-            $list[$id] = 1;
+        $db->close();
+        $plans = $this->ucrm()->get('service-plans') ?? [];
+        $plans = json_decode(json_encode($plans),true);
+        $addressMap = [];
+        $planMap = [];
+        foreach ($plans as $plan)$planMap[$plan['id']] = $plan ;
+        foreach ($cached as $item) $addressMap[$item['id']] = $item ;
+        $ret = [];
+        foreach ($cached as $item) {
+            $item['plan'] = $planMap[$item['planId']]['name'] ?? null ;
+            $ret[$item['id']] = $item ;
         }
-        $this->conf->disabled_routers = json_encode($list) ?? [];
-        return $this->db()->saveConfig($this->conf);
+        $ret['count'] = $this->cache_count();
+        return $ret ;
     }
 
-    private function set_profile_limit($id,$profile,$plan,$enable=false)
-    {
-        $rate = $enable
-            ? $plan['uploadSpeed']. 'M/'.$plan['downloadSpeed'] .'M'
-            : null ;
-        $parent = $enable
-            ? 'servicePlan-'.$plan['id'].'-parent'
-            : 'none';
-        $data = (object)[
-            'device_id' => $id,
-            'action' => 'set',
-            'path' => '/ppp/profile',
-            'data' => (object)[
-                '.id' => $profile['.id'],
-                'rate-limit' => $rate,
-                'parent-queue' => $parent,
-            ],
-        ];
-        return (new MT($data))->set();
-    }
-
-    private function connect(): API_SQLite
-    {
-        return new API_SQLite();
-    }
-
-    public function services(): void
-    {
-        $this->result = $this->cache();
-        if($this->result){
-            $this->cache_update();
-            return ;
+    private function cache_sql(){
+        $fields = "services.*,services.username,services.mac,services.price,".
+            "network.address,network.address6,clients.company,clients.firstName,clients.lastName";
+        $did = $this->data->did ?? $this->data->id ?? $this->data->device ?? 0 ;
+        $sql = sprintf("SELECT %s FROM services LEFT JOIN cache.clients ON ".
+            "main.services.clientId=clients.id LEFT JOIN network ON main.services.id=network.id ".
+            "LEFT JOIN cache.services ON main.services.id=cache.services.id ".
+            "WHERE main.services.device = %s AND main.services.status NOT IN (2,5,8) ",$fields,$did);
+        $query = $this->data->query ?? null ;
+        if($query){
+            if(is_numeric($query)){
+                $sql .= sprintf("AND (main.services.id=%s OR main.services.clientId=%s) ",$query,$query);
+            }
+            else{
+                $sql .= sprintf("AND (clients.firstName LIKE '%%%s%%' OR clients.lastName LIKE '%%%s%%' ".
+                    "OR clients.company LIKE '%%%s%%' OR services.username LIKE '%%%s%%' OR services.mac LIKE '%%%s%%') ",
+                    $query,$query,$query,$query,$query);
+            }
         }
-        //if cache is not ready load skeleton from db
-        $id = $this->data->id;
-        $limit = $this->data->limit ?? null ;
-        $offset = $this->data->offset ?? null ;
-        $this->result = $this->db()->selectServicesOnDevice($id,$limit,$offset) ?? [];
-        $this->result['skel'] = true ;
-        $this->cache_update();
+        $limit = $this->data->limit ?? 100 ;
+        $offset = $this->data->offset ?? 0 ;
+        $sql .= sprintf("ORDER BY main.services.id DESC LIMIT %s OFFSET %s",$limit,$offset);
+        MyLog()->Append("services sql: ".$sql);
+        return $sql;
     }
 
-    public function cache_update(): void
+    private function cache_count()
     {
-        if(!function_exists('fastcgi_finish_request')){
-            shell_exec('php lib/shell.php cache > /dev/null 2>&1 &');
-            return;
-        }else{
-            $this->status->status = 'ok';
-            $this->status->data = $this->result ;
-            header('content-type: application/json');
-            echo json_encode($this->status);
-            fastcgi_finish_request();
-        }
-        set_time_limit(300);
-        (new Admin_Cache())->create();
-    }
-
-    private function cache(): ?array
-    {
-        $file = 'data/cache.json';
-        if(!file_exists($file))return null ;
-        if($this->cache_is_valid()) return [1];
-        $id = $this->data->id ?? 0;
-        $cache = json_decode(file_get_contents($file),true) ;
-        $ret = $cache[$id] ?? null;
-        if($ret) $ret['date'] = filemtime('data/cache.json');
-        return $ret;
-    }
-
-    private function cache_is_valid(): bool
-    { // if last cache is still valid
-        $last = $this->data->lastCache ?? 0 ;
-        $current = filemtime('data/cache.json');
-        return $last == $current ;
+        $device = $this->data->did ?? $this->data->id ?? $this->data->device ?? 0 ;
+        $sql = sprintf("SELECT COUNT(services.id) FROM services LEFT JOIN clients ON ".
+            "services.clientId=clients.id WHERE services.device = %s AND services.status ".
+            "NOT IN (2,5,8) ",$device);
+        return $this->dbCache()->singleQuery($sql) ;
     }
 
     private function read(): bool
     {
-        $db = $this->connect();
-        $this->read = $db->selectAllFromTable('devices');
-        return (bool) $this->read;
+        $this->read = $this->db()->selectAllFromTable('devices');
+        return !empty($this->read) ;
     }
 
     private function trim_prefix(): void
@@ -207,15 +154,20 @@ class Devices extends Admin
     private function setStatus(): void
     {
         foreach ($this->read as &$device) {
-            $conn = @fsockopen($device['ip'],
+            try{
+                $conn = @fsockopen($device['ip'],
                 $this->default_port($device['type']),
                 $code, $err, 0.3);
-            if (!is_resource($conn)) {
-                $device['status'] = false;
-                continue;
+                if (!is_resource($conn)) {
+                    $device['status'] = false;
+                    continue;
+                }
+                $device['status'] = true;
+                fclose($conn);
             }
-            $device['status'] = true;
-            fclose($conn);
+            catch (Exception $err){
+                $device['status'] = false ;
+            }
         }
     }
 
@@ -231,7 +183,7 @@ class Devices extends Admin
 
     private function setUsers(): void
     {
-        $db = new API_SQLite();
+        $db = new ApiSqlite();
         foreach ($this->read as &$device) {
             $device['users'] = $db->countServicesByDeviceId($device['id']);
         }

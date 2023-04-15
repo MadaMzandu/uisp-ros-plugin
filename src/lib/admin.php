@@ -1,5 +1,10 @@
 <?php
-
+include_once 'api_logger.php';
+include_once 'api_timer.php';
+include_once 'api_ucrm.php';
+include_once 'api_trim.php';
+include_once 'api_lang.php';
+include_once 'api_sqlite.php';
 include_once 'admin_settings.php';
 include_once 'admin_devices.php';
 include_once 'admin_plans.php';
@@ -7,11 +12,11 @@ include_once 'admin_validation.php';
 include_once 'admin_backup.php';
 include_once 'admin_system.php';
 include_once 'admin_rebuild.php';
-include_once 'admin_cache.php';
 include_once 'api_jobs.php';
-include_once 'api_lang.php';
-include_once 'admin_mt_queue.php';
-
+include_once 'api_cache.php' ;
+include_once '_web_ucrm.php';
+include_once 'api_action.php';
+include_once 'mt_batch.php';//for devel only
 class Admin
 {
 
@@ -20,63 +25,60 @@ class Admin
     protected $result;
     protected $user;
     protected $read;
-    protected $conf;
 
-    public function __construct($data)
+    public function __construct($data = [])
     {
         $this->data = $this->toObject($data);
         $this->init();
     }
 
-    private function toObject($data): stdClass
+    protected function toObject($data): ?stdClass
     {
-        if($data && (is_array($data) || is_object($data))){
-            return is_object($data) ? $data
-                :json_decode(json_encode($data));
-        }
-        return (object)[];
+        if(empty($data)) return null ;
+        if(is_object($data)){return $data; }
+        if(is_array($data)){ json_decode(json_encode($data)); }
+        return null;
     }
 
     protected function init(): void
     {
-        $this->conf = $this->db()->readConfig();
-        $this->status = new stdClass();
-        $this->result = new stdClass();
-        $this->status->error = false;
-        $this->status->message = 'ok';
+        $this->status = json_decode('{"error":false,"message":"ok"}');
+    }
+
+    public function select()
+    {
+        $target = $this->data->target ?? null ;
+        $request = $this->data ;
+        $data = $this->data->data ?? null;
+        switch ($target){
+            case 'config': return new Settings($data);
+            case 'devices': return new AdminDevices($data);
+            case 'plans': return new AdminPlans($data);
+            case 'validation': return new Validation($data);
+            case 'jobs': return new Api_Jobs($data);
+            case 'system': return new Admin_System($data);
+            case 'backup': return new Admin_Backup($data);
+            case 'lang': return new Api_Lang($data);
+        }
+        return null ;
     }
 
     public function exec(): void
     {
-        $target = $this->target();
-        $exec = new $target($this->data->data);
-        $exec->{$this->data->action}();
-        $this->status = $exec->status();
-        $this->result = $exec->result();
-    }
-
-    private function target(): ?string
-    {
-        $map = array(
-            'config' => 'Settings',
-            'devices' => 'Devices',
-            'stats' => 'Stats',
-            'plans' => 'Plans',
-            'validation' => 'Validation',
-            'users' => 'Users',
-            'jobs' => 'Api_Jobs',
-            'unms' => 'API_Unms',
-            'system' => 'Admin_System',
-            'backup' => 'Admin_Backup',
-            'lang' => 'Api_Lang',
-            'queues' => 'Admin_Queue'
-        );
-        $target = $this->data->target ?? 'none' ;
-        $module = $map[$target] ?? null ;
-        if(!$module){
-            throw new Exception('Unknown target module specified');
+        if(empty($this->data)) {
+            throw new Exception('admin: unable to route invalid request'); }
+        $api = $this->select();
+        $action = $this->data->action ?? null ;
+        if($api && method_exists($api,$action)){ //route found
+            $api->$action();
+            $this->status = $api->status();
+            $this->result = $api->result();
         }
-        return $module ;
+        else{ //assume its a uisp api call
+            $data = $this->data->data ?? [];
+            $path = $this->data->path ?? null;
+            $this->result = $this->ucrm()->$action($path,(array)$data);
+        }
     }
 
     public function status(): stdClass
@@ -84,13 +86,25 @@ class Admin
         return $this->status;
     }
 
-    protected function db(): ?API_SQLite
+    protected function db()
     {
-        try {
-            return new API_SQLite();
-        } catch (Exception $e) {
-            return null;
-        }
+        return new ApiSqlite();
+    }
+
+    protected function dbCache()
+    {
+        return new ApiSqlite('data/cache.db');
+    }
+
+
+    protected function ucrm()
+    {
+        return new ApiUcrm();
+    }
+
+    protected function conf()
+    {
+        return $this->db()->readConfig();
     }
 
     public function result()

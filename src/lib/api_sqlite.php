@@ -1,8 +1,7 @@
 <?php
-const API_SQLT_EXEC = 0;
 const API_SQLT_SINGLE = 1;
 
-class API_SQLite
+class ApiSqlite
 {
 
     private $path;
@@ -49,6 +48,15 @@ class API_SQLite
         return (new DateTime())->format('Y-m-d H:i:s');
     }
 
+    public function has_tables($tables = ['services','devices','config']): bool
+    {
+        foreach ($tables as $table){
+            $sql = "SELECT name from sqlite_master where type='table' AND name='" . $table ."'";
+            if(empty($this->db()->querySingle($sql))) return false;
+        }
+        return true ;
+    }
+
     public function edit($data, $table = 'services')
     {
         if (!(is_array($data) || is_object($data))) {
@@ -61,9 +69,15 @@ class API_SQLite
         return $this->execQuery($this->prepareUpdate());
     }
 
-    public function exec($sql)
+    public function exists($id,$table = 'network'): ?int
     {
-        return $this->execQuery($sql);
+        return $this->db()->querySingle(
+            sprintf('select id from %s where id = %s',$table,$id));
+    }
+
+    public function exec($sql): ?bool
+    {
+        return $this->db()->exec($sql);
     }
 
     private function prepareUpdate()
@@ -133,6 +147,14 @@ class API_SQLite
         return (object)$this->singleQuery($sql,true) ?? null;
     }
 
+    public function selectIp($id,$ip6): ?string
+    {
+        $field = 'address';
+        if($ip6) $field = 'address6';
+        $sql = sprintf("SELECT %s FROM network WHERE id=%s",$field,$id);
+        return $this->db()->querySingle($sql);
+    }
+
     public function selectDeviceByDeviceName($name)
     {
         $sql = "select * from devices where name='" . $name . "' collate nocase";
@@ -186,17 +208,20 @@ class API_SQLite
         return $this->execQuery($sql);
     }
 
-    public function readConfig()
+
+
+    public function selectCustom($sql) : ?array
     {
-        $this->read = $this->selectAllFromTable('config');
+        $res = $this->db()->query($sql);
         $return = null;
-        foreach ($this->read as $row) {
-            $return[$row['key']] = $this->fixBoolValue($row['value']);
+        while ($row = $res->fetchArray(SQLITE3_ASSOC)) {
+            $return[] = $row;
         }
-        return (object)$return;
+        return $return;
     }
 
-    public function selectAllFromTable($table = 'services')
+
+    public function selectAllFromTable($table = 'services'): ?array
     {
         $sql = 'select * from ' . $table;
         $res = $this->query($sql);
@@ -207,45 +232,61 @@ class API_SQLite
         return $return;
     }
 
-    private function fixBoolValue($value)
+    private function unStringify($value)
     {
-        return ($value == 'true' || $value == 'false') ? ($value == 'true' ? true : false) : $value ?? '';
+        if(in_array($value,['true','false'])) return $value == 'true' ;
+        if(is_numeric($value)) return (double) $value;
+        if(empty($value)) return null;
+        return $value ;
     }
 
-    public function saveConfig($data)
+    private function stringify($value)
     {
-        $keys = array_keys((array)$data);
-        foreach ($keys as $key) {
-            $val = $data->{$key};
-            $value = is_bool($val) ? ($val ? 'true' : 'false') : $val;
-            $sql = "update config set value='" . $value
-                . "' where key='" . $key . "'";
-            if (!$this->execQuery($sql)) {
-                return false;
-            }
+        if(is_bool($value)) return $value ? 'true' : 'false';
+        if(is_numeric($value)) return (string) $value;
+        if(empty($value)) return null ;
+        return $value ;
+    }
+
+    public function readConfig(): ?stdClass
+    {
+        $this->read = $this->selectAllFromTable('config') ?? [];
+        $return = null;
+        foreach ($this->read as $row) {
+            $return[$row['key']] = $this->unStringify($row['value']);
+        }
+        return (object)$return;
+    }
+
+    public function saveConfig($fields): bool
+    {
+        $data = (array) $fields ;
+        foreach(array_keys($data) as $key){
+            $now = (new DateTime())->format('Y-m-d H:i:s');
+            $value = $this->stringify($data[$key] ?? null);
+            $sql = sprintf("INSERT OR REPLACE INTO config ('key','value','last','created')".
+                " VALUES ('%s','%s','%s','%s') ",$key,$value,$now,'2020-01-01 00:00:00');
+            if(!$this->db()->exec($sql)) return false;
         }
         return true;
     }
 
-    private function db(): ?SQLite3
+    private function db(): SQLite3
     {
-        try {
-            $db = new SQLite3($this->path);
-            $db->busyTimeout(100);
-            return $db;
-        } catch (Exception $err) {
-            die($this->error($err->getMessage()));
-        }
+        $db = new SQLite3($this->path);
+        $db->busyTimeout(100);
+        $db->enableExceptions(true);
+        return $db ;
     }
     
-    private function execQuery($sql)
+    public function execQuery($sql)
     {
-        return $this->query($sql,API_SQLT_EXEC);
+        return $this->db()->exec($sql);
     }
 
-    private function singleQuery($sql,$entireRow=false)
+    public function singleQuery($sql,$entireRow=false)
     {
-        return $this->query($sql,API_SQLT_SINGLE,$entireRow);
+        return $this->db()->querySingle($sql,$entireRow);
     }
 
     private function query($sql,$mode=2,$entireRow=null)

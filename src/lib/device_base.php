@@ -10,7 +10,7 @@ class Device_Base
     protected $read; // temporary reads for processing
     protected $conf;
 
-    public function __construct($data)
+    public function __construct($data = null)
     {
         $service = is_object($data) && ($data->type ?? null) == 'service';
         $this->svc = $service ? $data : null;
@@ -18,22 +18,20 @@ class Device_Base
         $this->init();
     }
 
-    private function toObject($data)
+    private function toObject($data): ?stdClass
     {
         if($data && (is_object($data) || is_array($data))) {
             return is_object($data)
                 ? $data
                 : json_decode(json_encode($data));
         }
-        return (object)[];
+        return null;
     }
 
     protected function init(): void
     {
         $this->load_config();
-        $this->status = (object)[];
-        $this->status->error = false;
-        $this->status->message = 'ok';
+        $this->status = json_decode('{"error":false,"message":"ok"}');
     }
 
     protected function load_config(): void
@@ -44,23 +42,14 @@ class Device_Base
         }
     }
 
-    protected function db(): ?API_SQLite
+    protected function db(): ?ApiSqlite
     {
-        try {
-            return new API_SQLite();
-        } catch (Exception $e) {
-            $this->setErr($e->getMessage());
-            return null;
-        }
+        return new ApiSqlite();
     }
 
-    protected function queueMe($msg): void
+    protected function dbCache(): ?ApiSqlite
     {
-        $this->setErr($msg);
-        $this->status->status = 'failed';
-        if($this->svc){
-            $this->svc->queue_job($this->status);
-        }
+        return new ApiSqlite('data/cache.db');
     }
 
     protected function setErr($msg): void

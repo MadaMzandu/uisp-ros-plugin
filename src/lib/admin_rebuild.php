@@ -1,80 +1,58 @@
 <?php
 
-class Admin_Rebuild{
-    private $conf ;
-    private $device ;
+class AdminRebuild{
 
-    private function db()
-    {
-        return new API_SQLite() ;
-    }
+    private function db(){ return new ApiSqlite(); }
 
-    private function clear_cache():bool
-    {
-        return $this->db()->deleteAll('services');
-    }
+    private function cache(){ return new ApiSqlite('data/cache.db'); }
 
-    private function crm()
-    {
-        $c = new API_Unms();
-        $c->assoc = true ;
-        return $c;
-    }
+//    private function clear($type,$ids = [])
+//    {
+//        if($type == 'all'){
+//            $this->db()->deleteAll('services');
+//        }
+//        else{
+//            $this->db()->exec(sprintf("DELETE FROM 'services' WHERE id IN (%s)",
+//                implode(',',$ids) ));
+//        }
+//    }
 
-    private function filter($services): array
+    public function rebuild($data)
     {
-        $dn = $this->conf->device_name_attr ?? 'deviceName';
-        $result = [];
-        foreach ($services as $s){
-            $attrs = $s['attributes'] ?? [];
-            foreach($attrs as $a){
-                if($this->device){
-                    if($a['key'] == $dn && $a['value'] == $this->device) $result[] = $s;
-                }
-                else{
-                    if($a['key'] == $dn && $a['value']) $result[] = $s;
-                }
-            }
+        if(function_exists('fastcgi_finish_request')){
+            fastcgi_finish_request();
         }
-        return $result;
-    }
-
-    private function find_attr(): ?int
-    {
-        $dn = $this->conf->device_name_attr ?? 'deviceName';
-        $attrs = $this->crm()->request('/custom-attributes') ?? [];
-        foreach ($attrs as $a){
-            if($a['key'] == $dn) return $a['id'];
+        set_time_limit(7200);
+        $type = $data->type ?? 'all';
+        $typeId = $data->id ?? $data->did ?? $data->sid ?? null;
+        $clear = $data->clear ?? false ;
+        $select = [];
+        $timer = new ApiTimer($type . ' rebuild: '.json_encode($data));
+        MyLog()->Append('selecting services to rebuild');
+        if($type == 'all'){
+            $select = $this->cache()->selectCustom('SELECT id FROM services WHERE status NOT IN (2,5,8)');
         }
-        return null ;
-    }
-
-    public function rebuild_device($device)
-    {
-        $this->device = $device->name ?? null;
-        $this->send_triggers();
-    }
-
-    public function send_triggers():void
-    {
-        $this->conf = $this->db()->readConfig();
-        //$id = $this->find_attr();
-        $opts = null ;
-        //if($id) $opts = '?customAttributeId=' . $id . '&customAttributeValue="Test2"';
-        $result = $this->crm()->request('/clients/services' . $opts) ?? [];
-        $services = $this->filter($result) ;
-        if($services && $this->clear_cache()) {
-            $url = '/clients/services/';
-            file_put_contents('data/cache.json',null); //reset cache
-            file_put_contents('data/queue.json',null); // reset queue
-            //$count = 20 ;
-            foreach ($services as $item) {
-                //if(!$count--)break ;
-                $data = ['note' => $item['note']];
-                $this->crm()->request($url . $item['id'], 'PATCH', $data);
-            }
+        if($type == 'service'){
+            $select = $this->cache()->selectCustom(sprintf("SELECT id from services WHERE planId = %s AND status NOT IN (2,5,8) ",$typeId));
         }
+        if($type == 'device'){
+            $select = $this->cache()->selectCustom(sprintf("SELECT id FROM services WHERE device = %s AND status NOT IN (2,5,8) ",$typeId));
+        }
+        $ids = [];
+        if(empty($select)){
+            throw new Exception('no items found to rebuild: '.json_encode($data));
+        }
+        foreach ($select as $item) $ids[] = $item['id'];
+        MyLog()->Append(sprintf('found %s services to rebuild',sizeof($ids)));
+//        if($clear)
+//        {
+//            $this->clear($type,$ids);
+//        }
+        $batch = new MtBatch();
+        $batch->set_ids($ids);
+        $timer->stop();
     }
-    
+
 }
 
+function rebuild(){ $api = new AdminRebuild(); $api->rebuild([]);}

@@ -4,7 +4,6 @@ include_once '../src/lib/service_attributes.php';
 include_once '../src/lib/service_plan.php';
 include_once '../src/lib/service_client.php';
 include_once '../src/lib/service_account.php';
-include_once '../src/lib/api_sqlite.php';
 include_once '../src/lib/admin.php';
 include_once '../src/lib/admin_subnets.php';
 
@@ -19,7 +18,7 @@ class Service_AccountTest extends TestCase
     public function testIP():void
     {
         $d = json_decode($this->json);
-        $db = new API_SQLite();
+        $db = new ApiSqlite();
         $pre = '192.168.99.';
         $i = 1 ;
         while($i < 33){
@@ -44,7 +43,7 @@ class Service_AccountTest extends TestCase
 
     public function setUp(): void
     {
-        $db = new API_SQLite();
+        $db = new ApiSqlite();
         $device = ['id'=>99 ,'name' =>'Device99','ip'=>'172.20.2.1','pool'=>'192.168.99.0/24','pool6'=>'fd99:1111:2222::/48'];
         $plan =['id'=>99,'name' => 'Plan99'];
         $db->insert($device,'devices');
@@ -55,7 +54,7 @@ class Service_AccountTest extends TestCase
 
     public function tearDown(): void
     {
-        $db = new API_SQLite();
+        $db = new ApiSqlite();
         $db->delete(99,'devices');
         $db->delete(99,'plans');
         $db->deleteWhere('did=99','subnets');

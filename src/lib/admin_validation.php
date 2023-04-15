@@ -1,7 +1,7 @@
 <?php
 
 // a very lazy effort since we only have two object classes to validate
-// will probably move these to their respective object classes
+// will probably move these to client side
 
 class Validation extends Admin
 {
@@ -9,7 +9,7 @@ class Validation extends Admin
     private $keys;
     private $subnet;
 
-    public function __construct(&$data)
+    public function __construct($data)
     {
         parent::__construct($data);
         $this->keys = array_keys((array)$this->data);
@@ -72,7 +72,7 @@ class Validation extends Admin
         if (!in_array($field, $this->keys)) {
             return true;
         }
-        $db = new API_SQLite();
+        $db = new ApiSqlite();
         if ($this->data->id > 0) {
             $device = $db->selectDeviceById($this->data->id);
             if (strtolower($device->name) == strtolower($this->data->name)) {
@@ -130,8 +130,7 @@ class Validation extends Admin
         global $conf;
         $savedToken = $conf->{$field};
         $conf->{$field} = $this->data->{$field};
-        $u = new API_Unms();
-        $test = $u->request('/service-plans');
+        $test = (new ApiUcrm())->get('/service-plans');
         if (!$test) {
             $this->setFieldError($field, 'token may be invalid - services plans not found using token');
             $this->set_error('could not access service plans with token');
@@ -240,7 +239,7 @@ class Validation extends Admin
     private function netIsValid($prefix, $len)
     {
         $this->subnet = long2ip(ip2long($prefix) & (-1 << (32 - $len)));
-        return $this->subnet == $prefix ? true : false;
+        return $this->subnet == $prefix;
     }
 
     private function checkIpAddress()

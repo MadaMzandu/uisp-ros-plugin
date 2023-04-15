@@ -270,6 +270,22 @@
     "type": null,
     "isAttribute": true
   },
+  "config_dhcp6_duid_attr" :
+  {
+    "name" : "dhcp6_duid_attr",
+    "label" : "Custom attribute for dhcp6 mac address (duid)",
+    "describe" : true,
+    "description" : "Mac address used for duid - ether1 on mikrotiks",
+    "isAttribute" : true
+  },
+  "config_dhcp6_iaid_attr" :
+  {
+    "name" : "dhcp6_iaid_attr",
+    "label" : "Custom attribute for dhcp6 wan interface number (iaid)",
+    "describe" : true,
+    "description" : "Used for iaid - hex or decimal",
+    "isAttribute" : true
+  },
   "config_ip_addr_attr": {
     "name": "ip_addr_attr",
     "label": "Gepasmaakte kenmerk vir handmatige IP-adres",
@@ -280,6 +296,14 @@
     "obscure": null,
     "type": null,
     "isAttribute": true
+  },
+  "config_lease_time" :
+  {
+    "name" : "lease_time",
+    "label" : "Lease duration for dhcpv4 and dhcpv6",
+    "width" : "75",
+    "describe" : true,
+    "description" : "Specify lease duration in minutes. Applies for dhcpv4 and dhcpv6."
   },
   "config_disable_contention": {
     "name": "disable_contention",
