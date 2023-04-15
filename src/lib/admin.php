@@ -14,7 +14,7 @@ include_once 'admin_system.php';
 include_once 'admin_rebuild.php';
 include_once 'api_jobs.php';
 include_once 'api_cache.php' ;
-include_once '_web_ucrm.php';
+//include_once '_web_ucrm.php';
 include_once 'api_action.php';
 include_once 'mt_batch.php';//for devel only
 class Admin

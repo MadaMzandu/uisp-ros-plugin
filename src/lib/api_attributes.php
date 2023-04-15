@@ -1,6 +1,6 @@
 <?php
 include_once 'api_sqlite.php';
-include_once '_web_ucrm.php';
+//include_once '_web_ucrm.php';
 include_once 'api_ucrm.php';
 
 class ApiAttributes
