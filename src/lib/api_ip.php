@@ -23,6 +23,7 @@ class ApiIP
         }
         $prefixes = explode(',',$pool);
         foreach ($prefixes as $prefix){
+            MyLog()->Append('pool: '. $prefix);
             $address = $this->findUnused($prefix);
             if($address){
                 MyLog()->Append(sprintf("ip assignment: %s",$address));
@@ -106,9 +107,9 @@ class ApiIP
        if($this->ip6) $address = $address . '/' . $this->length6 ;
         $field = 'address';
        if($this->ip6) $field = 'address6';
-        $address = $this->db()->singleQuery(
+        $id = $this->db()->singleQuery(
            sprintf("SELECT id FROM network WHERE %s = '%s'",$field,$address));
-        return (bool) $address ;
+        return (bool) $id ;
     }
 
     private function type($address): ?string
@@ -124,9 +125,11 @@ class ApiIP
         $gmp_last = $this->gmp_bcast($prefix);
         $gmp_first = $this->ip2gmp($prefix);
         while(gmp_cmp($gmp_first,$gmp_last) < 1){
+            MyLog()->Append('iterating');
             $gmp_first = $this->gmp_next($gmp_first);
             if($this->excluded($gmp_first)) continue; //skip excluded
             $ip = $this->gmp2ip($gmp_first);
+            MyLog()->Append('iterating: '.$ip);
             if($this->is_odd($ip)) continue ; // skip zeros and xFFFF
             if ($this->is_used($ip)) continue; // skip used
             return $ip ;
@@ -185,17 +188,15 @@ class ApiIP
             if (!$e) $e = $s;
             $start = $this->ip2gmp($s);
             $end = $this->ip2gmp($e) ;
-            if(gmp_cmp($gmp_addr,$start) >= 0 && gmp_cmp($gmp_addr,$end) <= 0) return true ;
-            //if($gmp_addr >= $start && $gmp_addr <= $end) return true ;
+            return gmp_cmp($gmp_addr,$start) >= 0 && gmp_cmp($gmp_addr,$end) <= 0 ;
         }
         return false;
     }
 
     private function exclusions(): array
     {
-        return $this->conf()->excl_addr
-            ? explode(',', $this->conf()->excl_addr . ',')
-            : [];
+        if(empty($this->conf()->excl_addr)) return [];
+        return explode(',',trim($this->conf()->excl_addr));
     }
 
     private function db(): ApiSqlite
