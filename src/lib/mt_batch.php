@@ -83,8 +83,10 @@ class MtBatch extends MT
         $mt = new MtData();
         foreach (array_keys($deviceServices) as $did){
             foreach ($deviceServices[$did] as $service){
+                //MyLog()->Append('preparing service: '.$service['id']);
                 if($did == 'nodev'){ continue; }
                 $plan = $plans[$service['planId']] ;
+                if(!$plan){ continue; }
                 $mt->set_data($service,$plan);
                 $account = $mt->account();
                 if($account){ $deviceData[$did]['accounts'][] = $account ; }

@@ -1,5 +1,5 @@
 <?php
-const MY_VERSION = '1.8.8.1';
+const MY_VERSION = '1.8.9';
 const MAX_BACKUPS = 6 ;
 
 include_once 'api_sqlite.php';
@@ -134,7 +134,7 @@ class ApiSetup
     private function needs_update(): bool
     {
         $running = $this->db()->readConfig()->version ?? '0.0.0' ;
-        return $running < MY_VERSION ;
+        return $running != MY_VERSION ;
     }
 
     private function needs_db(): bool
