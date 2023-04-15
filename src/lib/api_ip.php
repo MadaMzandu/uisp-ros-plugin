@@ -125,11 +125,9 @@ class ApiIP
         $gmp_last = $this->gmp_bcast($prefix);
         $gmp_first = $this->ip2gmp($prefix);
         while(gmp_cmp($gmp_first,$gmp_last) < 1){
-            MyLog()->Append('iterating');
             $gmp_first = $this->gmp_next($gmp_first);
             if($this->excluded($gmp_first)) continue; //skip excluded
             $ip = $this->gmp2ip($gmp_first);
-            MyLog()->Append('iterating: '.$ip);
             if($this->is_odd($ip)) continue ; // skip zeros and xFFFF
             if ($this->is_used($ip)) continue; // skip used
             return $ip ;
