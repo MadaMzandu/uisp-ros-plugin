@@ -79,6 +79,44 @@ class MtBatch extends MT
         $this->queue_failed($deviceServices);
     }
 
+    public function set_queues(array $ids,$on = true)
+    {
+        $deviceServices = $this->select_ids($ids,'update');
+        $plans = $this->select_plans();
+        $deviceData = [];
+        $mt = new MtData();
+        $device_ids = [];
+        foreach (array_keys($deviceServices) as $did) {
+            $device_ids[] = $did;
+            foreach ($deviceServices[$did] as $service) {
+                if ($did == 'nodev') {
+                    continue;
+                }
+                $plan = $plans[$service['planId']];
+                if (!$plan) {
+                    MyLog()->Append(sprintf('batch plan for client %s not found', $service['clientId']), 6);
+                    continue;
+                }
+                $mt->set_data($service,$plan);
+                $queue = $mt->queue();
+                if($queue){
+                    $queue['action'] = $on ? 'set' : 'remove';
+                    $deviceData[$did]['queues'][] = $queue ;
+                }
+            }
+        }
+        $this->run_batch($deviceData);
+        $conf = $this->conf->disabled_routers ?? null;
+        $routers = $conf ? explode(',',$conf) : [];
+        if(!$on){
+            $routers = array_merge($routers,$device_ids);
+        }
+        else {
+            $routers = array_diff($routers,$device_ids);
+        }
+        $this->db()->saveConfig(['disabled_routers' => implode(',',$routers)]);
+    }
+
     public function set_ids(array $ids)
     {
         $deviceServices = $this->select_ids($ids,'update');

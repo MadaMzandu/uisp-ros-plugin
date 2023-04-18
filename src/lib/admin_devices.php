@@ -133,10 +133,9 @@ class AdminDevices extends Admin
     private function cache_count()
     {
         $device = $this->data->did ?? $this->data->id ?? $this->data->device ?? 0 ;
-        $sql = sprintf("SELECT COUNT(services.id) FROM services LEFT JOIN clients ON ".
-            "services.clientId=clients.id WHERE services.device = %s AND services.status ".
-            "NOT IN (2,5,8) ",$device);
-        return $this->dbCache()->singleQuery($sql) ;
+        $sql = sprintf("SELECT COUNT(services.id) FROM services WHERE ".
+            "services.device = %s AND services.status NOT IN (2,5,8) ",$device);
+        return $this->db()->singleQuery($sql) ;
     }
 
     private function read(): bool
