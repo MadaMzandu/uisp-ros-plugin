@@ -67,6 +67,7 @@ class ApiCache{
                 $request[] = $trim ;
             }
             $this->batch($table,$request);
+            if($table == 'services')$this->batch_network($request);
             $opts['offset'] += 500 ;
         }
     }
