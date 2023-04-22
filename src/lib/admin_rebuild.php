@@ -40,7 +40,8 @@ class AdminRebuild{
         }
         $ids = [];
         if(empty($select)){
-            throw new Exception('no items found to rebuild: '.json_encode($data));
+            MyLog()->Append("no items found to rebuild");
+            return ;
         }
         foreach ($select as $item) $ids[] = $item['id'];
         MyLog()->Append(sprintf('found %s services to rebuild',sizeof($ids)));
