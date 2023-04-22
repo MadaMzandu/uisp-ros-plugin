@@ -8,6 +8,7 @@ class MtData extends MT
     {
         $this->service = $service ;
         $this->plan = $plan ;
+        MyLog()->Append('account data: '.json_encode([$service,$plan]));
     }
     
     public function account(): ?array
@@ -55,7 +56,7 @@ class MtData extends MT
     {
         if(!in_array($this->type(),['dhcp','dhcp6'])) return null ;
         $limits = $this->limits();
-        if($this->disabled()){
+        if($this->disabled() && $this->disabled_rate()){
             return [
                 'path' => '/queue/simple',
                 'name' => $this->account_name(),
@@ -225,6 +226,7 @@ class MtData extends MT
 
     private function ip($ip6 = false): ?string
     {
+        MyLog()->Append(sprintf("service %s ip address %s",$this->service['id'],$this->service['address']));
         $preset = $this->service['address'] ?? null;
         if($ip6) $preset = $this->service['address6'] ?? null;
         $ip = $preset ?? $this->db()->selectIp($this->service['id'],$ip6);
