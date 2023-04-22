@@ -1,7 +1,7 @@
 <?php
 require_once  'vendor/autoload.php';
 
-const API_DEBUG_LEVEL = 7;
+const API_DEBUG_LEVEL = 6;
 
 class ApiLogger
 {
