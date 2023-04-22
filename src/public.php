@@ -57,7 +57,8 @@ Exception | Error | GuzzleHttp\Exception\GuzzleException
 | \Ubnt\UcrmPluginSdk\Exception\InvalidPluginRootPathException
 | \Ubnt\UcrmPluginSdk\Exception\JsonException $error )
 {
-    MyLog()->Append('Exception triggered: '.$error->getTraceAsString().' request: '.$json);
+    MyLog()->Append(sprintf("Exception encountered message: %s \nTrace: %s",
+        $error->getMessage(),$error->getTraceAsString()));
     respond($error->getMessage(),true);
 }
 
