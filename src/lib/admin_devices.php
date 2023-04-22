@@ -50,6 +50,7 @@ class AdminDevices extends Admin
             $this->set_error('database error');
             return false;
         }
+        $this->recache();
         $this->set_message('device has been updated');
         return true;
     }
