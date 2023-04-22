@@ -3,7 +3,6 @@ const MyCacheVersion = '1.8.9';
 
 include_once 'api_trim.php';
 include_once 'api_ucrm.php';
-//include_once '_web_ucrm.php';
 
 class ApiCache{
 
@@ -75,30 +74,23 @@ class ApiCache{
     public function batch($table, $request)
     {
         $values = [];
-        $fields = null ;
         foreach ($request as $item){
-            $item = array_diff_key($item,['network' => null]);
-            $values[] = $this->to_sql(array_values($item));
-            $fields = implode(',',array_keys($item));
+            $values[] = array_diff_key($item,['network' => null]);
         }
-        $sql = sprintf('INSERT OR REPLACE INTO %s (%s) VALUES ',$table,$fields);
-        $sql .= implode(',',$values);
-        MyLog()->Append("cache update sql: ".$sql);
-        $this->dbCache()->exec($sql);
+        MyLog()->Append("sending cache data to sqlite");
+        $this->dbCache()->insert($values,$table,true);
     }
 
     private function batch_network($request)
     {
         $deleted = [];
         $values = [];
-        $fields = null ;
         foreach($request as $item){
             $net = $item['network'] ?? [];
             $net['id'] = $item['id'];
             if(in_array($item['status'],[2,5,8])) { $deleted[] = $item['id']; }
             else {
-                $values[] = $this->to_sql(array_values($net));
-                $fields = implode(',',array_keys($net));
+                $values[] = $net ;
             }
         }
         if(!empty($deleted)){
@@ -108,10 +100,8 @@ class ApiCache{
             $this->dbCache()->exec($sql); //clear inactive addresses
         }
         if(!empty($values)){
-            $sql = sprintf("insert or replace into network (%s) values %s ",$fields,
-                implode(',',$values));
-            MyLog()->Append("cache: network sql: ".$sql);
-            $this->dbCache()->exec($sql);
+            MyLog()->Append('sending cache network data to sqlite');
+            $this->dbCache()->insert($values,'network',true);
         }
     }
 
@@ -122,18 +112,6 @@ class ApiCache{
             case 'services': return 'clients/services';
         }
         return null ;
-    }
-
-    private function to_sql($array): string
-    {
-        $values = [];
-        foreach ($array as $item){
-            if(empty($item)) $values[] = 'null';
-            elseif (is_array($item) || is_object($item)) $values[] = sprintf("'%s'",json_encode($item));
-            elseif(is_numeric($item)) $values[] = $item ;
-            else $values[] = sprintf("'%s'",$item);
-        }
-        return sprintf("(%s)",implode(',',$values));
     }
 
     private function check_devices(): bool
@@ -190,7 +168,7 @@ class ApiCache{
 
     private function db(){ return new ApiSqlite(); }
 
-    private function now() { return (new DateTime())->format('Y-m-d H:i:s'); }
+    private function now(): string { return (new DateTime())->format('c'); }
 
     private function conf() {return $this->db()->readConfig(); }
 
@@ -201,5 +179,3 @@ class ApiCache{
 function cache_sync() { $api = new ApiCache(); $api->sync();}
 
 function cache_setup(){ $cache = new ApiCache(); $cache->setup();}
-
-//function net_sync(){ $cache = new ApiCache(); $cache->net_sync();}
