@@ -278,7 +278,8 @@ class MtBatch extends MT
 
     private function select_ids(array $ids,$action): array
     {
-        $fields = 'services.*,clients.company,clients.firstName,clients.lastName';
+        $fields = 'services.*,clients.company,clients.firstName,clients.lastName,'.
+            'network.address,network.address6';
         $sql = sprintf("SELECT %s FROM services LEFT JOIN clients ON services.clientId=clients.id ".
             "LEFT JOIN network ON services.id=network.id ".
             "WHERE services.id IN (%s) ",$fields,implode(',',$ids));
