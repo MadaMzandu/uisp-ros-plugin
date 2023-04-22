@@ -46,7 +46,7 @@ class ApiSqlite
 
     private function to_array($data): ?array
     {
-        if(is_object($data)) return json_decode(json_encode($data),true);
+        if(is_object($data)) return [json_decode(json_encode($data),true)];
         if(is_array($data)){
             $first = array_values($data)[0] ?? null;
             if(is_object($first)) return json_decode(json_encode($data),true);
