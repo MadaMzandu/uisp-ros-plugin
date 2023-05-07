@@ -41,7 +41,11 @@ class ApiSqlite
     private function to_fields($data): ?string
     {
         $first = array_values($data)[0] ?? [];
-        return implode(',',array_keys($first));
+        $fields = [];
+        foreach (array_keys($first) as $key){
+            $fields[] = $this->quote($key);
+        }
+        return implode(',',$fields);
     }
 
     private function to_array($data): ?array
