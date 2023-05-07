@@ -1,15 +1,15 @@
 CREATE TABLE IF NOT EXISTS "services"(
-     "id" INT,
-     "device" INT,
-     "clientId" INT,
-     "planId" INT,
-     "status" INT,
+     "id" INTEGER,
+     "device" INTEGER,
+     "clientId" INTEGER,
+     "planId" INTEGER,
+     "status" INTEGER,
      "last" TEXT,
      "created" TEXT,
      PRIMARY KEY("id")
 );
 CREATE TABLE IF NOT EXISTS "network"(
-     "id" INT,
+     "id" INTEGER,
      "address" TEXT,
      "address6" TEXT,
      "last" TEXT,
@@ -26,7 +26,7 @@ CREATE TABLE IF NOT EXISTS "devices" (
     "dbname"        TEXT,
     "pool"  TEXT,
     "pool6"  TEXT,
-    "pfxLength" INT,
+    "pfxLength" INTEGER,
     "last"  TEXT,
     "created"       TEXT,
     PRIMARY KEY("id" AUTOINCREMENT)
