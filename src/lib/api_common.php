@@ -1,6 +1,5 @@
 <?php
 include_once 'api_logger.php';
-include_once 'admin_backup.php';
 
 function myErrorHandler($errno, $errstr, $errfile, $errline){
     MyLog()->Append(sprintf('error no: %s error: %s',$errno,$errstr),6);

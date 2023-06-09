@@ -12,15 +12,6 @@ if (isset($_SERVER['REQUEST_METHOD'])
     exit();
 }
 
-if(isset($_FILES) && !empty($_FILES))
-{//backup restore
-    $bak = $_FILES['backup'] ?? null ;
-    if($bak){ backup_restore(); }
-    header('content-type: application/json');
-    echo '{"status":"ok","error":false,"message":"ok","data":[]}';
-    exit();
-}
-
 $json = file_get_contents('php://input') ?? null;
 
 
@@ -39,6 +30,14 @@ try
 
     include_once 'lib/api_router.php';
 
+    if(isset($_FILES) && !empty($_FILES))
+    {//backup restore
+        $bak = $_FILES['backup'] ?? null ;
+        if($bak){ backup_restore(); }
+        header('content-type: application/json');
+        echo '{"status":"ok","error":false,"message":"ok","data":[]}';
+        exit();
+    }
 
 
     if(!$json)

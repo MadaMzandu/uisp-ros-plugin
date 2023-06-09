@@ -19,7 +19,7 @@
   "menu": [
         {
             "key": "Ros Plugin",
-            "label": "Testing",
+            "label": "Panel",
             "type" : "admin",
             "target": "iframe",
             "parameters":{
