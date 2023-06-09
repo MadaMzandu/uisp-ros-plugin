@@ -20,7 +20,7 @@ try
     include_once 'lib/api_cache.php';
     include_once 'lib/api_setup.php';
 
-    //set_error_handler('myErrorHandler');
+    set_error_handler('myErrorHandler');
     MyLog()->Append('public: checking databases');
     run_setup();
     cache_setup();
@@ -30,6 +30,14 @@ try
 
     include_once 'lib/api_router.php';
 
+    if(isset($_FILES) && !empty($_FILES))
+    {//backup restore
+        $bak = $_FILES['backup'] ?? null ;
+        if($bak){ backup_restore(); }
+        header('content-type: application/json');
+        echo '{"status":"ok","error":false,"message":"ok","data":[]}';
+        exit();
+    }
 
 
     if(!$json)
@@ -51,11 +59,7 @@ try
     MyLog()->Append('api: finished without error : ' . json_encode($api->status()));
 }
 catch (NoActionException $noError){ respond($noError->getMessage()); }
-catch (
-Exception | Error | GuzzleHttp\Exception\GuzzleException
-| \Ubnt\UcrmPluginSdk\Exception\ConfigurationException
-| \Ubnt\UcrmPluginSdk\Exception\InvalidPluginRootPathException
-| \Ubnt\UcrmPluginSdk\Exception\JsonException $error )
+catch ( \Exception | Error $error )
 {
     MyLog()->Append(sprintf("Exception encountered message: %s \nTrace: %s",
         $error->getMessage(),$error->getTraceAsString()));

@@ -55,7 +55,7 @@ class AdminDevices extends Admin
         return true;
     }
 
-    public function getAllServices()
+    public function getAllServices(): bool
     {
         $this->result =
             $this->db()->selectServices();

@@ -1,6 +1,6 @@
 {
-    "name": "ROS Plugin",
-    "short_name": "ros-plugin",
+    "name": "ROS Plugin Test",
+    "short_name": "ros-plugin-test",
     "start_url": ".",
     "display": "browser",
     "background_color": "#0175C2",

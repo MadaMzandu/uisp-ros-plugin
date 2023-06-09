@@ -35,9 +35,8 @@ class ApiAction
     private function execute()
     {
         $type = $this->request->entity ?? 'none';
-        $clientId = $this->request->entity->clientId ?? 0 ;
         $cache = new ApiCache();
-        $data = $this->trimmer()->trim('service',$this->request);
+        $data = $this->trimmer()->trim($type,$this->request);
         if($type == 'client'){
             $cache->save($data['entity'],'client');
         }
@@ -67,6 +66,7 @@ class ApiAction
                     $cache->save($data['entity']);
                     $delete = $this->get('id',$data);
                     $api->delete_ids([$delete]);
+                    //$this->attributes()->unset_attr($delete);
                     break ;
                 }
                 case ACTION_DEFERRED: {
@@ -74,7 +74,7 @@ class ApiAction
                     break ;
                 }
                 case ACTION_CACHE: {
-                    MyLog()->Append('service has missing attributes - delete before cache');
+                    MyLog()->Append('service missing relevant attributes - delete before cache');
                     $delete = $this->get('id',$data);
                     $api->delete_ids([$delete]);
                     $cache->save($data['entity']);
@@ -82,7 +82,9 @@ class ApiAction
                 }
                 case ACTION_AUTO:{
                     MyLog()->Append('generating username and password for service');
-                    $this->attributes()->set_username($clientId);
+                    $serviceId = $this->get('id',$data);
+                    $clientId = $this->get('clientId',$data);
+                    $this->attributes()->set_username($serviceId,$clientId);
                     break ;
                 }
             }
@@ -91,17 +93,22 @@ class ApiAction
 
     private function select_action($data): int
     {
-        switch ($this->has_attributes()){
+        switch ($this->has_attributes()) {
+            case -1: return ACTION_DELETE;
             case 0: return ACTION_CACHE;
             case 2: return ACTION_AUTO;
         }
-        if($this->has_deferred($data)) { return ACTION_DEFERRED; }
-        else if($this->has_moved($data)
-            || $this->has_flipped($data)
-            || $this->has_upgraded($data)
-            || $this->has_renamed($data)) { return ACTION_DOUBLE; }
-        else if($this->has_ended($data)) { return ACTION_DELETE; }
-        return ACTION_SET ;
+        if ($this->has_ended($data)) { return ACTION_DELETE; }
+
+        if ($this->has_deferred($data)) { return ACTION_DEFERRED; }
+
+        if (
+            $this->has_renamed($data) ||
+            $this->has_moved($data) ||
+            $this->has_upgraded($data) ||
+            $this->has_flipped($data)){ return ACTION_DOUBLE; }
+
+        return ACTION_SET;
     }
 
     private function has_attributes(): int
@@ -137,7 +144,7 @@ class ApiAction
     }
 
     private function has_flipped($data): bool
-    {
+    {//compare status
         $action = $data['action'] ?? null;
         if(in_array($action,['suspend','unsuspend'])) return true ;
         $new = $this->get('status',$data);
@@ -146,7 +153,7 @@ class ApiAction
     }
 
     private function has_upgraded($data): bool
-    {
+    {//compare plans
         $new = $this->get('planId',$data);
         $old = $this->get('planId',$data,'old');
         return $new && $old && $new != $old ;
@@ -167,16 +174,12 @@ class ApiAction
         else {
             return $data['previous'][$key] ?? null ;
         }
-        return null ;
     }
 
     private function trimmer(){ return new ApiTrim(); }
 
     private function attributes() { return new ApiAttributes(); }
 
-    public function __construct($data = null)
-    {
-        $this->request = $data ;
-    }
+    public function __construct($data = null){ $this->request = $data ; }
 
 }

@@ -12,8 +12,9 @@
     * https://developer.mozilla.org/en-US/docs/Web/HTML/Element/base
   -->
 
- <!-- <base href="/"> -->
- <base href="/crm/_plugins/ros-plugin/public/panel/">
+<!--  <base href="/">-->
+<!--  <base href="/ros/public/panel/">-->
+  <base href="/crm/_plugins/ros/plugin/public/panel/">
 
   <meta charset="UTF-8">
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
@@ -25,7 +26,7 @@
   <meta name="apple-mobile-web-app-title" content="rpa">
   <link rel="apple-touch-icon" href="icons/Icon-192.png">
 
-  <title>ROS Plugin</title>
+  <title>ROS Testing</title>
   <link rel="manifest" href="manifest.json">
   <link rel="stylesheet" type="text/css" href="splash/style.css">
 </head>
@@ -34,7 +35,7 @@
        application. For more information, see:
        https://developers.google.com/web/fundamentals/primers/service-workers -->
   <script>
-    var serviceWorkerVersion = '1193115767';
+    var serviceWorkerVersion = '3168511482';
     var scriptLoaded = false;
     function loadMainDartJs() {
       if (scriptLoaded) {
@@ -98,9 +99,11 @@
     }
   </script>
   <picture id="splash">
-    <source srcset="splash/img/light-1x.png 1x, splash/img/light-2x.png 2x, splash/img/light-3x.png 3x, splash/img/light-4x.png 4x" media="(prefers-color-scheme: light) or (prefers-color-scheme: no-preference)">
-    <source srcset="splash/img/dark-1x.png 1x, splash/img/dark-2x.png 2x, splash/img/dark-3x.png 3x, splash/img/dark-4x.png 4x" media="(prefers-color-scheme: dark)">
-    <img class="center" aria-hidden="true" src="splash/img/light-1x.png" />
+    <source srcset="splash/img/light-1x.png 1x, splash/img/light-2x.png 2x, splash/img/light-3x.png 3x, splash/img/light-4x.png 4x"
+            media="(prefers-color-scheme: light) or (prefers-color-scheme: no-preference)">
+    <source srcset="splash/img/dark-1x.png 1x, splash/img/dark-2x.png 2x, splash/img/dark-3x.png 3x, splash/img/dark-4x.png 4x"
+            media="(prefers-color-scheme: dark)">
+    <img class="center" aria-hidden="true" src="splash/img/light-1x.png"/>
   </picture>
 </body>
 </html>

@@ -6,16 +6,16 @@ class AdminRebuild{
 
     private function cache(){ return new ApiSqlite('data/cache.db'); }
 
-//    private function clear($type,$ids = [])
-//    {
-//        if($type == 'all'){
-//            $this->db()->deleteAll('services');
-//        }
-//        else{
-//            $this->db()->exec(sprintf("DELETE FROM 'services' WHERE id IN (%s)",
-//                implode(',',$ids) ));
-//        }
-//    }
+    private function clear($type,$ids = [])
+    {
+        if($type == 'all'){
+            $this->db()->deleteAll('services');
+        }
+        else{
+            $this->db()->exec(sprintf("DELETE FROM 'services' WHERE id IN (%s)",
+                implode(',',$ids) ));
+        }
+    }
 
     public function rebuild($data)
     {
@@ -45,10 +45,7 @@ class AdminRebuild{
         }
         foreach ($select as $item) $ids[] = $item['id'];
         MyLog()->Append(sprintf('found %s services to rebuild',sizeof($ids)));
-//        if($clear)
-//        {
-//            $this->clear($type,$ids);
-//        }
+        if($clear) { $this->clear($type,$ids); }
         $batch = new MtBatch();
         $batch->set_ids($ids);
         $timer->stop();
