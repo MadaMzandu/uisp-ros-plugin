@@ -13,6 +13,7 @@ class ApiAttributes
         $attributes = $entity->attributes ?? null ;
         $values = $this->extract($attributes);
         if(empty($values)) return 0 ;
+        if(!$this->check_status($entity)) return -1;
         if(!$this->check_device($values)) return 0 ;
         if($this->check_mac($values)) return 1;
         if($this->check_username($values)) return 1 ;
@@ -33,17 +34,27 @@ class ApiAttributes
         return $conf->auto_ppp_user || ($hotspot && $conf->auto_hs_user);
     }
 
-    public function set_username($clientId): void
+    public function set_username($serviceId,$clientId): void
     {
         $ids = $this->attribute_id_map();
         $uid = $ids['pppoe_user_attr'] ?? null ;
         $pid = $ids['pppoe_pass_attr'] ?? null ;
-        $post = [];
+        $values = [];
         if($uid)
-        $post['attributes'][] = ['customAttributeId' => $uid, 'value' =>
+        $values[] = ['customAttributeId' => $uid, 'value' =>
             sprintf('%s-%s',$this->string(5),$clientId)] ;
-        if($pid) $post['attributes'][] = ['customAttributeId' => $pid, 'value' => $this->string()];
-        if($post) $this->ucrm()->patch('clients/'.$clientId,$post);
+        if($pid) $values[] = ['customAttributeId' => $pid, 'value' => $this->string()];
+        if($values) $this->ucrm()->patch('clients/services/'.$serviceId,['attributes' => $values]);
+    }
+
+    public function unset_attr($serviceId){
+        $ids = $this->attribute_id_map();
+        $values = [];
+        foreach($ids as $id){
+            if($id) $values = ['customAttributeId' => $id, 'value' => null];
+        }
+        $service['attributes'] = $values ;
+        $this->ucrm()->patch('clients/services/'.$serviceId,$service);
     }
 
     public function check_config(): bool
@@ -81,6 +92,12 @@ class ApiAttributes
         return filter_var($mac,FILTER_VALIDATE_MAC) ;
     }
 
+    private function check_status($entity): bool
+    {
+        $status = $entity->status ?? 1 ;
+        return !in_array($status,[2,5,8]);
+    }
+
     private function check_device($values): bool
     {
         $name = $values['device'] ?? null ;
@@ -101,7 +118,7 @@ class ApiAttributes
             $db_key = $native[$key] ?? null ;
             if($db_key){ $map[$db_key] = $attribute->value ?? null; }
         }
-        $device = strtolower($map['device']) ?? null ;
+        $device = strtolower($map['device'] ?? '') ?? null ;
         $map['device'] = $devices[$device] ?? null ;
         return $this->split($map) ;
     }
