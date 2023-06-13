@@ -70,6 +70,7 @@ class AdminDevices extends Admin
         }
         $this->setStatus();
         $this->setUsers();
+        $this->setDisabled();
         $this->result = $this->read;
         $this->set_message('devices retrieved');
         return true;
@@ -141,7 +142,7 @@ class AdminDevices extends Admin
 
     private function read(): bool
     {
-        $this->read = $this->db()->selectAllFromTable('devices');
+        $this->read = $this->db()->selectAllFromTable('devices') ?? [];
         return !empty($this->read) ;
     }
 
@@ -169,6 +170,17 @@ class AdminDevices extends Admin
                 $device['status'] = false ;
             }
         }
+    }
+
+    private function setDisabled(){
+        $map = [];
+        foreach ($this->read as $item) {
+            $item['disabled'] = false ;
+            $map[$item['id']] = $item ;
+        };
+        $conf = $this->db()->readConfig()->disabled_routers ?? null;
+        if($conf) foreach (explode(',',$conf) as $id){$map[$id]['disabled'] = true ;}
+        $this->read = array_values($map);
     }
 
     private function default_port($type): int
