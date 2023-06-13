@@ -2,7 +2,8 @@
 include_once 'api_logger.php';
 
 function myErrorHandler($errno, $errstr, $errfile, $errline){
-    MyLog()->Append(sprintf('error no: %s error: %s',$errno,$errstr),6);
+    MyLog()->Append(sprintf('error no: %s error: %s file %s line: %s',
+        $errno,$errstr,$errfile,$errline),6);
 }
 
 function backup_restore(){

@@ -10,18 +10,16 @@ class AdminPlans extends Admin
 
     private function merge()
     {
+        $defaults = ['priorityUpload' => 8,'priorityDownload' => 8,'timeUpload' => 1,'timeDownload' => 1];
         $plans = $this->get_plans();
         $config = $this->get_config() ;
-        $keys = ['ratio','priority','limitUpload','limitDownload','burstUpload','burstDownload',
-            'threshUpload','threshDownload','timeUpload','timeDownload'];
+        $keys = ['ratio','priorityUpload','priorityDownload','limitUpload','limitDownload',
+            'burstUpload','burstDownload','threshUpload','threshDownload','timeUpload','timeDownload'];
         foreach($plans as $plan){
             $id = $plan['id'] ;
             foreach($keys as $key){
-                if($key == 'priority'){
-                    $plans[$id][$key] = $config[$id][$key] ?? 8 ;
-                    continue;
-                }
-                $plans[$id][$key] = $config[$id][$key] ?? 0 ;
+                $plans[$id][$key] = $config[$id][$key]
+                    ?? $defaults[$key] ?? 0;
             }
         }
         return $plans ;
