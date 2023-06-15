@@ -139,10 +139,11 @@ class ApiSqlite
 
     public function selectServices(): ?array
     {
-        $sql = "select services.*,devices.name as deviceName from services left join devices "
-            . "on services.device=devices.id";
+        $fields = 'services.*,devices.name as deviceName,network.address,network.address6';
+        $sql = sprintf("select %s from services left join devices on services.device=devices.id ".
+            "left join network on services.id=network.id",$fields);
         $res = $this->query($sql);
-        $return = null;
+        $return = [];
         while ($row = $res->fetchArray(SQLITE3_ASSOC)) {
             $return[] = $row;
         }
