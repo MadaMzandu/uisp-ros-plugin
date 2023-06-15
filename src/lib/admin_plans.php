@@ -31,8 +31,8 @@ class AdminPlans extends Admin
         $ids = array_keys($plans);
         $delete_expired = sprintf('DELETE FROM plans WHERE id NOT IN (%s)',implode(',',$ids)) ;
         $this->db()->exec($delete_expired);
-        $keys = "id,ratio,priority,limitUpload,limitDownload,burstUpload,burstDownload,threshUpload,".
-            "threshDownload,timeUpload,timeDownload";
+        $keys = "id,ratio,priorityUpload,priorityDownload,limitUpload,limitDownload,burstUpload,".
+        "burstDownload,threshUpload,threshDownload,timeUpload,timeDownload";
         $update = sprintf("INSERT OR IGNORE INTO plans (%s) VALUES ",$keys);
         $values = [];
         foreach ($plans as $plan){
