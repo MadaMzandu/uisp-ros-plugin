@@ -264,7 +264,8 @@ class MtData extends MT
     {
         $keys = [
             'ratio',
-            'priority',
+            'priorityUpload',
+            'priorityDownload',
             'limitUpload',
             'limitDownload',
             'uploadSpeed',
@@ -280,7 +281,8 @@ class MtData extends MT
         foreach($keys as $key){
             switch ($key)
             {
-                case 'priority': $values['prio'] = array_fill(0,2,$this->plan[$key]); break;
+                case 'priorityUpload':
+                case 'priorityDownload': $values['prio'][] = $this->plan[$key]; break;
                 case 'limitUpload':
                 case 'limitDownload': $values['limit'][] = $this->plan[$key];break;
                 case 'uploadSpeed':

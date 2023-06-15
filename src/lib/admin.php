@@ -42,7 +42,8 @@ class Admin
 
     protected function init(): void
     {
-        $this->status = json_decode('{"error":false,"message":"ok"}');
+        $this->status = json_decode('{"status":"ok","error":false,'.
+            '"message":"ok","session":false}');
     }
 
     public function select()
