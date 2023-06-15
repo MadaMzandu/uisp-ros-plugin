@@ -13,8 +13,7 @@
   -->
 
 <!--  <base href="/">-->
-<!--  <base href="/ros/public/panel/">-->
-  <base href="/crm/_plugins/ros/plugin/public/panel/">
+  <base href="/crm/_plugins/ros-plugin/public/panel/">
 
   <meta charset="UTF-8">
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
@@ -35,7 +34,7 @@
        application. For more information, see:
        https://developers.google.com/web/fundamentals/primers/service-workers -->
   <script>
-    var serviceWorkerVersion = '3168511482';
+    var serviceWorkerVersion = '3399857994';
     var scriptLoaded = false;
     function loadMainDartJs() {
       if (scriptLoaded) {
