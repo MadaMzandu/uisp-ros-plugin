@@ -96,11 +96,11 @@ class API_Router
 
     public function http_response(): void
     {
-        header('content-type: application/json');
+        if(!headers_sent())header('content-type: application/json');
         $stat = 'ok';
         $error = $this->status->error ?? false ;
         if ($error) { // failed response
-            header('X-API-Response: 202', true, 202);
+            if(!headers_sent()) header('X-API-Response: 202', true, 202);
             $stat = 'failed';
         }
         $response = [

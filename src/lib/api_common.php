@@ -3,7 +3,7 @@ include_once 'api_logger.php';
 
 function myErrorHandler($errno, $errstr, $errfile, $errline){
     MyLog()->Append(sprintf('error no: %s error: %s file %s line: %s',
-        $errno,$errstr,$errfile,$errline),6);
+        $errno,$errstr,$errfile,$errline),7);
 }
 
 function backup_restore(){
@@ -21,7 +21,6 @@ function backup_restore(){
         $msg = sprintf('backup restore error: %s, trace: %s',
             $e->getMessage(),$e->getTraceAsString());
         MyLog()->Append($msg,6);
-        header('content-type: application/json');
         echo sprintf('{"status":"failed","error":true,"message":%s,"data":[]}',$msg);
     }
 }
@@ -35,8 +34,8 @@ function respond($msg,$err = false,$data = [])
         'message' => $msg,
         'data' => $data,
     ];
-    header('content-type: application/json');
-    if ($err) { // failed header
+    if(!headers_sent()) header('content-type: application/json');
+    if ($err && !headers_sent()) { // failed header
         header('X-API-Response: 202', true, 202);
     }
     echo json_encode($response,JSON_PRETTY_PRINT);
