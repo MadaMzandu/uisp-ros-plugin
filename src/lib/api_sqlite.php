@@ -137,7 +137,7 @@ class ApiSqlite
         return (object)$this->singleQuery($sql,true);
     }
 
-    public function selectServices(): ?array
+    private function selectServices(): ?array
     {
         $fields = 'services.*,devices.name as deviceName,network.address,network.address6';
         $sql = sprintf("select %s from services left join devices on services.device=devices.id ".
@@ -150,9 +150,14 @@ class ApiSqlite
         return $return;
     }
 
+    public function deleteAll($table = 'services'){
+        $sql = sprintf("delete from %s",$table);
+        return $this->db()->exec($sql);
+    }
+
     public function delete($id, $table = 'services'): bool
     {
-        $sql = 'delete from ' . $table . " where id=" . $id;
+        $sql = sprintf("delete from %s where id = %s",$table,$id);
         return $this->db()->exec($sql);
     }
 
