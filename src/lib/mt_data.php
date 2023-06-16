@@ -334,7 +334,7 @@ class MtData extends MT
 
     private function account_name(): string
     {
-        $name = sprintf('Client-%s',$this->service['id']);
+        $name = sprintf('Client-%s',$this->service['clientId']);
         $co = $this->service['company'];
         $fn = $this->service['firstName'];
         $ln = $this->service['lastName'];
@@ -355,7 +355,7 @@ class MtData extends MT
 
     private function disabled_rate(): ?string
     {
-        $rate = $this->conf->disabled ?? 0;
+        $rate = $this->conf->disabled_rate ?? 0;
         if(!$rate) return null ;
         return $this->to_pair([$rate,$rate]);
     }
