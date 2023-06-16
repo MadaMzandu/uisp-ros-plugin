@@ -8,6 +8,7 @@ class AdminDevices extends Admin
             $this->set_error('database error');
             return false;
         }
+        $this->recache();
         $this->set_message('device has been deleted');
         return true;
     }
@@ -28,6 +29,11 @@ class AdminDevices extends Admin
     private function recache(): void
     {
         $api = new Admin_System();
+        if(function_exists('fastcgi_finish_request')){
+            respond('Device has been updated!');
+            fastcgi_finish_request();
+        }
+        sleep(5);
         $api->recache();
     }
 

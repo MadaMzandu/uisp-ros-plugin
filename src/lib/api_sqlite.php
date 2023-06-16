@@ -35,7 +35,7 @@ class ApiSqlite
     {
         if(empty($value)) return 'null';
         if(is_numeric($value)) return $value;
-        return sprintf("'%s'",$value);
+        return sprintf('"%s"',SQLite3::escapeString($value));
     }
 
     private function to_fields($data): ?string
@@ -137,7 +137,7 @@ class ApiSqlite
         return (object)$this->singleQuery($sql,true);
     }
 
-    private function selectServices(): ?array
+    public function selectServices(): ?array
     {
         $fields = 'services.*,devices.name as deviceName,network.address,network.address6';
         $sql = sprintf("select %s from services left join devices on services.device=devices.id ".
@@ -224,7 +224,7 @@ class ApiSqlite
     private function db(): SQLite3
     {
         $db = new SQLite3($this->path);
-        $db->busyTimeout(100);
+        $db->busyTimeout(5000);
         $db->enableExceptions(true);
         return $db ;
     }
