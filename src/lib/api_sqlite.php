@@ -175,7 +175,7 @@ class ApiSqlite
     {
         $sql = 'select * from ' . $table;
         $res = $this->query($sql);
-        $return = null;
+        $return = [];
         while ($row = $res->fetchArray(SQLITE3_ASSOC)) {
             $return[] = $row;
         }
