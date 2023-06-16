@@ -136,7 +136,7 @@ class ApiAttributes
         $devices = $this->db()->selectAllFromTable('devices');
         $map = [];
         foreach ($devices as $device){
-            $name = strtolower($device['name']);
+            $name = strtolower($device['name'] ?? '');
             $map[$name] = $device['id'];
         }
         return $map ;
