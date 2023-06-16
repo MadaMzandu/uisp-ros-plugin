@@ -35,12 +35,12 @@ class ApiSetup
         $schema = $this->update_schema();
         shell_exec('rm -f data/tmp.db');
         $db = new SQLite3('data/data.db');
-        $count = 0 ;
+        $count = 0 ; $total = sizeof($schema) ; $repeats = 4;
         foreach($schema as $stm){
             if($db->exec($stm)){ $count++; }
         }
-        if($count > 10){
-            MyLog()->Append(sprintf('update: %s of %s statements executed',$count,sizeof($schema)));
+        if($count > $total - $repeats){
+            MyLog()->Append(sprintf('update: %s of %s statements executed',$count,$total));
             copy('data/tmp.db','data/data.db');
             shell_exec('rm -f data/tmp.db');
             $this->set_version();
