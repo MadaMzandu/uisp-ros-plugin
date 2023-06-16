@@ -231,7 +231,7 @@ class MtData extends MT
         if($ip6) $preset = $this->service['address6'] ?? null;
         $ip = $preset ?? $this->db()->selectIp($this->service['id'],$ip6);
         if($ip){
-            MyLog()->Append('ip address found ' . $ip,5);
+            MyLog()->Append('ip address found ' . $ip);
             return $ip ;
         }
         MyLog()->Append('requesting ip');
@@ -381,7 +381,7 @@ class MtData extends MT
     private function make_duid(): ?string
     {
         $MAC_LENGTH = 12 ;
-        $val = $this->service['duid'] ?? $this->service['mac'] ?? null ;
+        $val = $this->service['duid'] ?? $this->service['mac'] ?? '' ;
         $stripped = preg_replace('/\W/','',strtolower($val));
         if(strlen($stripped) < 12) return null ;
         return '0x' . substr($stripped,strlen($stripped) - $MAC_LENGTH);
