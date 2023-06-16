@@ -14,7 +14,6 @@ if (isset($_SERVER['REQUEST_METHOD'])
 
 $json = file_get_contents('php://input') ?? null;
 
-
 try
 {
     include_once 'lib/api_cache.php';
@@ -59,9 +58,9 @@ try
     MyLog()->Append('api: finished without error : ' . json_encode($api->status()));
 }
 catch (NoActionException $noError){ respond($noError->getMessage()); }
-catch ( \Exception | Error $error )
+catch ( \Exception | Error $error)
 {
-    MyLog()->Append(sprintf("Exception encountered message: %s \nTrace: %s",
+    MyLog()->Append(sprintf("Global exception message: %s \nTrace: %s",
         $error->getMessage(),$error->getTraceAsString()));
     respond($error->getMessage(),true);
 }
