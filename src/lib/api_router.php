@@ -60,7 +60,7 @@ class API_Router
             return false;
         }
         $entity = $this->data->entity ?? null ;
-        if ($entity && in_array($entity,['service','admin'])) {
+        if ($entity && !in_array($entity,['service','admin'])) {
             $this->set_message('ok');
             MyLog()->Append('route wrong entity type: '.$entity);
             return false;
