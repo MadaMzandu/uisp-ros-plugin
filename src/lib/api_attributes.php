@@ -133,7 +133,7 @@ class ApiAttributes
 
     private function device_map()
     {
-        $devices = $this->db()->selectAllFromTable('devices');
+        $devices = $this->db()->selectAllFromTable('devices') ?? [];
         $map = [];
         foreach ($devices as $device){
             $name = strtolower($device['name'] ?? '');
