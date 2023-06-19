@@ -181,11 +181,10 @@ class ApiIP
     {
         $read = $this->exclusions();
         foreach ($read as $range) {
-            $range .= '-';              //append hyphen incase of single addr entry
-            [$s, $e] = explode('-', $range);
-            if (!$e) $e = $s;
-            $start = $this->ip2gmp($s);
-            $end = $this->ip2gmp($e) ;
+            $range = explode('-', $range);
+            $range[1] ??= $range[0];
+            $start = $this->ip2gmp($range[0]);
+            $end = $this->ip2gmp($range[1]) ;
             return gmp_cmp($gmp_addr,$start) >= 0 && gmp_cmp($gmp_addr,$end) <= 0 ;
         }
         return false;
