@@ -116,7 +116,7 @@ class MtData extends MT
 
     private function dhcp(): array
     {
-        $lease = $this->conf->dhcp_lease_time ?? 60 ;
+        $lease = $this->conf->lease_time ?? $this->conf->dhcp_lease_time ?? 60;
         return [
             'batch' => $this->service['batch'] ?? null ,
             'path' => '/ip/dhcp-server/lease',
@@ -132,7 +132,7 @@ class MtData extends MT
     public function dhcp6(): ?array
     {
         if(!$this->has_dhcp6()) return null ;
-        $lease = $this->conf->dhcp_lease_time ?? 60;
+        $lease = $this->conf->lease_time ?? $this->conf->dhcp_lease_time ?? 60;
         return [
             'batch' => $this->service['batch'] ?? null ,
             'path' => '/ipv6/dhcp-server/binding',
