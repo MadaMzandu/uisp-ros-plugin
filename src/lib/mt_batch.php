@@ -283,7 +283,7 @@ class MtBatch extends MT
         $sql = sprintf("SELECT %s FROM services LEFT JOIN clients ON services.clientId=clients.id ".
             "LEFT JOIN network ON services.id=network.id ".
             "WHERE services.id IN (%s) ",$fields,implode(',',$ids));
-        $data = $this->dbCache()->selectCustom($sql);
+        $data = $this->dbCache()->selectCustom($sql) ?? [];
         $deviceMap = [];
         foreach ($data as $item){
             $item['action'] = $action ;

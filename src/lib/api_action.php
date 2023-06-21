@@ -103,8 +103,8 @@ class ApiAction
         if ($this->has_deferred($data)) { return ACTION_DEFERRED; }
 
         if (
-            $this->has_renamed($data) ||
             $this->has_moved($data) ||
+            $this->has_renamed($data) ||
             $this->has_upgraded($data) ||
             $this->has_flipped($data)){ return ACTION_DOUBLE; }
 
@@ -146,6 +146,8 @@ class ApiAction
     private function has_flipped($data): bool
     {//compare status
         $action = $data['action'] ?? null;
+        $mac = $this->get('mac',$data);
+        if($mac) return false ; // skip this check for dhcp
         if(in_array($action,['suspend','unsuspend'])) return true ;
         $new = $this->get('status',$data);
         $old = $this->get('status',$data,'old');

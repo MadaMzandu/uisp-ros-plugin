@@ -197,11 +197,9 @@ class MT extends Device
         $name = $data['name'] ?? null ;
         $mac = $data['mac-address'] ?? null ;
         $duid = $data['duid'] ?? null;
-        $address = $data['address'] ?? null ;
         $filter = [] ;
         if($name) $filter['name'] = $name;
         if($mac) $filter['mac-address'] = $mac ;
-        //if($address) $filter['address'] = $address ;
         if($duid) $filter['duid'] = $duid ;
         if($filter){
             $path = $data['path'];
@@ -209,6 +207,12 @@ class MT extends Device
             $item  = $read[0] ?? [];
             $id = $item['.id'] ?? null ;
             if($id && is_string($id)){
+                MyLog()->Append('THIS IS MY ID '.$id);
+                if(preg_match("/(binding)|(lease)/",$path)){ //convert dynamic lease
+                    MyLog()->Append('THIS IS A DHCP LEASE');
+                    $dynamic = $item['dynamic'] ?? 'false' ;
+                    if($dynamic == 'true'){ $this->make_static_lease($id,$path);}
+                }
                 return $id ;
             }
         }
@@ -223,6 +227,17 @@ class MT extends Device
         $prefix = $list[0]['address'] ?? null ;
         $address = explode('/',$prefix)[0] ?? null ;
         return $address ?? (new ApiIP())->local();
+    }
+
+    protected  function make_static_lease($id,$path): void
+    {
+        MyLog()->Append('ATTEMPTING TO CONVERT A DYNAMIC LEASE');
+        $command = sprintf('/%s/make-static',trim($path,'/'));
+        MyLog()->Append('THIS IS MY COMMAND '.$command);
+        $this->api->write($command,false);
+        $this->api->write('=.id=' . $id);
+        $read = $this->api->read();
+        MyLog()->Append('MAKE STATIC RESULT '.json_encode($read));
     }
 
     protected function prep_data($data): array
@@ -270,7 +285,7 @@ class MT extends Device
         }
         if(is_array($filter)){
             foreach(array_keys($filter) as $key){
-                $return[] = '?' . $key . '=' . $filter[$key] ?? null;
+                $return[] = sprintf('?%s=%s',$key,$filter[$key]);
             }
         }
         return $return ;
