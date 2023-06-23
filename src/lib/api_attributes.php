@@ -1,10 +1,10 @@
 <?php
 include_once 'api_sqlite.php';
-//include_once '_web_ucrm.php';
 include_once 'api_ucrm.php';
 
 class ApiAttributes
 {
+    private $_devices ;
 
     public function check($request): int
     {
@@ -47,15 +47,6 @@ class ApiAttributes
         if($values) $this->ucrm()->patch('clients/services/'.$serviceId,['attributes' => $values]);
     }
 
-    public function unset_attr($serviceId){
-        $ids = $this->attribute_id_map();
-        $values = [];
-        foreach($ids as $id){
-            if($id) $values = ['customAttributeId' => $id, 'value' => null];
-        }
-        $service['attributes'] = $values ;
-        $this->ucrm()->patch('clients/services/'.$serviceId,$service);
-    }
 
     public function check_config(): bool
     {
@@ -86,6 +77,28 @@ class ApiAttributes
         return $str ;
     }
 
+    private function strip($attributes){
+        if(!is_array($attributes)){ return []; }
+        $values = [];
+        $assigned = $this->assigned_map();
+        foreach($attributes as $attribute){
+            $native = $assigned[$attribute->key] ?? null;
+            if($native)$values[$native] = $this->to_value($attribute->value ?? null);
+        }
+        return $values ;
+    }
+
+    private function to_value($value){
+        if(empty($value)){ return null ;}
+        return trim($value);
+    }
+
+    private function to_lower($value){
+        if(empty($value)) return null ;
+        if(!is_string($value)) return trim($value);
+        return strtolower(trim($value));
+    }
+
     private function check_mac($values): bool
     {
         $mac = $values['mac'] ?? null ;
@@ -108,18 +121,16 @@ class ApiAttributes
 
     public function extract($attributes): array
     {//extract attribute values and map to database keys
-        if(empty($attributes)){ $attributes = []; }
-        $assigned = array_flip($this->assigned_map());
-        $native = $this->native_map();
+        $attributes = $this->strip($attributes);
+        $dbmap = $this->dbmap();
         $devices = $this->device_map();
-        $map = array_fill_keys(array_values($native),null);
-        foreach($attributes as $attribute){
-            $key = $assigned[$attribute->key] ?? null ;
-            $db_key = $native[$key] ?? null ;
-            if($db_key){ $map[$db_key] = $attribute->value ?? null; }
+        $map = array_fill_keys(array_values($dbmap),null);
+        foreach(array_keys($attributes) as $key){
+            $dbkey = $dbmap[$key] ?? null ;
+            if($dbkey){ $map[$dbkey] = $attributes[$key] ?? null; }
         }
-        $device = strtolower($map['device'] ?? '') ?? null ;
-        $map['device'] = $devices[$device] ?? null ;
+        $device = $map['device'] ?? null;
+        if($device)$map['device'] = $devices[$this->to_lower($device)] ?? null ;
         return $this->split($map) ;
     }
 
@@ -133,13 +144,16 @@ class ApiAttributes
 
     private function device_map()
     {
-        $devices = $this->db()->selectAllFromTable('devices') ?? [];
-        $map = [];
-        foreach ($devices as $device){
-            $name = strtolower($device['name'] ?? '');
-            $map[$name] = $device['id'];
+        if(!empty($this->_devices)){
+            return $this->_devices ;
         }
-        return $map ;
+        $devices = $this->db()->selectAllFromTable('devices') ?? [];
+        $this->_devices = [];
+        foreach ($devices as $device){
+            $name = $device['name'] ?? 'Noname';
+            $this->_devices[$this->to_lower($name)] = $device['id'];
+        }
+        return $this->_devices ;
     }
 
     private function attribute_id_map(): array
@@ -170,16 +184,16 @@ class ApiAttributes
     private function assigned_map(): array
     {// native key to assigned key map
         $conf = $this->conf();
-        $native_keys = array_keys($this->native_map());
+        $native_keys = array_keys($this->dbmap());
         $map = [];
         foreach ($native_keys as $native_key){
             $assigned = $conf->$native_key ?? null ;
-           if($assigned) $map[$native_key] = $assigned;
+           if($assigned) $map[$assigned] = $native_key;
         }
         return $map ;
     }
 
-    private function native_map(): array
+    private function dbmap(): array
     { // plugin native key to database key map
         return [
             'device_name_attr' => 'device',
