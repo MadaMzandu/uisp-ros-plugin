@@ -2,6 +2,8 @@
 
 class Device_Base
 {
+
+    protected $svc; // service data object
     protected $data ; // none service data object
     protected $status; // execution status and errors
     protected $result; // output
@@ -10,7 +12,9 @@ class Device_Base
 
     public function __construct($data = null)
     {
-        $this->data = $this->toObject($data);
+        $service = is_object($data) && ($data->type ?? null) == 'service';
+        $this->svc = $service ? $data : null;
+        $this->data = $service ? null : $this->toObject($data);
         $this->init();
     }
 
@@ -67,6 +71,12 @@ class Device_Base
     protected function error(): ?string
     {
         return $this->status->message;
+    }
+
+    protected function setMess($msg): void
+    {
+        $this->status->error = false;
+        $this->status->message = $msg;
     }
 
 }

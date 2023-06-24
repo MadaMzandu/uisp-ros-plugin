@@ -4,8 +4,6 @@ include_once 'api_attributes.php';
 class ApiTrim
 {// trim request to min and map to db fields
 
-    private $_tributes ;
-
     public function trim($type, $request): ?array
     {
         switch (strtolower($type)){
@@ -56,13 +54,7 @@ class ApiTrim
         return $entity ;
     }
 
-    private function attributes(): ApiAttributes
-    {
-        if(empty($this->_tributes)){
-            $this->_tributes = new ApiAttributes();
-        }
-        return $this->_tributes ;
-    }
+    private function attributes(){ return new ApiAttributes(); }
 
     private function db(){ return new ApiSqlite(); }
 

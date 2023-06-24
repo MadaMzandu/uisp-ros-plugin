@@ -6,17 +6,16 @@ include_once 'device.php';
 class MT extends Device
 {
 
-    protected $device;
-    protected $batch;
-    protected $batch_device;
-    protected $batch_failed;
-    protected $batch_success;
-    protected $api;
+    protected ?stdClass $device;
+    protected ?array $batch ;
+    protected ?stdClass $batch_device ;
+    protected ?array $batch_failed ;
+    protected ?array $batch_success;
+    protected ?RouterosAPI $api ;
 
     protected function write($post)
     {
-        $batch = (bool) $this->api;
-        $this->api ??= $this->connect();
+        $opened = $this->xor_connect();
         $timer = new ApiTimer('single write');
         //check and prepare
         $id = $this->find_id($post);
@@ -38,18 +37,28 @@ class MT extends Device
         $this->api->write(';');
         $timer->stop();
         $read = $this->api->read() ;
-        if(!$batch) $this->disconnect();
+        if($opened) $this->api_disconnect();
         return $read ;
+    }
+
+    protected function xor_connect(): bool
+    {// connect if not already connected
+        if(!$this->api){
+            $this->api = $this->api_connect() ;
+            if($this->api) return true;
+        }
+        return false ;
     }
 
     protected function write_batch(): int
     {
-        $this->api = $this->connect();
-        if (!$this->api) {
+        $api = $this->api_connect();
+        if (!$api) {
             MyLog()->Append("mt failed to connect sending batch to queue");
             $this->send_to_queue('device connect failed');
             return 0;
         }
+        $this->api = $api ;
         $writes = 0;
         foreach ($this->batch as $post) {
             $result = $this->write($post);
@@ -64,7 +73,8 @@ class MT extends Device
             }
         }
         $this->batch = null;
-        $this->disconnect();
+        $this->api = null ;
+        $api->disconnect();
         return $writes;
     }
 
@@ -92,8 +102,7 @@ class MT extends Device
 
     protected function read($path,$filter = null): ?array
     {  //implements mikrotik print
-        $batch  = (bool) $this->api ;
-        $this->api ??= $this->connect();
+        $opened = $this->xor_connect() ;
         if(!$this->api) return  null ;
         $this->api->write(sprintf('/%s/print',trim($path,'/')), false);
         if ($filter) {
@@ -103,11 +112,11 @@ class MT extends Device
         }
         $this->api->write(";");
         $read = $this->api->read() ;
-        if(!$batch) $this->disconnect();
+        if($opened) $this->api_disconnect();
         return $this->find_error($read) ? null : $read;
     }
 
-    protected function connect(): ?RouterosAPI
+    protected function api_connect(): ?RouterosAPI
     {
         if(!$this->get_device()){
             MyLog()->Append('mt: failed to get device information');
@@ -124,7 +133,7 @@ class MT extends Device
         return $api;
     }
 
-    protected function disconnect(): void
+    protected function api_disconnect(): void
     {
         if($this->api) $this->api->disconnect();
         $this->api = null ;
@@ -132,24 +141,25 @@ class MT extends Device
 
     protected function find_deps($data): bool
     {
-        if($data['action'] ?? null != 'remove') return false ;
-        $path = $data['path'] ?? null ;
+        $action = $data['action'];
+        if($action != 'remove') return false ;
+        $path = trim($data['path'],'/') ;
         if(!$this->needs_dep_check($path)) return false;
         $name = $data['name'] ?? null ;
-        if(!$name) return false ; //no reason to proceed
-        $search_paths = $this->dep_paths($path);
-        foreach($search_paths as $search_path)
+        if(!$name) return false ; //we dont delete unless we are sure
+        foreach($this->dep_paths($path) as $dep_path)
         {
-            $key = $this->dep_filter_key($search_path);
-            if(!$key){ continue ; }
-            $filter[$key] = $name ;
-            $read = $this->read($search_path,$filter);
-            if(!empty($read)){ return true ; }
+            $path = $dep_path;
+            $filter = sprintf('?%s=%s',$this->dep_filter_key($dep_path),$name);
+            $read = $this->read($path,$filter);
+            if(!empty($read)){
+                return true ;
+            }
         }
         return false ;
     }
 
-    protected function dep_filter_key($path): ?string
+    protected function dep_filter_key($path): string
     {
         switch (trim($path,'/'))
         {
@@ -157,9 +167,7 @@ class MT extends Device
             case 'ip/hotspot/user': return 'profile';
             case 'queue/simple': return 'parent';
             case 'ipv6/dhcp-server/binding': return 'prefix-pool';
-            case 'ppp/profile':
-            case 'ip/hotspot/user/profile': return 'parent-queue';
-            default: return null;
+            default: return 'parent-queue';
         }
     }
 
@@ -170,14 +178,13 @@ class MT extends Device
             case 'ppp/profile': return ['/ppp/secret'];
             case 'ip/hotspot/user/profile': return ['/ip/hotspot/user'];
             case 'ipv6/pool': return ['/ipv6/dhcp-server/binding'];
-            case 'queue/simple': return ['/ppp/profile','/ip/hotspot/user/profile','/queue/simple'];
-            default: return [];
+            default: return ['/ppp/profile','/ip/hotspot/user/profile','/queue/simple'];
         }
     }
 
     protected function needs_dep_check($path): bool
     {
-        return in_array(trim($path,'/'),[
+        return in_array($path,[
             'ppp/profile',
             'ip/hotspot/user/profile',
             'queue/simple',
@@ -200,7 +207,9 @@ class MT extends Device
             $item  = $read[0] ?? [];
             $id = $item['.id'] ?? null ;
             if($id && is_string($id)){
+                MyLog()->Append('THIS IS MY ID '.$id);
                 if(preg_match("/(binding)|(lease)/",$path)){ //convert dynamic lease
+                    MyLog()->Append('THIS IS A DHCP LEASE');
                     $dynamic = $item['dynamic'] ?? 'false' ;
                     if($dynamic == 'true'){ $this->make_static_lease($id,$path);}
                 }
@@ -222,10 +231,13 @@ class MT extends Device
 
     protected  function make_static_lease($id,$path): void
     {
+        MyLog()->Append('ATTEMPTING TO CONVERT A DYNAMIC LEASE');
         $command = sprintf('/%s/make-static',trim($path,'/'));
+        MyLog()->Append('THIS IS MY COMMAND '.$command);
         $this->api->write($command,false);
         $this->api->write('=.id=' . $id);
-        $this->api->read();
+        $read = $this->api->read();
+        MyLog()->Append('MAKE STATIC RESULT '.json_encode($read));
     }
 
     protected function prep_data($data): array
@@ -251,6 +263,9 @@ class MT extends Device
         if($this->batch_device){
             $this->device = $this->batch_device ;
         }
+        elseif ($this->svc) {
+            $this->device = $this->svc->device();
+        }
         elseif ($id = $this->get_data('device_id')) {
             $this->device = $this->db()->selectDeviceById($id);
         }
@@ -264,8 +279,8 @@ class MT extends Device
     {
         $return = [];
         if(is_string($filter)){
-            foreach(explode(',',$filter) as $item){
-                $return[] = $item ;
+            foreach(explode(',',$filter . ',') as $item){
+                if(!empty($item)) $return[] = $item ;
             }
         }
         if(is_array($filter)){

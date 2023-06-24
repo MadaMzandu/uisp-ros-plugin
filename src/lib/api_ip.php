@@ -185,10 +185,7 @@ class ApiIP
             $range[1] ??= $range[0];
             $start = $this->ip2gmp($range[0]);
             $end = $this->ip2gmp($range[1]) ;
-            if(gmp_cmp($gmp_addr,$start) >= 0 &&
-                gmp_cmp($gmp_addr,$end) <= 0 ){
-                return true;
-            }
+            return gmp_cmp($gmp_addr,$start) >= 0 && gmp_cmp($gmp_addr,$end) <= 0 ;
         }
         return false;
     }

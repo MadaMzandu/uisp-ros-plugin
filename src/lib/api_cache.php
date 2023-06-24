@@ -6,8 +6,6 @@ include_once 'api_ucrm.php';
 
 class ApiCache{
 
-    private $_trimmer ;
-
     public function save($request,$type = 'service')
     { //update a single service
         $timer = new ApiTimer('cache update');
@@ -123,6 +121,7 @@ class ApiCache{
             MyLog()->Append('devices not configured sync delayed');
             return false ;
         }
+        MyLog()->Append('cache devices found: '. json_encode($devices));
         return true ;
     }
 
@@ -163,13 +162,7 @@ class ApiCache{
 
     private function attributes() { return new ApiAttributes(); }
 
-    private function trimmer(): ApiTrim
-    {
-        if(empty($this->_trimmer)){
-            $this->_trimmer = new ApiTrim();
-        }
-        return $this->_trimmer ;
-    }
+    private function trimmer(){ return new ApiTrim(); }
 
     private function ucrm(){ return new ApiUcrm(); }
 
