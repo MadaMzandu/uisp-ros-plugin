@@ -70,7 +70,7 @@ class ApiAction
                     break ;
                 }
                 case ACTION_DEFERRED: {
-                    MyLog()->Append('No action for deferred action');
+                    MyLog()->Append('No action for this request');
                     break ;
                 }
                 case ACTION_CACHE: {
@@ -98,6 +98,9 @@ class ApiAction
             case 0: return ACTION_CACHE;
             case 2: return ACTION_AUTO;
         }
+
+        if(!$this->has_changed($data)){ return ACTION_DEFERRED; }
+
         if ($this->has_ended($data)) { return ACTION_DELETE; }
 
         if ($this->has_deferred($data)) { return ACTION_DEFERRED; }
@@ -109,6 +112,13 @@ class ApiAction
             $this->has_flipped($data)){ return ACTION_DOUBLE; }
 
         return ACTION_SET;
+    }
+
+    private function has_changed($data): bool
+    {
+        $entity = $data['entity'] ?? [];
+        $previous = $data['previous'] ?? [];
+        return $entity != $previous;
     }
 
     private function has_attributes(): int
@@ -170,12 +180,8 @@ class ApiAction
 
     private function get($key,$data,$entity = 'entity')
     {
-        if($entity == 'entity'){
-            return $data['entity'][$key] ?? null ;
-        }
-        else {
-            return $data['previous'][$key] ?? null ;
-        }
+        $value = $data[$entity][$key] ?? null ;
+        return $value ? trim($value) : null ;
     }
 
     private function trimmer(){ return new ApiTrim(); }
