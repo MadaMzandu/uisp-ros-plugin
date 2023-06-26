@@ -6,6 +6,8 @@ include_once 'api_ucrm.php';
 
 class ApiCache{
 
+    private $_trim ;
+
     public function save($request,$type = 'service')
     { //update a single service
         $timer = new ApiTimer('cache update');
@@ -162,7 +164,13 @@ class ApiCache{
 
     private function attributes() { return new ApiAttributes(); }
 
-    private function trimmer(){ return new ApiTrim(); }
+    private function trimmer()
+    {
+        if(empty($this->_trim)){
+            $this->_trim = new ApiTrim();
+        }
+        return $this->_trim;
+    }
 
     private function ucrm(){ return new ApiUcrm(); }
 
