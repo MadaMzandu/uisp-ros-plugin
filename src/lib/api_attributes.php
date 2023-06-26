@@ -5,6 +5,8 @@ include_once 'api_ucrm.php';
 
 class ApiAttributes
 {
+    private $_devmap ;
+    private $_conf ;
 
     public function check($request): int
     {
@@ -108,38 +110,56 @@ class ApiAttributes
 
     public function extract($attributes): array
     {//extract attribute values and map to database keys
-        if(empty($attributes)){ $attributes = []; }
-        $assigned = array_flip($this->assigned_map());
-        $native = $this->native_map();
-        $devices = $this->device_map();
-        $map = array_fill_keys(array_values($native),null);
-        foreach($attributes as $attribute){
-            $key = $assigned[$attribute->key] ?? null ;
-            $db_key = $native[$key] ?? null ;
-            if($db_key){ $map[$db_key] = $attribute->value ?? null; }
+        $attributes = $this->strip($attributes);
+        $dbmap = $this->dbmap();
+        $devices = $this->devmap();
+        $map = array_fill_keys(array_values($dbmap),null);
+        foreach(array_keys($attributes) as $key){
+            $dbkey = $dbmap[$key] ?? null ;
+            if($dbkey){ $map[$dbkey] = $attributes[$key] ?? null; }
         }
-        $device = strtolower($map['device'] ?? '') ?? null ;
-        $map['device'] = $devices[$device] ?? null ;
+        $device = $map['device'] ?? null ;
+        if($device) $map['device'] = $devices[strtolower($device)] ?? null ;
         return $this->split($map) ;
     }
 
     private function split($values): array
     {// split for network table
-        $keys = ['address','address6'];
-        $map = array_diff_key($values,array_fill_keys($keys,null));
-        foreach ($keys as $key){ $map['network'][$key] = $values[$key] ?? null; }
+        $netkeys = ['address','address6'];
+        $map = array_diff_key($values,array_fill_keys($netkeys,null));
+        foreach ($netkeys as $key){ $map['network'][$key] = $values[$key] ?? null; }
         return $map ;
     }
 
-    private function device_map()
+    private function strip($attributes): array
     {
-        $devices = $this->db()->selectAllFromTable('devices') ?? [];
-        $map = [];
-        foreach ($devices as $device){
-            $name = strtolower($device['name'] ?? '');
-            $map[$name] = $device['id'];
+        if(empty($attributes)){ return []; }
+        $assigned = array_flip($this->assigned_map());
+        $stripped = [];
+        foreach($attributes as $attribute){
+            $key = $assigned[$attribute->key] ?? null ;
+            $value = $attribute->value ?? null ;
+            if($key){ $stripped[$key] = $this->to_value($value);}
         }
-        return $map ;
+        return $stripped ;
+    }
+
+    private function to_value($value)
+    {
+        if(empty($value)) return null ;
+        return trim($value);
+    }
+
+    private function devmap(): array
+    {
+        if(empty($this->_devmap)){
+            $devices = $this->db()->selectAllFromTable('devices') ?? [];
+            foreach ($devices as $device){
+                $name = $device['name'] ?? 'Noname';
+                $this->_devmap[strtolower(trim($name))] = $device['id'] ?? null;
+            }
+        }
+        return $this->_devmap ;
     }
 
     private function attribute_id_map(): array
@@ -170,7 +190,7 @@ class ApiAttributes
     private function assigned_map(): array
     {// native key to assigned key map
         $conf = $this->conf();
-        $native_keys = array_keys($this->native_map());
+        $native_keys = array_keys($this->dbmap());
         $map = [];
         foreach ($native_keys as $native_key){
             $assigned = $conf->$native_key ?? null ;
@@ -179,7 +199,7 @@ class ApiAttributes
         return $map ;
     }
 
-    private function native_map(): array
+    private function dbmap(): array
     { // plugin native key to database key map
         return [
             'device_name_attr' => 'device',
@@ -197,7 +217,13 @@ class ApiAttributes
 
     private function db(){ return new ApiSqlite(); }
 
-    private function conf(){ return $this->db()->readConfig(); }
+    private function conf(): ?object
+    {
+        if(empty($this->_conf)){
+            $this->_conf = $this->db()->readConfig();
+        }
+        return $this->_conf;
+    }
 
     private function ucrm(){ return new ApiUcrm(); }
 
