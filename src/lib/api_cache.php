@@ -8,6 +8,7 @@ class ApiCache{
 
     private $_trim ;
     private $_cache ;
+    private $_conf ;
 
     public function save($request,$type = 'service')
     { //update a single service
@@ -181,7 +182,13 @@ class ApiCache{
 
     private function now(): string { return (new DateTime())->format('c'); }
 
-    private function conf() {return $this->db()->readConfig(); }
+    private function conf()
+    {
+        if(empty($this->_conf)){
+            $this->_conf = $this->db()->readConfig();
+        }
+        return $this->_conf;
+    }
 
     private function dbCache()
     {
