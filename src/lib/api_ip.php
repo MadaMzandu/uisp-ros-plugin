@@ -61,7 +61,7 @@ class ApiIP
         $field = $ip6 ? 'address6' : 'address';
         $set = $ip6 ? 'address' : 'address6';
         $sql = sprintf("INSERT OR REPLACE INTO network (id,%s,%s) ".
-            "VALUES (%s,'%s','(SELECT %s FROM network WHERE id = %s)')",
+            "VALUES (%s,'%s',(SELECT %s FROM network WHERE id = %s))",
         $field,$set,$sid,$address,$set,$sid);
         $this->memdb()->exec($sql);
     }
