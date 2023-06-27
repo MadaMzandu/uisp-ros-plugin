@@ -3,6 +3,8 @@ class MtData extends MT
 {
     private array $service = [];
     private array $plan = [];
+    private ?ApiIP $_ipApi = null;
+    private ?array $_devices = null ;
     
     public function set_data($service,$plan)
     {
@@ -226,31 +228,19 @@ class MtData extends MT
 
     private function ip($ip6 = false): ?string
     {
-        MyLog()->Append(sprintf("service %s ip address %s",$this->service['id'],$this->service['address']));
-        $preset = $this->service['address'] ?? null;
-        if($ip6) $preset = $this->service['address6'] ?? null;
-        $ip = $preset ?? $this->db()->selectIp($this->service['id'],$ip6);
-        if($ip){
-            MyLog()->Append('ip address found ' . $ip);
-            return $ip ;
-        }
-        MyLog()->Append('requesting ip');
-        $router_pool = $this->conf->router_ppp_pool ?? true ;
-        $type = $this->type();
-        $api = new ApiIP();
-        $sid = $this->service['id'];
-        $did = $this->service['device'] ?? 0 ;
-        $device = $this->db()->selectDeviceById($did);
-        if($type == 'ppp' && !$router_pool){
-            MyLog()->Append('requesting from global pool');
-            $test = $api->ip($sid,null,$ip6);
-            return $test ;
+        MyLog()->Append('checking for assigned address');
+        $assigned = $this->find_address($ip6);
+        if($assigned){ return $assigned; }
+        MyLog()->Append('requesting address assignment');
+        return $this->assign_address($ip6);
+    }
 
+    private function ipApi(): ApiIP
+    {
+        if(empty($this->_ipApi)){
+            $this->_ipApi = new ApiIP();
         }
-        else{
-            MyLog()->Append('requesting from device pool');
-            return $api->ip($sid,$device,$ip6);
-        }
+        return $this->_ipApi ;
     }
 
     private function profile_name(): string
@@ -369,6 +359,35 @@ class MtData extends MT
         if($user && $hotspot) return 'hotspot' ;
         if($user) return 'ppp';
         return 'invalid';
+    }
+
+    private function find_device(): ?object
+    {
+        if(empty($this->_devices)){
+            $read = $this->db()->selectAllFromTable('devices');
+            foreach ($read as $item){$this->_devices[$item['id']] = $item; }
+        }
+        $id = $this->service['device'] ?? 0 ;
+        $device = $this->_devices[$id] ?? null ;
+        return $device ? (object) $device : null ;
+    }
+
+    private function find_address($ip6): ?string
+    {
+        $type = $ip6 ? 'address6' : 'address';
+        $fixed = $this->service[$type] ?? null ;
+        if($fixed){ return $fixed; }
+        $service = $this->service['id'] ?? 0 ;
+        return $this->ipApi()->find_used($service,$ip6);
+    }
+
+    private function assign_address($ip6): ?string
+    {
+        $device = $this->find_device();
+        $router_pool = $this->conf->router_ppp_pool ?? true ;
+        if($this->type() == 'ppp' && !$router_pool){ $device = null; }
+        $service = $this->service['id'] ?? 0 ;
+        return $this->ipApi()->assign($service,$device,$ip6);
     }
 
     private function has_dhcp6(): string
