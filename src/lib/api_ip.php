@@ -9,7 +9,7 @@ class ApiIP
     private int $length6 = 64;
     private bool $ip6 = false;
     private ?SQLite3 $_memdb = null ;
-    private ?stdClass $_conf = null;
+    private ?object $_conf = null;
 
     public function ip($sid,$device = null,$ip6 = false): ?string
     {
