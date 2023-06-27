@@ -11,7 +11,7 @@ class ApiIP
     private ?SQLite3 $_memdb = null ;
     private ?object $_conf = null;
 
-    public function ip($sid,$device = null,$ip6 = false): ?string
+    public function assign($sid, $device = null, $ip6 = false): ?string
     {
         $this->ip6 = $ip6;
         $pool = $this->conf()->ppp_pool ;
