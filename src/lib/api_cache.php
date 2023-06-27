@@ -2,11 +2,12 @@
 const MyCacheVersion = '1.8.9';
 
 include_once 'api_trim.php';
-include_once 'api_ucrm.php';
+include_once '_web_ucrm.php';
 
 class ApiCache{
 
     private $_trim ;
+    private $_cache ;
 
     public function save($request,$type = 'service')
     { //update a single service
@@ -18,9 +19,9 @@ class ApiCache{
         $timer->stop();
     }
 
-    public function sync()
+    public function sync($force = false)
     {
-        if($this->needs_update()){
+        if($force || $this->needs_update()){
             if(!$this->attributes()->check_config()
                 || !$this->check_devices()){
                 return ;
@@ -44,7 +45,9 @@ class ApiCache{
             shell_exec('rm -f data/cache.db');
             $schema_file = 'includes/cache.sql';
             $schema = file_get_contents($schema_file);
-            if($this->dbCache()->exec($schema)){//reset cache time
+            $cache = new SQLite3('data/cache.db');
+            if($cache->exec($schema)){//reset cache time
+                $cache->close();
                 $state = ['cache_version' => MyCacheVersion,
                     'last_cache' => '2020-01-01','last_net' => '2020-01-01'];
                 $this->db()->saveConfig($state);
@@ -180,7 +183,13 @@ class ApiCache{
 
     private function conf() {return $this->db()->readConfig(); }
 
-    private function dbCache(){ return new ApiSqlite('data/cache.db'); }
+    private function dbCache()
+    {
+        if(empty($this->_cache)){
+            $this->_cache = new ApiSqlite('data/cache.db',true);
+        }
+        return $this->_cache;
+    }
 
    }
 
