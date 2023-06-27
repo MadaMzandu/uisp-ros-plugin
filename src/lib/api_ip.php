@@ -8,8 +8,8 @@ class ApiIP
 {
     private int $length6 = 64;
     private bool $ip6 = false;
-    private ?SQLite3 $_memdb = null ;
     private ?object $_conf = null;
+    private ?ApiSqlite $_db = null ;
 
     public function assign($sid, $device = null, $ip6 = false): ?string
     {
@@ -63,7 +63,7 @@ class ApiIP
         $sql = sprintf("INSERT OR REPLACE INTO network (id,%s,%s) ".
             "VALUES (%s,'%s',(SELECT %s FROM network WHERE id = %s))",
         $field,$set,$sid,$address,$set,$sid);
-        $this->memdb()->exec($sql);
+        $this->db()->exec($sql);
     }
 
 
@@ -78,7 +78,7 @@ class ApiIP
     {
         $field = $ip6 ? 'address6' : 'address';
         $sql = sprintf("SELECT %s FROM network WHERE id = %s",$field,$sid);
-        return $this->memdb()->querySingle($sql);
+        return $this->db()->singleQuery($sql);
     }
 
     private function valid($prefix): bool
@@ -114,7 +114,7 @@ class ApiIP
        if($this->ip6) $address = $address . '/' . $this->length6 ;
         $field = 'address';
        if($this->ip6) $field = 'address6';
-        $id = $this->memdb()->querySingle(
+        $id = $this->db()->singleQuery(
            sprintf("SELECT id FROM network WHERE %s = '%s'",$field,$address));
         return (bool) $id ;
     }
@@ -208,7 +208,10 @@ class ApiIP
 
     private function db(): ApiSqlite
     {
-        return new ApiSqlite();
+        if(empty($this->_db)){
+            $this->_db = new ApiSqlite(null,true);
+        }
+        return $this->_db ;
     }
 
     private function conf(): object
@@ -217,34 +220,6 @@ class ApiIP
             $this->_conf = $this->db()->readConfig();
         }
         return $this->_conf ;
-    }
-
-    private function memdb(): SQLite3
-    {
-        if(empty($this->_memdb)){
-            $this->_memdb = new SQLite3(':memory:');
-            $this->_memdb->busyTimeout(5000);
-            $this->_memdb->enableExceptions(true);
-            $this->_memdb->exec('ATTACH "data/data.db" AS tmp');
-            $this->_memdb->exec('CREATE TABLE "network" AS SELECT * FROM tmp."network"');
-            $this->_memdb->exec('CREATE INDEX "address_index" ON "network" ("address");'.
-                'CREATE INDEX "address6_index" ON "network" ("address6");');
-            $this->_memdb->exec('DETACH tmp');
-        }
-        return $this->_memdb ;
-    }
-
-    private function memdb_close(){
-        if(!empty($this->_memdb)){
-            $this->_memdb->exec('ATTACH "data/data.db" AS tmp');
-            $this->_memdb->exec('INSERT OR REPLACE INTO tmp."network" SELECT * FROM network');
-            $this->_memdb->close();
-        }
-    }
-
-    public function __destruct()
-    {
-        $this->memdb_close();
     }
 
 }
