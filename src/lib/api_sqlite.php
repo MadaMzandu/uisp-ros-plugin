@@ -6,6 +6,8 @@ class ApiSqlite
 
     private string $path;
     private $read;
+    private bool $mem  ;
+    private ?SQLite3 $_db = null;
 
     public function insert($data,$table = 'services',$replace = false): bool
     { //insert single row or batch
@@ -223,10 +225,44 @@ class ApiSqlite
 
     private function db(): SQLite3
     {
-        $db = new SQLite3($this->path);
-        $db->busyTimeout(5000);
-        $db->enableExceptions(true);
-        return $db ;
+        if(empty($this->_db)){
+            $path = $this->mem ? ':memory:' : $this->path ;
+            $this->_db = new SQLite3($path);
+            $this->_db->busyTimeout(5000);
+            $this->_db->enableExceptions(true);
+            if($this->mem){ $this->load_disk(); }
+        }
+        return $this->_db ;
+    }
+
+    public function test (){ return $this->db(); }
+
+    private function load_disk()
+    {
+        $cache = $this->path != 'data/data.db';
+        $schema = $cache ? 'includes/cache.sql' : 'includes/schema.sql';
+        $this->_db->exec(file_get_contents($schema));
+        $this->_db->exec(sprintf('ATTACH "%s" as tmp',$this->path));
+        $tables = $cache ? 'services,network,clients' : 'network';
+        foreach (explode(',',$tables) as $table){
+            $sql = sprintf('INSERT INTO "%s" SELECT * FROM tmp."%s"',$table,$table);
+            $this->_db->exec($sql);
+        }
+        $this->_db->exec('DETACH tmp');
+    }
+
+    private function save_disk()
+    {
+        if($this->mem){
+            $this->_db->exec(sprintf('ATTACH "%s" as tmp',$this->path));
+            $cache = $this->path != 'data/data.db';
+            $tables = $cache ? 'services,network,clients' : 'network';
+            foreach (explode(',',$tables) as $table){
+                $sql = sprintf('INSERT OR REPLACE INTO tmp."%s" SELECT * FROM "%s"',$table,$table);
+                $this->_db->exec($sql);
+            }
+            $this->_db->close();
+        }
     }
     
     public function execQuery($sql)
@@ -264,121 +300,13 @@ class ApiSqlite
         return json_encode($status);
     }
 
-    public function __construct($path = null){ $this->path = $path ?? 'data/data.db'; }
+    public function __construct($path = null,$mem = false)
+    { $this->path = $path ?? 'data/data.db'; $this->mem = $mem; }
 
-//    public function ifServiceIdExists($id)
-//    {
-//        $sql = "select id from services where id=" . $id;
-//        return $this->singleQuery($sql);
-//    }
-//    public function countDeviceServicesByPlanId($planId, $deviceId)
-//    {
-//        $sql = "select count(services.id) from services "
-//            . "where planId=" . $planId . " and device=" . $deviceId;
-//        return $this->singleQuery($sql);
-//    }
-//    public function ifIpAddressIsUsed($address)
-//    {
-//        $sql = "select id from services where address='"
-//            . $address . "' or prefix6='" . $address . "'";
-//        return $this->singleQuery($sql);
-//    }
-//    public function selectServicesOnDevice($device_id,$limit=null,$offset=null)
-//    {
-//        if($limit) $limit = ' LIMIT ' . $limit ;
-//        if($offset) $offset = ' OFFSET ' . $offset ;
-//        $sql = "select * from services where device=" . $device_id . $limit . $offset;
-//        $res = $this->query($sql);
-//        $return = null;
-//        while ($row = $res->fetchArray(SQLITE3_ASSOC)) {
-//            $return[] = $row;
-//        }
-//        return $return;
-//    }
-//    public function selectServiceById($id): ?stdClass
-//    {
-//        $sql = "select services.*,devices.name as deviceName from services left join devices "
-//            . "on services.device=devices.id where services.id=" . $id;
-//        return (object)$this->singleQuery($sql,true) ?? null;
-//    }
-//    public function selectTargets($id, $devId)
-//    {
-//        $sql = "select address from services where planId=" . $id . " and device=" . $devId;
-//        $res = $this->query($sql);
-//        $return = null;
-//        while ($row = $res->fetchArray(SQLITE3_ASSOC)) {
-//            $return[$row['address']] = $row['address'];
-//        }
-//        return $return;
-//    }
-//    public function setVersion($version)
-//    {
-//        $sql = "update config set value='" . $version . "' where key='version'";
-//        return $this->execQuery($sql);
-//    }
-//    public function deleteAll($table)
-//    {
-//        $sql = "delete from " . $table;
-//        return $this->execQuery($sql);
-//    }
-//    private function getTime()
-//    {
-//        return (new DateTime())->format('c');
-//    }
-    //    public function edit($data, $table = 'services')
-//    {
-//        if (!(is_array($data) || is_object($data))) {
-//            return false;
-//        }
-//        $this->data = is_array($data) ? $data : (array)$data;
-//        $this->id = $this->data['id'];
-//        unset($this->data['id']);
-//        $this->table = $table;
-//        return $this->execQuery($this->prepareUpdate());
-//    }
-
-//    private function prepareUpdate()
-//    {
-//        $sql = 'update ' . $this->table . " set ";
-//        $this->data['last'] = $this->getTime();
-//        $keys = array_keys($this->data);
-//        $fields = '';
-//        foreach ($keys as $key) {
-//            if (is_null($this->data[$key])) {
-//                continue;
-//            }
-//            $fields .= $key . "='" . $this->data[$key] . "',";
-//        }
-//        return $sql . substr($fields, 0, -1) . " where id=" . $this->id;
-//    }
-
-//    public function insert($data, $table = 'services')
-//    {
-//        if (!(is_array($data) || is_object($data))) {
-//            return false;
-//        }
-//        $this->data = is_array($data) ? $data : (array)$data;
-//        $this->table = $table;
-//        return $this->execQuery($this->prepareInsert());
-//    }
-
-//    private function prepareInsert()
-//    {
-//        $sql = 'insert into ' . $this->table . " (";
-//        $this->data['created'] = $this->getTime();
-//        $keys = array_keys($this->data);
-//        $valid_keys = [];
-//        $values = [];
-//        foreach ($keys as $key) {
-//            if (is_null($this->data[$key])) {
-//                continue;
-//            }
-//            $valid_keys[] = $key ;
-//            $values[] = "'" . $this->data[$key] . "'";
-//        }
-//        return $sql . implode(',', $valid_keys) . ") values (" .
-//            implode(',', $values) . ")";
-//    }
+    public function __destruct()
+    {
+        $this->save_disk();
+    }
 
 
 }
