@@ -46,9 +46,7 @@ class ApiCache{
             shell_exec('rm -f data/cache.db');
             $schema_file = 'includes/cache.sql';
             $schema = file_get_contents($schema_file);
-            $cache = new SQLite3('data/cache.db');
-            if($cache->exec($schema)){//reset cache time
-                $cache->close();
+            if($this->dbCache()->exec($schema)){//reset cache time
                 $state = ['cache_version' => MyCacheVersion,
                     'last_cache' => '2020-01-01','last_net' => '2020-01-01'];
                 $this->db()->saveConfig($state);
@@ -193,7 +191,7 @@ class ApiCache{
     private function dbCache()
     {
         if(empty($this->_cache)){
-            $this->_cache = new ApiSqlite('data/cache.db',true);
+            $this->_cache = new ApiSqlite('data/cache.db');
         }
         return $this->_cache;
     }
