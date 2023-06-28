@@ -46,8 +46,8 @@ class Api_Jobs extends Admin
             if($action == 'delete'){ $delete[] = $item['id'] ;}
         }
         $api = new MtBatch();
-        $api->set_ids($set);
-        $api->delete_ids($delete);
+        $api->set_accounts($set);
+        $api->del_accounts($delete);
     }
 
 //    private function run_item($item): object

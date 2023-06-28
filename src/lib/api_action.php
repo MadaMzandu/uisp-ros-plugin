@@ -48,24 +48,24 @@ class ApiAction
                     MyLog()->Append('action delete then set');
                     $cache->save($data['previous']);
                     $delete = $this->get('id',$data,'old');
-                    $api->delete_ids([$delete]);
+                    $api->del_accounts([$delete]);
                     $cache->save($data['entity']);
                     $set = $this->get('id',$data);
-                    $api->set_ids([$set]);
+                    $api->set_accounts([$set]);
                     break ;
                 }
                 case ACTION_SET:{
                     MyLog()->Append('action set');
                     $cache->save($data['entity']);
                     $set = $this->get('id',$data);
-                    $api->set_ids([$set]);
+                    $api->set_accounts([$set]);
                     break;
                 }
                 case ACTION_DELETE:{
                     MyLog()->Append('action delete');
                     $cache->save($data['entity']);
                     $delete = $this->get('id',$data);
-                    $api->delete_ids([$delete]);
+                    $api->del_accounts([$delete]);
                     //$this->attributes()->unset_attr($delete);
                     break ;
                 }
@@ -76,7 +76,7 @@ class ApiAction
                 case ACTION_CACHE: {
                     MyLog()->Append('service missing relevant attributes - delete before cache');
                     $delete = $this->get('id',$data);
-                    $api->delete_ids([$delete]);
+                    $api->del_accounts([$delete]);
                     $cache->save($data['entity']);
                     break;
                 }

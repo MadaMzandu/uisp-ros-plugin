@@ -45,7 +45,7 @@ class AdminDevices extends Admin
             ("SELECT id FROM services WHERE device = %s AND status NOT IN (2,5,8) ",$id));
         foreach ($select as $item) $ids[] = $item['id'];
         $api = new MtBatch();
-        $api->delete_ids($ids);
+        $api->del_accounts($ids);
     }
 
     public function edit(): bool

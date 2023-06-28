@@ -50,7 +50,7 @@ class AdminRebuild{
         MyLog()->Append(sprintf('found %s services to rebuild',sizeof($ids)));
         if($clear) { $this->clear($type,$ids); }
         $batch = new MtBatch();
-        $batch->set_ids($ids);
+        $batch->set_accounts($ids);
         $timer->stop();
     }
 

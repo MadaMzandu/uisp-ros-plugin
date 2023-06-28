@@ -78,7 +78,7 @@ class Settings extends Admin
         else{
             $sys->rebuild(['type' => 'all']);
             $batch = new MtBatch();
-            $batch->delete_parents();
+            $batch->del_parents();
         }
         return true;
     }
