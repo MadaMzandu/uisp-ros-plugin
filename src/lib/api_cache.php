@@ -1,5 +1,5 @@
 <?php
-const MyCacheVersion = '1.8.9';
+const MyCacheVersion = '1.8.10';
 
 include_once 'api_trim.php';
 include_once 'api_ucrm.php';

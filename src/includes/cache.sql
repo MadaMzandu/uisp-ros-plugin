@@ -17,6 +17,8 @@ CREATE TABLE IF NOT EXISTS "services" (
        "planId" INTEGER,
        "device" INTEGER ,
        "status" INTEGER ,
+       "uploadSpeed" REAL,
+       "downloadSpeed" REAL,
        "username" TEXT COLLATE NOCASE,
        "password" TEXT,
        "mac" TEXT COLLATE NOCASE,

@@ -44,6 +44,8 @@ class ApiTrim
             'servicePlanId',
             'clientId',
             'status',
+            'uploadSpeed',
+            'downloadSpeed',
             'price',
             'totalPrice',
             'currencyCode',
