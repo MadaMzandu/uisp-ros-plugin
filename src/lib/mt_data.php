@@ -58,10 +58,11 @@ class MtData extends MT
     {
         if(!in_array($this->type(),['dhcp','dhcp6'])) return null ;
         $limits = $this->limits();
+        $id = $this->service['id'] ?? rand(1000000);
         if($this->disabled() && $this->disabled_rate()){
             return [
                 'path' => '/queue/simple',
-                'name' => $this->account_name(),
+                'name' => sprintf('%s - %s',$this->account_name(),$id),
                 'target' => $this->ip(),
                 'max-limit' => $this->disabled_rate(),
                 'limit-at' => $this->disabled_rate(),
