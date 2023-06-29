@@ -14,7 +14,7 @@ class ApiIP
     public function assign($sid, $device = null, $ip6 = false): ?string
     {
         $this->ip6 = $ip6;
-        $pool = $this->conf()->ppp_pool ;
+        $pool = $this->conf()->ppp_pool ?? null ;
         if((array) $device){
             $this->length6 = $device->pfxLength ?? 64;
             $pool = $ip6 ? $device->pool6 : $device->pool ;
