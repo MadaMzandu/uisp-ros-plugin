@@ -6,10 +6,13 @@ include_once 'api_sqlite.php';
 
 class MtBatch extends MT
 {
-    public function delete_parents()
+    private ?array $_service_plans = null;
+    private ?array $_devices = null ;
+
+    public function del_parents()
     {
-        $plans = $this->select_plans();
-        $devices = $this->select_devices();
+        $plans = $this->find_plans();
+        $devices = $this->find_devices();
         $deviceData = [];
         foreach(array_keys($devices) as $did){
             foreach ($plans as $plan){
@@ -24,20 +27,17 @@ class MtBatch extends MT
         $this->run_batch($deviceData,true);
     }
 
-    public function delete_ids(array $ids)
+    public function del_accounts(array $ids)
     {
         $deviceServices = $this->select_ids($ids,'delete');
-        $plans = $this->select_plans();
+        $plans = $this->find_plans();
         $deviceData = [];
         $mt = new MtData();
         foreach (array_keys($deviceServices) as $did){
             if($did == 'nodev'){ continue; }
             foreach($deviceServices[$did] as $service){
-                $plan = $plans[$service['planId']] ;
-                if(!$plan){
-                    MyLog()->Append(sprintf('batch plan for client %s not found',$service['clientId']),6);
-                    continue;
-                }
+                $plan = $plans[$service['planId']] ?? null;
+                if(!$plan){ $plan = $this->make_plan($service); } //generate plan if not found
                 $mt->set_data($service,$plan);
                 $account = $mt->account();
                 if($account){
@@ -82,21 +82,16 @@ class MtBatch extends MT
     public function set_queues(array $ids,$on = true)
     {
         $deviceServices = $this->select_ids($ids,'update');
-        $plans = $this->select_plans();
+        $plans = $this->find_plans();
         $deviceData = [];
         $mt = new MtData();
         $device_ids = [];
         foreach (array_keys($deviceServices) as $did) {
             $device_ids[] = $did;
             foreach ($deviceServices[$did] as $service) {
-                if ($did == 'nodev') {
-                    continue;
-                }
-                $plan = $plans[$service['planId']];
-                if (!$plan) {
-                    MyLog()->Append(sprintf('batch plan for client %s not found', $service['clientId']), 6);
-                    continue;
-                }
+                if ($did == 'nodev') { continue; }
+                $plan = $plans[$service['planId']] ?? null ;
+                if(!$plan){ $plan = $this->make_plan($service); } //generate plan if not found
                 $mt->set_data($service,$plan);
                 $queue = $mt->queue();
                 if($queue){
@@ -117,20 +112,17 @@ class MtBatch extends MT
         $this->db()->saveConfig(['disabled_routers' => implode(',',$routers)]);
     }
 
-    public function set_ids(array $ids)
+    public function set_accounts(array $ids)
     {
         $deviceServices = $this->select_ids($ids,'update');
-        $plans = $this->select_plans();
+        $plans = $this->find_plans();
         $deviceData = [];
         $mt = new MtData();
         foreach (array_keys($deviceServices) as $did){
             foreach ($deviceServices[$did] as $service){
                 if($did == 'nodev'){ continue; }
-                $plan = $plans[$service['planId']] ;
-                if(!$plan){
-                    MyLog()->Append(sprintf('batch plan for client %s not found',$service['clientId']),6);
-                    continue;
-                }
+                $plan = $plans[$service['planId']] ?? null ;
+                if(!$plan){ $plan = $this->make_plan($service); } //generate plan if not found
                 $mt->set_data($service,$plan);
                 $account = $mt->account();
                 if($account){ $deviceData[$did]['accounts'][] = $account ; }
@@ -156,7 +148,7 @@ class MtBatch extends MT
     private function run_batch($deviceData,$delete = false)
     {
         $timer = new ApiTimer("mt batch write");
-        $devices = $this->select_devices();
+        $devices = $this->find_devices();
         $sent = 0 ;
         $writes = 0 ;
         $this->batch_failed = [];
@@ -198,16 +190,14 @@ class MtBatch extends MT
                 $success = $this->batch_success[$id] ?? null ;
                 if($success){
                     $values = [];
-                    foreach ($fields as $key){ $values[] = $service[$key] ?? null ;}
+                    foreach ($fields as $key){ $values[$key] = $service[$key] ?? null ;}
                     $values['last'] = $this->now();
                     $save[] = $values;
                 }
             }
         }
-        $sql = sprintf("insert or replace into services (%s,last) values ",implode(',',$fields));
-        $sql .= $this->to_sql($save);
-        MyLog()->Append('batch: saving data '.$sql);
-        $this->db()->exec($sql);
+        MyLog()->Append('batch: saving data ');
+        $this->db()->insert($save,'services',true);
     }
 
     private function unsave_batch($deviceServices)
@@ -251,29 +241,16 @@ class MtBatch extends MT
         file_put_contents('data/queue.json',json_encode($queue));
     }
 
-    private function to_sql($array): string
+    private function find_plans(): array
     {
-        $query = [];
-        foreach ($array as $row){
-            $values = [];
-            foreach($row as $value){
-                if(is_null($value)) $values[] = 'null';
-                else if(is_numeric($value)) $values[] = $value;
-                else $values[] = sprintf("'%s'",$value);
-            }
-            $query[] = sprintf("(%s)",implode(',',$values));
-        }
-        return implode(',',$query);
-    }
-
-    private function select_plans(): array
-    {
-        $api = new AdminPlans();
-        $api->get();
-        $plans = $api->result();
-        $map = [];
-        foreach ($plans as $plan){ $map[$plan['id']] = $plan; }
-        return $map ;
+       if(empty($this->_service_plans)){
+           $api = new AdminPlans();
+           $api->get();
+           $plans = $api->result();
+           foreach ($plans as $plan){
+               $this->_service_plans[$plan['id']] = $plan; }
+       }
+       return $this->_service_plans ;
     }
 
     private function select_ids(array $ids,$action): array
@@ -294,15 +271,31 @@ class MtBatch extends MT
         return $deviceMap ;
     }
 
-    private function select_devices(): array
+    private function find_devices(): array
     {
-        $devs = $this->db()->selectAllFromTable('devices') ?? [];
-        $map = [];
-        foreach ($devs as $dev){ $map[$dev['id']] = $dev; }
-        return $map ;
+        if(empty($this->_devices)){
+            $devs = $this->db()->selectAllFromTable('devices') ?? [];
+            foreach ($devs as $dev){ $this->_devices[$dev['id']] = $dev; }
+        }
+        return $this->_devices ;
     }
 
-    private function now(): string {$date = new DateTime(); return $date->format('Y-m-d H:i:s'); }
+    private function make_plan($service): array
+    {
+        $ul = $service['uploadSpeed'] ?? 1 ;
+        $dl = $service['downloadSpeed'] ?? 1 ;
+        $defaults = ['priorityUpload' => 8,'priorityDownload' => 8,'timeUpload' => 1,'timeDownload' => 1,
+            'uploadSpeed' => $ul,'downloadSpeed' => $dl];
+        $keys = ['ratio','priorityUpload','priorityDownload','limitUpload','limitDownload',
+            'burstUpload','burstDownload','threshUpload','threshDownload','timeUpload','timeDownload',
+            'uploadSpeed','downloadSpeed'];
+        $plan = [];
+        foreach ($keys as $key){ $plan[$key] = $defaults[$key] ?? 0 ;}
+        $plan['name'] = sprintf('Custom Plan %s/%s',$ul,$dl);
+        return $plan ;
+    }
+
+    private function now(): string {$date = new DateTime(); return $date->format('c'); }
 
 
 }
