@@ -207,7 +207,6 @@ class MT extends Device
             $item  = $read[0] ?? [];
             $id = $item['.id'] ?? null ;
             if($id && is_string($id)){
-                MyLog()->Append('THIS IS MY ID '.$id);
                 if(preg_match("/(binding)|(lease)/",$path)){ //convert dynamic lease
                     MyLog()->Append('THIS IS A DHCP LEASE');
                     $dynamic = $item['dynamic'] ?? 'false' ;
@@ -231,13 +230,10 @@ class MT extends Device
 
     protected  function make_static_lease($id,$path): void
     {
-        MyLog()->Append('ATTEMPTING TO CONVERT A DYNAMIC LEASE');
         $command = sprintf('/%s/make-static',trim($path,'/'));
-        MyLog()->Append('THIS IS MY COMMAND '.$command);
         $this->api->write($command,false);
         $this->api->write('=.id=' . $id);
-        $read = $this->api->read();
-        MyLog()->Append('MAKE STATIC RESULT '.json_encode($read));
+        $this->api->read();
     }
 
     protected function prep_data($data): array
