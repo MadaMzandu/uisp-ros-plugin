@@ -131,10 +131,11 @@ class ApiIP
     {
         $gmp_last = $this->gmp_bcast($prefix);
         $gmp_first = $this->ip2gmp($prefix);
-        while(gmp_cmp($gmp_first,$gmp_last) < 1){
-            $gmp_first = $this->gmp_next($gmp_first);
-            if($this->excluded($gmp_first)) continue; //skip excluded
-            $ip = $this->gmp2ip($gmp_first);
+        for($assign = $gmp_first;
+            gmp_cmp($assign,$gmp_last) < 0; // less than bcast address
+            $assign = $this->gmp_next($assign)){
+            if($this->excluded($assign)) continue; //skip excluded
+            $ip = $this->gmp2ip($assign);
             if($this->is_odd($ip)) continue ; // skip zeros and xFFFF
             if ($this->is_used($ip)) continue; // skip used
             return $ip ;
