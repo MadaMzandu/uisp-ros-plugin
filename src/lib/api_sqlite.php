@@ -243,7 +243,7 @@ class ApiSqlite
         $schema = $cache ? 'includes/cache.sql' : 'includes/schema.sql';
         $this->_db->exec(file_get_contents($schema));
         $this->_db->exec(sprintf('ATTACH "%s" as tmp',$this->path));
-        $tables = $cache ? 'services,network,clients' : 'network';
+        $tables = $cache ? 'services,network,clients' : 'config,network';
         foreach (explode(',',$tables) as $table){
             $sql = sprintf('INSERT INTO "%s" SELECT * FROM tmp."%s"',$table,$table);
             $this->_db->exec($sql);
@@ -256,7 +256,7 @@ class ApiSqlite
         if($this->mem){
             $this->_db->exec(sprintf('ATTACH "%s" as tmp',$this->path));
             $cache = $this->path != 'data/data.db';
-            $tables = $cache ? 'services,network,clients' : 'network';
+            $tables = $cache ? 'services,network,clients' : 'config,network';
             foreach (explode(',',$tables) as $table){
                 $sql = sprintf('INSERT OR REPLACE INTO tmp."%s" SELECT * FROM "%s"',$table,$table);
                 $this->_db->exec($sql);
