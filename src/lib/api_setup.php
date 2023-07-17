@@ -45,7 +45,7 @@ class ApiSetup
         }
         $this->close();
         set_error_handler('myErrorHandler');
-        if($count > $total - REPEAT_STATEMENTS){
+        if($count >= $total - REPEAT_STATEMENTS){
             MyLog()->Append(sprintf('update: %s of %s statements executed',$count,$total));
             copy('data/tmp.db','data/data.db');
             shell_exec('rm -f data/tmp.db');
@@ -72,9 +72,9 @@ class ApiSetup
     {
         $file = file_get_contents('includes/conf_default.json');
         $default = json_decode($file,true);
-        $conf = (array) $this->db()->readConfig();
+        $conf = (array) $this->dbApi()->readConfig();
         $diff = array_diff_key($default,$conf);
-        return $this->db()->saveConfig($diff);
+        return $this->dbApi()->saveConfig($diff);
     }
 
     private function update_schema(): ?array
@@ -89,7 +89,8 @@ class ApiSetup
 
     private  function set_version(): void
     {
-        $this->db()->saveConfig(['version' => MY_VERSION]);
+
+        $this->dbApi()->saveConfig(['version' => MY_VERSION]);
     }
 
     private function db_backup(): bool
@@ -139,9 +140,9 @@ class ApiSetup
 
     private function needs_update(): bool
     {
-        if($this->needs_cols()) return true ;
-        $running = $this->db()->readConfig()->version ?? '0.0.0' ;
-        return $running != MY_VERSION ;
+        if($this->needs_columns()) return true ;
+        $running = $this->dbApi()->readConfig()->version ?? '0.0.0' ;
+        return trim($running) != MY_VERSION ;
     }
 
     private function needs_db(): bool
@@ -151,8 +152,8 @@ class ApiSetup
         return false ;
     }
 
-    private function needs_cols(): bool
-    {
+    private function needs_columns(): bool
+    { //check for missing columns
         $schema = [];
         $file = 'includes/cols.json';
         if(is_file($file)) $schema = json_decode(file_get_contents($file),true);
@@ -210,6 +211,11 @@ class ApiSetup
             $this->_db->busyTimeout(5000);
         }
         return $this->_db ;
+    }
+
+    private function dbApi(): ApiSqlite
+    {
+        return new ApiSqlite();
     }
 }
 
