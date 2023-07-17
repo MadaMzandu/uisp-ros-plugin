@@ -6,6 +6,11 @@ function myErrorHandler($errno, $errstr, $errfile, $errline){
         $errno,$errstr,$errfile,$errline),7);
 }
 
+function dbUpdateHandler($errno, $errstr, $errfile, $errline){
+    MyLog()->Append('Update chunk rejected - this is normal');
+}
+
+
 function backup_restore(){
     try{
         $sec = \Ubnt\UcrmPluginSdk\Service\UcrmSecurity::create();

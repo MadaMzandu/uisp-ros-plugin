@@ -1,0 +1,48 @@
+{
+  "plans": [
+    "id",
+    "ratio",
+    "priorityUpload",
+    "priorityDownload",
+    "limitUpload",
+    "limitDownload",
+    "burstUpload",
+    "burstDownload",
+    "threshUpload",
+    "threshDownload",
+    "timeUpload",
+    "timeDownload",
+    "last",
+    "created"
+  ],
+  "services": [
+    "id",
+    "device",
+    "clientId",
+    "planId",
+    "status",
+    "last",
+    "created"
+  ],
+  "network": [
+    "id",
+    "address",
+    "address6",
+    "last",
+    "created"
+  ],
+  "devices": [
+    "id",
+    "name",
+    "ip",
+    "type",
+    "user",
+    "password",
+    "dbname",
+    "pool",
+    "pool6",
+    "pfxLength",
+    "last",
+    "created"
+  ]
+}

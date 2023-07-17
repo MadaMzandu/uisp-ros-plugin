@@ -1,6 +1,8 @@
 <?php
+//remember to update cols file and repeats when schema changes
 const MY_VERSION = '2.0.1';
 const MAX_BACKUPS = 6 ;
+const REPEAT_STATEMENTS  = 4; //number of statements expected to fail during update
 
 include_once 'api_sqlite.php';
 include_once 'api_logger.php';
@@ -8,6 +10,8 @@ include_once 'api_timer.php';
 
 class ApiSetup
 {
+    private $_db ;
+
     public function run(){
         $timer = new ApiTimer('db setup: ');
         if($this->needs_db()){
@@ -34,12 +38,14 @@ class ApiSetup
         MyLog()->Append('starting db update');
         $schema = $this->update_schema();
         shell_exec('rm -f data/tmp.db');
-        $db = new SQLite3('data/data.db');
-        $count = 0 ; $total = sizeof($schema) ; $repeats = 4;
+        $count = 0 ; $total = sizeof($schema) ;
+        set_error_handler('dbUpdateHandler');
         foreach($schema as $stm){
-            if($db->exec($stm)){ $count++; }
+            if($this->db()->exec($stm)){ $count++; }
         }
-        if($count > $total - $repeats){
+        $this->close();
+        set_error_handler('myErrorHandler');
+        if($count > $total - REPEAT_STATEMENTS){
             MyLog()->Append(sprintf('update: %s of %s statements executed',$count,$total));
             copy('data/tmp.db','data/data.db');
             shell_exec('rm -f data/tmp.db');
@@ -133,6 +139,7 @@ class ApiSetup
 
     private function needs_update(): bool
     {
+        if($this->needs_cols()) return true ;
         $running = $this->db()->readConfig()->version ?? '0.0.0' ;
         return $running != MY_VERSION ;
     }
@@ -140,8 +147,22 @@ class ApiSetup
     private function needs_db(): bool
     {
         $file = 'data/data.db';
-        if(!file_exists($file)) return true ;
-        return !$this->db()->has_tables();
+        if(!is_file($file)) return true ;
+        return false ;
+    }
+
+    private function needs_cols(): bool
+    {
+        $schema = [];
+        $file = 'includes/cols.json';
+        if(is_file($file)) $schema = json_decode(file_get_contents($file),true);
+        foreach(array_keys($schema) as $table){
+            $q = $this->db()->query(sprintf('PRAGMA table_info("%s")',$table));
+            $cols = [];
+            while($row = $q->fetchArray(SQLITE3_ASSOC)){ $cols[] = $row['name'];}
+            if(array_diff($schema[$table],$cols)) { return true; }
+        }
+        return false ;
     }
 
     private function now(): string
@@ -156,6 +177,12 @@ class ApiSetup
             $this->save($this->default_state());
         }
         return json_decode(file_get_contents($file));
+    }
+
+    private function close(): void
+    {
+        $this->db()->close();
+        $this->_db = null ;
     }
 
     private function save($state): void
@@ -176,9 +203,13 @@ class ApiSetup
         );
     }
 
-    private function db(): ApiSqlite
+    private function db(): SQLite3
     {
-        return new ApiSqlite();
+        if(empty($this->_db)){
+            $this->_db = new SQLite3('data/data.db');
+            $this->_db->busyTimeout(5000);
+        }
+        return $this->_db ;
     }
 }
 
