@@ -3,7 +3,7 @@
     "name": "name",
     "label": "Nom du routeur",
     "describe": true,
-    "description": "Définissez le nom désisé pour le routeur. Le nom ne peut pas être modifié si le routeur a des utilisateurs.",
+    "description": "Définissez le nom désiré pour le routeur. Le nom ne peut pas être modifié si le routeur a des utilisateurs.",
     "hint": "",
     "width": null,
     "obscure": null,
