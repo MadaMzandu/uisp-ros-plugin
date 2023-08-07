@@ -178,8 +178,9 @@ class ApiAction
         return $new && $old && $new != $old ;
     }
 
-    private function get($key,$data,$entity = 'entity')
+    private function get($key,$data,$type = 'entity')
     {
+        $entity = $type == 'entity' ? $type : 'previous';
         $value = $data[$entity][$key] ?? null ;
         return $value ? trim($value) : null ;
     }
