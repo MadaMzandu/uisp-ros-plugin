@@ -75,7 +75,8 @@ class MtBatch extends MT
         }
         MyLog()->Append('services ready to delete');
         $this->run_batch($deviceData,true);
-        $this->unsave_batch($deviceServices);
+        $clear = $this->unsave_batch($deviceServices);
+        $mt->ip_clear($clear);
         $this->queue_failed($deviceServices);
     }
 
@@ -200,9 +201,9 @@ class MtBatch extends MT
         $this->db()->insert($save,'services',true);
     }
 
-    private function unsave_batch($deviceServices)
+    private function unsave_batch($deviceServices): array
     {
-        if(empty($this->batch_success)) return ;
+        if(empty($this->batch_success)) return [];
         $ids = [];
         foreach ($deviceServices as $services){
             foreach ($services as $service){
@@ -219,6 +220,7 @@ class MtBatch extends MT
             MyLog()->Append(sprintf("batch delete from %s sql: %s",$table,$sql));
             $this->db()->exec($sql);
         }
+        return $ids ;
     }
 
     private function queue_failed($deviceServices)

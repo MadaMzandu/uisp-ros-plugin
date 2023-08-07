@@ -12,7 +12,12 @@ class MtData extends MT
         $this->plan = $plan ;
         MyLog()->Append('account data: '.json_encode([$service,$plan]));
     }
-    
+
+    public function ip_clear($ids):void
+    {
+        $this->ipApi()->clear($ids);
+    }
+
     public function account(): ?array
     {
         $data = null ;
