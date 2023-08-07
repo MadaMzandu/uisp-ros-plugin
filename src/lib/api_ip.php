@@ -66,7 +66,6 @@ class ApiIP
         $this->db()->exec($sql);
     }
 
-
     private function find_unused($prefix): ?string
     {
         if(!$this->valid($prefix)) return null ;
