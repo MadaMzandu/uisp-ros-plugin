@@ -42,9 +42,8 @@ class ApiIP
 
     public function clear($ids)
     {
-        $this->db()->exec(sprintf('delete from network where id in (%s)',
-        implode(',',$ids)
-        ));
+        $this->db()->exec(sprintf(
+            'delete from network where id in (%s)', implode(',',$ids)));
     }
 
     public function local(): string
@@ -117,12 +116,12 @@ class ApiIP
 
     public function is_used($address): bool
     {
-       if($this->ip6) $address = $address . '/' . $this->length6 ;
+        if($this->ip6) $address = $address . '/' . $this->length6;
         $field = 'address';
-       if($this->ip6) $field = 'address6';
+        if($this->ip6) $field = 'address6';
         $id = $this->db()->singleQuery(
-           sprintf("SELECT id FROM network WHERE %s = '%s'",$field,$address));
-        return (bool) $id ;
+        sprintf("SELECT id FROM network WHERE %s = '%s'", $field, $address));
+        return (bool)$id;
     }
 
     private function type($address): ?string
@@ -181,7 +180,7 @@ class ApiIP
     private function gmp_next($gmp_addr)
     {
         $next = !$this->ip6 ? 1
-            : gmp_pow(IP_PWR2,$this->length6);
+            : $this->gmp_hosts($this->length6);
         return gmp_add($gmp_addr,$next);
     }
 
