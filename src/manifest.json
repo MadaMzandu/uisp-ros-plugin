@@ -26,5 +26,14 @@
                 "page": "panel"
             }
         }
-    ]
+    ],
+  "configuration": [
+    {
+      "key": "debugEnable",
+      "label": "Enable Debugging",
+      "description": "Enable verbose log output for debugging",
+      "type": "checkbox",
+      "required": 0
+    }
+  ]
 }

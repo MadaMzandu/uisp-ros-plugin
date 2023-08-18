@@ -7,7 +7,8 @@ class ApiLogger
 {
     public function Append($entry, $level = LOG_DEBUG)
     {
-        if ($level > API_DEBUG_LEVEL) return;
+        if (!$this->Debug() && $level >= LOG_DEBUG){ return; }
+        if(is_array($entry)){ $entry = json_encode($entry); }
 //        error_log(sprintf("%s: %s",$this->Time(), $entry) . PHP_EOL,3,'data/plugin.log');
 //      echo sprintf("%s: %s",$this->Time(), $entry) . PHP_EOL;
        $this->ULog()->appendLog(sprintf("%s: %s",$this->Time(), $entry));
@@ -15,8 +16,11 @@ class ApiLogger
 
     private function Debug(): bool
     {
-        $cm = \Ubnt\UcrmPluginSdk\Service\PluginConfigManager::create();
-        return (bool)$cm->loadConfig()['debugEnable'];
+        $fn = 'data/config.json';
+        if(!is_file($fn)){ return '0'; }
+        $file = file_get_contents($fn) ?? '{}';
+        $conf = json_decode($file);
+        return $conf->debugEnable ?? '0';
     }
 
     private function ULog()
