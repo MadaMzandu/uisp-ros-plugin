@@ -21,7 +21,10 @@ class ApiTrim
     {
         $item = $request->extraData->entity ?? $request ;
         $entity = array_fill_keys(['id','company','firstName','lastName'],null);
-        foreach (array_keys($entity) as $key){ $entity[$key] = $item->$key ?? null; }
+        $map = ['company' => 'companyName'];
+        foreach (array_keys($entity) as $key){
+            $mapped = $map[$key] ?? $key ;
+            $entity[$key] = $item->$mapped ?? null; }
         return ['entity' => $entity];
     }
 
