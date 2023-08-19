@@ -1,6 +1,6 @@
 <?php
 
-class Admin_Backup extends Admin
+class ApiBackup extends Admin
 {
 
     public function run()

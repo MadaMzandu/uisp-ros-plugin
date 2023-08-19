@@ -21,6 +21,8 @@ CREATE TABLE  IF NOT EXISTS tmp."devices" (
     "id"    INTEGER NOT NULL,
     "name"  TEXT COLLATE NOCASE,
     "ip"    TEXT,
+    "port"  INTEGER ,
+    "qos" INTEGER ,
     "type"  TEXT,
     "user"  TEXT,
     "password"      TEXT,
@@ -66,8 +68,12 @@ INSERT INTO tmp."config" SELECT * FROM config;
 INSERT INTO tmp."devices" SELECT * FROM devices ;
 INSERT INTO tmp."services" SELECT * FROM services ;
 
+INSERT INTO tmp."devices" (id,name,ip,port,type,user,password,dbname,pool,pool6,pfxLength,last,created)
+select * FROM "devices" ;
+INSERT INTO tmp."devices" (id,name,ip,type,user,password,dbname,pool,pool6,pfxLength,last,created)
+select * FROM "devices" ;
 INSERT INTO tmp."services" (id,device,clientId,planId,status,last,created)
-SELECT id,device,clientId,planId,status,"last",created FROM services ;
+SELECT id,device,clientId,planId,status,"last",created FROM "services" ;
 INSERT INTO tmp."plans" (id,ratio,priorityUpload,priorityDownload,limitUpload,limitDownload,
 burstUpload,burstDownload,threshUpload,threshDownload,timeUpload,timeDownload,"last",created)
 SELECT * FROM plans;

@@ -1,6 +1,6 @@
 <?php
 
-class Api_Lang extends Admin
+class ApiLang extends Admin
 {
     protected $lang ;
     protected $file ;
