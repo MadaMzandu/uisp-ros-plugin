@@ -21,6 +21,14 @@
     "type": null,
     "isAttribute": null
   },
+  "device_port" :
+  {
+    "name" : "port",
+    "label" : "Port number",
+    "hint" : "443",
+    "describe" : true,
+    "description" : "Set device port number"
+  },
   "device_pool": {
     "name": "pool",
     "label": "IP4 swembad",
@@ -151,7 +159,7 @@
   },
   "config_active_list": {
     "name": "active_list",
-    "label": "Mikrotik-adreslys vir aktiewe gebruikers",
+    "label": "Router-adreslys vir aktiewe gebruikers",
     "describe": true,
     "description": "Opsionele naam van dinamiese brandmuurlys vir rekeninge wat nie opgeskort is nie",
     "hint": "",
@@ -162,7 +170,7 @@
   },
   "config_disabled_list": {
     "name": "disabled_list",
-    "label": "Mikrotik-adreslys vir gestremde gebruikers",
+    "label": "Router-adreslys vir gestremde gebruikers",
     "describe": true,
     "description": "Naam van dinamiese brandmuurlys vir die filter en herleiding van opgeskorte rekeninge",
     "hint": "",
@@ -173,9 +181,9 @@
   },
   "config_disabled_profile": {
     "name": "disabled_profile",
-    "label": "Mikrotik-profiel vir gestremde gebruikers",
+    "label": "Router-profiel vir gestremde gebruikers",
     "describe": true,
-    "description": "Mikrotik ppp-profiel wat toegepas word op opgeskorte rekeninge. Die profiel moet elke router geskep en gekonfigureer word",
+    "description": "Router ppp-profiel wat toegepas word op opgeskorte rekeninge. Die profiel moet elke router geskep en gekonfigureer word",
     "hint": "",
     "width": 550,
     "obscure": null,
@@ -184,9 +192,9 @@
   },
   "config_disabled_rate": {
     "name": "disabled_rate",
-    "label": "Mikrotik-tarieflimiet vir gestremde rekeninge",
+    "label": "Router-tarieflimiet vir gestremde rekeninge",
     "describe": true,
-    "description": "Mikrotik-koers toegepas op gedeaktiveerde profiel en gedeaktiveerde dhcp-rye",
+    "description": "Router-koers toegepas op gedeaktiveerde profiel en gedeaktiveerde dhcp-rye",
     "hint": "",
     "width": 550,
     "obscure": null,

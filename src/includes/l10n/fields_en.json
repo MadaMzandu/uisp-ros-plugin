@@ -14,6 +14,14 @@
     "describe" : true,
     "description" : "Set the Ip address for the device"
   },
+  "device_port" :
+  {
+    "name" : "port",
+    "label" : "Port number",
+    "hint" : "443",
+    "describe" : true,
+    "description" : "Set device port number"
+  },
   "device_pool" :
   {
     "name" : "pool",

@@ -1,14 +1,46 @@
 <?php
+include_once 'er.php';
 include_once 'mt.php';
+include_once 'er_data.php';
 include_once 'mt_data.php';
 include_once 'api_ip.php';
 include_once 'api_sqlite.php';
 include_once 'api_sites.php';
 
-class MtBatch extends MT
+class Batch
 {
-    private ?array $_service_plans = null;
+    private ?array $_plans = null;
     private ?array $_devices = null ;
+    private ?ApiSqlite $_db = null ;
+    private ?ApiSqlite $_cache = null ;
+    private array $_apis = [];
+    private array $batch_failed = [];
+    private array $batch_success = [];
+
+    public function del_queues($ids)
+    {
+        $deviceServices = $this->find_services($ids, 'delete');
+        $plans = $this->find_plans();
+        $deviceData = [];
+        foreach (array_keys($deviceServices) as $did) {
+            if ($did == 'nodev') { continue;}
+            $api = $this->data_api($did);
+            foreach ($deviceServices[$did] as $service) {
+                $plan = $plans[$service['planId']] ?? null;
+                if (!$plan) {
+                    $plan = $this->make_plan($service);
+                } //generate plan if not found
+                $api->set_data($service, $plan);
+                $queue = $api->queue();
+                if($queue){
+                    $queue['action'] = 'remove';
+                    $deviceData[$did]['queues'][] = $queue ;
+                }
+            }
+        }
+        MyLog()->Append('Queues ready to delete');
+        $this->run_batch($deviceData,true);
+    }
 
     public function del_parents()
     {
@@ -33,41 +65,42 @@ class MtBatch extends MT
         $deviceServices = $this->select_data($ids,'delete');
         $plans = $this->find_plans();
         $deviceData = [];
-        $mt = new MtData();
+        $api = null ;  //needed to realese ip address assignments later
         foreach (array_keys($deviceServices) as $did){
             if($did == 'nodev'){ continue; }
+            $api = $this->data_api($did);
             foreach($deviceServices[$did] as $service){
                 $plan = $plans[$service['planId']] ?? null;
                 if(!$plan){ $plan = $this->make_plan($service); } //generate plan if not found
-                $mt->set_data($service,$plan);
-                $account = $mt->account();
+                $api->set_data($service,$plan);
+                $account = $api->account();
                 if($account){
                     $account['action'] = 'remove';
                     $deviceData[$did]['accounts'][] = $account ;
                 }
-                $queue = $mt->queue();
+                $queue = $api->queue();
                 if($queue){
                     $queue['action'] = 'remove';
                     $deviceData[$did]['queues'][] = $queue ;
                 }
-                $profile = $mt->profile();
+                $profile = $api->profile();
                 if($profile){
                     $profile['action'] = 'remove';
                     $deviceData[$did]['profiles'][$profile['name']] = $profile ;
                 }
-                $parent = $mt->parent();
+                $parent = $api->parent();
                 if($parent){
                     $parent['action'] = 'remove';
                     $deviceData[$did]['parents'][$parent['name']] = $parent ;
                 }
-                $disconnect = $mt->account_reset();
+                $disconnect = $api->account_reset();
                 if($disconnect){$deviceData[$did]['disconn'][] = $disconnect; }
-                $pool = $mt->pool();
+                $pool = $api->pool();
                 if ($pool){
                     $pool['action'] = 'remove';
                     $deviceData[$did]['pool']['uisp_pool'] = $pool;
                 }
-                $dhcp6 = $mt->dhcp6();
+                $dhcp6 = $api->dhcp6();
                 if($dhcp6){
                     $dhcp6['action'] = 'remove';
                     $deviceData[$did]['accounts'][] = $dhcp6;
@@ -86,16 +119,16 @@ class MtBatch extends MT
         $deviceServices = $this->select_data($ids,'update');
         $plans = $this->find_plans();
         $deviceData = [];
-        $mt = new MtData();
         $device_ids = [];
         foreach (array_keys($deviceServices) as $did) {
+            $api = $this->data_api($did);
             $device_ids[] = $did;
             foreach ($deviceServices[$did] as $service) {
                 if ($did == 'nodev') { continue; }
                 $plan = $plans[$service['planId']] ?? null ;
                 if(!$plan){ $plan = $this->make_plan($service); } //generate plan if not found
-                $mt->set_data($service,$plan);
-                $queue = $mt->queue();
+                $api->set_data($service,$plan);
+                $queue = $api->queue();
                 if($queue){
                     $queue['action'] = $on ? 'set' : 'remove';
                     $deviceData[$did]['queues'][] = $queue ;
@@ -119,27 +152,28 @@ class MtBatch extends MT
         $deviceServices = $this->select_data($ids,'update');
         $plans = $this->find_plans();
         $deviceData = [];
-        $mt = new MtData();
+
         foreach (array_keys($deviceServices) as $did){
+            $api = $this->data_api($did);
             foreach ($deviceServices[$did] as $service){
                 if($did == 'nodev'){ continue; }
                 $plan = $plans[$service['planId']] ?? null ;
                 if(!$plan){ $plan = $this->make_plan($service); } //generate plan if not found
-                $mt->set_data($service,$plan);
-                $account = $mt->account();
+                $api->set_data($service,$plan);
+                $account = $api->account();
                 if(!$account){ continue; }
                 $deviceData[$did]['accounts'][] = $account ; 
-                $queue = $mt->queue();
+                $queue = $api->queue();
                 if($queue){ $deviceData[$did]['queues'][] = $queue ; }
-                $profile = $mt->profile();
+                $profile = $api->profile();
                 if($profile){ $deviceData[$did]['profiles'][$profile['name']] = $profile ; }
-                $parent = $mt->parent();
+                $parent = $api->parent();
                 if($parent){ $deviceData[$did]['parents'][$parent['name']] = $parent ; }
-                $disconnect = $mt->account_reset();
+                $disconnect = $api->account_reset();
                 if($disconnect){$deviceData[$did]['disconn'][] = $disconnect; }
-                $pool = $mt->pool();
+                $pool = $api->pool();
                 if($pool){$deviceData[$did]['pool']['uisp_pool'] = $pool; }
-                $dhcp6 = $mt->dhcp6();
+                $dhcp6 = $api->dhcp6();
                 if($dhcp6){$deviceData[$did]['accounts'][] = $dhcp6; }
             }
         }
@@ -159,17 +193,18 @@ class MtBatch extends MT
     private function run_batch($deviceData,$delete = false)
     {
         $timer = new ApiTimer("mt batch write");
-        $devices = $this->find_devices();
         $sent = 0 ;
         $writes = 0 ;
         $this->batch_failed = [];
         $this->batch_success = [];
         foreach (array_keys($deviceData) as $did)
         {
-            $device  = $devices[$did] ?? null ;
-            if(!$device){ continue; }
-            $this->batch_device = (object) $device ;
-            MyLog()->Append('executing batch for device: '.$this->batch_device->name);
+            $device  = $this->find_device($did);
+            if(!(array)$device){ continue; }
+            $this->batch_device = $device ;
+            $type = $device->type ?? 'mikrotik';
+            $api = $this->device_api($type);
+            MyLog()->Append('executing batch for device: '.$device->name);
             $keys = ['pool','parents','profiles','queues','accounts','dhcp6','disconn'];
             if($delete) {
                 $keys = array_reverse(array_diff($keys,['disconn']));
@@ -177,10 +212,13 @@ class MtBatch extends MT
             }
             foreach ($keys as $key){
                 $item = $deviceData[$did][$key] ?? [];
-                $this->batch = array_values($item);
-                $sent += sizeof($this->batch);
-                $writes += $this->write_batch();
+                $batch = array_values($item);
+                $sent += sizeof($batch);
+                $writes += $api->do_batch($device,$batch);
+                $this->batch_success = array_replace($this->batch_success,$api->success());
+                $this->batch_failed = array_replace($this->batch_failed,$api->failed());
             }
+
         }
         $timer->stop();
         MyLog()->Append(sprintf('batch sent: %s written: %s',$sent,$writes));
@@ -188,7 +226,7 @@ class MtBatch extends MT
 
     private function save_batch($deviceServices)
     {
-        if(empty($this->batch_success)) return ;
+        if(empty($this->batch_success)){ return ;}
         $fields = [
             'id',
             'device',
@@ -259,16 +297,40 @@ class MtBatch extends MT
         file_put_contents('data/queue.json',json_encode($queue));
     }
 
+    private function device_api($type)
+    {
+        $client = $this->_apis[$type] ?? null ;
+        if(!$client){
+            if($type == 'mikrotik'){
+                $client = new MT();
+                $this->_apis[$type] = $client ;
+            }
+            if(in_array($type,['edge','edgeos','edgerouter'])){
+                $client = new ER();
+                $this->_apis[$type] = $client ;
+            }
+        }
+        return $client ;
+    }
+
+    private function data_api($did)
+    {
+        $type = $this->find_device($did)->type ?? 'mikrotik';
+        if($type == 'mikrotik') return new MtData();
+        if(in_array($type,['edge','edgerouter','edgeos'])){ return new ErData(); }
+        throw new Exception('No api for this device type: '.$type);
+    }
+
     private function find_plans(): array
     {
-       if(empty($this->_service_plans)){
-           $api = new AdminPlans();
-           $api->get();
-           $plans = $api->result();
-           foreach ($plans as $plan){
-               $this->_service_plans[$plan['id']] = $plan; }
-       }
-       return $this->_service_plans ;
+        if(empty($this->_plans)){
+            $api = new ApiPlans();
+            $api->get();
+            $plans = $api->result();
+            foreach ($plans as $plan){
+                $this->_plans[$plan['id']] = $plan; }
+        }
+        return $this->_plans ;
     }
 
     private function select_data(array $ids, $action): array
@@ -295,6 +357,12 @@ class MtBatch extends MT
         return $deviceMap ;
     }
 
+    private function find_device($did): ?object
+    {
+        $dev = $this->find_devices()[$did] ?? null ;
+        return $dev ? (object) $dev : null ;
+    }
+
     private function find_devices(): array
     {
         if(empty($this->_devices)){
@@ -318,6 +386,22 @@ class MtBatch extends MT
         foreach ($keys as $key){ $plan[$key] = $defaults[$key] ?? 0 ;}
         $plan['name'] = sprintf('Custom Plan %s/%s',$ul,$dl);
         return $plan ;
+    }
+
+    private function db()
+    {
+        if(empty($this->_db)){
+            $this->_db = new ApiSqlite();
+        }
+        return $this->_db ;
+    }
+
+    private function dbCache()
+    {
+        if(empty($this->_cache)){
+            $this->_cache = new ApiSqlite('data/cache.db');
+        }
+        return $this->_cache ;
     }
 
     private function now(): string {$date = new DateTime(); return $date->format('c'); }

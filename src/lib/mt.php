@@ -67,7 +67,7 @@ class MT extends Device
                 if($id)$this->batch_failed[$id] = json_encode($result);
                 MyLog()->Append('mt write error: ' . json_encode([$post, $result]), 6);
             } else {
-                if($id) $this->batch_success[$id] = 1;
+                if($id) $this->batch_success[$id] = $id;
                 $writes++;
             }
         }
@@ -117,7 +117,7 @@ class MT extends Device
 
     protected function api_connect(): ?RouterosAPI
     {
-        if(!$this->get_device()){
+        if(!$this->find_device()){
             MyLog()->Append('mt: failed to get device information');
             return null ;
         }
@@ -127,6 +127,7 @@ class MT extends Device
         //$api->debug = true;
         if (!$api->connect($this->device->ip,
             $this->device->user, $this->device->password)) {
+            MyLog()->Append('mt: failed to connect to: '. $this->device->ip);
             return null ;
         }
         return $api;
@@ -259,7 +260,7 @@ class MT extends Device
         return $this->data->$property ?? null;
     }
 
-    protected function get_device(): bool
+    protected function find_device(): bool
     {
         $this->device = null ;
         if($this->batch_device){
@@ -277,6 +278,19 @@ class MT extends Device
         return (bool)$this->device ;
     }
 
+    public function do_batch($device,$data): int
+    {
+        $this->batch_device = $device ;
+        $this->batch = $data ;
+        $this->batch_success = [];
+        $this->batch_failed = [];
+        return $this->write_batch();
+    }
+
+    public function failed(): ?array { return $this->batch_failed; }
+
+    public function success(): ?array { return $this->batch_success ; }
+
     protected function format_filter($filter): array
     {
         $return = [];
@@ -291,17 +305,6 @@ class MT extends Device
             }
         }
         return $return ;
-    }
-
-    protected function to_pair($array, $mbps = true): ?string
-    {
-        $str = [];
-        foreach($array as $value){
-            $unit = $mbps ? 'M' : null;
-            if(!$value){ $value = 0; $unit = null; }
-            $str[] = $value . $unit ;
-        }
-        return implode('/',$str);
     }
 
 }
