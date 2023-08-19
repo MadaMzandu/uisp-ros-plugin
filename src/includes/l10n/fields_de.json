@@ -21,6 +21,14 @@
     "type": null,
     "isAttribute": null
   },
+  "device_port" :
+  {
+    "name" : "port",
+    "label" : "Port number",
+    "hint" : "443",
+    "describe" : true,
+    "description" : "Set device port number"
+  },
   "device_pool": {
     "name": "pool",
     "label": "IP4-Pool",
@@ -151,7 +159,7 @@
   },
   "config_active_list": {
     "name": "active_list",
-    "label": "Mikrotik Adressliste für aktive Benutzer",
+    "label": "Router Adressliste für aktive Benutzer",
     "describe": true,
     "description": "Optionaler Name der dynamischen Firewallliste für Konten, die nicht angehalten werden",
     "hint": "",
@@ -162,7 +170,7 @@
   },
   "config_disabled_list": {
     "name": "disabled_list",
-    "label": "Mikrotik Adressliste für behinderte Benutzer",
+    "label": "Router Adressliste für behinderte Benutzer",
     "describe": true,
     "description": "Name der dynamischen Firewall-Liste zum Filtern und Umleiten gesperrter Konten",
     "hint": "",
@@ -173,9 +181,9 @@
   },
   "config_disabled_profile": {
     "name": "disabled_profile",
-    "label": "Mikrotik Profil für behinderte Benutzer",
+    "label": "Router Profil für behinderte Benutzer",
     "describe": true,
-    "description": "Mikrotik ppp-Profil, das auf gesperrte Konten angewendet wird. Das Profil muss für jeden Router erstellt und konfiguriert werden",
+    "description": "Router ppp-Profil, das auf gesperrte Konten angewendet wird. Das Profil muss für jeden Router erstellt und konfiguriert werden",
     "hint": "",
     "width": 550,
     "obscure": null,
@@ -184,9 +192,9 @@
   },
   "config_disabled_rate": {
     "name": "disabled_rate",
-    "label": "Mikrotik-Höchstsatz für deaktivierte Konten",
+    "label": "Router-Höchstsatz für deaktivierte Konten",
     "describe": true,
-    "description": "Mikrotik-Rate angewendet auf deaktiviertes Profil und deaktivierte DHCP-Warteschlangen",
+    "description": "Router-Rate angewendet auf deaktiviertes Profil und deaktivierte DHCP-Warteschlangen",
     "hint": "",
     "width": 550,
     "obscure": null,

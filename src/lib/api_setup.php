@@ -1,8 +1,8 @@
 <?php
 //remember to update cols file and repeats when schema changes
-const MY_VERSION = '2.0.1';
+const MY_VERSION = '1.0.3';
 const MAX_BACKUPS = 6 ;
-const REPEAT_STATEMENTS  = 4; //number of statements expected to fail during update
+const REPEAT_STATEMENTS  = 6; //number of statements expected to fail during update
 
 include_once 'api_sqlite.php';
 include_once 'api_logger.php';

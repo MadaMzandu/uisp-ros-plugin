@@ -20,6 +20,8 @@ CREATE TABLE IF NOT EXISTS "devices" (
     "id"    INTEGER NOT NULL,
     "name"  TEXT COLLATE NOCASE,
     "ip"    TEXT,
+    "port"  INTEGER ,
+    "qos" INTEGER ,
     "type"  TEXT,
     "user"  TEXT,
     "password"      TEXT,

@@ -1,6 +1,7 @@
 <?php
 include_once 'api_attributes.php';
 include_once 'api_trim.php';
+include_once 'batch.php';
 
 const ACTION_OBSOLETE = 5 ;
 const ACTION_ENDED = 2;
@@ -41,7 +42,7 @@ class ApiAction
             $cache->save($data['entity'],'client');
         }
         else{
-            $api = new MtBatch();
+            $api = new Batch();
             switch ($this->select_action($data))
             {
                 case ACTION_DOUBLE:{

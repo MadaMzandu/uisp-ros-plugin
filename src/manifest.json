@@ -1,11 +1,11 @@
 {
   "version": "1",
   "information": {
-    "name": "ros-plugin",
-    "displayName": "Router OS Plugin",
-    "description": "Real time provisioning for ROS",
+    "name": "ros-plugin-beta",
+    "displayName": "Ros Plugin Beta",
+    "description": "Real time provisioning for RouterOs",
     "url": "",
-    "version": "2.0.2.11",
+    "version": "2.0.3-beta2",
     "ucrmVersionCompliancy": {
       "min": "2.14.0-beta4",
       "max": null
@@ -18,7 +18,7 @@
   },
   "menu": [
         {
-            "key": "Ros Plugin",
+            "key": "Ros Plugin Beta",
             "label": "Panel",
             "type" : "admin",
             "target": "iframe",

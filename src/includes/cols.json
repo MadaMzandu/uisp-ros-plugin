@@ -35,6 +35,8 @@
     "id",
     "name",
     "ip",
+    "port",
+    "qos",
     "type",
     "user",
     "password",

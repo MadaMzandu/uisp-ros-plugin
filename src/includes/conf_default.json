@@ -16,7 +16,7 @@
   "dhcp6_iaid_attr": "iaid",
   "ip_addr_attr": "ipAddress",
   "ip_addr6_attr": "ip6Address",
-  "disabled_rate": "1",
+  "disabled_rate": "0",
   "auto_ppp_user": false,
   "pppoe_caller_attr": "callerId",
   "disable_contention": true,

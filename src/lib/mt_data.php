@@ -1,22 +1,8 @@
 <?php
-class MtData extends MT
-{
-    private array $service = [];
-    private array $plan = [];
-    private ?ApiIP $_ipApi = null;
-    private ?array $_devices = null ;
-    
-    public function set_data($service,$plan)
-    {
-        $this->service = $service ;
-        $this->plan = $plan ;
-        MyLog()->Append('account data: '.json_encode([$service,$plan]));
-    }
+include_once 'data.php';
 
-    public function ip_clear($ids):void
-    {
-        $this->ipApi()->clear($ids);
-    }
+class MtData extends Data
+{
 
     public function account(): ?array
     {
@@ -145,6 +131,7 @@ class MtData extends MT
             'batch' => $this->service['batch'] ?? null ,
             'path' => '/ipv6/dhcp-server/binding',
             'address' => $this->ip(true),
+            'address-lists' => $this->addr_list(),
             'duid' => $this->make_duid(),
             'iaid' => $this->make_iaid(),
             'life-time' => $lease . 'm',
@@ -177,7 +164,7 @@ class MtData extends MT
 
     public function parent(): ?array
     {
-        if($this->conf->disable_contention) return null ;
+        if($this->conf()->disable_contention) return null ;
         if($this->disabled()) return null ;
         return [
             'path' => '/queue/simple',
@@ -206,7 +193,7 @@ class MtData extends MT
 
     private function parent_name(): ?string
     {
-        if($this->conf->disable_contention) return 'none' ;
+        if($this->conf()->disable_contention) return 'none' ;
         if($this->disabled()) return 'none';
         return sprintf('servicePlan-%s-parent',$this->plan['id']);
     }
@@ -232,23 +219,6 @@ class MtData extends MT
         return max($count,1);
     }
 
-    private function ip($ip6 = false): ?string
-    {
-        MyLog()->Append('checking for assigned address');
-        $assigned = $this->find_address($ip6);
-        if($assigned){ return $assigned; }
-        MyLog()->Append('requesting address assignment');
-        return $this->assign_address($ip6);
-    }
-
-    private function ipApi(): ApiIP
-    {
-        if(empty($this->_ipApi)){
-            $this->_ipApi = new ApiIP();
-        }
-        return $this->_ipApi ;
-    }
-
     private function profile_name(): string
     {
         if($this->disabled())
@@ -256,43 +226,7 @@ class MtData extends MT
         return $this->plan['name'] ?? 'default';
     }
 
-    private function limits(): array
-    {
-        $keys = [
-            'ratio',
-            'priorityUpload',
-            'priorityDownload',
-            'limitUpload',
-            'limitDownload',
-            'uploadSpeed',
-            'downloadSpeed',
-            'burstUpload',
-            'burstDownload',
-            'threshUpload',
-            'threshDownload',
-            'timeUpload',
-            'timeDownload',
-        ];
-        $values = [];
-        foreach($keys as $key){
-            switch ($key)
-            {
-                case 'priorityUpload':
-                case 'priorityDownload': $values['prio'][] = $this->plan[$key]; break;
-                case 'limitUpload':
-                case 'limitDownload': $values['limit'][] = $this->plan[$key];break;
-                case 'uploadSpeed':
-                case 'downloadSpeed': $values['rate'][] = $this->plan[$key];break;
-                case 'burstUpload':
-                case 'burstDownload': $values['burst'][] = $this->plan[$key];break;
-                case 'threshUpload':
-                case 'threshDownload': $values['thresh'][] = $this->plan[$key];break;
-                case 'timeUpload':
-                case 'timeDownload': $values['time'][] = $this->plan[$key];break;
-            }
-        }
-        return $values ;
-    }
+
 
     private function profile_limits(): ?string
     {
@@ -310,90 +244,6 @@ class MtData extends MT
             $ret[] = $values[$key];
         }
         return implode(' ', $ret);
-    }
-
-    private function addr_list()
-    {
-        if($this->disabled()){
-            return $this->conf->disabled_list ?? null ;
-        }
-        return $this->conf->active_list ?? null ;
-    }
-
-    private function account_comment(): string
-    {
-        $id = $this->service['id'];
-        return $this->service['clientId'] . " - "
-            . $this->account_name() . " - "
-            . $id;
-    }
-
-    private function account_name(): string
-    {
-        $name = sprintf('Client-%s',$this->service['clientId']);
-        $co = $this->service['company'];
-        $fn = $this->service['firstName'];
-        $ln = $this->service['lastName'];
-        if($co){
-            $name = $co ;
-        }
-        else if($fn && $ln){
-            $name = sprintf('%s %s',$fn,$ln);
-        }
-        return $name ;
-    }
-
-    private function disabled(): bool
-    {
-        $status = $this->service['status'] ?? 1 ;
-        return in_array($status,[3,5,2,8]);
-    }
-
-    private function disabled_rate(): ?string
-    {
-        $rate = $this->conf->disabled_rate ?? 0;
-        if(!$rate) return null ;
-        return $this->to_pair([$rate,$rate]);
-    }
-
-    private function type(): string
-    {
-        $mac = $this->service['mac'] ?? null ;
-        $user = $this->service['username'] ?? null ;
-        $hotspot = $this->service['hotspot'] ?? null ;
-        if(filter_var($mac,FILTER_VALIDATE_MAC)) return 'dhcp' ;
-        if($user && $hotspot) return 'hotspot' ;
-        if($user) return 'ppp';
-        return 'invalid';
-    }
-
-    private function find_device(): ?object
-    {
-        if(empty($this->_devices)){
-            $read = $this->db()->selectAllFromTable('devices');
-            foreach ($read as $item){$this->_devices[$item['id']] = $item; }
-        }
-        $id = $this->service['device'] ?? 0 ;
-        $device = $this->_devices[$id] ?? null ;
-        return $device ? (object) $device : null ;
-    }
-
-    private function find_address($ip6): ?string
-    {
-        $type = $ip6 ? 'address6' : 'address';
-        $fixed = $this->service[$type] ?? null ;
-        if($fixed){ return $fixed; }
-        $service = $this->service['id'] ?? 0 ;
-        return $this->ipApi()->find_used($service,$ip6);
-    }
-
-    private function assign_address($ip6): ?string
-    {
-        $device = $this->find_device();
-        $router_pool = $this->conf->router_ppp_pool ?? true ;
-        if($this->type() == 'ppp' && !$router_pool){ $device = null; }
-        $service = $this->service['id'] ?? 0 ;
-        return $this->ipApi()->assign($service,$device,$ip6);
     }
 
     private function has_dhcp6(): string

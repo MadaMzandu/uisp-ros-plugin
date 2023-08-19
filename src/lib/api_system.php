@@ -1,11 +1,11 @@
 <?php
 
-class Admin_System extends Admin
+class ApiSystem extends Admin
 {
 
     public function rebuild(): void
     {
-        $api = new AdminRebuild() ;
+        $api = new ApiRebuild() ;
         $api->rebuild($this->data);
     }
 
@@ -28,7 +28,13 @@ class Admin_System extends Admin
         if(empty($select)){ return ;}
         $ids = [];
         foreach ($select as $item) $ids[] = $item['id'];
-        $api = new MtBatch();
+        $api = new Batch();
         $api->set_queues($ids,$on);
+    }
+
+    public function log_clear()
+    {
+        file_put_contents('data/plugin.log','');
+        MyLog()->Append('log has been cleared');
     }
 }
