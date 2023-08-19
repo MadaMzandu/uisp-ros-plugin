@@ -198,7 +198,6 @@ class Batch
         {
             $device  = $this->find_device($did);
             if(!(array)$device){ continue; }
-//            $this->batch_device = $device ;
             $type = $device->type ?? 'mikrotik';
             $api = $this->device_api($type);
             MyLog()->Append('executing batch for device: '.$device->name);
