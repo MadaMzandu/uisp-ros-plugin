@@ -1,5 +1,7 @@
 <?php
-class MtData extends MT
+include_once 'data.php';
+
+class MtData extends Data
 {
     private array $service = [];
     private array $plan = [];
@@ -148,6 +150,7 @@ class MtData extends MT
             'batch' => $this->service['batch'] ?? null ,
             'path' => '/ipv6/dhcp-server/binding',
             'address' => $ipv6,
+            'address-lists' => $this->addr_list(),
             'duid' => $this->make_duid(),
             'iaid' => $this->make_iaid(),
             'life-time' => $lease . 'm',
@@ -180,7 +183,7 @@ class MtData extends MT
 
     public function parent(): ?array
     {
-        if($this->conf->disable_contention) return null ;
+        if($this->conf()->disable_contention) return null ;
         if($this->disabled()) return null ;
         return [
             'path' => '/queue/simple',
@@ -209,7 +212,7 @@ class MtData extends MT
 
     private function parent_name(): ?string
     {
-        if($this->conf->disable_contention) return 'none' ;
+        if($this->conf()->disable_contention) return 'none' ;
         if($this->disabled()) return 'none';
         return sprintf('servicePlan-%s-parent',$this->plan['id']);
     }
@@ -259,43 +262,7 @@ class MtData extends MT
         return $this->plan['name'] ?? 'default';
     }
 
-    private function limits(): array
-    {
-        $keys = [
-            'ratio',
-            'priorityUpload',
-            'priorityDownload',
-            'limitUpload',
-            'limitDownload',
-            'uploadSpeed',
-            'downloadSpeed',
-            'burstUpload',
-            'burstDownload',
-            'threshUpload',
-            'threshDownload',
-            'timeUpload',
-            'timeDownload',
-        ];
-        $values = [];
-        foreach($keys as $key){
-            switch ($key)
-            {
-                case 'priorityUpload':
-                case 'priorityDownload': $values['prio'][] = $this->plan[$key]; break;
-                case 'limitUpload':
-                case 'limitDownload': $values['limit'][] = $this->plan[$key];break;
-                case 'uploadSpeed':
-                case 'downloadSpeed': $values['rate'][] = $this->plan[$key];break;
-                case 'burstUpload':
-                case 'burstDownload': $values['burst'][] = $this->plan[$key];break;
-                case 'threshUpload':
-                case 'threshDownload': $values['thresh'][] = $this->plan[$key];break;
-                case 'timeUpload':
-                case 'timeDownload': $values['time'][] = $this->plan[$key];break;
-            }
-        }
-        return $values ;
-    }
+
 
     private function profile_limits(): ?string
     {

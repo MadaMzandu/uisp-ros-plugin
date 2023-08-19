@@ -1,5 +1,5 @@
 <?php
-class AdminDevices extends Admin
+class ApiDevices extends Admin
 {
     public function delete(): bool
     {
@@ -7,6 +7,10 @@ class AdminDevices extends Admin
         if (!$this->db()->delete($this->data->id, 'devices')) {
             $this->set_error('database error');
             return false;
+        }
+        if(function_exists('fastcgi_finish_request')){
+            respond('device has been added');
+            fastcgi_finish_request();
         }
         $this->recache();
         $this->set_message('device has been deleted');
@@ -21,30 +25,37 @@ class AdminDevices extends Admin
             $this->set_error('database error');
             return false;
         }
-        $this->set_message('device has been added');
+        if(function_exists('fastcgi_finish_request')){
+            respond('device has been added');
+            fastcgi_finish_request();
+        }
         $this->recache();
         return true;
     }
 
     private function recache(): void
     {
-        $api = new Admin_System();
-        if(function_exists('fastcgi_finish_request')){
-            respond('Device has been updated!');
-            fastcgi_finish_request();
-        }
-        sleep(5);
+        $api = new ApiSystem();
+        sleep(3);
         $api->recache();
     }
 
-    public function clear()
+    private function rebuild_qs($queues)
     {
-        $id = $this->data->id ?? 0 ;
-        $ids = [];
-        $select = $this->dbCache()->selectCustom(sprintf
-            ("SELECT id FROM services WHERE device = %s AND status NOT IN (2,5,8) ",$id));
-        foreach ($select as $item) $ids[] = $item['id'];
-        $api = new MtBatch();
+        $api = new Batch();
+        $ids = $this->find_ids();
+        if($queues > 0){
+            $api->set_accounts($ids);
+        }
+        else{
+            $api->del_queues($ids);
+        }
+    }
+
+    public function clear()
+    {//remove accounts from device
+        $ids = $this->find_ids();
+        $api = new Batch();
         $api->del_accounts($ids);
     }
 
@@ -52,12 +63,18 @@ class AdminDevices extends Admin
     {
 
         $this->trim_prefix();
+        $queues = $this->needs_rebuild_qs();
+        $cache = $this->needs_cache();
         if (!$this->db()->edit($this->data, 'devices')) {
             $this->set_error('database error');
             return false;
         }
-        $this->recache();
-        $this->set_message('device has been updated');
+        if(function_exists('fastcgi_finish_request')){
+            respond('device has been updated');
+            fastcgi_finish_request();
+        }
+        if($cache) $this->recache();
+        if($queues) $this->rebuild_qs($queues);
         return true;
     }
 
@@ -74,9 +91,9 @@ class AdminDevices extends Admin
             $this->result = [];
             return true ;
         }
-        $this->setStatus();
-        $this->setUsers();
-        $this->setDisabled();
+        $this->set_status();
+        $this->set_users();
+        $this->set_disabled();
         $this->result = $this->read;
         $this->set_message('devices retrieved');
         return true;
@@ -103,7 +120,18 @@ class AdminDevices extends Admin
         return $ret ;
     }
 
-    private function cache_sql(){
+    private function find_ids(): array
+    {
+        $id = $this->data->id ?? 0 ;
+        $ids = [];
+        $select = $this->dbCache()->selectCustom(sprintf
+        ("SELECT id FROM services WHERE device = %s AND status NOT IN (2,5,8) ",$id));
+        foreach ($select as $item) $ids[] = $item['id'];
+        return $ids ;
+    }
+
+    private function cache_sql(): string
+    {
         $fields = "services.*,services.username,services.mac,services.price,".
             "main.network.address,main.network.address6,clients.company,clients.firstName,".
             "clients.lastName,plans.name as plan,cache.network.address as a4,".
@@ -148,19 +176,48 @@ class AdminDevices extends Admin
         return !empty($this->read) ;
     }
 
-    private function trim_prefix(): void
+    private function needs_cache(): bool
     {
-        $pfx = $this->data->pfxLength ?? null ;
-        if($pfx) $this->data->pfxLength = trim($pfx,"/");
+        if(!property_exists($this->data,'name')){ return false; }
+        $id = $this->data->id ?? 0;
+        if(!$id){ return false; }
+        $device = $this->db()->selectDeviceById($id);
+        $name = $device->name ?? null ;
+        $edit = $this->data->name ?? null ;
+        return $name !== $edit ;
     }
 
-    private function setStatus(): void
+    private function needs_rebuild_qs(): int
+    {
+        if(!property_exists($this->data,'qos')){ return 0; }
+        $id = $this->data->id ?? 0;
+        if(!$id){ return 0; }
+        $device = $this->db()->selectDeviceById($id);
+        $type = $device->type ?? 'mikrotik';
+        if($type != 'edgeos'){ return 0; }
+        $edit = $this->data->qos ?? null ;
+        $prev = $device->qos ?? null ;
+        if($edit == $prev){ return 0 ;}
+        return $edit ? 1 : -1 ;
+    }
+
+    private function trim_prefix(): void
+    {
+        if(isset($this->data->pfxLength)){
+            $this->data->pfxLength =
+                trim(trim($this->data->pfxLength),'/');
+        }
+    }
+
+    private function set_status(): void
     {
         foreach ($this->read as &$device) {
+            $type = $device['type'] ?? 'mikrotik';
+            $port = $device['port'] ?? $this->dp($type);
             try{
                 $conn = @fsockopen($device['ip'],
-                $this->default_port($device['type']),
-                $code, $err, 0.3);
+                $port,
+                $code, $err, 3);
                 if (!is_resource($conn)) {
                     $device['status'] = false;
                     continue;
@@ -174,18 +231,18 @@ class AdminDevices extends Admin
         }
     }
 
-    private function setDisabled(){
+    private function set_disabled(){
         $map = [];
         foreach ($this->read as $item) {
             $item['disabled'] = false ;
             $map[$item['id']] = $item ;
-        };
+        }
         $conf = $this->db()->readConfig()->disabled_routers ?? null;
         if($conf) foreach (explode(',',$conf) as $id){$map[$id]['disabled'] = true ;}
         $this->read = array_values($map);
     }
 
-    private function default_port($type): int
+    private function dp($type): int
     {
         $ports = array(
             'mikrotik' => 8728,
@@ -196,7 +253,7 @@ class AdminDevices extends Admin
         return $ports[$type];
     }
 
-    private function setUsers(): void
+    private function set_users(): void
     {
         $db = new ApiSqlite();
         foreach ($this->read as &$device) {

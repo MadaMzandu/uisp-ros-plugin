@@ -1,7 +1,8 @@
 <?php
 include_once 'api_router.php';
+include_once 'batch.php';
 
-class Api_Jobs extends Admin
+class ApiJobs extends Admin
 { //scheduled job queue
     private $queue;
     private $file = 'data/queue.json';
@@ -45,18 +46,10 @@ class Api_Jobs extends Admin
             if($action == 'update'){ $set[] = $item['id']; }
             if($action == 'delete'){ $delete[] = $item['id'] ;}
         }
-        $api = new MtBatch();
+        $api = new Batch();
         $api->set_accounts($set);
         $api->del_accounts($delete);
     }
-
-//    private function run_item($item): object
-//    {
-//        $item->data->queued = true ; // in case it fails again
-//        $api = new API_Router($item->data);
-//        $api->route();
-//        return $api->status();
-//    }
 
     private function read()
     {

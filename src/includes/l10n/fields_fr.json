@@ -21,6 +21,14 @@
     "type": null,
     "isAttribute": null
   },
+  "device_port" :
+  {
+    "name" : "port",
+    "label" : "Port number",
+    "hint" : "443",
+    "describe" : true,
+    "description" : "Set device port number"
+  },
   "device_pool": {
     "name": "pool",
     "label": "Pool d'adresse IPv4",
@@ -151,7 +159,7 @@
   },
   "config_active_list": {
     "name": "active_list",
-    "label": "Nom de la liste d'adresses du pare-feu Mikrotik pour les utilisateurs actifs",
+    "label": "Nom de la liste d'adresses du pare-feu routeur pour les utilisateurs actifs",
     "describe": true,
     "description": "Nom facultatif de la liste dans le pare-feu dynamique pour les comptes qui ne sont pas suspendus",
     "hint": "",
@@ -162,7 +170,7 @@
   },
   "config_disabled_list": {
     "name": "disabled_list",
-    "label": "Nom de la liste d'adresses dans le pare-feu Mikrotik pour les utilisateurs suspendus",
+    "label": "Nom de la liste d'adresses dans le pare-feu routeur pour les utilisateurs suspendus",
     "describe": true,
     "description": "Nom de la liste de pare-feu dynamique pour filtrer et rediriger les comptes suspendus",
     "hint": "",
@@ -173,9 +181,9 @@
   },
   "config_disabled_profile": {
     "name": "disabled_profile",
-    "label": "Profil Mikrotik pour les utilisateurs suspendus",
+    "label": "Profil routeur pour les utilisateurs suspendus",
     "describe": true,
-    "description": "Profil Mikrotik PPP appliqué aux comptes suspendus. Le profil doit être créé et configuré pour chaque routeur",
+    "description": "Profil routeur PPP appliqué aux comptes suspendus. Le profil doit être créé et configuré pour chaque routeur",
     "hint": "",
     "width": 550,
     "obscure": null,
@@ -184,9 +192,9 @@
   },
   "config_disabled_rate": {
     "name": "disabled_rate",
-    "label": "Vitesse appliquée aux comptes suspendus dans le routeur Mikrotik",
+    "label": "Vitesse appliquée aux comptes suspendus dans le routeur",
     "describe": true,
-    "description": "Vitesse appliquée aux clients DHCP et aux profils suspendus dans le routeur Mikrotik",
+    "description": "Vitesse appliquée aux clients DHCP et aux profils suspendus dans le routeur",
     "hint": "",
     "width": 550,
     "obscure": null,
@@ -275,7 +283,7 @@
     "name" : "dhcp6_duid_attr",
     "label" : "Attribut personnalisé pour l'adresse MAC DHCPv6 (DUID) de l'équipement client",
     "describe" : true,
-    "description" : "Adresse MAC utilisée pour le DUID - ether1 sur Mikrotik",
+    "description" : "Adresse MAC utilisée pour le DUID - ether1 sur routeur",
     "isAttribute" : true
   },
   "config_dhcp6_iaid_attr" :

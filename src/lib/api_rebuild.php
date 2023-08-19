@@ -1,6 +1,6 @@
 <?php
 
-class AdminRebuild{
+class ApiRebuild{
 
     private function db(){ return new ApiSqlite(); }
 
@@ -49,11 +49,11 @@ class AdminRebuild{
         foreach ($select as $item) $ids[] = $item['id'];
         MyLog()->Append(sprintf('found %s services to rebuild',sizeof($ids)));
         if($clear) { $this->clear($type,$ids); }
-        $batch = new MtBatch();
+        $batch = new Batch();
         $batch->set_accounts($ids);
         $timer->stop();
     }
 
 }
 
-function rebuild(){ $api = new AdminRebuild(); $api->rebuild([]);}
+function rebuild(){ $api = new ApiRebuild(); $api->rebuild([]);}

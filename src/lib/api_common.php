@@ -10,13 +10,12 @@ function dbUpdateHandler($errno, $errstr, $errfile, $errline){
     MyLog()->Append('Update chunk rejected - this is normal');
 }
 
-
 function backup_restore(){
     try{
         $sec = \Ubnt\UcrmPluginSdk\Service\UcrmSecurity::create();
         $user = $sec->getUser();
         if(!$user || $user->isClient){ return; }
-        $bu = new Admin_Backup();
+        $bu = new ApiBackup();
         if($bu->run()){
             $ul = $_FILES['backup']['tmp_name'] ?? null;
             if($ul){ copy($ul,'data/data.db'); }

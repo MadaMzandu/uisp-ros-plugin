@@ -1,6 +1,6 @@
 <?php
 
-class Settings extends Admin
+class ApiSettings extends Admin
 {
 
     public function edit(): bool
@@ -71,13 +71,13 @@ class Settings extends Admin
     private function apply_disable_contention(): bool
     {
         $enable = !$this->data->disable_contention ?? false ;
-        $sys = new AdminRebuild();
+        $sys = new ApiRebuild();
         if($enable){
             $sys->rebuild(['type' => 'all']);
         }
         else{
             $sys->rebuild(['type' => 'all']);
-            $batch = new MtBatch();
+            $batch = new Batch();
             $batch->del_parents();
         }
         return true;

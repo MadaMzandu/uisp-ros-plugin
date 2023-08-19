@@ -1,6 +1,6 @@
 <?php
 
-class AdminPlans extends Admin
+class ApiPlans extends Admin
 {
 
     public function get()
@@ -100,7 +100,7 @@ class AdminPlans extends Admin
 
     private function rebuild()
     {
-       $api = new AdminRebuild();
+       $api = new ApiRebuild();
        $plan = new stdClass();
        $plan->id = $this->data->id ;
        $plan->type = 'service';
