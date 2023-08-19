@@ -21,6 +21,14 @@
       "type": null,
       "isAttribute": null
    },
+   "device_port" :
+   {
+      "name" : "port",
+      "label" : "Port number",
+      "hint" : "443",
+      "describe" : true,
+      "description" : "Set device port number"
+   },
    "device_pool": {
       "name": "pool",
       "label": "Ip4 bwawa",
@@ -151,7 +159,7 @@
    },
    "config_active_list": {
       "name": "active_list",
-      "label": "Orodha ya anwani ya Mikrotik kwa watumiaji wanaofanya kazi",
+      "label": "Orodha ya anwani ya Router kwa watumiaji wanaofanya kazi",
       "describe": true,
       "description": "Jina la hiari la orodha inayobadilika ya ngome kwa akaunti ambazo hazijasimamishwa",
       "hint": "",
@@ -162,7 +170,7 @@
    },
    "config_disabled_list": {
       "name": "disabled_list",
-      "label": "Orodha ya anwani ya Mikrotik kwa watumiaji walemavu",
+      "label": "Orodha ya anwani ya Router kwa watumiaji walemavu",
       "describe": true,
       "description": "Jina la orodha inayobadilika ya ngome ya kuchuja na kuelekeza upya akaunti zilizosimamishwa",
       "hint": "",
@@ -173,9 +181,9 @@
    },
    "config_disabled_profile": {
       "name": "disabled_profile",
-      "label": "Profaili ya Mikrotik kwa watumiaji walemavu",
+      "label": "Profaili ya Router kwa watumiaji walemavu",
       "describe": true,
-      "description": "Wasifu wa Mikrotik ppp ambao unatumika kwa akaunti zilizosimamishwa. Wasifu unapaswa kuundwa na kusanidi kila kipanga njia",
+      "description": "Wasifu wa Router ppp ambao unatumika kwa akaunti zilizosimamishwa. Wasifu unapaswa kuundwa na kusanidi kila kipanga njia",
       "hint": "",
       "width": 550,
       "obscure": null,
@@ -184,9 +192,9 @@
    },
    "config_disabled_rate": {
       "name": "disabled_rate",
-      "label": "Kikomo cha kiwango cha Mikrotik kwa akaunti zilizozimwa",
+      "label": "Kikomo cha kiwango cha Router kwa akaunti zilizozimwa",
       "describe": true,
-      "description": "Kiwango cha Mikrotik kinatumika kwa wasifu uliozimwa na kuzima foleni za dhcp",
+      "description": "Kiwango cha Router kinatumika kwa wasifu uliozimwa na kuzima foleni za dhcp",
       "hint": "",
       "width": 550,
       "obscure": null,
