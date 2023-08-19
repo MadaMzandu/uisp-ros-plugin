@@ -58,8 +58,6 @@ class ErQueue
 
     public function __construct($ip, $limits, $disabled=false, $disrate = 0){
         $this->configure($ip,$limits,$disabled,$disrate); }
-
-
 }
 
 class ErObject

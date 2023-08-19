@@ -33,6 +33,7 @@ class ER
         $this->delete_list = [];
     }
 
+
     private function client():ErClient { return erClient(); }
 
     public function __call($name, $arguments)

@@ -2,6 +2,7 @@
 include_once 'api_logger.php';
 
 class ErClient extends ApiCurl
+
 {
     private ?string $host = null;
     private ?int $port = null;
