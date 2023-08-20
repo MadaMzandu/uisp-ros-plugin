@@ -17,7 +17,9 @@ class NoActionException extends Exception{}
 
 class ApiAction
 {
-    private $request ;
+    private ?object $request;
+    private ?object $_conf = null ;
+    private ?ApiSqlite $_db = null;
 
     public function submit()
     {
@@ -133,8 +135,6 @@ class ApiAction
 
         }
 
-        if($this->has_cleared($data)){ return ACTION_DELETE_OLD; }
-
         return ACTION_DEFERRED;
     }
 
@@ -219,6 +219,7 @@ class ApiAction
         return $new != $old ;
     }
 
+
     private function has_user($data): bool
     {//has valid mac or username
         $mac = $this->get('mac',$data);
@@ -261,11 +262,26 @@ class ApiAction
         return $this->_conf;
     }
 
-    public function set($request):void { $this->request = $request; }
-
-    public function test():int {
+    public function test($request):int {
+        $this->request = $request ;
         $data = $this->trimmer()->trim('service',$this->request);
         return $this->select_action($data);
+    }
+
+    private function db(): ApiSqlite
+    {
+        if(empty($this->_db)){
+            $this->_db = new ApiSqlite();
+        }
+        return $this->_db ;
+    }
+
+    private function conf(): ?object
+    {
+        if(empty($this->_conf)){
+            $this->_conf = $this->db()->readConfig();
+        }
+        return $this->_conf;
     }
 
     public function __construct($data = null){ $this->request = $data ; }
