@@ -46,7 +46,9 @@ class ApiAction
         }
         else{
             $api = new Batch();
-            switch ($this->select_action($data))
+            $select = $this->select_action($data);
+            MyLog()->Append("Selected Action: ".$select);
+            switch ($select)
             {
                 case ACTION_DOUBLE:{
                     MyLog()->Append('action delete then set');
