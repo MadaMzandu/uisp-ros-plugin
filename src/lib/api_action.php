@@ -136,6 +136,8 @@ class ApiAction
 
         }
 
+        if($this->has_cleared($data)){ return ACTION_DELETE_OLD; }
+
         return ACTION_DEFERRED;
     }
 
