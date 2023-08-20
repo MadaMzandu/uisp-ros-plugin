@@ -46,7 +46,6 @@ class ApiAction
         {
             $this->edit($data);
         }
-
     }
 
     private function edit($data)
