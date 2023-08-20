@@ -95,9 +95,9 @@ class ApiAction
     private function select_action($data): int
     {
         switch ($this->has_attributes()) {
-            case -1: return ACTION_DELETE;
             case 0: return ACTION_CACHE;
             case 2: return ACTION_AUTO;
+            default: break ;
         }
 
         if(!$this->has_changed($data)){ return ACTION_DEFERRED; }
@@ -189,6 +189,13 @@ class ApiAction
     private function trimmer(){ return new ApiTrim(); }
 
     private function attributes() { return new ApiAttributes(); }
+
+    public function set($request):void { $this->request = $request; }
+
+    public function test():int {
+        $data = $this->trimmer()->trim('service',$this->request);
+        return $this->select_action($data);
+    }
 
     public function __construct($data = null){ $this->request = $data ; }
 
