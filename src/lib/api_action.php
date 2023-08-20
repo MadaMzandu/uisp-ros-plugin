@@ -261,6 +261,13 @@ class ApiAction
         return $this->_conf;
     }
 
+    public function set($request):void { $this->request = $request; }
+
+    public function test():int {
+        $data = $this->trimmer()->trim('service',$this->request);
+        return $this->select_action($data);
+    }
+
     public function __construct($data = null){ $this->request = $data ; }
 
 }
