@@ -70,6 +70,7 @@ class ER
 
     public function prep_dhcp(): int
     {//map accounts to server pool on device
+        $this->_dhcp()->reset();
         $servers = $this->_dhcp()->findKeys();
         $nets = [];
         foreach($servers as $s){ $nets[$s] = $this->_dhcp()->findKeys($s . '>subnet')[0];}
