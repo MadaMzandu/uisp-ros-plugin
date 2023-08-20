@@ -5,41 +5,40 @@ function strim($str){ return !$str ? $str :trim(trim($str),'>');}
 class ErQueue
 {
     private $data ;
-    private $disable = false;
-    private $disrate = 0 ;
 
-    public function toArray()
-    {
-        $map = [];
-        foreach(array_keys($this->data) as $key){
-            $value = $this->data[$key] ?? null ;
-            if(preg_match("/qtype/",$key)){ $value = 'pfifo'; }
-            if(preg_match("/rate/",$key)){
-                $value = $value ? $value . 'Mbit' : null ; }
-            $map[$key] = $value ? : "";
-        }
-        if($this->disable && $this->disrate){
-            $map['rate'] = $this->disrate . 'Mbit';
-            $map['r_rate'] = $this->disrate . 'Mbit';
-        }
-        return $map ;
-    }
+    public function toArray(): array { return array_replace($this->data,[]); }
+    public function reset($ip,$limits,$disabled,$drate): void { $this->configure($ip,$limits,$disabled,$drate);}
 
-    private function limits($value)
+    private function set_rates($value): void
     {
         if(is_array($value)){
             $map = ['burst' => 'brate'];
-            foreach(['rate','burst'] as $key){
-                if(isset($value[$key]) && is_array($value[$key])){
-                    $mapped = $map[$key] ?? $key ;
-                    $this->data[$mapped] = $value[$key][0] ?? 0;
-                    $this->data['r_'.$mapped] = $value[$key][1] ?? 0;
-                }
+            foreach(['rate'] as $key){
+                $a = $value[$key] ?? null ;
+                if(!$a || sizeof($a) < 2){ continue; }
+                [$f,$r] = $a ;
+                $mapped = $map[$key] ?? $key ;
+                $this->data[$mapped] = $f . 'Mbit';
+                $this->data['r_'.$mapped] = $r . 'Mbit';
             }
         }
     }
 
-    private function df(): array
+    private function set_disabled($disabled,$rate): void
+    {
+        if($disabled){
+            $this->data['rate'] = $rate . 'Mbit';
+            $this->data['r_rate'] = $rate . 'Mbit';
+        }
+    }
+
+    private function set_qtype(): void
+    {
+        $this->data['qtype'] = 'pfifo';
+        $this->data['r_qtype'] = 'pfifo';
+    }
+
+    private function defaults(): array
     {
         $fields = 'src,dest,application,rate,brate,bsize,qtype,r_rate,r_brate,r_bsize,'.
             'r_qtype,hfq_subnet,hfq_max,hfq_id,hfq_brate,hfq_bsize,r_hfq_subnet,r_hfq_max,'.
@@ -47,14 +46,18 @@ class ErQueue
         return array_fill_keys(explode(',',$fields),"");
     }
 
-    public function __construct($ip,$limits,$disable=false,$disrate = 0)
+    private function configure($ip,$limits,$disabled,$drate): void
     {
-        $this->data = $this->df();
+        $this->data = $this->defaults();
         $this->data['src'] = $ip . '/32';
-        $this->limits($limits);
-        $this->disable = $disable ;
-        $this->disrate = $disrate ;
+        $this->set_rates($limits);
+        $this->set_qtype();
+        $this->set_disabled($disabled,$drate);
+        $this->data['path'] = 'queue';
     }
+
+    public function __construct($ip, $limits, $disabled=false, $disrate = 0){
+        $this->configure($ip,$limits,$disabled,$disrate); }
 
 
 }
