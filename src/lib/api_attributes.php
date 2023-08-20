@@ -15,7 +15,7 @@ class ApiAttributes
         $attributes = $entity->attributes ?? null ;
         $values = $this->extract($attributes);
         if(empty($values)) return 0 ;
-        if(!$this->check_status($entity)) return -1;
+//        if(!$this->check_status($entity)) return -1;
         if(!$this->check_device($values)) return 0 ;
         if($this->check_mac($values)) return 1;
         if($this->check_username($values)) return 1 ;
@@ -26,7 +26,7 @@ class ApiAttributes
     private function check_username($values):bool
     {
         $user = $values['username'] ?? null ;
-        return (bool) $user ;
+        return (bool) trim($user) ;
     }
 
     public function check_auto($values): bool
