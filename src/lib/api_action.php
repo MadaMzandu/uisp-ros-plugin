@@ -103,11 +103,10 @@ class ApiAction
 
     private function select_action($data): int
     {
-        if($this->has_changed($data))
-        {
-            if($this->has_device($data))
-            {
+        if($this->has_device($data)){
 
+            if($this->has_changed($data))
+            {
                 if(!$this->has_user($data))
                 {
                     if($this->has_auto($data)){ return ACTION_AUTO; }
@@ -127,12 +126,15 @@ class ApiAction
                     $this->has_upgraded($data) ||
                     $this->has_flipped($data)){ return ACTION_DOUBLE; }
 
-                return ACTION_SET ;
             }
 
-            if($this->has_cleared($data)){ return ACTION_DELETE_OLD; }
+            if($this->has_outage()){ return ACTION_DEFERRED; } //skip network flapping
+
+            return ACTION_SET ;
 
         }
+
+        if($this->has_cleared($data)){ return ACTION_DELETE_OLD; }
 
         return ACTION_DEFERRED;
     }
@@ -214,6 +216,13 @@ class ApiAction
         $new = $this->get('planId',$data);
         $old = $this->get('planId',$data,'old');
         return $new && $old && $new != $old ;
+    }
+
+    private function has_outage()
+    {
+        $new = $this->request->extraData->entity->hasOutage ?? false ;
+        $old = $this->request->extraData->entityBeforeEdit->hasOutage ?? false ;
+        return $new != $old ;
     }
 
     private function has_user($data): bool
