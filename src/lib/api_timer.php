@@ -7,6 +7,7 @@ class ApiTimer
     public function stop()
     {
         $in = $this->duration();
+        MyLog()->Append(sprintf('%s completed in %s seconds',$this->label,$in / 1000));
         MyLog()->Append(sprintf('%s completed in %s milliseconds',$this->label,$in));
         return $in;
     }
