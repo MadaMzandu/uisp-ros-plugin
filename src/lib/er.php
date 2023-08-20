@@ -1,6 +1,7 @@
 <?php
 include_once 'er_client.php';
 include_once 'er_objects.php';
+include_once 'api_sqlite.php';
 include_once 'api_ip.php';
 class ER
 {
@@ -24,6 +25,14 @@ class ER
         return $this->client()->connect($dev->user,$pass,$dev->ip,$port);
     }
 
+    private function reset()
+    {
+        $this->batch_success = [];
+        $this->batch_failed = [];
+        $this->set_list = [];
+        $this->delete_list = [];
+    }
+
     private function client():ErClient { return erClient(); }
 
     public function __call($name, $arguments)
@@ -37,16 +46,16 @@ class ER
 
         $this->device = $device;
         $this->batch = $data ;
-        $this->batch_success = [];
-        $this->batch_failed = [];
+        $this->reset();
         $type = $this->type();
         return $this->$type();
     }
 
     public function dhcp(): int
     {
-        if(!$this->_dhcp()->read()){ return 0; }
-        if(!$this->prep_dhcp()){ return 0 ; }
+        if(!$this->connect() ||
+            !$this->_dhcp()->read() ||
+            !$this->prep_dhcp()) { return 0 ;}
         $api = $this->action == 'set' ? 'set.json' : 'delete.json';
         $ret = $this->client()->post($api,$this->_dhcp()->post());
         $success = $ret['SET']['success'] ?? $ret['DELETE']['success'];
@@ -80,7 +89,7 @@ class ER
                         $this->_dhcp()->set($i['id'],null,$path);
                     }
                     else{
-                        $this->_dhcp()->set($i['id'],$this->arrClean($i),$path);
+                        $this->_dhcp()->set($i['id'],$this->clean_data($i),$path);
                     }
                 }
             }
@@ -97,28 +106,31 @@ class ER
     {
         $disabled = $this->conf()->disabled_list ?? 'disabled';
         $active = $this->conf()->active_list ?? null;
+        $suspended = $item['disabled'] ?? false ;
+        $ip = $item['ip-address'] ?? null ;
+        if(!$ip){ return; }
         if($this->action == 'remove'){
-            $this->delete_list[$disabled]['address'][] = $item['ip-address'];
-            if($active)$this->delete_list[$active]['address'][] = $item['ip-address'];
+            $this->delete_list[$disabled]['address'][] = $ip;
+            if($active)$this->delete_list[$active]['address'][] = $ip;
         }
-        else if($item['disabled']){
-            $this->set_list[$disabled]['address'][] = $item['ip-address'];
-            if($active)$this->delete_list[$active]['address'][] = $item['ip-address'];
+        else if($suspended){
+            $this->set_list[$disabled]['address'][] = $ip;
+            if($active)$this->delete_list[$active]['address'][] = $ip;
         }
         else{
-            $this->delete_list[$disabled]['address'][] = $item['ip-address'];
-            if($active)$this->set_list[$active]['address'][] = $item['ip-address'];
+            $this->delete_list[$disabled]['address'][] = $ip;
+            if($active)$this->set_list[$active]['address'][] = $ip;
         }
     }
 
     private function set_fw()
     {
-        $lists['set'] = &$this->set_list;
-        $lists['delete'] = &$this->delete_list;
-        foreach(array_keys($lists) as $key){
-            if(empty($lists[$key])){ continue; }
+        $jobs['set'] = &$this->set_list;
+        $jobs['delete'] = &$this->delete_list;
+        foreach(array_keys($jobs) as $key){
+            if(empty($jobs[$key])){ continue; }
             $this->_fw()->reset();
-            $this->_fw()->set('address-group',$lists[$key]);
+            $this->_fw()->set('address-group',$jobs[$key]);
             $this->client()->post($key.'.json',$this->_fw()->post());
         }
     }
@@ -128,7 +140,8 @@ class ER
         if(!$this->connect()){ return 0 ;}
         $t = new ApiTimer('Queue Write');
         $map = [];
-        foreach($this->batch as $item){ $map[$item['src']] = $this->arrClean($item); }
+        foreach($this->batch as $item){
+            $map[$item['src']] = $this->clean_data($item); }
         $read = $this->read_queues();
         if(empty($map)){ $data = []; }
         else if($this->action() == 'remove'){
@@ -197,7 +210,7 @@ class ER
         return 'set';
     }
 
-    private function arrClean($array): array
+    private function clean_data($array): array
     {
         $diff = ['path' => null,'batch' => null,'disabled' => null,
             'action' => null,'server' => null,'id' => null];
