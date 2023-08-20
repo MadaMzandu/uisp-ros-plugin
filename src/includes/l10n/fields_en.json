@@ -120,7 +120,7 @@
   {
     "name" : "active_list",
     "width" : "550",
-    "label" : "Mikrotik address list for active users",
+    "label" : "Router address list for active users",
     "describe" : true,
     "description" : "Optional name of dynamic firewall list for accounts that are not suspended"
   },
@@ -128,7 +128,7 @@
   {
     "name" : "disabled_list",
     "width" : "550",
-    "label" : "Mikrotik address list for disabled users",
+    "label" : "Router address list for disabled users",
     "describe" : true,
     "description" : "Name of dynamic firewall list for filtering and redirecting suspended accounts"
   },
@@ -136,17 +136,17 @@
   {
     "name" : "disabled_profile",
     "width" : "550",
-    "label" : "Mikrotik profile for disabled users",
+    "label" : "Router profile for disabled users",
     "describe" : true,
-    "description" : "Mikrotik ppp profile that is applied to suspended accounts. The profile has to be created and configured each router"
+    "description" : "Router ppp profile that is applied to suspended accounts. The profile has to be created and configured each router"
   },
   "config_disabled_rate" :
   {
     "name" : "disabled_rate",
     "width" : "550",
-    "label" : "Mikrotik rate limit for disabled accounts",
+    "label" : "Router rate limit for disabled accounts",
     "describe" : true,
-    "description" : "Mikrotik rate applied to disabled profile and disabled dhcp queues"
+    "description" : "Router rate applied to disabled profile and disabled dhcp queues"
   },
   "config_unsuspend_date_fix" :
   {
