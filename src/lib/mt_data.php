@@ -62,7 +62,7 @@ class MtData extends Data
         }
         $data = [
             'path' => '/queue/simple',
-            'name' => $this->account_name(),
+            'name' => sprintf('%s - %s',$this->account_name(),$id),
             'target' => $this->ip(),
             'max-limit' => $this->to_pair($limits['rate']),
             'limit-at' => $this->to_pair($limits['limit']),
