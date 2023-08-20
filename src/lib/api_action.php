@@ -9,6 +9,7 @@ const ACTION_DEFERRED = 6;
 const ACTION_INACTIVE = 8;
 const ACTION_DOUBLE = 2 ;
 const ACTION_DELETE = -1 ;
+const ACTION_DELETE_OLD = -2;
 const ACTION_SET = 1 ;
 const ACTION_CACHE = 10;
 const ACTION_AUTO = 11;
@@ -16,7 +17,9 @@ class NoActionException extends Exception{}
 
 class ApiAction
 {
-    private $request ;
+    private ?object $request;
+    private ?object $_conf = null ;
+    private ?ApiSqlite $_db = null;
 
     public function submit()
     {
@@ -67,7 +70,13 @@ class ApiAction
                     $cache->save($data['entity']);
                     $delete = $this->get('id',$data);
                     $api->del_accounts([$delete]);
-                    //$this->attributes()->unset_attr($delete);
+                    break ;
+                }
+                case ACTION_DELETE_OLD:{
+                    MyLog()->Append('action delete old');
+                    $cache->save($data['previous']);
+                    $delete = $this->get('id',$data,'old');
+                    $api->del_accounts([$delete]);
                     break ;
                 }
                 case ACTION_DEFERRED: {
@@ -94,25 +103,38 @@ class ApiAction
 
     private function select_action($data): int
     {
-        switch ($this->has_attributes()) {
-            case 0: return ACTION_CACHE;
-            case 2: return ACTION_AUTO;
-            default: break ;
+        if($this->has_changed($data))
+        {
+            if($this->has_device($data))
+            {
+
+                if(!$this->has_user($data))
+                {
+                    if($this->has_auto($data)){ return ACTION_AUTO; }
+
+                    if($this->has_cleared($data)){ return ACTION_DELETE_OLD; }
+
+                    return ACTION_DEFERRED;
+                }
+
+                if ($this->has_ended($data)) { return ACTION_DELETE; }
+
+                if ($this->has_deferred($data)) { return ACTION_DEFERRED; }
+
+                if (
+                    $this->has_moved($data) ||
+                    $this->has_renamed($data) ||
+                    $this->has_upgraded($data) ||
+                    $this->has_flipped($data)){ return ACTION_DOUBLE; }
+
+                return ACTION_SET ;
+            }
+
+            if($this->has_cleared($data)){ return ACTION_DELETE_OLD; }
+
         }
 
-        if(!$this->has_changed($data)){ return ACTION_DEFERRED; }
-
-        if ($this->has_ended($data)) { return ACTION_DELETE; }
-
-        if ($this->has_deferred($data)) { return ACTION_DEFERRED; }
-
-        if (
-            $this->has_moved($data) ||
-            $this->has_renamed($data) ||
-            $this->has_upgraded($data) ||
-            $this->has_flipped($data)){ return ACTION_DOUBLE; }
-
-        return ACTION_SET;
+        return ACTION_DEFERRED;
     }
 
     private function has_changed($data): bool
@@ -122,9 +144,12 @@ class ApiAction
         return $entity != $previous;
     }
 
-    private function has_attributes(): int
+    private function has_auto($data): bool
     {
-        return $this->attributes()->check($this->request);
+        $ap = $this->conf()->auto_ppp_user ?? false ;
+        $ah = $this->conf()->auto_hs_user ?? false ;
+        $he = $data['entity']['hotspot'] ?? false ;
+        return ($he && $ah) || $ap ;
     }
 
     private function has_deferred($data): bool
@@ -139,7 +164,7 @@ class ApiAction
         foreach ($fields as $field){
             $new = $this->get($field,$data);
             $old = $this->get($field,$data,'previous');
-            if($old && $new != $old){
+            if($old && $new && $new != $old){
                 return true ;
             }
         }
@@ -165,11 +190,38 @@ class ApiAction
         return $new && $old && $new != $old ;
     }
 
+    private function has_cleared($data): bool
+    {
+        foreach (['device','username','mac'] as $key){
+            $new = $this->get($key,$data);
+            $old = $this->get($key,$data,'old');
+            if($old && empty($new)){ return true; }
+        }
+        return false ;
+    }
+
+    private function has_device($data): bool
+    {
+        $new = $this->get('device',$data);
+        if($new){ return true ; }
+        $old = $this->get('device',$data);
+        if($old){ return true ; }
+        return false ;
+    }
+
     private function has_upgraded($data): bool
     {//compare plans
         $new = $this->get('planId',$data);
         $old = $this->get('planId',$data,'old');
         return $new && $old && $new != $old ;
+    }
+
+    private function has_user($data): bool
+    {
+        $mac = $this->get('mac',$data);
+        if(filter_var($mac,FILTER_VALIDATE_MAC)){ return true; }
+        $user = $this->get('username',$data);
+        return !empty($user);
     }
 
     private function has_moved($data): bool
@@ -190,11 +242,26 @@ class ApiAction
 
     private function attributes() { return new ApiAttributes(); }
 
-    public function set($request):void { $this->request = $request; }
-
-    public function test():int {
+    public function test($request):int {
+        $this->request = $request ;
         $data = $this->trimmer()->trim('service',$this->request);
         return $this->select_action($data);
+    }
+
+    private function db(): ApiSqlite
+    {
+        if(empty($this->_db)){
+            $this->_db = new ApiSqlite();
+        }
+        return $this->_db ;
+    }
+
+    private function conf(): ?object
+    {
+        if(empty($this->_conf)){
+            $this->_conf = $this->db()->readConfig();
+        }
+        return $this->_conf;
     }
 
     public function __construct($data = null){ $this->request = $data ; }
