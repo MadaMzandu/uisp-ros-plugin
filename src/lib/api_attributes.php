@@ -146,7 +146,8 @@ class ApiAttributes
 
     private function to_value($value)
     {
-        if(empty($value)) return null ;
+        if(is_numeric($value)){ return trim($value); }
+        if(empty($value)) { return null; }
         return trim($value);
     }
 
