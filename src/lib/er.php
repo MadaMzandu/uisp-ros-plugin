@@ -60,7 +60,7 @@ class ER
         $ret = $this->client()->post($api,$this->_dhcp()->post());
         $success = $ret['SET']['success'] ?? $ret['DELETE']['success'];
         if(!$success){
-            $error = $ret['SET']['error'] ?? $ret['DELETE']['error'] ?? 'Unknown error';
+            $error = $ret['SET']['error'] ?? $ret['DELETE']['error'] ?? ['Unknown error'];
             $this->setErr(array_values($error)[0]);
         }
         else{ $this->set_fw(); }
