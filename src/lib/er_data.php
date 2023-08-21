@@ -39,7 +39,7 @@ class ErData extends Data
             'action' => 'set',
             'disabled' => $this->disabled(),
             'batch' => $this->service['batch'],
-            'id' => $this->account_name(),
+            'id' => 'client-' . $this->service['clientId'] . '-' . $this->service['id'],
             'ip-address' => $this->ip(),
             'mac-address' => $this->service['mac'],
         ];
