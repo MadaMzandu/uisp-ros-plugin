@@ -294,22 +294,6 @@ class ApiAction
         return $this->select_action($data);
     }
 
-    private function db(): ApiSqlite
-    {
-        if(empty($this->_db)){
-            $this->_db = new ApiSqlite();
-        }
-        return $this->_db ;
-    }
-
-    private function conf(): ?object
-    {
-        if(empty($this->_conf)){
-            $this->_conf = $this->db()->readConfig();
-        }
-        return $this->_conf;
-    }
-
     public function __construct($data = null){ $this->request = $data ; }
 
 }
