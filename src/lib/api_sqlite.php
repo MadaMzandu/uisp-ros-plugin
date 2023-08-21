@@ -35,8 +35,8 @@ class ApiSqlite
 
     private function quote($value)
     {
-        if(empty($value)) return 'null';
         if(is_numeric($value)) return $value;
+        if(empty($value)) return 'null';
         return sprintf('"%s"',SQLite3::escapeString($value));
     }
 
