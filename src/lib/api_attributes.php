@@ -153,6 +153,7 @@ class ApiAttributes
     private function devmap(): array
     {
         if(empty($this->_devmap)){
+            $this->_devmap = [];
             $devices = $this->db()->selectAllFromTable('devices') ?? [];
             foreach ($devices as $device){
                 $name = $device['name'] ?? 'Noname';
