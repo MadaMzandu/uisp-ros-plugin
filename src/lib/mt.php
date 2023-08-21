@@ -194,6 +194,9 @@ class MT extends Device
 
     protected function find_id($data): ?string
     {
+        if($this->is_queue($data['path']) //find broken name
+            && $q = $this->find_broken($data)){ MyLog()->Append(['FOUND ID:',$q]);
+            return $q; }
         $name = $data['name'] ?? null ;
         $mac = $data['mac-address'] ?? null ;
         $duid = $data['duid'] ?? null;
@@ -215,6 +218,25 @@ class MT extends Device
             }
         }
         return null ;
+    }
+
+    protected function find_broken($data)
+    {
+        $n = $data['name'] ?? null ;
+        if(!$n){ return null; }
+        $filter = [];
+        $name = preg_replace("/ - \d+$/",'',$n);
+        if($name) $filter['name'] = $name;
+        if(!$filter){ return null; }
+        $r = $this->read('/queue/simple',$filter);
+        $i = $r[0] ?? [];
+        return $i['.id'] ?? null ;
+    }
+
+    protected function is_queue($path)
+    {
+        return preg_match("/queue\/simple/",
+            trim(trim($path),'/'));
     }
 
     protected function find_local(): ?string
