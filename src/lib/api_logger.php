@@ -9,9 +9,9 @@ class ApiLogger
     {
         if (!$this->Debug() && $level >= LOG_DEBUG){ return; }
         if(is_array($entry)){ $entry = json_encode($entry); }
-//        error_log(sprintf("%s: %s",$this->Time(), $entry) . PHP_EOL,3,'data/plugin.log');
+        error_log(sprintf("%s: %s",$this->Time(), $entry) . PHP_EOL,3,'data/plugin.log');
 //      echo sprintf("%s: %s",$this->Time(), $entry) . PHP_EOL;
-       $this->ULog()->appendLog(sprintf("%s: %s",$this->Time(), $entry));
+//       $this->ULog()->appendLog(sprintf("%s: %s",$this->Time(), $entry));
     }
 
     private function Debug(): bool
