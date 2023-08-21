@@ -42,7 +42,9 @@ class ApiAction
         }
         else{
             $api = new MtBatch();
-            switch ($this->select_action($data))
+            $select = $this->select_action($data);
+            MyLog()->Append("Selected action: ".$select);
+            switch ($select)
             {
                 case ACTION_DOUBLE:{
                     MyLog()->Append('action delete then set');
