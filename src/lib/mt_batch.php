@@ -156,7 +156,9 @@ class MtBatch extends MT
         $this->batch_success = [];
         foreach (array_keys($deviceData) as $did)
         {
-            $this->batch_device = (object) $devices[$did];
+            $device  = $devices[$did] ?? null ;
+            if(!$device){ continue; }
+            $this->batch_device = (object) $device ;
             MyLog()->Append('executing batch for device: '.$this->batch_device->name);
             $keys = ['pool','parents','profiles','queues','accounts','dhcp6','disconn'];
             if($delete) {
