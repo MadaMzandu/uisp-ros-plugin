@@ -125,7 +125,8 @@ class MT extends Device
         $api->timeout = 1;
         $api->attempts = 1;
         //$api->debug = true;
-        if (!$api->connect($this->device->ip,
+        $port = $this->device->port ?? 8728 ;
+        if (!$api->connect($this->device->ip . ':' . $port,
             $this->device->user, $this->device->password)) {
             MyLog()->Append('mt: failed to connect to: '. $this->device->ip);
             return null ;
