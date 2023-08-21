@@ -276,6 +276,7 @@ class MtBatch extends MT
     private function find_devices(): array
     {
         if(empty($this->_devices)){
+            $this->_devices = [];
             $devs = $this->db()->selectAllFromTable('devices') ?? [];
             foreach ($devs as $dev){ $this->_devices[$dev['id']] = $dev; }
         }
