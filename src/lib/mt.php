@@ -208,7 +208,6 @@ class MT extends Device
             $id = $item['.id'] ?? null ;
             if($id && is_string($id)){
                 if(preg_match("/(binding)|(lease)/",$path)){ //convert dynamic lease
-                    MyLog()->Append('THIS IS A DHCP LEASE');
                     $dynamic = $item['dynamic'] ?? 'false' ;
                     if($dynamic == 'true'){ $this->make_static_lease($id,$path);}
                 }
