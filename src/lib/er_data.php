@@ -17,12 +17,11 @@ class ErData extends Data
         if(!in_array($this->type(),['dhcp','dhcp6'])) return null ;
         $dev = $this->find_device();
         $qos = $dev->qos ?? null ;
-        $action = $this->service['action'] ?? 'set';
-        if($action == 'set' && !$qos){ return null; }
+        if(!$qos){ return null; }
         $q = new ErQueue($this->ip(),$this->limits(),
             $this->disabled(),$this->disabled_rate());
         $post = $q->toArray();
-        $post['action'] = $action;
+        $post['action'] = $this->service['action'];
         $post['path'] = 'queue';
         $post['batch'] = $this->service['batch'];
         return $post ;
