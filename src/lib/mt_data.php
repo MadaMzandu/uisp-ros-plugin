@@ -399,8 +399,7 @@ class MtData extends MT
     private function has_dhcp6(): string
     {
         $duid = $this->make_duid() ;
-        $iaid = $this->service['iaid'] ?? 1 ;
-        return $duid && $iaid  && $this->ip(true);
+        return $duid && $this->ip(true);
     }
 
     private function make_duid(): ?string
