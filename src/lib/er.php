@@ -46,8 +46,7 @@ class ER
 
         $this->device = $device;
         $this->batch = $data ;
-        while ($this->has_lock()){ MyLog()->Append(["LOCKED: "]);
-            sleep(5); }
+        while ($this->has_lock()){ sleep(5); }
         $this->lock();
         $this->reset();
         $type = $this->type();
