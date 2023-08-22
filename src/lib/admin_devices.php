@@ -195,6 +195,7 @@ class AdminDevices extends Admin
             'mikrotik' => 8728,
             'cisco' => 22,
             'radius' => 3301,
+            'edgeos' => 443,
         );
         return $ports[$type];
     }
