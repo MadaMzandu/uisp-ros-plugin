@@ -53,7 +53,6 @@ class MtData extends MT
             'name' => $this->service['username'],
             'password' => $this->service['password'],
             'address' => $this->ip(),
-            'parent-queue' => $this->parent_name(),
             'profile' => $this->profile_name(),
             'comment' => $this->account_comment(),
         ];
@@ -299,17 +298,14 @@ class MtData extends MT
         if($this->disabled()) return $this->disabled_rate();
         $limits = $this->limits();
         $values = [];
-        foreach (array_keys($limits) as $key) {
+        $hs = $this->type() == 'hotspot';
+        foreach (['rate','burst','thresh','time','prio','limit'] as $key) {
             $limit = $limits[$key];
             $mbps = !in_array($key,['time','prio']);
-            $values[$key] = $this->to_pair($limit, $mbps);
+            if($hs && $key == 'prio'){ $values[] = $limit[0] ?? 8 ;}
+            else{ $values[] = $this->to_pair($limit, $mbps); }
         }
-        $order = 'rate,burst,thresh,time,prio,limit';
-        $ret = [];
-        foreach (explode(',', $order) as $key) {
-            $ret[] = $values[$key];
-        }
-        return implode(' ', $ret);
+        return implode(' ', $values);
     }
 
     private function addr_list()
