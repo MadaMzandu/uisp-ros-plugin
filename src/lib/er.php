@@ -258,20 +258,11 @@ class ER
         $this->batch_success = [];
     }
 
-    private function unlock()
-    {
-        shell_exec('rm -f data/.er.lock');
-    }
+    private function unlock() { shell_exec('rm -f data/.er.lock'); }
 
-    private function lock()
-    {
-        touch('data/.er.lock');
-    }
+    private function lock() { touch('data/.er.lock'); }
 
-    private function has_lock(): bool
-    {
-        return is_file('data/.er.lock');
-    }
+    private function has_lock(): bool { return is_file('data/.er.lock'); }
 
     public function success(): array { return $this->batch_success; }
 
