@@ -122,8 +122,7 @@ class ApiAction
                 if (
                     $this->has_moved($data) ||
                     $this->has_renamed($data) ||
-                    $this->has_upgraded($data) ||
-                    $this->has_flipped($data)){ return ACTION_DOUBLE; }
+                    $this->has_migrated($data)){ return ACTION_DOUBLE; }
 
             }
 
@@ -160,6 +159,18 @@ class ApiAction
         return $status == ACTION_DEFERRED ;
     }
 
+    private function has_migrated($data)
+    { //has switched between dhcp/ppp/hotspot
+        $new = $this->get('mac',$data)
+            ?? $this->get('username',$data);
+        $old = $this->get('mac',$data,'old')
+            ?? $this->get('username',$data,'old');
+        if($new != $old){ return true; }
+        $new = $this->get('hotspot',$data) ;
+        $old = $this->get('hotspot',$data,'old') ;
+        return $new != $old ;
+    }
+
     private function has_renamed($data): bool
     {
         $fields = ['mac','username','duid','iaid'];
@@ -170,10 +181,6 @@ class ApiAction
                 return true ;
             }
         }
-        $new = $this->get('mac',$data)
-            ?? $this->get('username',$data) ?? null ;
-        $old = $this->get('mac',$data,'old')
-            ?? $this->get('username',$data,'old') ?? null ;
         return $new != $old ;
     }
 
@@ -185,19 +192,8 @@ class ApiAction
         return in_array($status,[ACTION_OBSOLETE,ACTION_ENDED,ACTION_INACTIVE]);
     }
 
-    private function has_flipped($data): bool
-    {//compare status
-        $action = $data['action'] ?? null;
-        $mac = $this->get('mac',$data);
-        if($mac) return false ; // skip this check for dhcp
-        if(in_array($action,['suspend','unsuspend'])) return true ;
-        $new = $this->get('status',$data);
-        $old = $this->get('status',$data,'old');
-        return $new && $old && $new != $old ;
-    }
-
     private function has_cleared($data): bool
-    {
+    { //has removed attributes
         foreach (['device','username','mac'] as $key){
             $new = $this->get($key,$data);
             $old = $this->get($key,$data,'old');
@@ -215,13 +211,6 @@ class ApiAction
         return false ;
     }
 
-    private function has_upgraded($data): bool
-    {//compare plans
-        $new = $this->get('planId',$data);
-        $old = $this->get('planId',$data,'old');
-        return $new && $old && $new != $old ;
-    }
-
     private function has_outage(): bool
     {
         $new = $this->request->extraData->entity->hasOutage ?? false ;
@@ -230,7 +219,7 @@ class ApiAction
     }
 
     private function has_user($data): bool
-    {
+    {//has valid mac or username
         $mac = $this->get('mac',$data);
         if(filter_var($mac,FILTER_VALIDATE_MAC)){ return true; }
         $user = $this->get('username',$data);
