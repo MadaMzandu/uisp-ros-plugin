@@ -46,9 +46,14 @@ class ER
 
         $this->device = $device;
         $this->batch = $data ;
+        while ($this->has_lock()){ MyLog()->Append(["LOCKED: "]);
+            sleep(5); }
+        $this->lock();
         $this->reset();
         $type = $this->type();
-        return $this->$type();
+        $ret = $this->$type();
+        $this->unlock(); ;
+        return $ret ;
     }
 
     public function dhcp(): int
@@ -251,6 +256,21 @@ class ER
             $this->batch_failed[$batch] = $err;
         }
         $this->batch_success = [];
+    }
+
+    private function unlock()
+    {
+        shell_exec('rm -f data/.er.lock');
+    }
+
+    private function lock()
+    {
+        touch('data/.er.lock');
+    }
+
+    private function has_lock(): bool
+    {
+        return is_file('data/.er.lock');
     }
 
     public function success(): array { return $this->batch_success; }
