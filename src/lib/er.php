@@ -22,6 +22,7 @@ class ER
         $dev = &$this->device ;
         $pass = $dev->password ?? null;
         $port = $dev->port ?? 443;
+        $this->_dhcp()->set_device($this->device);
         return $this->client()->connect($dev->user,$pass,$dev->ip,$port);
     }
 
