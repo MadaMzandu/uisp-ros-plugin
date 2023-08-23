@@ -82,6 +82,8 @@ class ErObject
 
     public function findKeys($path = null){ return array_keys($this->findPath($path)); }
 
+    public function set_device($device){ $this->_device = $device; }
+
     public function read($path = null): bool
     {
         $this->_read = null ;
