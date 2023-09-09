@@ -34,7 +34,8 @@ class AdminPlans extends Admin
         $plans = $this->merge();
         $update = [];
         foreach ($plans as $plan){
-            $update[] = array_diff_key($plan,['uploadSpeed'=>0,'downloadSpeed' => 0]);
+            $update[] = array_diff_key($plan,['uploadSpeed'=>0,
+                'downloadSpeed' => 0,'last' => -1,'created' => -1]);
         }
         $this->db()->insert($update,'plans',true);
         return $plans;
