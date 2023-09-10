@@ -21,7 +21,7 @@ class AdminPlans extends Admin
 
     private function defaults(): array
     {
-        $keys = ['ratio','uploadSpeed','downloadSpeed','priorityUpload','priorityDownload',
+        $keys = ['ratio','priorityUpload','priorityDownload',
             'limitUpload','limitDownload', 'burstUpload','burstDownload','threshUpload',
             'threshDownload','timeUpload','timeDownload',];
         $fill = array_fill_keys($keys,0);
@@ -35,8 +35,7 @@ class AdminPlans extends Admin
         $plans = $this->merge();
         $update = [];
         foreach ($plans as $plan){
-            $update[] = array_diff_key($plan,['name'=> null,
-                'last' => -1,'created' => -1]);
+            $update[] = array_diff_key($plan,['last' => -1,'created' => -1]);
         }
         $this->db()->insert($update,'plans',true);
         return $plans;
