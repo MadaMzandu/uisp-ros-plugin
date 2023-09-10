@@ -29,6 +29,12 @@
     ],
   "configuration": [
     {
+      "key": "unmsToken",
+      "label": "UNMS api token",
+      "description": "Api token to access NMS",
+      "required": 0
+    },
+    {
       "key": "debugEnable",
       "label": "Enable Debugging",
       "description": "Enable verbose log output for debugging",
