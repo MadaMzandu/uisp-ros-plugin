@@ -1,10 +1,16 @@
 <?php
 require_once 'vendor/autoload.php';
 
+use Ubnt\UcrmPluginSdk\Service\UcrmApi;
+use Ubnt\UcrmPluginSdk\Service\UnmsApi;
+
+
 class ApiUcrm
 {
 
     public bool $assoc = false ;
+    public bool $unms = false ;
+    public ?string $key = null ;
     private ?string $method;
     private $data ;
     private ?string $url ;
@@ -17,10 +23,16 @@ class ApiUcrm
 
     private function exec()
     {
-        $api = \Ubnt\UcrmPluginSdk\Service\UcrmApi::create();
+        $api = $this->unms ? UnmsApi::create($this->key()): UcrmApi::create();
         $action = $this->method;
-        $response = $api->$action($this->url, $this->data);
-        return json_decode(json_encode($response), $this->assoc);
+        try{
+            $response = $api->$action($this->url, $this->data);
+            return json_decode(json_encode($response), $this->assoc);
+        }
+        catch (\Exception $e){
+            MyLog()->Append([$e->getMessage(),$e->getTraceAsString()]);
+            return null ;
+        }
     }
 
     public function post($path,$data= [])
@@ -49,9 +61,20 @@ class ApiUcrm
 
     private function configure($path,$method,$data)
     {
-        $this->method = $method;
-        $this->url = $path ;
-        $this->data = $data ;
+        $this->method = strtolower(trim($method));
+        $this->url = trim(trim($path),'/');
+        $this->data = json_decode(json_encode($data),true);
     }
+
+    private function key(): string
+    {
+        $c = [];
+        if(is_file('data/config.json')){
+            $c = json_decode(file_get_contents(
+                    'data/config.json'),true) ?? [];
+        }
+        return $this->key ?? $c['nmsToken'] ?? '' ;
+    }
+
 
 }
