@@ -35,6 +35,8 @@ CREATE TABLE  IF NOT EXISTS tmp."devices" (
 CREATE TABLE IF NOT EXISTS tmp."plans" (
     "id"    INTEGER NOT NULL,
     "ratio" INTEGER,
+    "uploadSpeed" INTEGER,
+    "downloadSpeed" INTEGER,
     "priorityUpload" INTEGER,
     "priorityDownload" INTEGER,
     "limitUpload" INTEGER ,

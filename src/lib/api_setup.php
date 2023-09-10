@@ -1,6 +1,6 @@
 <?php
 //remember to update cols file and repeats when schema changes
-const MY_VERSION = '2.0.1';
+const MY_VERSION = '2.0.2';
 const MAX_BACKUPS = 6 ;
 const REPEAT_STATEMENTS  = 4; //number of statements expected to fail during update
 

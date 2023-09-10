@@ -2,6 +2,8 @@
   "plans": [
     "id",
     "ratio",
+    "uploadSpeed",
+    "downloadSpeed",
     "priorityUpload",
     "priorityDownload",
     "limitUpload",

@@ -34,6 +34,8 @@ CREATE TABLE IF NOT EXISTS "devices" (
 CREATE TABLE IF NOT EXISTS "plans" (
     "id"    INTEGER NOT NULL,
     "ratio" INTEGER,
+    "uploadSpeed" INTEGER,
+    "downloadSpeed" INTEGER,
     "priorityUpload" INTEGER,
     "priorityDownload" INTEGER,
     "limitUpload" INTEGER ,
