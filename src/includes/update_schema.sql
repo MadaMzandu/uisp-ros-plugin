@@ -77,7 +77,7 @@ priority,limitUpload,limitDownload,burstUpload,burstDownload,threshUpload,thresh
 "last",created FROM plans;
 INSERT INTO tmp."plans" ("id","ratio") SELECT "id","ratio" FROM plans ;
 INSERT INTO tmp."network" (id,address,address6) SELECT id,address,prefix6 FROM services ;
-
+DELETE FROM tmp."plans" WHERE id=0 ;
 
 CREATE INDEX tmp."address_index" ON "network" ("address");
 CREATE INDEX tmp."address6_index" ON "network" ("address6");
