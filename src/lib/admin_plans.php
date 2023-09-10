@@ -43,7 +43,7 @@ class AdminPlans extends Admin
 
     private function get_plans(): array
     {
-        $data = $this->ucrm()->get('service-plans',['public' => 0]);
+        $data = $this->ucrm()->get('service-plans',['servicePlanType' => 'internet']);
         $read = json_decode(json_encode($data),true);
         $tmp = [];
         $trimmer = null ;
