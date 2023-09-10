@@ -21,7 +21,7 @@ class AdminPlans extends Admin
 
     private function defaults(): array
     {
-        $keys = ['ratio','priorityUpload','priorityDownload',
+        $keys = ['id','name','ratio','uploadSpeed','downloadSpeed','priorityUpload','priorityDownload',
             'limitUpload','limitDownload', 'burstUpload','burstDownload','threshUpload',
             'threshDownload','timeUpload','timeDownload',];
         $fill = array_fill_keys($keys,0);
@@ -35,7 +35,7 @@ class AdminPlans extends Admin
         $plans = $this->merge();
         $update = [];
         foreach ($plans as $plan){
-            $update[] = array_diff_key($plan,['last' => -1,'created' => -1]);
+            $update[] = array_diff_key($plan,['last' => -1,'created' => -1,'archive' => null]);
         }
         $this->db()->insert($update,'plans',true);
         return $plans;
@@ -50,6 +50,7 @@ class AdminPlans extends Admin
         foreach ($read as $item) {
             $trimmer ??= array_diff_key($item,['id' => 0,'uploadSpeed' => 0,'downloadSpeed' => 0,'name' => null]);
             $trim = array_diff_key($item,$trimmer);
+            $trim['archive'] = false ;
             $tmp[$item['id']] = array_replace($this->defaults(),$trim);
         }
         return $tmp ;
@@ -70,15 +71,17 @@ class AdminPlans extends Admin
         return $this->update();
     }
 
-    public function edit()
+    public function edit():bool
     {
-        if($this->db()->edit($this->data,'plans')){
+        $arr = (array) $this->data ;
+        $update = array_diff_key($arr,['archive' => null]);
+        if($this->db()->edit($update,'plans')){
             $this->rebuild();
         }
         return true ;
     }
 
-    public function delete()
+    public function delete():bool
     {
         $id = $this->data->id ?? 0 ;
         if($this->db()->delete($id,'plans')){
