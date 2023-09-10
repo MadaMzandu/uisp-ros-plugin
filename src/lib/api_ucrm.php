@@ -4,10 +4,16 @@ include_once '_web_ucrm.php';
 
 const USE_UCRM_CURL = 0;
 
+use Ubnt\UcrmPluginSdk\Service\UcrmApi;
+use Ubnt\UcrmPluginSdk\Service\UnmsApi;
+
+
 class ApiUcrm
 {
 
     public bool $assoc = false ;
+    public bool $unms = false ;
+    public ?string $key = null ;
     private ?string $method;
     private $data ;
     private ?string $url ;
@@ -21,10 +27,16 @@ class ApiUcrm
     private function exec()
     {
         if(USE_UCRM_CURL > 0 ) return $this->web_exec();
-        $api = \Ubnt\UcrmPluginSdk\Service\UcrmApi::create();
+        $api = $this->unms ? UnmsApi::create($this->key()): UcrmApi::create();
         $action = $this->method;
-        $response = $api->$action($this->url, $this->data);
-        return json_decode(json_encode($response), $this->assoc);
+        try{
+            $response = $api->$action($this->url, $this->data);
+            return json_decode(json_encode($response), $this->assoc);
+        }
+        catch (\Exception $e){
+            MyLog()->Append([$e->getMessage(),$e->getTraceAsString()]);
+            return null ;
+        }
     }
 
     private function web_exec()
@@ -61,9 +73,9 @@ class ApiUcrm
 
     private function configure($path,$method,$data)
     {
-        $this->method = $method;
-        $this->url = $path ;
-        $this->data = $data ;
+        $this->method = strtolower(trim($method));
+        $this->url = trim(trim($path),'/');
+        $this->data = json_decode(json_encode($data),true);
     }
 
     private function key(): string
