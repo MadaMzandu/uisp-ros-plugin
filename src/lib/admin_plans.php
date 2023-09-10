@@ -78,6 +78,15 @@ class AdminPlans extends Admin
         return true ;
     }
 
+    public function delete()
+    {
+        $id = $this->data->id ?? 0 ;
+        if($this->db()->delete($id,'plans')){
+            $this->rebuild();
+        }
+        return true ;
+    }
+
     private function rebuild()
     {
        $api = new AdminRebuild();
