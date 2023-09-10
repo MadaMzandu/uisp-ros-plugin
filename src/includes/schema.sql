@@ -33,6 +33,7 @@ CREATE TABLE IF NOT EXISTS "devices" (
 );
 CREATE TABLE IF NOT EXISTS "plans" (
     "id"    INTEGER NOT NULL,
+    "name" TEXT,
     "ratio" INTEGER,
     "uploadSpeed" INTEGER,
     "downloadSpeed" INTEGER,

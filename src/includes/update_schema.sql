@@ -34,6 +34,7 @@ CREATE TABLE  IF NOT EXISTS tmp."devices" (
 );
 CREATE TABLE IF NOT EXISTS tmp."plans" (
     "id"    INTEGER NOT NULL,
+    "name" TEXT,
     "ratio" INTEGER,
     "uploadSpeed" INTEGER,
     "downloadSpeed" INTEGER,
@@ -67,6 +68,9 @@ INSERT INTO tmp."services" SELECT * FROM services ;
 
 INSERT INTO tmp."services" (id,device,clientId,planId,status,last,created)
 SELECT id,device,clientId,planId,status,"last",created FROM services ;
+INSERT INTO tmp."plans" (id,ratio,priorityUpload,priorityDownload,limitUpload,limitDownload,
+burstUpload,burstDownload,threshUpload,threshDownload,timeUpload,timeDownload,"last",created)
+SELECT * FROM plans;
 INSERT INTO tmp."plans" (id,ratio,priorityUpload,priorityDownload,limitUpload,limitDownload,
 burstUpload,burstDownload,threshUpload,threshDownload,timeUpload,timeDownload,"last",created) SELECT id,ratio,priority,
 priority,limitUpload,limitDownload,burstUpload,burstDownload,threshUpload,threshDownload,timeUpload,timeDownload,

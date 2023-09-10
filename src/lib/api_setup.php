@@ -2,7 +2,7 @@
 //remember to update cols file and repeats when schema changes
 const MY_VERSION = '2.0.2';
 const MAX_BACKUPS = 6 ;
-const REPEAT_STATEMENTS  = 4; //number of statements expected to fail during update
+const REPEAT_STATEMENTS  = 5; //number of statements expected to fail during update
 
 include_once 'api_sqlite.php';
 include_once 'api_logger.php';
@@ -38,15 +38,15 @@ class ApiSetup
         MyLog()->Append('starting db update');
         $schema = $this->update_schema();
         shell_exec('rm -f data/tmp.db');
-        $count = 0 ; $total = sizeof($schema) ;
+        $failed = 0 ; $total = sizeof($schema) ;
         set_error_handler('dbUpdateHandler');
         foreach($schema as $stm){
-            if($this->db()->exec($stm)){ $count++; }
+            if(!$this->db()->exec($stm)){ $failed++; }
         }
         $this->close();
         set_error_handler('myErrorHandler');
-        if($count >= $total - REPEAT_STATEMENTS){
-            MyLog()->Append(sprintf('update: %s of %s statements executed',$count,$total));
+        MyLog()->Append(sprintf('update: %s of %s statements rejected',$failed,$total));
+        if($failed <= REPEAT_STATEMENTS){
             copy('data/tmp.db','data/data.db');
             shell_exec('rm -f data/tmp.db');
             $this->set_version();
