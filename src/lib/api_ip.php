@@ -248,7 +248,7 @@ class ApiIP
         if(empty($this->_db)){
             $this->_db = new ApiSqlite();
         }
-        return $IP_Database ;
+        return $this->_db ;
     }
 
     private function cache(): ApiSqlite
