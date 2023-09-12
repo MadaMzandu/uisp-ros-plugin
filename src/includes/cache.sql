@@ -32,7 +32,7 @@ CREATE TABLE IF NOT EXISTS "services" (
 CREATE TABLE IF NOT EXISTS "sites" (
        "id"	TEXT,
        "service"	INTEGER,
-       "devices" INTEGER DEFAULT 0,
+       "device" TEXT,
        PRIMARY KEY("id"));
 CREATE INDEX IF NOT EXISTS "client_index" ON "services" ("clientId");
 CREATE INDEX IF NOT EXISTS "plan_index" ON "services" ("planId");
