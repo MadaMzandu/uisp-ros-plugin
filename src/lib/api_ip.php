@@ -62,6 +62,8 @@ class ApiIP
         return $address ;
     }
 
+    public function save(): void { $this->db()->save_disk(false); }
+
     public function set_ip($sid,$address,$ip6 = false): void
     {
         $field = $ip6 ? 'address6' : 'address';
