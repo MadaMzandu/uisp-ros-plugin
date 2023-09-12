@@ -251,7 +251,7 @@ class ApiSqlite
         $this->_db->exec('DETACH tmp');
     }
 
-    public function save_disk($close = true)
+    private function save_disk()
     {
         if($this->mem){
             $this->_db->exec(sprintf('ATTACH "%s" as tmp',$this->path));
@@ -261,7 +261,7 @@ class ApiSqlite
                 $sql = sprintf('INSERT OR REPLACE INTO tmp."%s" SELECT * FROM "%s"',$table,$table);
                 $this->_db->exec($sql);
             }
-            if($close)$this->_db->close();
+            $this->_db->close();
         }
     }
     

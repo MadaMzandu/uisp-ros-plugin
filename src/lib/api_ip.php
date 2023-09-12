@@ -4,12 +4,13 @@ const IP_BASE16 = 16;
 const IP_BASE10 = 10;
 const IP_PWR2 = 2;
 const IP_PAD0 = '0';
+$IP_Database = null ;
 class ApiIP
 {
     private int $length6 = 64;
     private bool $ip6 = false;
     private ?object $_conf = null;
-    private ?ApiSqlite $_db = null ;
+//    private ?ApiSqlite $_db = null ;
 
     public function assign($sid, $device = null, $ip6 = false): ?string
     {
@@ -61,8 +62,6 @@ class ApiIP
         }
         return $address ;
     }
-
-    public function save(): void { $this->db()->save_disk(false); }
 
     public function set_ip($sid,$address,$ip6 = false): void
     {
@@ -216,10 +215,11 @@ class ApiIP
 
     private function db(): ApiSqlite
     {
-        if(empty($this->_db)){
-            $this->_db = new ApiSqlite(null,true);
+        global $IP_Database ;
+        if(empty($IP_Database)){
+            $IP_Database = new ApiSqlite(null,true);
         }
-        return $this->_db ;
+        return $IP_Database ;
     }
 
     private function conf(): object
