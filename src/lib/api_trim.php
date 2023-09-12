@@ -13,8 +13,18 @@ class ApiTrim
             case 'services': return $this->trim_service($request);
             case 'client':
             case 'clients': return $this->trim_client($request);
+            case 'site':
+            case 'sites': return $this->trim_site($request) ;
         }
         return null ;
+    }
+
+    private function trim_site($request): array
+    {
+        $site['id'] = $request->id ?? 'nosite';
+        $site['service'] = $request->ucrm->service->id ?? 0 ;
+        $site['devices'] = $request->description->deviceCount ?? 0;
+        return $site ;
     }
 
     private function trim_client($request): array
