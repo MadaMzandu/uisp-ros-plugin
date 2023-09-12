@@ -203,7 +203,7 @@ class MtBatch extends MT
                 $id = $service['batch'] ?? null ;
                 $success = $this->batch_success[$id] ?? null ;
                 if($success){
-                    $sites[] = $id ;
+                    $sites[] = $service['id'] ;
                     $values = [];
                     foreach ($fields as $key){ $values[$key] = $service[$key] ?? null ;}
                     $values['last'] = $this->now();
