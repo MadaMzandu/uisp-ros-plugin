@@ -1,7 +1,8 @@
 <?php
-const MyCacheVersion = '1.8.10';
+const MyCacheVersion = '1.8.11';
 
 include_once 'api_trim.php';
+include_once '_web_ucrm.php';
 include_once 'api_ucrm.php';
 
 class ApiCache{
@@ -22,13 +23,19 @@ class ApiCache{
 
     public function sync($force = false)
     {
+        if($force || $this->needs_sites()){
+            MyLog()->Append("Syncing sites only");
+            $this->populate('sites');
+            $set['last_sites'] = $this->now() ;
+            $this->db()->saveConfig($set);
+        }
         if($force || $this->needs_update()){
             if(!$this->attributes()->check_config()
                 || !$this->check_devices()){
                 return ;
             }
             $timer = new ApiTimer('sync: ');
-            MyLog()->Append('populating services and clients');
+            MyLog()->Append('populating services,clients');
             foreach(['clients','services'] as $table){
                 $this->populate($table);
                 MyLog()->Append('finished populating: '.$table);
@@ -58,11 +65,12 @@ class ApiCache{
     private function populate($table)
     {
         $data = ['starter'];
-        $opts = $this->opts($table);
-        $path = $this->path($table);
+        $limit = 50 ;
+        $offset = 0 ;
         while($data){
-            $data = $this->ucrm()->get($path,$opts);
-            if(empty((array)$data)) continue ;
+            $method = 'get_' . $table ;
+            $data = $this->$method($offset,$limit);
+            if(empty($data)) continue ;
             $request = [];
             foreach($data as $item){
                 $trim = $this->trimmer()->trim($table,$item)['entity'] ?? null;
@@ -70,9 +78,35 @@ class ApiCache{
                 $request[] = $trim ;
             }
             $this->batch($table,$request);
-            if($table == 'services')$this->batch_network($request);
-            $opts['offset'] += 500 ;
+            if(in_array($table,['service','services'])){
+                $this->batch_network($request);
+            }
+            if(in_array($table,['site','sites'])){ break; }
+            $offset += $limit ;
         }
+    }
+
+    private function get_sites($offset,$limit)
+    {
+        $opts = ['type' => 'endpoint'];
+        return $this->get_data('sites',$opts,true);
+    }
+
+    private function get_clients($offset,$limit = 500)
+    {
+        $opts = ['offset' => $offset, 'limit' => $limit];
+        return $this->get_data('clients',$opts) ;
+    }
+
+    private function get_services($offset,$limit = 500): array
+    {
+        $opts = ['offset' => $offset,'limit' => $limit,'statuses' => [0,1,3,4,6,7]];
+        return $this->get_data('clients/services',$opts);
+    }
+
+    private function get_data($path,$opts,$unms = false): array
+    {
+        return $this->ucrm($unms)->get($path,$opts) ?? [];
     }
 
     public function batch($table, $request)
@@ -109,15 +143,6 @@ class ApiCache{
         }
     }
 
-    private function path($table): ?string
-    {
-        switch ($table){
-            case 'clients': return 'clients';
-            case 'services': return 'clients/services';
-        }
-        return null ;
-    }
-
     private function check_devices(): bool
     {
         $devices = $this->db()->selectAllFromTable('devices');
@@ -147,21 +172,23 @@ class ApiCache{
         return date_add($sync,$cycle) < $now ;
     }
 
+    private function needs_sites(): bool
+    {
+        $time = $this->conf()->last_sites ?? '2023-01-01';
+        $last = new DateTime($time);
+        $now = new DateTime();
+        $interval = new DateInterval('PT1H');
+        return $last->add($interval) < $now ;
+    }
+
     private function needs_db(): bool
     {
         $file = 'data/cache.db';
-        if(!file_exists($file)) return true;
-        if(!$this->dbCache()->has_tables(['clients','services','network'])){
+        if(!is_file($file)) return true;
+        if(!$this->dbCache()->has_tables(['clients','services','network','sites'])){
             return true ;}
         $version = $this->conf()->cache_version ?? '0.0.0';
         return $version != MyCacheVersion ;
-    }
-
-    private function opts($table = 'services'): array
-    {
-        $opts = ['limit' => 500,'offset' => 0,'statuses' => [0,1,3,4,6,7]];
-        if($table == 'services') return $opts ;
-        else return array_diff_key($opts,['statuses' => null]);
     }
 
     private function attributes() { return new ApiAttributes(); }
@@ -174,7 +201,12 @@ class ApiCache{
         return $this->_trim;
     }
 
-    private function ucrm(){ return new ApiUcrm(); }
+    private function ucrm($unms = false)
+    {
+        $api = new WebUcrm();
+        $api->unms = $unms ;
+        return $api ;
+    }
 
     private function db(){ return new ApiSqlite(); }
 
