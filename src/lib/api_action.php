@@ -127,9 +127,9 @@ class ApiAction
 
             }
 
-            if($this->has_outage()){ return ACTION_DEFERRED; } //skip network flapping
+            //if($this->has_outage()){ return ACTION_DEFERRED; } //skip network flapping
 
-            return ACTION_SET ;
+            return ACTION_DEFERRED ;
 
         }
 
