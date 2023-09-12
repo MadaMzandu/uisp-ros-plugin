@@ -34,7 +34,7 @@ class ApiCache{
             }
             $timer = new ApiTimer('sync: ');
             MyLog()->Append('populating services,clients');
-            foreach(['clients','services'] as $table){
+            foreach(['clients','services','sites'] as $table){
                 $this->populate($table);
                 MyLog()->Append('finished populating: '.$table);
             }
