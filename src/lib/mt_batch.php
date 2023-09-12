@@ -3,6 +3,7 @@ include_once 'mt.php';
 include_once 'mt_data.php';
 include_once 'api_ip.php';
 include_once 'api_sqlite.php';
+include_once 'api_sites.php';
 
 class MtBatch extends MT
 {
@@ -148,6 +149,13 @@ class MtBatch extends MT
         $this->queue_failed($deviceServices);
     }
 
+    private function set_sites($ids,$delete = false)
+    {
+        $nms = new ApiSites();
+        if($delete){ $nms->delete($ids);}
+        else{ $nms->set($ids); }
+    }
+
     private function run_batch($deviceData,$delete = false)
     {
         $timer = new ApiTimer("mt batch write");
@@ -262,9 +270,10 @@ class MtBatch extends MT
     private function select_ids(array $ids,$action): array
     {
         $fields = 'services.*,clients.company,clients.firstName,clients.lastName,'.
-            'network.address,network.address6';
+            'network.address,network.address6,sites.id,sites.devices';
         $sql = sprintf("SELECT %s FROM services LEFT JOIN clients ON services.clientId=clients.id ".
             "LEFT JOIN network ON services.id=network.id ".
+            "LEFT JOIN sites ON services.id=sites.service".
             "WHERE services.id IN (%s) ",$fields,implode(',',$ids));
         $data = $this->dbCache()->selectCustom($sql) ?? [];
         $deviceMap = [];
