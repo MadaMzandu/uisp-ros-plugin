@@ -197,11 +197,13 @@ class MtBatch extends MT
             'status',
         ];
         $save = [];
+        $sites = [];
         foreach ($deviceServices as $services){
             foreach ($services as $service){
                 $id = $service['batch'] ?? null ;
                 $success = $this->batch_success[$id] ?? null ;
                 if($success){
+                    $sites[] = $id ;
                     $values = [];
                     foreach ($fields as $key){ $values[$key] = $service[$key] ?? null ;}
                     $values['last'] = $this->now();
@@ -211,6 +213,7 @@ class MtBatch extends MT
         }
         MyLog()->Append('batch: saving data ');
         $this->db()->insert($save,'services',true);
+        $this->set_sites($sites);
     }
 
     private function unsave_batch($deviceServices): array
@@ -232,6 +235,7 @@ class MtBatch extends MT
             MyLog()->Append(sprintf("batch delete from %s sql: %s",$table,$sql));
             $this->db()->exec($sql);
         }
+        $this->set_sites($ids,true);
         return $ids ;
     }
 
