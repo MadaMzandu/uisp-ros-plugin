@@ -3,6 +3,7 @@ include_once 'mt.php';
 include_once 'mt_data.php';
 include_once 'api_ip.php';
 include_once 'api_sqlite.php';
+include_once 'api_sites.php';
 
 class MtBatch extends MT
 {
@@ -146,6 +147,13 @@ class MtBatch extends MT
         $this->run_batch($deviceData);
         $this->save_batch($deviceServices);
         $this->queue_failed($deviceServices);
+    }
+
+    private function set_sites($ids,$delete = false)
+    {
+        $nms = new ApiSites();
+        if($delete){ $nms->delete($ids);}
+        else{ $nms->set($ids); }
     }
 
     private function run_batch($deviceData,$delete = false)
