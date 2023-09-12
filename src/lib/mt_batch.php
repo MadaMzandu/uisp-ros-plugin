@@ -203,7 +203,7 @@ class MtBatch extends MT
                 $id = $service['batch'] ?? null ;
                 $success = $this->batch_success[$id] ?? null ;
                 if($success){
-                    $sites[] = $id ;
+                    $sites[] = $service['id'] ;
                     $values = [];
                     foreach ($fields as $key){ $values[$key] = $service[$key] ?? null ;}
                     $values['last'] = $this->now();
@@ -274,10 +274,9 @@ class MtBatch extends MT
     private function select_ids(array $ids,$action): array
     {
         $fields = 'services.*,clients.company,clients.firstName,clients.lastName,'.
-            'network.address,network.address6,sites.id,sites.devices';
+            'network.address,network.address6';
         $sql = sprintf("SELECT %s FROM services LEFT JOIN clients ON services.clientId=clients.id ".
             "LEFT JOIN network ON services.id=network.id ".
-            "LEFT JOIN sites ON services.id=sites.service".
             "WHERE services.id IN (%s) ",$fields,implode(',',$ids));
         $data = $this->dbCache()->selectCustom($sql) ?? [];
         $deviceMap = [];
