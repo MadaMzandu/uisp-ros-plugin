@@ -4,7 +4,7 @@ const IP_BASE16 = 16;
 const IP_BASE10 = 10;
 const IP_PWR2 = 2;
 const IP_PAD0 = '0';
-$IP_Database = null ;
+
 class ApiIP
 {
     private int $length6 = 64;
@@ -215,11 +215,7 @@ class ApiIP
 
     private function db(): ApiSqlite
     {
-        global $IP_Database ;
-        if(empty($IP_Database)){
-            $IP_Database = new ApiSqlite(null,true);
-        }
-        return $IP_Database ;
+        return ip_database();
     }
 
     private function conf(): object
@@ -230,4 +226,14 @@ class ApiIP
         return $this->_conf ;
     }
 
+}
+
+$IP_DATABASE = null ;
+function ip_database(): ApiSqlite
+{
+    global $IP_DATABASE ;
+    if(empty($IP_DATABASE)){
+        $IP_DATABASE = new ApiSqlite(null,true);
+    }
+    return $IP_DATABASE ;
 }
