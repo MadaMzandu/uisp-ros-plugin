@@ -5,8 +5,8 @@ class ApiSites
 
     public function set($ids)
     {
-        $map = $this->find_services($ids) ?? [];
-        foreach($map as $service){
+        $services = $this->find_services($ids) ?? [];
+        foreach($services as $service){
             $this->create($service);
         }
     }
