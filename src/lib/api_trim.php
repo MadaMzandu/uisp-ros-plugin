@@ -24,7 +24,7 @@ class ApiTrim
         $site['id'] = $request->id ?? 'nosite';
         $site['service'] = $request->ucrm->service->id ?? 0 ;
         $site['devices'] = $request->description->deviceCount ?? 0;
-        return $site ;
+        return ['entity' => $site];
     }
 
     private function trim_client($request): array
