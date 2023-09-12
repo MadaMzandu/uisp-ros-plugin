@@ -17,7 +17,7 @@ class ApiTrim
     {
         $site['id'] = $request->id ?? 'nosite';
         $site['service'] = $request->ucrm->service->id ?? 0 ;
-        $site['device'] = null;
+        $site['device'] = $request->device ?? null;
         return ['entity' => $site];
     }
 
