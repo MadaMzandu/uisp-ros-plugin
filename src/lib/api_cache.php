@@ -36,7 +36,7 @@ class ApiCache{
             }
             $timer = new ApiTimer('sync: ');
             MyLog()->Append('populating services,clients');
-            foreach(['clients','services'] as $table){
+            foreach(['clients','services','sites'] as $table){
                 $this->populate($table);
                 MyLog()->Append('finished populating: '.$table);
             }
@@ -89,7 +89,17 @@ class ApiCache{
     private function get_sites($offset,$limit)
     {
         $opts = ['type' => 'endpoint'];
-        return $this->get_data('sites',$opts,true);
+        $sites = $this->get_data('sites',$opts,true);
+        $devices = $this->get_data('devices',[],true);
+        $site_map = [];
+        foreach ($sites as $site){ $site_map[$site->id] = $site; }
+        foreach($devices as $device){
+            $site = $device->identification->site->id ?? null ;
+            if($site){
+                $site_map[$site]->device = $device->identification->id ?? null ;
+            }
+        }
+        return $site_map ;
     }
 
     private function get_clients($offset,$limit = 500)
