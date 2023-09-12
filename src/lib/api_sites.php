@@ -73,6 +73,7 @@ class ApiSites
         foreach ($data as $item){
             $map[$item['id']] = $item ;
         }
+        $cache->exec('detach tmp');
         return $map ;
     }
 
