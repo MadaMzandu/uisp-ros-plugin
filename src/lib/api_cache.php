@@ -2,7 +2,7 @@
 const MyCacheVersion = '1.8.11';
 
 include_once 'api_trim.php';
-include_once '_web_ucrm.php';
+//include_once '_web_ucrm.php';
 include_once 'api_ucrm.php';
 
 class ApiCache{
@@ -213,7 +213,7 @@ class ApiCache{
 
     private function ucrm($unms = false)
     {
-        $api = new WebUcrm();
+        $api = new ApiUcrm();
         $api->unms = $unms ;
         return $api ;
     }
