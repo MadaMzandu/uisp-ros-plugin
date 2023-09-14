@@ -47,8 +47,8 @@ class ApiJobs extends Admin
             if($action == 'delete'){ $delete[] = $item['id'] ;}
         }
         $api = new Batch();
-        $api->set_accounts($set);
-        $api->del_accounts($delete);
+        if($set) { $api->set_accounts($set); }
+        if($delete) { $api->del_accounts($delete); }
     }
 
     private function read()
