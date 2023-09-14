@@ -14,7 +14,13 @@ class AdminPlans extends Admin
         $config = $this->get_config() ;
         foreach($plans as $plan){
             $saved = $config[$plan['id']] ?? [] ;
-            $config[$plan['id']] = array_replace($saved,$plan);
+            if(!$saved) {
+                $config[$plan['id']] =
+                    array_replace($this->defaults(),$plan);
+            }
+            else{
+                $config[$plan['id']] = array_replace($saved,$plan);
+            }
         }
         return $config ;
     }
@@ -51,7 +57,7 @@ class AdminPlans extends Admin
             $trimmer ??= array_diff_key($item,['id' => 0,'uploadSpeed' => 0,'downloadSpeed' => 0,'name' => null]);
             $trim = array_diff_key($item,$trimmer);
             $trim['archive'] = false ;
-            $tmp[$item['id']] = array_replace($this->defaults(),$trim);
+            $tmp[$item['id']] = $trim;
         }
         return $tmp ;
     }
