@@ -10,6 +10,7 @@ class ApiIP
     private bool $ip6 = false;
     private ?object $_conf = null;
     private ?ApiSqlite $_db = null ;
+    private ?ApiSqlite $_cache = null ;
 
     public function assign($sid, $device = null, $ip6 = false): ?string
     {
@@ -117,11 +118,8 @@ class ApiIP
     public function is_used($address): bool
     {
         if($this->ip6) $address = $address . '/' . $this->length6;
-        $field = 'address';
-        if($this->ip6) $field = 'address6';
-        $id = $this->db()->singleQuery(
-        sprintf("SELECT id FROM network WHERE %s = '%s'", $field, $address));
-        return (bool)$id;
+        return $this->cache()->addressIsUsed($address,$this->ip6) ||
+            $this->db()->addressIsUsed($address,$this->ip6);
     }
 
     private function type($address): ?string
@@ -218,6 +216,14 @@ class ApiIP
             $this->_db = new ApiSqlite(null,true);
         }
         return $this->_db ;
+    }
+
+    private function cache(): ApiSqlite
+    {
+        if(empty($this->_cache)){
+            $this->_cache = new ApiSqlite('data/cache.db',true);
+        }
+        return $this->_cache ;
     }
 
     private function conf(): object

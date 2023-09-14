@@ -235,7 +235,13 @@ class ApiSqlite
         return $this->_db ;
     }
 
-    public function test (){ return $this->db(); }
+    public function addressIsUsed($address,$ipv6 = false):bool
+    {
+        $field = $ipv6 ? 'address6' : 'address';
+        $query = sprintf("select id from network where %s = '%s'",$field,$address);
+        $id = $this->db()->querySingle($query) ;
+        return (bool) $id ;
+    }
 
     private function load_disk()
     {
