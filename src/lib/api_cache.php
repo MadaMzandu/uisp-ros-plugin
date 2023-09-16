@@ -73,6 +73,43 @@ class ApiCache{
         }
     }
 
+    private function get_sites($offset,$limit)
+    {
+        $opts = ['type' => 'endpoint'];
+        $sites = $this->get_data('sites',$opts,true);
+        $devices = $this->get_data('devices',[],true);
+        $site_map = [];
+        foreach ($sites as $site){ $site_map[$site->id] = $site; }
+        foreach($devices as $device){
+            $site_id = $device->identification->site->id ?? null ;
+            if($site_id){
+                $site = $site_map[$site_id] ?? null ;
+                if(is_object($site)){
+                    $site->device = $device->identification->id ?? null ;
+                    $site_map[$site_id] = $site ;
+                }
+            }
+        }
+        return $site_map ;
+    }
+
+    private function get_clients($offset,$limit = 500)
+    {
+        $opts = ['offset' => $offset, 'limit' => $limit];
+        return $this->get_data('clients',$opts) ;
+    }
+
+    private function get_services($offset,$limit = 500): array
+    {
+        $opts = ['offset' => $offset,'limit' => $limit,'statuses' => [0,1,3,4,6,7]];
+        return $this->get_data('clients/services',$opts);
+    }
+
+    private function get_data($path,$opts,$unms = false): array
+    {
+        return $this->ucrm($unms)->get($path,$opts) ?? [];
+    }
+
     public function batch($table, $request)
     {
         $values = [];
