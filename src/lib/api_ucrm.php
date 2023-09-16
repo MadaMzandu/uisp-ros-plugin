@@ -66,4 +66,14 @@ class ApiUcrm
         $this->data = $data ;
     }
 
+    private function key(): string
+    {
+        $c = [];
+        if(is_file('data/config.json')){
+            $c = json_decode(file_get_contents(
+                    'data/config.json'),true) ?? [];
+        }
+        return $this->key ?? $c['unmsToken'] ?? '' ;
+    }
+
 }
