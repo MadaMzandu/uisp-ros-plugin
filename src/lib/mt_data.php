@@ -89,7 +89,7 @@ class MtData extends MT
             'parent' => $this->parent_name(),
             'comment' => $this->account_comment(),
         ];
-        if($ipv6){
+        if($this->has_dhcp6() && $ipv6){
             $data['target'] .= ',' . $ipv6;
         }
         return $data ;
