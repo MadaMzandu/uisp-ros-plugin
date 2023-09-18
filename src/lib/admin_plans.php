@@ -29,8 +29,10 @@ class AdminPlans extends Admin
     {
         $keys = ['id','name','ratio','uploadSpeed','downloadSpeed','priorityUpload','priorityDownload',
             'limitUpload','limitDownload', 'burstUpload','burstDownload','threshUpload',
-            'threshDownload','timeUpload','timeDownload',];
+            'threshDownload'];
         $fill = array_fill_keys($keys,0);
+        $fill['timeUpload'] = 1 ;
+        $fill['timeDownload'] = 1 ;
         $fill['priorityUpload'] = 8 ;
         $fill['priorityDownload'] = 8 ;
         return $fill ;
