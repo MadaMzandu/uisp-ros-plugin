@@ -34,6 +34,8 @@ class ErData extends Data
 
     private function dhcp()
     {
+        $ip = $this->ip();
+        if(!$ip){ return null; }
         return [
             'path' => 'dhcp',
             'action' => 'set',
