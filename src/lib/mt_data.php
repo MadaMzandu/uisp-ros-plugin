@@ -63,11 +63,14 @@ class MtData extends MT
         if(!in_array($this->type(),['dhcp','dhcp6'])) return null ;
         $limits = $this->limits();
         $id = $this->service['id'] ?? rand(1000000);
+        $ip = $this->ip();
+        $ipv6 = $this->ip(true);
+        if(!($ip || $ipv6)){ return null; }
         if($this->disabled() && $this->disabled_rate()){
             return [
                 'path' => '/queue/simple',
                 'name' => sprintf('%s - %s',$this->account_name(),$id),
-                'target' => $this->ip(),
+                'target' => $ip,
                 'max-limit' => $this->disabled_rate(),
                 'limit-at' => $this->disabled_rate(),
                 'comment' => $this->account_comment(),
@@ -76,7 +79,7 @@ class MtData extends MT
         $data = [
             'path' => '/queue/simple',
             'name' => sprintf('%s - %s',$this->account_name(),$id),
-            'target' => $this->ip(),
+            'target' => $ip,
             'max-limit' => $this->to_pair($limits['rate']),
             'limit-at' => $this->to_pair($limits['limit']),
             'burst-limit' => $this->to_pair($limits['burst']),
@@ -86,18 +89,20 @@ class MtData extends MT
             'parent' => $this->parent_name(),
             'comment' => $this->account_comment(),
         ];
-        if($this->has_dhcp6()){
-            $data['target'] .= ',' . $this->ip(true);
+        if($ipv6){
+            $data['target'] .= ',' . $ipv6;
         }
         return $data ;
     }
 
-    private function ppp(): array
+    private function ppp(): ?array
     {
+        $ip = $this->ip();
+        if(!$ip){ return null; }
        $data = [
            'batch' => $this->service['batch'] ?? null ,
             'path' => '/ppp/secret',
-            'remote-address' => $this->ip(),
+            'remote-address' => $ip,
             'name' => $this->service['username'],
             'caller-id' => $this->service['callerId'] ?? null,
             'password' => $this->service['password'] ?? null,
@@ -121,13 +126,15 @@ class MtData extends MT
         ];
     }
 
-    private function dhcp(): array
+    private function dhcp(): ?array
     {
         $lease = $this->conf->lease_time ?? $this->conf->dhcp_lease_time ?? 60;
+        $ip = $this->ip();
+        if(!$ip){ return null; }
         return [
             'batch' => $this->service['batch'] ?? null ,
             'path' => '/ip/dhcp-server/lease',
-            'address' => $this->ip(),
+            'address' => $ip,
             'mac-address' => strtoupper($this->service['mac']),
             'insert-queue-before' => 'bottom',
             'address-lists' => $this->addr_list(),
@@ -140,10 +147,12 @@ class MtData extends MT
     {
         if(!$this->has_dhcp6()) return null ;
         $lease = $this->conf->lease_time ?? $this->conf->dhcp_lease_time ?? 60;
+        $ipv6 = $this->ip(true);
+        if(!$ipv6){ return null; }
         return [
             'batch' => $this->service['batch'] ?? null ,
             'path' => '/ipv6/dhcp-server/binding',
-            'address' => $this->ip(true),
+            'address' => $ipv6,
             'duid' => $this->make_duid(),
             'iaid' => $this->make_iaid(),
             'life-time' => $lease . 'm',
