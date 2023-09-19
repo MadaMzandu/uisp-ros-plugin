@@ -18,9 +18,8 @@ class ApiSites
         $ip = $service['address'] ?? null ;
         if(!$ip){ return; }
         $data['ip'] = $ip;
-        $data['hostname'] = $service['company']
-            ?? $service['firstName'] . " " . $service['lastName'] .
-            '-' . $service['clientId'] . '-' . $service['id'];
+        $data['hostname'] = $service['address'] . '_' . $service['company']
+            ?? $service['firstName'] . " " . $service['lastName'] ;
         $conn = $this->ucrm()->post('devices/connect/other',$data);
         $device = $conn->identification->id ?? null ;
         $site['siteId'] = $service['site'] ?? null ;
