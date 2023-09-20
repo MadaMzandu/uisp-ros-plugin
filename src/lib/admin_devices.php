@@ -87,7 +87,7 @@ class AdminDevices extends Admin
         $this->result = $this->get_services();
     }
 
-    public function get_services()
+    private function get_services(): array
     {
         $db = new SQLite3('data/data.db');
         $db->exec("ATTACH 'data/cache.db' as cache");
