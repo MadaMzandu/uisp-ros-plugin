@@ -87,37 +87,33 @@ class AdminDevices extends Admin
         $this->result = $this->get_services();
     }
 
-    private function get_services()
+    public function get_services()
     {
         $db = new SQLite3('data/data.db');
         $db->exec("ATTACH 'data/cache.db' as cache");
         $result = $db->query($this->cache_sql()) ?? [];
-        $cached = [];
+        $ret = [];
         while ($row = $result->fetchArray(SQLITE3_ASSOC)){
-            $cached[] = $row ;
+            $row['address'] ??= $row['a4'] ?? null ;
+            $row['address6'] ??= $row['a6'] ?? null ;
+            $ret[$row['id']] = $row ;
         }
         $db->close();
-        $plans = $this->ucrm()->get('service-plans') ?? [];
-        $plans = json_decode(json_encode($plans),true);
-        $addressMap = [];
-        $planMap = [];
-        foreach ($plans as $plan)$planMap[$plan['id']] = $plan ;
-        foreach ($cached as $item) $addressMap[$item['id']] = $item ;
-        $ret = [];
-        foreach ($cached as $item) {
-            $item['plan'] = $planMap[$item['planId']]['name'] ?? null ;
-            $ret[$item['id']] = $item ;
-        }
         $ret['count'] = $this->cache_count();
         return $ret ;
     }
 
     private function cache_sql(){
         $fields = "services.*,services.username,services.mac,services.price,".
-            "network.address,network.address6,clients.company,clients.firstName,clients.lastName";
+            "main.network.address,main.network.address6,clients.company,clients.firstName,".
+            "clients.lastName,plans.name as plan,cache.network.address as a4,".
+            "cache.network.address6 as a6";
         $did = $this->data->did ?? $this->data->id ?? $this->data->device ?? 0 ;
-        $sql = sprintf("SELECT %s FROM services LEFT JOIN cache.clients ON ".
-            "main.services.clientId=clients.id LEFT JOIN network ON main.services.id=network.id ".
+        $sql = sprintf("SELECT %s FROM main.services ".
+            "LEFT JOIN cache.clients ON main.services.clientId=clients.id ".
+            "LEFT JOIN main.network ON main.services.id=main.network.id ".
+            "LEFT JOIN cache.network on main.services.id=cache.network.id ".
+            "LEFT JOIN main.plans on main.services.planId=plans.id ".
             "LEFT JOIN cache.services ON main.services.id=cache.services.id ".
             "WHERE main.services.device = %s AND main.services.status NOT IN (2,5,8) ",$fields,$did);
         $query = $this->data->query ?? null ;
