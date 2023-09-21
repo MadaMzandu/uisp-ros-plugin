@@ -80,6 +80,10 @@ class ApiIP
 
     public function find_used($sid,$ip6 = false): ?string
     {
+        $mapname = $ip6 ? 'ipv6_map' : 'ip_map';
+        $map = array_flip($this->$mapname) ;
+        $assigned = $map[$sid] ?? null ;
+        if($assigned){ return $assigned; }
         $field = $ip6 ? 'address6' : 'address';
         $sql = sprintf("SELECT %s FROM network WHERE id = %s",$field,$sid);
         return $this->db()->singleQuery($sql);
