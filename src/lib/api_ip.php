@@ -11,12 +11,14 @@ class ApiIP
     private ?object $_conf = null;
     private ?ApiSqlite $_db = null ;
     private ?ApiSqlite $_cache = null ;
+    private array $ip_map = [] ;
+    private array $ipv6_map = [] ;
 
     public function assign($sid, $device = null, $ip6 = false): ?string
     {
         $this->ip6 = $ip6;
         $pool = $this->conf()->ppp_pool ?? null ;
-        if((array) $device){
+        if(is_object($device)){
             $len = $device->pfxLength ?? null ;
             $this->length6 = is_int($len) ? $len : 64;
             $pool = $ip6 ? $device->pool6 : $device->pool ;
@@ -64,14 +66,10 @@ class ApiIP
         return $address ;
     }
 
-    public function set_ip($sid,$address,$ip6 = false): void
+    public function set_ip($sid,$address,$ip6 = false)
     {
-        $field = $ip6 ? 'address6' : 'address';
-        $set = $ip6 ? 'address' : 'address6';
-        $sql = sprintf("INSERT OR REPLACE INTO network (id,%s,%s) ".
-            "VALUES (%s,'%s',(SELECT %s FROM network WHERE id = %s))",
-        $field,$set,$sid,$address,$set,$sid);
-        $this->db()->exec($sql);
+        $map = $ip6 ? 'ipv6_map' : 'ip_map';
+        $this->$map[$address] = $sid ;
     }
 
     private function find_unused($prefix): ?string
@@ -86,6 +84,19 @@ class ApiIP
         $field = $ip6 ? 'address6' : 'address';
         $sql = sprintf("SELECT %s FROM network WHERE id = %s",$field,$sid);
         return $this->db()->singleQuery($sql);
+    }
+
+    private function save_used()
+    {
+        $data = [];
+        $ip = array_flip($this->ip_map) ;
+        $ipv6 = array_flip($this->ipv6_map);
+        foreach(array_keys($ip) as $id){
+            $data[$id]['id'] = $id ;
+            $data[$id]['address'] = $ip[$id] ??  null;
+            $data[$id]['address6'] = $ipv6[$id] ?? null ;
+        }
+        $this->db()->insert($data,'network',true);
     }
 
     private function valid($prefix): bool
@@ -116,11 +127,19 @@ class ApiIP
             : preg_match($ff,$last);
     }
 
-    public function is_used($address): bool
+    public function is_used_db($address): bool
     {
         if($this->ip6) $address = $address . '/' . $this->length6;
-        return $this->cache()->addressIsUsed($address,$this->ip6) ||
-            $this->db()->addressIsUsed($address,$this->ip6);
+        return $this->cache()->selectIsUsed($address,$this->ip6) ||
+            $this->db()->selectIsUsed($address,$this->ip6);
+    }
+
+    public function is_used($address)
+    {
+        $map = $this->ip6 ? 'ipv6_map' : 'ip_map' ;
+        $used = $this->$map[$address] ?? null ;
+        if($used){ return true; }
+        return $this->is_used_db($address);
     }
 
     private function type($address): ?string
@@ -214,7 +233,7 @@ class ApiIP
     private function db(): ApiSqlite
     {
         if(empty($this->_db)){
-            $this->_db = new ApiSqlite(null,true);
+            $this->_db = new ApiSqlite();
         }
         return $this->_db ;
     }
@@ -222,7 +241,7 @@ class ApiIP
     private function cache(): ApiSqlite
     {
         if(empty($this->_cache)){
-            $this->_cache = new ApiSqlite('data/cache.db',true);
+            $this->_cache = new ApiSqlite('data/cache.db');
         }
         return $this->_cache ;
     }
@@ -233,6 +252,11 @@ class ApiIP
             $this->_conf = $this->db()->readConfig();
         }
         return $this->_conf ;
+    }
+
+    public function __destruct()
+    {
+        $this->save_used();
     }
 
 }
