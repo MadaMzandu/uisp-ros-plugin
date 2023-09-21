@@ -18,11 +18,6 @@ class Data
         $this->plan = $plan ;
     }
 
-    public function ip_clear($ids):void
-    {
-        $this->ipapi()->clear($ids);
-    }
-
     protected function disabled(): bool
     {
         $status = $this->service['status'] ?? 1 ;
@@ -41,9 +36,13 @@ class Data
     protected function find_address($ip6): ?string
     {
         $type = $ip6 ? 'address6' : 'address';
-        $fixed = $this->service[$type] ?? null ;
-        if($fixed){ return $fixed; }
         $service = $this->service['id'] ?? 0 ;
+        $fixed = $this->service[$type] ?? null ;
+        if($fixed){
+            $this->ipapi()->set_ip($service,$fixed,$ip6);
+            return $fixed;
+        }
+
         return $this->ipapi()->find_used($service,$ip6);
     }
 
