@@ -225,11 +225,9 @@ class ApiSqlite
     private function db(): SQLite3
     {
         if(empty($this->_db)){
-            $path = $this->mem ? ':memory:' : $this->path ;
-            $this->_db = new SQLite3($path);
+            $this->_db = new SQLite3($this->path);
             $this->_db->busyTimeout(5000);
             $this->_db->enableExceptions(true);
-            if($this->mem){ $this->load_disk(); }
         }
         return $this->_db ;
     }
@@ -240,34 +238,6 @@ class ApiSqlite
         $query = sprintf("select id from network where %s = '%s'",$field,$address);
         $id = $this->db()->querySingle($query) ;
         return (bool) $id ;
-    }
-
-    private function load_disk()
-    {
-        $cache = $this->path != 'data/data.db';
-        $schema = $cache ? 'includes/cache.sql' : 'includes/schema.sql';
-        $this->_db->exec(file_get_contents($schema));
-        $this->_db->exec(sprintf('ATTACH "%s" as tmp',$this->path));
-        $tables = $cache ? 'services,network,clients' : 'config,network';
-        foreach (explode(',',$tables) as $table){
-            $sql = sprintf('INSERT INTO "%s" SELECT * FROM tmp."%s"',$table,$table);
-            $this->_db->exec($sql);
-        }
-        $this->_db->exec('DETACH tmp');
-    }
-
-    private function save_disk()
-    {
-        if($this->mem){
-            $this->_db->exec(sprintf('ATTACH "%s" as tmp',$this->path));
-            $cache = $this->path != 'data/data.db';
-            $tables = $cache ? 'services,network,clients' : 'config,network';
-            foreach (explode(',',$tables) as $table){
-                $sql = sprintf('INSERT OR REPLACE INTO tmp."%s" SELECT * FROM "%s"',$table,$table);
-                $this->_db->exec($sql);
-            }
-            $this->_db->close();
-        }
     }
     
     public function execQuery($sql)
@@ -305,13 +275,6 @@ class ApiSqlite
         return json_encode($status);
     }
 
-    public function __construct($path = null,$mem = false)
-    { $this->path = $path ?? 'data/data.db'; $this->mem = $mem; }
-
-    public function __destruct()
-    {
-        $this->save_disk();
-    }
-
+    public function __construct($path = null) { $this->path = $path ?? 'data/data.db';}
 
 }
