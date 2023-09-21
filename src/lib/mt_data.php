@@ -3,7 +3,7 @@ class MtData extends MT
 {
     private array $service = [];
     private array $plan = [];
-    private ?ApiIP $_ipApi = null;
+    private ?ApiIP $_ipapi = null;
     private ?array $_devices = null ;
     
     public function set_data($service,$plan)
@@ -15,7 +15,7 @@ class MtData extends MT
 
     public function ip_clear($ids):void
     {
-        $this->ipApi()->clear($ids);
+        $this->ipapi()->clear($ids);
     }
 
     public function account(): ?array
@@ -249,12 +249,12 @@ class MtData extends MT
         return $this->assign_address($ip6);
     }
 
-    private function ipApi(): ApiIP
+    private function ipapi(): ApiIP
     {
-        if(empty($this->_ipApi)){
-            $this->_ipApi = new ApiIP();
+        if(empty($this->_ipapi)){
+            $this->_ipapi = new ApiIP();
         }
-        return $this->_ipApi ;
+        return $this->_ipapi ;
     }
 
     private function profile_name(): string
@@ -389,7 +389,7 @@ class MtData extends MT
         $fixed = $this->service[$type] ?? null ;
         if($fixed){ return $fixed; }
         $service = $this->service['id'] ?? 0 ;
-        return $this->ipApi()->find_used($service,$ip6);
+        return $this->ipapi()->find_used($service,$ip6);
     }
 
     private function assign_address($ip6): ?string
@@ -398,7 +398,7 @@ class MtData extends MT
         $router_pool = $this->conf->router_ppp_pool ?? true ;
         if($this->type() == 'ppp' && !$router_pool){ $device = null; }
         $service = $this->service['id'] ?? 0 ;
-        return $this->ipApi()->assign($service,$device,$ip6);
+        return $this->ipapi()->assign($service,$device,$ip6);
     }
 
     private function has_dhcp6(): string
