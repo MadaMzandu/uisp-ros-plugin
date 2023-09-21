@@ -236,7 +236,7 @@ class MtData extends Data
         return max($count,1);
     }
 
-    private function ip($ip6 = false): ?string
+f    private function ip($ip6 = false): ?string
     {
         MyLog()->Append('checking for assigned address');
         $assigned = $this->find_address($ip6);
@@ -256,8 +256,6 @@ class MtData extends Data
             return $this->conf->disabled_profile ?? 'default';
         return $this->plan['name'] ?? 'default';
     }
-
-
 
     private function profile_limits(): ?string
     {
