@@ -121,8 +121,7 @@ class ApiSqlite
 
     public function selectIp($id,$ip6): ?string
     {
-        $field = 'address';
-        if($ip6) $field = 'address6';
+        $field = $ip6 ? 'address6':'address';
         $sql = sprintf("SELECT %s FROM network WHERE id=%s",$field,$id);
         return $this->db()->querySingle($sql);
     }
@@ -235,7 +234,7 @@ class ApiSqlite
         return $this->_db ;
     }
 
-    public function addressIsUsed($address,$ipv6 = false):bool
+    public function selectIsUsed($address, $ipv6 = false):bool
     {
         $field = $ipv6 ? 'address6' : 'address';
         $query = sprintf("select id from network where %s = '%s'",$field,$address);
