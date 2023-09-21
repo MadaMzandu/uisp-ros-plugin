@@ -24,7 +24,7 @@ class Batch
         $deviceData = [];
         foreach (array_keys($deviceServices) as $did) {
             if ($did == 'nodev') { continue;}
-            $api = $this->data_api($did);
+            $api = $this->datapi($did);
             foreach ($deviceServices[$did] as $service) {
                 $plan = $plans[$service['planId']] ?? null;
                 if (!$plan) {
@@ -68,7 +68,7 @@ class Batch
         $api = null ;  //needed to realese ip address assignments later
         foreach (array_keys($deviceServices) as $did){
             if($did == 'nodev'){ continue; }
-            $api = $this->data_api($did);
+            $api = $this->datapi($did);
             foreach($deviceServices[$did] as $service){
                 $plan = $plans[$service['planId']] ?? null;
                 if(!$plan){ $plan = $this->make_plan($service); } //generate plan if not found
@@ -121,7 +121,7 @@ class Batch
         $deviceData = [];
         $device_ids = [];
         foreach (array_keys($deviceServices) as $did) {
-            $api = $this->data_api($did);
+            $api = $this->datapi($did);
             $device_ids[] = $did;
             foreach ($deviceServices[$did] as $service) {
                 if ($did == 'nodev') { continue; }
@@ -154,7 +154,7 @@ class Batch
         $deviceData = [];
 
         foreach (array_keys($deviceServices) as $did){
-            $api = $this->data_api($did);
+            $api = $this->datapi($did);
             foreach ($deviceServices[$did] as $service){
                 if($did == 'nodev'){ continue; }
                 $plan = $plans[$service['planId']] ?? null ;
@@ -176,6 +176,7 @@ class Batch
                 $dhcp6 = $api->dhcp6();
                 if($dhcp6){$deviceData[$did]['accounts'][] = $dhcp6; }
             }
+            unset($api);
         }
         unset($mt);
         $this->run_batch($deviceData);
@@ -313,7 +314,7 @@ class Batch
         return $client ;
     }
 
-    private function data_api($did)
+    private function datapi($did)
     {
         $type = $this->find_device($did)->type ?? 'mikrotik';
         if($type == 'mikrotik') return new MtData();
