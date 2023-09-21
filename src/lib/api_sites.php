@@ -61,7 +61,7 @@ class ApiSites
 
     private function find_services($ids): array
     {
-        $cache = ip_database();
+        $cache = $this->cache();
         $cache->exec('attach "data/cache.db" as tmp');
         $sql = sprintf("select services.*,clients.company,clients.firstName,clients.lastName,".
             "network.address,network.address6,sites.id as site,sites.service,sites.device as dev from tmp.services ".
@@ -84,5 +84,5 @@ class ApiSites
         return $api ;
     }
 
-    private function cache(){ return new ApiSqlite('data/cache.db'); }
+    private function cache(){ return new ApiSqlite('data/data.db'); }
 }
