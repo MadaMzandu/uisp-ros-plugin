@@ -128,6 +128,7 @@ class ApiAction
                     $this->has_ipchange($data) ||
                     $this->has_migrated($data)){ return ACTION_DOUBLE; }
 
+                return ACTION_SET ;
             }
 
             //if($this->has_outage()){ return ACTION_DEFERRED; } //skip network flapping
