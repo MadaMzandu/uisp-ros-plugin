@@ -1,8 +1,5 @@
 <?php
 
-use Ubnt\UcrmPluginSdk\Service\UcrmApi;
-use Ubnt\UcrmPluginSdk\Service\UnmsApi;
-
 require_once 'vendor/autoload.php';
 include_once '_web_ucrm.php';
 
