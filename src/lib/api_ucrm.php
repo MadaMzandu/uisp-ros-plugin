@@ -43,6 +43,7 @@ class ApiUcrm
     {
         $api = new WebUcrm();
         $api->assoc = $this->assoc ;
+        $api->unms = $this->unms ;
         $action = $this->method ;
         return $api->$action($this->url,$this->data);
     }
