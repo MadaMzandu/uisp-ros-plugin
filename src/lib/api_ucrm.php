@@ -1,5 +1,8 @@
 <?php
 require_once 'vendor/autoload.php';
+include_once '_web_ucrm.php';
+
+const USE_UCRM_CURL = 0;
 
 class ApiUcrm
 {
@@ -21,6 +24,14 @@ class ApiUcrm
         $action = $this->method;
         $response = $api->$action($this->url, $this->data);
         return json_decode(json_encode($response), $this->assoc);
+    }
+
+    private function web_exec()
+    {
+        $api = new WebUcrm();
+        $api->assoc = $this->assoc ;
+        $action = $this->method ;
+        return $api->$action($this->url,$this->data);
     }
 
     public function post($path,$data= [])
