@@ -20,6 +20,7 @@ class ApiUcrm
 
     private function exec()
     {
+        if(USE_UCRM_CURL > 0 ) return $this->web_exec();
         $api = \Ubnt\UcrmPluginSdk\Service\UcrmApi::create();
         $action = $this->method;
         $response = $api->$action($this->url, $this->data);
