@@ -99,7 +99,7 @@ class ApiIP
             $data[$id]['address'] = $ip[$id] ??  null;
             $data[$id]['address6'] = $ipv6[$id] ?? null ;
         }
-        $this->db()->insert($data,'network',true);
+        if($data)$this->db()->insert($data,'network',true);
     }
 
     private function valid($prefix): bool
