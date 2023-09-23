@@ -122,6 +122,7 @@ class ApiAction
                 if (
                     $this->has_moved($data) ||
                     $this->has_renamed($data) ||
+                    $this->has_ipchange($data) ||
                     $this->has_migrated($data)){ return ACTION_DOUBLE; }
 
             }
@@ -135,6 +136,20 @@ class ApiAction
         if($this->has_cleared($data)){ return ACTION_DELETE_OLD; }
 
         return ACTION_DEFERRED;
+    }
+
+    private function has_ipchange($data)
+    {
+        $previous = $data['previous'] ?? [];
+        if(!$previous){ return false; }
+        foreach (['address','address6'] as $field){
+            $new = $this->get($field,$data);
+            $old = $this->get($field,$data,'old');
+            $ret = false ;
+            if($old && $new != $old){ $ret = true; }
+            if($ret){ return $ret; }
+        }
+        return false ;
     }
 
 
@@ -235,9 +250,18 @@ class ApiAction
 
     private function get($key,$data,$type = 'entity')
     {
-        $entity = $type == 'entity' ? $type : 'previous';
-        $value = $data[$entity][$key] ?? null ;
-        return $value ? trim($value) : null ;
+        $type = $type == 'entity' ? 'entity' : 'previous';
+        $arrays[] = $data[$type] ?? [];
+        while($array = array_pop($arrays)){
+            $check = $array[$key] ?? null ;
+            if(!is_null($check)){ return $check; }
+            foreach($array as $value){
+                if(is_array($value)){
+                    $arrays[] = $value;
+                }
+            }
+        }
+        return null ;
     }
 
     private function trimmer(): ApiTrim { return new ApiTrim(); }
