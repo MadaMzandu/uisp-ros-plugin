@@ -268,12 +268,12 @@ class Batch
                 }
             }
         }
-        $ip = new ApiIP();
-        $ip->clear($ids);
-        $sql = sprintf("delete from services where id in (%s)",
-            implode(',',$ids));
-        MyLog()->Append(sprintf("batch delete from 'services sql: %s",$sql));
-        $this->db()->exec($sql);
+        foreach(['services','network'] as $table) {
+            $sql = sprintf("delete from %s where id in (%s)",$table,
+                implode(',',$ids));
+            MyLog()->Append(sprintf("batch delete from %s sql: %s",$table,$sql));
+            $this->db()->exec($sql);
+        }
         $this->set_sites($ids,true);
         return $ids ;
     }
