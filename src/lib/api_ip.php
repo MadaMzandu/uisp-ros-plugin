@@ -43,12 +43,6 @@ class ApiIP
         return null ;
     }
 
-    public function clear($ids)
-    {
-        $this->db()->exec(sprintf(
-            'delete from network where id in (%s)', implode(',',$ids)));
-    }
-
     public function local(): string
     {
         $start = ip2long('169.254.1.0');

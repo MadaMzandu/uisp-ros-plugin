@@ -13,11 +13,6 @@ class MtData extends MT
         MyLog()->Append('account data: '.json_encode([$service,$plan]));
     }
 
-    public function ip_clear($ids):void
-    {
-        $this->ipapi()->clear($ids);
-    }
-
     public function account(): ?array
     {
         $data = null ;
