@@ -73,10 +73,10 @@ class MtBatch extends MT
                 }
             }
         }
+        unset($mt);
         MyLog()->Append('services ready to delete');
         $this->run_batch($deviceData,true);
-        $clear = $this->unsave_batch($deviceServices);
-        $mt->ip_clear($clear);
+        $this->unsave_batch($deviceServices);
         $this->queue_failed($deviceServices);
     }
 
@@ -141,6 +141,7 @@ class MtBatch extends MT
                 if($dhcp6){$deviceData[$did]['accounts'][] = $dhcp6; }
             }
         }
+        unset($mt);
         $this->run_batch($deviceData);
         $this->save_batch($deviceServices);
         $this->queue_failed($deviceServices);
