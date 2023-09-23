@@ -65,7 +65,6 @@ class Batch
         $deviceServices = $this->find_services($ids,'delete');
         $plans = $this->find_plans();
         $deviceData = [];
-        $api = null ;  //needed to realese ip address assignments later
         foreach (array_keys($deviceServices) as $did){
             if($did == 'nodev'){ continue; }
             $api = $this->datapi($did);
@@ -107,7 +106,7 @@ class Batch
                 }
             }
         }
-        unset($mt);
+        unset($api);
         MyLog()->Append('services ready to delete');
         $this->run_batch($deviceData,true);
         $this->unsave_batch($deviceServices);
@@ -176,9 +175,8 @@ class Batch
                 $dhcp6 = $api->dhcp6();
                 if($dhcp6){$deviceData[$did]['accounts'][] = $dhcp6; }
             }
-            unset($api);
         }
-        unset($mt);
+        unset($api);
         $this->run_batch($deviceData);
         $this->save_batch($deviceServices);
         $this->queue_failed($deviceServices);
