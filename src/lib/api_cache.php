@@ -93,7 +93,8 @@ class ApiCache{
         foreach ($sites as $site){ $site_map[$site->id] = $site; }
         foreach($devices as $device){
             $site_id = $device->identification->site->id ?? null ;
-            if($site_id){
+            $name = $device->identification->name ?? null ;
+            if($site_id && preg_match("/^RosP_/",$name)){
                 $site = $site_map[$site_id] ?? null ;
                 if(is_object($site)){
                     $site->device = $device->identification->id ?? null ;
