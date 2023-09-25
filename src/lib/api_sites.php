@@ -19,7 +19,7 @@ class ApiSites
         if(!$ip){ return; }
         $data['ip'] = $ip;
         $name = $service['company'] ?? $service['firstName'] . ' ' . $service['lastName'];
-        $data['hostname'] = $service['address'] . '_' . $name;
+        $data['hostname'] = "RosP_". $service['address'] . '_' . $name;
         $conn = $this->ucrm()->post('devices/connect/other',$data);
         $device = $conn->identification->id ?? null ;
         $site['siteId'] = $service['site'] ?? null ;
