@@ -62,6 +62,7 @@ class ApiTrim
             'price',
             'totalPrice',
             'currencyCode',
+            'unmsClientSiteId',
         ];
         $db_map = ['servicePlanId' => 'planId'];
         foreach ($fields as $field) {

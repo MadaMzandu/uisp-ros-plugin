@@ -14,11 +14,32 @@ class ApiCache{
     public function save($request,$type = 'service')
     { //update a single service
         $timer = new ApiTimer('cache update');
+        $id = $request['id'] ?? 0 ;
+        $siteId = $request['unmsClientSiteId'] ?? null ;
+        if(key_exists('unmsClientSiteId',$request)){
+            unset($request['unmsClientSiteId']); }
         $table = $type . 's';
         $batch[] = $request ;
         $this->batch($table,$batch);
-        if($table == 'services')$this->batch_network($batch);
+        if($table == 'services'){
+            $this->batch_network($batch);
+            $this->save_site($id,$siteId);
+        }
         $timer->stop();
+    }
+
+    private function save_site($id,$siteId){
+
+        $device = $this->get_device($siteId);
+        $did = null ;
+        if($device){
+            $did = $device->identification->id ?? null ;
+        }
+        $post['id'] = $siteId ;
+        $post['service'] = $id ;
+        $post['device'] = $did;
+        MyLog()->Append(['SITE CACHE',$post]);
+        $this->dbCache()->insert($post,'sites',true);
     }
 
     public function sync($force = false)
@@ -86,7 +107,7 @@ class ApiCache{
         }
     }
 
-    private function get_sites($offset,$limit)
+    public function get_sites($offset,$limit)
     {
         $opts = ['type' => 'endpoint'];
         $sites = $this->get_data('sites',$opts,true);
@@ -105,6 +126,17 @@ class ApiCache{
             }
         }
         return $site_map ;
+    }
+
+    private function get_device($siteId): ?object
+    {
+        $devices = $this->ucrm(true)->get('devices',['siteId' => $siteId]);
+        if(!is_array($devices)){ return null ;}
+        foreach ($devices as $device){
+            $name = $device->identification->name ?? null ;
+            if(preg_match("/^RosP_/",$name)){ return $device; }
+        }
+        return null ;
     }
 
     private function get_clients($offset,$limit = 500)
