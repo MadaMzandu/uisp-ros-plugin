@@ -30,13 +30,11 @@ class ApiCache{
 
         $device = $this->get_device($siteId);
         $did = null ;
-        if($device){
-            $did = $device->identification->id ?? null ;
-        }
+        if(is_object($device)){
+            $did = $device->identification->id ?? null ; }
         $post['id'] = $siteId ;
         $post['service'] = $id ;
         $post['device'] = $did;
-        MyLog()->Append(['SITE CACHE',$post]);
         $this->dbCache()->insert($post,'sites',true);
     }
 
@@ -158,7 +156,7 @@ class ApiCache{
     {
         $values = [];
         foreach ($request as $item){
-            $values[] = array_diff_key($item,['network' => '$%$%@']);
+            $values[] = array_diff_key($item,['network' => 1,'unmsClientSiteId' => 1]);
         }
         $this->dbCache()->insert($values,$table,true);
     }
