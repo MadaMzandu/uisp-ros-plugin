@@ -16,13 +16,14 @@ class ApiSites
     {
         $data = ['role' => 'router','enablePing' => false,'snmpCommunity' => 'public'];
         $ip = $service['address'] ?? null ;
-        if(!$ip){ return; }
+        $sid = $service['site'] ?? null ;
+        if(!$ip || !$sid){ return; }
         $data['ip'] = $ip;
         $name = $service['company'] ?? $service['firstName'] . ' ' . $service['lastName'];
         $data['hostname'] = "RosP_". $service['address'] . '_' . $name;
         $conn = $this->ucrm()->post('devices/connect/other',$data);
         $device = $conn->identification->id ?? null ;
-        $site['siteId'] = $service['site'] ?? null ;
+        $site['siteId'] = $sid ;
         $site['deviceIds'][] = $device ;
         $auth = $this->ucrm()->post('devices/authorize',$site);
         $done = $auth->result ?? false ;
