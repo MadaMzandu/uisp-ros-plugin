@@ -15,7 +15,6 @@ class ApiLogger
 
     private function Debug(): bool
     {
-//        return '1'; //testing
         $fn = 'data/config.json';
         if(!is_file($fn)){ return false ;}
         $conf = json_decode(file_get_contents($fn));
