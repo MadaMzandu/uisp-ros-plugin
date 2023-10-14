@@ -1,7 +1,7 @@
 <?php
 require_once  'vendor/autoload.php';
 
-const API_DEBUG_LEVEL = 6;
+const API_DEBUG_ECHO = 0;
 
 class ApiLogger
 {
@@ -10,13 +10,11 @@ class ApiLogger
         if (!$this->Debug() && $level >= LOG_DEBUG){ return; }
         if(is_array($entry)){ $entry = json_encode($entry); }
         error_log(sprintf("%s: %s",$this->Time(), $entry) . PHP_EOL,3,'data/plugin.log');
-//      echo sprintf("%s: %s",$this->Time(), $entry) . PHP_EOL;
-//       $this->ULog()->appendLog(sprintf("%s: %s",$this->Time(), $entry));
+        if(API_DEBUG_ECHO > 0) echo sprintf("%s: %s",$this->Time(), $entry) . PHP_EOL;
     }
 
     private function Debug(): bool
     {
-//        return '1'; //testing
         $fn = 'data/config.json';
         if(!is_file($fn)){ return '0'; }
         $file = file_get_contents($fn) ?? '{}';
