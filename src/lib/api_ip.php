@@ -270,4 +270,3 @@ function myIPClass(): ApiIP
     }
     return $apiIpClass ;
 }
-
