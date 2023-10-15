@@ -4,19 +4,21 @@ const IP_BASE16 = 16;
 const IP_BASE10 = 10;
 const IP_PWR2 = 2;
 const IP_PAD0 = '0';
+
 class ApiIP
 {
-    private int $length6 = 64;
-    private bool $ip6 = false;
+    private int $len6 = 64;
+    private bool $ipv6 = false;
     private ?object $_conf = null;
     private ?ApiSqlite $_db = null ;
     private ?ApiSqlite $_cache = null ;
-    private array $ip_map = [] ;
+    private array $ipv4_map = [] ;
     private array $ipv6_map = [] ;
 
-    public function assign($sid, $device = null, $ip6 = false): ?string
+
+    public function assign($sid, $device = null, $ipv6 = false): ?string
     {
-        $this->ip6 = $ip6;
+        $this->ipv6 = $ipv6;
         $pool = $this->conf()->ppp_pool ?? null ;
         if(is_object($device)){
             $len = $device->pfxLength ?? null ;
@@ -29,17 +31,18 @@ class ApiIP
         }
         $prefixes = explode(',',$pool);
         foreach ($prefixes as $prefix){
+            if(!$prefix){ continue; }
             MyLog()->Append('pool: '. $prefix);
             $address = $this->find_unused($prefix);
             if($address){
                 MyLog()->Append(sprintf("ip assignment: %s",$address));
-                if($ip6) $address = $address . '/' . $this->length6 ;
-                $this->set_ip($sid,$address,$ip6);
+                if($ipv6) $address = $address . '/' . $this->len6 ;
+                $this->set_ip($sid,$address,$ipv6);
                 return $address;
             }
         }
         $name = $device->name ?? 'global';
-        $type = $ip6 ? 'ipv6' : 'ipv4';
+        $type = $ipv6 ? 'ipv6' : 'ipv4';
         MyLog()->Append(sprintf('ip: no addresses available type: %s pool: %s device: %s',$type,$pool,$name));
         return null ;
     }
@@ -62,8 +65,16 @@ class ApiIP
 
     public function set_ip($sid,$address,$ip6 = false)
     {
-        $map = $ip6 ? 'ipv6_map' : 'ip_map';
+        $map = $ip6 ? 'ipv6_map' : 'ipv4_map';
         $this->$map[$address] = $sid ;
+    }
+
+    public function in_subnet($address,$subnet)
+    {
+        $a = $this->ip2gmp($address);
+        $start = $this->ip2gmp($subnet);
+        $end = $this->gmp_bcast($subnet);
+        return gmp_cmp($a,$start) >= 0 && gmp_cmp($a,$end) <= 0;
     }
 
     private function find_unused($prefix): ?string
@@ -75,7 +86,7 @@ class ApiIP
 
     public function find_used($sid,$ip6 = false): ?string
     {
-        $mapname = $ip6 ? 'ipv6_map' : 'ip_map';
+        $mapname = $ip6 ? 'ipv6_map' : 'ipv4_map';
         $map = array_flip($this->$mapname) ;
         $assigned = $map[$sid] ?? null ;
         if($assigned){ return $assigned; }
@@ -87,22 +98,26 @@ class ApiIP
     private function save_used()
     {
         $data = [];
-        $ip = array_flip($this->ip_map) ;
+        $ip = array_flip($this->ipv4_map) ;
         $ipv6 = array_flip($this->ipv6_map);
-        foreach(array_keys($ip) as $id){
-            $data[$id]['id'] = $id ;
-            $data[$id]['address'] = $ip[$id] ??  null;
-            $data[$id]['address6'] = $ipv6[$id] ?? null ;
+        $ids = array_keys($ip);
+        $ids = array_merge($ids,array_diff($ids,array_keys($ipv6)));
+        foreach($ids as $id){
+            $item['id'] = $id ;
+            $item['address'] = $ip[$id] ??  null;
+            $item['address6'] = $ipv6[$id] ?? null ;
+            $data[] = $item ;
         }
-        if($data)$this->db()->insert($data,'network',true);
+        if($data){
+            $this->db()->insert($data,'network',true);}
     }
 
     private function valid($prefix): bool
     {
-        if(!preg_match('/[\da-fA-F\.\:]+\/\d{1,3}/',$prefix)) return false ;
+        if(!preg_match('/[\da-fA-F.:]+\/\d{1,3}/',$prefix)) return false ;
         $arr = explode('/',$prefix);
         if(sizeof($arr) < 2) return false ;
-        if($this->ip6){
+        if($this->ipv6){
             return filter_var($arr[0],FILTER_VALIDATE_IP,FILTER_FLAG_IPV6)
                 && $arr[1] >= 1 && $arr[1] <= 128;
         }
@@ -114,27 +129,27 @@ class ApiIP
 
     private function is_odd($address): bool
     {
-        $s = !$this->ip6 ? '.' : ':';
+        $s = !$this->ipv6 ? '.' : ':';
         $a = explode($s,$address); //address into array
         $last = $a[sizeof($a)-1] ?? '0' ; //last byte or word
-        if(!$this->ip6)$last = base_convert($last,IP_BASE10,IP_BASE16);
+        if(!$this->ipv6)$last = base_convert($last,IP_BASE10,IP_BASE16);
         $zero = '/^0+$/';
         $ff = '/^[fF]+$/';
-        return !$this->ip6
+        return !$this->ipv6
             ? preg_match($zero,$last) || preg_match($ff,$last)
             : preg_match($ff,$last);
     }
 
     public function is_used_db($address): bool
     {
-        if($this->ip6) $address = $address . '/' . $this->length6;
-        return $this->cache()->selectIsUsed($address,$this->ip6) ||
-            $this->db()->selectIsUsed($address,$this->ip6);
+        return $this->cache()->selectIsUsed($address,$this->ipv6) ||
+            $this->db()->selectIsUsed($address,$this->ipv6);
     }
 
     public function is_used($address)
     {
-        $map = $this->ip6 ? 'ipv6_map' : 'ip_map' ;
+        $map = $this->ipv6 ? 'ipv6_map' : 'ipv4_map' ;
+        if($this->ipv6) $address = $address . '/' . $this->len6;
         $used = $this->$map[$address] ?? null ;
         if($used){ return true; }
         return $this->is_used_db($address);
@@ -166,7 +181,7 @@ class ApiIP
 
     private function gmp_hosts($length)
     {
-        $max = $this->ip6 ? 128 :32 ;
+        $max = $this->ipv6 ? 128 :32 ;
         $host_len = $max - $length;
         return gmp_pow(IP_BASE2, $host_len);
     }
@@ -187,7 +202,7 @@ class ApiIP
         [$address,$length] = explode('/',$prefix);
         $hosts_qty = $this->gmp_hosts((int)$length);
         $net_addr = $this->ip2gmp($address);
-        if(!$this->ip6) {
+        if(!$this->ipv6) {
             return gmp_add($net_addr, gmp_sub($hosts_qty, 1));
         }
         return gmp_add($net_addr,$hosts_qty);
@@ -195,8 +210,8 @@ class ApiIP
 
     private function gmp_next($gmp_addr)
     {
-        $next = !$this->ip6 ? 1
-            : $this->gmp_hosts($this->length6);
+        $next = !$this->ipv6 ? 1
+            : $this->gmp_hosts($this->len6);
         return gmp_add($gmp_addr,$next);
     }
 
@@ -252,9 +267,6 @@ class ApiIP
         return $this->_conf ;
     }
 
-    public function __destruct()
-    {
-        $this->save_used();
-    }
+    public function __destruct() { $this->save_used(); }
 
 }
