@@ -126,7 +126,8 @@ class MtBatch extends MT
                 if(!$plan){ $plan = $this->make_plan($service); } //generate plan if not found
                 $mt->set_data($service,$plan);
                 $account = $mt->account();
-                if($account){ $deviceData[$did]['accounts'][] = $account ; }
+                if(!$account){ continue; }
+                $deviceData[$did]['accounts'][] = $account ; 
                 $queue = $mt->queue();
                 if($queue){ $deviceData[$did]['queues'][] = $queue ; }
                 $profile = $mt->profile();
