@@ -56,7 +56,7 @@ class ApiPlans extends Admin
         $tmp = [];
         $trimmer = null ;
         foreach ($read as $item) {
-            $trimmer ??= array_diff_key($item,['id' => 0,'uploadSpeed' => 0,'downloadSpeed' => 0,'name' => null]);
+            $trimmer ??= array_diff_key($item,['id' => -1,'uploadSpeed' => -1,'downloadSpeed' => -1,'name' => -1]);
             $trim = array_diff_key($item,$trimmer);
             $trim['archive'] = false ;
             $tmp[$item['id']] = $trim;
