@@ -5,6 +5,7 @@ class ApiSites
 
     public function set($ids)
     {
+        $this->delete($ids); // just clean up before
         $services = $this->find_services($ids) ?? [];
         MyLog()->Append('Setting sites');
         foreach($services as $service){
