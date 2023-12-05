@@ -103,8 +103,8 @@ class ApiSites
             foreach($sites as $site){
                 $blacks = $this->ucrm()->get('devices',['siteId' => $site,'type' => 'blackBox']);
                 foreach($blacks as $black){
-                    $name = $black->indentification->name ;
-                    if(preg_match('#^\s*RosP_#',$name)){
+                    $name = $black->identification->name ;
+                    if(preg_match("#^\s*RosP#",$name)){
                         $this->_blackboxes[] = $black->identification->id ;
                     }
                 }

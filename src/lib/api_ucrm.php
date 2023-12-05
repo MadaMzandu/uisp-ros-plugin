@@ -3,7 +3,7 @@
 require_once 'vendor/autoload.php';
 include_once '_web_ucrm.php';
 
-const USE_UCRM_CURL = 0;
+const USE_UCRM_CURL = 1;
 
 use Ubnt\UcrmPluginSdk\Service\UcrmApi;
 use Ubnt\UcrmPluginSdk\Service\UnmsApi;
