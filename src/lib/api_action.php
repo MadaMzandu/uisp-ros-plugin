@@ -248,9 +248,13 @@ class ApiAction
 
     private function has_moved($data): bool
     {//compare devices
-        $new = $this->get('device',$data);
-        $old = $this->get('device',$data,'old');
-        return $new && $old && $new != $old ;
+        $fields = ['device','unmsClientSiteId'];
+        foreach ($fields as $field){
+            $new = $this->get($field,$data);
+            $old = $this->get($field,$data,'old');
+            if($new && $old && $new != $old) return true ;
+        }
+        return false ;
     }
 
     private function get($key,$data,$type = 'entity')
