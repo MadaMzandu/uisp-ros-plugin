@@ -66,10 +66,7 @@ class Data
 
     protected function ipapi(): ApiIP
     {
-        if(empty($this->_ipapi)){
-            $this->_ipapi = new ApiIP();
-        }
-        return $this->_ipapi ;
+        return myIpApi();
     }
 
 
