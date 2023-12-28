@@ -256,6 +256,7 @@ function mySqlite()
 {
     global $apiSqlite ;
     if(empty($apiSqlite)){
+        MyLog()->Append("CREATING NEW DB INSTANCE");
         $apiSqlite = new ApiSqlite();
     }
     return $apiSqlite ;
@@ -270,4 +271,3 @@ function myCache()
     }
     return $apiSqliteCache ;
 }
-

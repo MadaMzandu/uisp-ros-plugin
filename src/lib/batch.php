@@ -397,10 +397,7 @@ class Batch
 
     private function dbCache()
     {
-        if(empty($this->_cache)){
-            $this->_cache = new ApiSqlite('data/cache.db');
-        }
-        return $this->_cache ;
+        return myCache();
     }
 
     private function now(): string {$date = new DateTime(); return $date->format('c'); }
