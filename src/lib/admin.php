@@ -87,7 +87,7 @@ class Admin
 
     protected function db()
     {
-        return new ApiSqlite();
+        return mySqlite();
     }
 
     protected function dbCache()

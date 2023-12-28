@@ -44,7 +44,7 @@ class Device_Base
 
     protected function db(): ?ApiSqlite
     {
-        return new ApiSqlite();
+        return mySqlite();
     }
 
     protected function dbCache(): ?ApiSqlite

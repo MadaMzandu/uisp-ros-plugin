@@ -2,7 +2,7 @@
 
 class ApiRebuild{
 
-    private function db(){ return new ApiSqlite(); }
+    private function db(){ return mySqlite(); }
 
     private function cache(){ return new ApiSqlite('data/cache.db'); }
 

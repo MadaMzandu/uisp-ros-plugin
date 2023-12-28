@@ -253,7 +253,7 @@ class ApiCache{
         return $api ;
     }
 
-    private function db(){ return new ApiSqlite(); }
+    private function db(){ return mySqlite(); }
 
     private function now(): string { return (new DateTime())->format('c'); }
 

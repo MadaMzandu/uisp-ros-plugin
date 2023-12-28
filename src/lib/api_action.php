@@ -205,6 +205,7 @@ class ApiAction
 
     private function has_ended($data): bool
     {
+        if($this->active_to() > date('c')) return false ; //skip deferred
         $action = $data['action'] ?? null ;
         if(in_array($action,['end','cancel','delete'])) return true ;
         $status = $this->get('status',$data);
@@ -280,9 +281,20 @@ class ApiAction
     private function db(): ApiSqlite
     {
         if(empty($this->_db)){
-            $this->_db = new ApiSqlite();
+            $this->_db = mySqlite();
         }
         return $this->_db ;
+    }
+
+    private function active_to(): string
+    {
+        return $this->entity()->activeTo ?? '2023-01-01';
+    }
+
+    private function entity($previous = false): stdClass
+    {
+        $entity = $previous ? 'entityBeforeEdit' : 'entity' ;
+        return $this->request->extraData->$entity ?? new stdClass();
     }
 
     private function conf(): ?object

@@ -215,7 +215,7 @@ class ApiSetup
 
     private function dbApi(): ApiSqlite
     {
-        return new ApiSqlite();
+        return mySqlite();
     }
 }
 

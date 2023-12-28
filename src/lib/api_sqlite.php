@@ -1,5 +1,4 @@
 <?php
-const API_SQLT_SINGLE = 1;
 
 class ApiSqlite
 {
@@ -276,4 +275,15 @@ class ApiSqlite
 
     public function __construct($path = null) { $this->path = $path ?? 'data/data.db';}
 
+}
+
+$apiSqlite = null ;
+
+function mySqlite(): ApiSqlite
+{
+    global $apiSqlite ;
+    if(empty($apiSqlite)){
+        $apiSqlite = new ApiSqlite();
+    }
+    return $apiSqlite ;
 }

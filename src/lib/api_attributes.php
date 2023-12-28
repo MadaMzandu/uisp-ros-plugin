@@ -216,7 +216,7 @@ class ApiAttributes
         ];
     }
 
-    private function db(){ return new ApiSqlite(); }
+    private function db(){ return mySqlite(); }
 
     private function conf(): ?object
     {
