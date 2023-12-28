@@ -262,3 +262,14 @@ class ApiIP
     public function __destruct() { $this->save_used(); }
 
 }
+
+$apiIpAddress = null ;
+
+function myIpApi(): ApiIP
+{
+    global $apiIpAddress;
+    if(empty($apiIpAddress)){
+        $apiIpAddress = new ApiIP();
+    }
+    return $apiIpAddress ;
+}

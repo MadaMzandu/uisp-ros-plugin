@@ -79,7 +79,7 @@ class ER
         $nets = [];
         foreach($servers as $s){ $nets[$s] = $this->_dhcp()->findKeys($s . '>subnet')[0];}
         if(!$nets){ return 0; }
-        $ip = new ApiIP();
+        $ip = myIpApi();
         foreach($this->batch as $i){
             $this->action = $i['action'] ?? 'set';
             $found = false ;
