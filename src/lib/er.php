@@ -244,7 +244,7 @@ class ER
     protected function db(): ApiSqlite
     {
         if(empty($this->_db)){
-            $this->_db = new ApiSqlite();
+            $this->_db = mySqlite();
         }
         return $this->_db ;
     }
