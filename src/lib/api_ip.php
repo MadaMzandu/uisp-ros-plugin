@@ -12,6 +12,7 @@ class ApiIP
     private ?object $_conf = null;
     private array $assigned = [];
 
+
     public function assign($sid, $device = [], $ipv6 = false): ?string
     {
         $this->ipv6 = $ipv6;

@@ -7,9 +7,10 @@ class ApiSites
 
     public function set($ids)
     {
+        myIpApi()->flush(); //make sure recent ips are flushed
         $this->delete($ids); // just clean up before
         $services = $this->find_services($ids) ?? [];
-        MyLog()->Append('Setting sites');
+        MyLog()->Append('SETTING SITES: '.sizeof($services));
         foreach($services as $service){
             $device = $this->create_device($service);
             if($device){
