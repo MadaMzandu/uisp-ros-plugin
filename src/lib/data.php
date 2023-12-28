@@ -169,10 +169,7 @@ class Data
 
     protected function dbCache(): ApiSqlite
     {
-        if(empty($this->_cache)){
-            $this->_cache = new ApiSqlite('data/cache.db');
-        }
-        return $this->_cache ;
+        return myCache();
     }
 
     protected function account_comment(): string
