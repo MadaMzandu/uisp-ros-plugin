@@ -269,6 +269,7 @@ function myIpApi(): ApiIP
 {
     global $apiIpAddress;
     if(empty($apiIpAddress)){
+        MyLog()->Append('CREATING NEW IP API');
         $apiIpAddress = new ApiIP();
     }
     return $apiIpAddress ;
