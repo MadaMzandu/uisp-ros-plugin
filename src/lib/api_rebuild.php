@@ -4,7 +4,7 @@ class ApiRebuild{
 
     private function db(){ return mySqlite(); }
 
-    private function cache(){ return new ApiSqlite('data/cache.db'); }
+    private function cache(){ return myCache(); }
 
     private function clear($type,$ids = [])
     {

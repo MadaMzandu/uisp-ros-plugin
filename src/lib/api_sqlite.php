@@ -278,12 +278,24 @@ class ApiSqlite
 }
 
 $apiSqlite = null ;
+$apiCache = null ;
 
 function mySqlite(): ApiSqlite
 {
     global $apiSqlite ;
     if(empty($apiSqlite)){
+        MyLog()->Append("CREATING NEW DB INSTANCE");
         $apiSqlite = new ApiSqlite();
     }
     return $apiSqlite ;
+}
+
+function myCache(): ApiSqlite
+{
+    global $apiCache ;
+    if(empty($apiCache)){
+        MyLog()->Append("CREATING NEW CACHE INSTANCE");
+        $apiCache = new ApiSqlite('data/cache.db');
+    }
+    return $apiCache ;
 }

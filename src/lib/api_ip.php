@@ -253,10 +253,7 @@ class ApiIP
 
     private function cache(): ApiSqlite
     {
-        if(empty($this->_cache)){
-            $this->_cache = new ApiSqlite('data/cache.db');
-        }
-        return $this->_cache ;
+        return myCache();
     }
 
     private function conf(): object

@@ -49,7 +49,7 @@ class Device_Base
 
     protected function dbCache(): ?ApiSqlite
     {
-        return new ApiSqlite('data/cache.db');
+        return myCache();
     }
 
     protected function setErr($msg): void

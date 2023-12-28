@@ -92,7 +92,7 @@ class Admin
 
     protected function dbCache()
     {
-        return new ApiSqlite('data/cache.db');
+        return myCache();
     }
 
 
