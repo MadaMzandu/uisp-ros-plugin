@@ -6,8 +6,6 @@ class Data
     protected array  $service = [];
     protected array $plan = [] ;
     protected ?array $_devices = null ;
-    protected ?ApiSqlite $_db = null;
-    protected ?ApiSqlite $_cache = null ;
     protected ?object $_conf = null;
     protected ?ApiIP $_ipapi = null ;
 
@@ -161,10 +159,7 @@ class Data
 
     protected function db(): ApiSqlite
     {
-        if(empty($this->_db)){
-            $this->_db = mySqlite();
-        }
-        return $this->_db ;
+        return mySqlite();
     }
 
     protected function dbCache(): ApiSqlite
