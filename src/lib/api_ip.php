@@ -13,6 +13,11 @@ class ApiIP
     private array $ipv4_map = [] ;
     private array $ipv6_map = [] ;
 
+    public function flush()
+    {
+        $this->save_used();
+    }
+
 
     public function assign($sid, $device = null, $ipv6 = false): ?string
     {
