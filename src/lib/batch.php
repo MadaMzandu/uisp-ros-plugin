@@ -11,8 +11,6 @@ class Batch
 {
     private ?array $_plans = null;
     private ?array $_devices = null ;
-    private ?ApiSqlite $_db = null ;
-    private ?ApiSqlite $_cache = null ;
     private array $_apis = [];
     private array $batch_failed = [];
     private array $batch_success = [];
@@ -383,10 +381,7 @@ class Batch
 
     private function db()
     {
-        if(empty($this->_db)){
-            $this->_db = mySqlite();
-        }
-        return $this->_db ;
+        return mySqlite();
     }
 
     private function dbCache()

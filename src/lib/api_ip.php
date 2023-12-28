@@ -10,8 +10,6 @@ class ApiIP
     private int $len6 = 64;
     private bool $ipv6 = false;
     private ?object $_conf = null;
-    private ?ApiSqlite $_db = null ;
-    private ?ApiSqlite $_cache = null ;
     private array $ipv4_map = [] ;
     private array $ipv6_map = [] ;
 
@@ -245,10 +243,7 @@ class ApiIP
 
     private function db(): ApiSqlite
     {
-        if(empty($this->_db)){
-            $this->_db = mySqlite();
-        }
-        return $this->_db ;
+        return  mySqlite();
     }
 
     private function cache(): ApiSqlite

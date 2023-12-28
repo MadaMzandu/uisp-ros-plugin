@@ -19,7 +19,6 @@ class ApiAction
 {
     private ?object $request;
     private ?object $_conf = null ;
-    private ?ApiSqlite $_db = null;
 
     public function submit()
     {
@@ -280,10 +279,7 @@ class ApiAction
 
     private function db(): ApiSqlite
     {
-        if(empty($this->_db)){
-            $this->_db = mySqlite();
-        }
-        return $this->_db ;
+        return mySqlite();
     }
 
     private function active_to(): string

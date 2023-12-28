@@ -15,7 +15,6 @@ class ER
     private array $delete_list =[];
     private array $set_list =[];
     private ?object $_conf = null;
-    private ?ApiSqlite $_db = null;
 
     private function connect(): bool
     {
@@ -243,10 +242,7 @@ class ER
 
     protected function db(): ApiSqlite
     {
-        if(empty($this->_db)){
-            $this->_db = mySqlite();
-        }
-        return $this->_db ;
+        return mySqlite() ;
     }
 
 
