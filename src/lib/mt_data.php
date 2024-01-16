@@ -3,7 +3,6 @@ class MtData extends MT
 {
     private array $service = [];
     private array $plan = [];
-    private ?ApiIP $_ipapi = null;
     private ?array $_devices = null ;
     
     public function set_data($service,$plan)
@@ -246,10 +245,7 @@ class MtData extends MT
 
     private function ipapi(): ApiIP
     {
-        if(empty($this->_ipapi)){
-            $this->_ipapi = new ApiIP();
-        }
-        return $this->_ipapi ;
+        return myApiIp() ;
     }
 
     private function profile_name(): string
