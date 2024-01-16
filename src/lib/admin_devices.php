@@ -198,7 +198,7 @@ class AdminDevices extends Admin
 
     private function setUsers(): void
     {
-        $db = new ApiSqlite();
+        $db = mySqlite();
         foreach ($this->read as &$device) {
             $device['users'] = $db->countServicesByDeviceId($device['id']);
         }

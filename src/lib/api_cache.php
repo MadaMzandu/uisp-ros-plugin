@@ -176,7 +176,7 @@ class ApiCache{
 
     private function ucrm(){ return new ApiUcrm(); }
 
-    private function db(){ return new ApiSqlite(); }
+    private function db(): ApiSqlite { return mySqlite(); }
 
     private function now(): string { return (new DateTime())->format('c'); }
 
@@ -188,12 +188,9 @@ class ApiCache{
         return $this->_conf;
     }
 
-    private function dbCache()
+    private function dbCache(): ApiSqlite
     {
-        if(empty($this->_cache)){
-            $this->_cache = new ApiSqlite('data/cache.db');
-        }
-        return $this->_cache;
+        return myCache() ;
     }
 
    }

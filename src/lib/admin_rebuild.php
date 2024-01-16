@@ -2,9 +2,9 @@
 
 class AdminRebuild{
 
-    private function db(){ return new ApiSqlite(); }
+    private function db(): ApiSqlite { return mySqlite(); }
 
-    private function cache(){ return new ApiSqlite('data/cache.db'); }
+    private function cache(): ApiSqlite { return myCache(); }
 
     private function clear($type,$ids = [])
     {
