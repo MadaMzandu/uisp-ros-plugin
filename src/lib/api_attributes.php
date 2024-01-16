@@ -7,6 +7,7 @@ class ApiAttributes
 {
     private $_devmap ;
     private $_conf ;
+    private ?array $_attributes = null ;
 
     public function check($request): int
     {
@@ -36,35 +37,26 @@ class ApiAttributes
         return $conf->auto_ppp_user || ($hotspot && $conf->auto_hs_user);
     }
 
-    public function set_username($serviceId,$clientId): void
+    public function set_user($serviceId, $clientId): void
     {
-        $ids = $this->attribute_id_map();
-        $uid = $ids['pppoe_user_attr'] ?? null ;
-        $pid = $ids['pppoe_pass_attr'] ?? null ;
+        $uid = $this->native2id('pppoe_user_attr');
+        $pid = $this->native2id('pppoe_pass_attr');
         $values = [];
-        if($uid)
-        $values[] = ['customAttributeId' => $uid, 'value' =>
-            sprintf('%s-%s',$this->string(5),$clientId)] ;
+        if($uid){
+            $values[] = ['customAttributeId' => $uid, 'value' =>
+                sprintf('%s-%s',$this->string(5),$clientId)] ;
+        }
+
         if($pid) $values[] = ['customAttributeId' => $pid, 'value' => $this->string()];
         if($values) $this->ucrm()->patch('clients/services/'.$serviceId,['attributes' => $values]);
     }
 
-    public function unset_attr($serviceId){
-        $ids = $this->attribute_id_map();
-        $values = [];
-        foreach($ids as $id){
-            if($id) $values = ['customAttributeId' => $id, 'value' => null];
-        }
-        $service['attributes'] = $values ;
-        $this->ucrm()->patch('clients/services/'.$serviceId,$service);
-    }
-
     public function check_config(): bool
     {
-        $assigned = $this->assigned_map();
-        $device = $assigned['device_name_attr'] ?? null ;
-        $user = $assigned['pppoe_user_attr'] ?? null ;
-        $mac = $assigned['mac_addr_attr'] ?? null ;
+        $conf = $this->conf();
+        $device = $conf->device_name_attr ?? null ;
+        $user = $conf->pppoe_user_attr ?? null ;
+        $mac = $conf->mac_addr_attr ?? null ;
         return $device && ($user || $mac);
     }
 
@@ -110,14 +102,9 @@ class ApiAttributes
 
     public function extract($attributes): array
     {//extract attribute values and map to database keys
-        $attributes = $this->strip($attributes);
-        $dbmap = $this->dbmap();
+        $fill = array_fill_keys(array_values($this->dbmap()),null);
+        $map = array_replace($fill,$this->strip($attributes));
         $devices = $this->devmap();
-        $map = array_fill_keys(array_values($dbmap),null);
-        foreach(array_keys($attributes) as $key){
-            $dbkey = $dbmap[$key] ?? null ;
-            if($dbkey){ $map[$dbkey] = $attributes[$key] ?? null; }
-        }
         $device = $map['device'] ?? null ;
         if($device) $map['device'] = $devices[strtolower($device)] ?? null ;
         return $this->split($map) ;
@@ -134,21 +121,19 @@ class ApiAttributes
     private function strip($attributes): array
     {
         if(empty($attributes)){ return []; }
-        $assigned = array_flip($this->assigned_map());
         $stripped = [];
-        foreach($attributes as $attribute){
-            $key = $assigned[$attribute->key] ?? null ;
-            $value = $attribute->value ?? null ;
-            if($key){ $stripped[$key] = $this->to_value($value);}
+        foreach($attributes as $attr){
+            $dbcol = $this->key2native($attr->key);
+            $value = $attr->value ?? null ;
+            $stripped[$dbcol] = $this->to_value($value);
         }
         return $stripped ;
     }
 
     private function to_value($value)
     {
-        if(is_numeric($value)){ return trim($value); }
-        if(empty($value)) { return null; }
-        return trim($value);
+        if(is_string($value)) return trim($value);
+        return $value ;
     }
 
     private function devmap(): array
@@ -164,41 +149,16 @@ class ApiAttributes
         return $this->_devmap ;
     }
 
-    private function attribute_id_map(): array
-    {// native key to uisp id
-        $assigned = $this->assigned_map();
-        $attributes = $this->attribute_map() ;
-        $map = [];
-        foreach(array_keys($assigned) as $native_key){
-            $key = $assigned[$native_key] ?? null ;
-            if($key){
-                $attribute = $attributes[$key] ?? null ;
-                if($attribute){$map[$native_key] = $attribute->id ; }
+    private function get_attr(): array
+    { //key to attribute map
+        if(empty($this->_attributes)){
+            $read = $this->ucrm()->get('custom-attributes') ?? [];
+            $this->_attributes = [];
+            foreach ($read as $item){
+                $this->_attributes[$item->key] = $item ;
             }
         }
-        return $map ;
-    }
-
-    private function attribute_map(): array
-    { //key to attribute map
-        $read = $this->ucrm()->get('custom-attributes') ?? [];
-        $map = [];
-        foreach ($read as $item){
-            $map[$item->key] = $item ;
-        }
-        return $map ;
-    }
-
-    private function assigned_map(): array
-    {// native key to assigned key map
-        $conf = $this->conf();
-        $native_keys = array_keys($this->dbmap());
-        $map = [];
-        foreach ($native_keys as $native_key){
-            $assigned = $conf->$native_key ?? null ;
-           if($assigned) $map[$native_key] = $assigned;
-        }
-        return $map ;
+        return $this->_attributes ;
     }
 
     private function dbmap(): array
@@ -217,7 +177,33 @@ class ApiAttributes
         ];
     }
 
-    private function db(){ return mySqlite(); }
+    private function db(): ApiSqlite { return mySqlite(); }
+
+    private function key2native($key): ?string
+    {
+        $conf = json_decode(json_encode($this->conf()),true);
+        $keys = array_keys($this->dbmap());
+        $natives = array_intersect_key($conf,
+            array_fill_keys($keys,null));
+        $natives = array_diff_assoc($natives,array_fill_keys($keys,null));
+        return array_flip($natives)[trim($key)] ?? null ;
+    }
+
+    public function native2id($native): ?int
+    {
+        foreach ($this->get_attr() as $attr){
+            if($native == $this->key2native($attr->key)){
+                return $attr->id ;
+            }
+        }
+        return null ;
+    }
+
+    private function key2dbcol($key): ?string
+    {
+        $native = $this->key2native($key);
+        return $this->dbmap()[$native] ?? null ;
+    }
 
     private function conf(): ?object
     {
