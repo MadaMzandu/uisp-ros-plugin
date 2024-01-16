@@ -6,6 +6,7 @@
     "ubnt/ucrm-plugin-sdk": "~0.3",
     "ext-gmp": "*",
     "ext-json": "*",
-    "ext-curl": "*"
+    "ext-curl": "*",
+    "ext-sqlite3": "*"
   }
 }
