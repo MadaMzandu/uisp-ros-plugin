@@ -1,9 +1,9 @@
 {
   "description": "ros-plugin",
-  "version": "1.8.4",
+  "version": "2.3.0",
   "license": "MIT",
   "require": {
-    "ubnt/ucrm-plugin-sdk": "~0.3",
+    "ubnt/ucrm-plugin-sdk": "v0.10.0",
     "ext-gmp": "*",
     "ext-json": "*",
     "ext-curl": "*",
