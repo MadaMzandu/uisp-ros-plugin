@@ -93,7 +93,7 @@ class ApiAction
                     MyLog()->Append('generating username and password for service');
                     $serviceId = $this->get('id',$data);
                     $clientId = $this->get('clientId',$data);
-                    $this->attributes()->set_username($serviceId,$clientId);
+                    $this->attributes()->set_user($serviceId,$clientId);
                     break ;
                 }
             }
