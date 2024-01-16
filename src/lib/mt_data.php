@@ -245,7 +245,7 @@ class MtData extends MT
 
     private function ipapi(): ApiIP
     {
-        return myApiIp() ;
+        return myIPClass() ;
     }
 
     private function profile_name(): string
@@ -380,7 +380,7 @@ class MtData extends MT
         $fixed = $this->service[$type] ?? null ;
         if($fixed){ return $fixed; }
         $service = $this->service['id'] ?? 0 ;
-        return $this->ipapi()->find_used($service,$ip6);
+        return $this->ipapi()->find_assigned($service,$ip6);
     }
 
     private function assign_address($ip6): ?string

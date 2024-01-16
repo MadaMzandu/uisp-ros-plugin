@@ -233,6 +233,13 @@ class ApiSqlite
         return (bool) $id ;
     }
 
+    public function selectAddress($sid,$ipv6 = false): ?string
+    {
+        $field = $ipv6 ? 'address6': 'address';
+        $query = "select $field from network where id='$sid'";
+        return $this->db()->querySingle($query);
+    }
+
     public function singleQuery($sql,$entireRow=false)
     {
         return $this->db()->querySingle($sql,$entireRow);
