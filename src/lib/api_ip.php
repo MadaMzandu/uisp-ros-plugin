@@ -149,7 +149,7 @@ class ApiIP
             : preg_match($ff,$last);
     }
 
-    public function is_used_db($address): bool
+    public function is_used($address): bool
     {
         $type = $this->ipv6 ? 'v6' : 'v4' ;
         if($this->ipv6) { $address = "$address/" . $this->len6;  }
