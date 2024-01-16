@@ -289,10 +289,7 @@ class ApiAction
 
     private function db(): ApiSqlite
     {
-        if(empty($this->_db)){
-            $this->_db = new ApiSqlite();
-        }
-        return $this->_db ;
+        return mySqlite() ;
     }
 
     private function conf(): ?object

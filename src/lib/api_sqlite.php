@@ -1,5 +1,4 @@
 <?php
-const API_SQLT_SINGLE = 1;
 
 class ApiSqlite
 {
@@ -118,20 +117,13 @@ class ApiSqlite
         return $this->singleQuery($sql);
     }
 
-    public function selectIp($id,$ip6): ?string
-    {
-        $field = $ip6 ? 'address6':'address';
-        $sql = sprintf("SELECT %s FROM network WHERE id=%s",$field,$id);
-        return $this->db()->querySingle($sql);
-    }
-
-    public function selectDeviceByDeviceName($name)
+    public function selectDeviceByDeviceName($name): object
     {
         $sql = "select * from devices where name='" . $name . "' collate nocase";
         return (object)$this->singleQuery($sql,true);
     }
 
-    public function selectDeviceById($id)
+    public function selectDeviceById($id): object
     {
         $sql = "select * from devices where id=" . $id;
         return (object)$this->singleQuery($sql,true);
@@ -142,7 +134,7 @@ class ApiSqlite
         $fields = 'services.*,devices.name as deviceName,network.address,network.address6';
         $sql = sprintf("select %s from services left join devices on services.device=devices.id ".
             "left join network on services.id=network.id",$fields);
-        $res = $this->query($sql);
+        $res = $this->db()->query($sql);
         $return = [];
         while ($row = $res->fetchArray(SQLITE3_ASSOC)) {
             $return[] = $row;
@@ -150,7 +142,8 @@ class ApiSqlite
         return $return;
     }
 
-    public function deleteAll($table = 'services'){
+    public function deleteAll($table = 'services'): bool
+    {
         $sql = sprintf("delete from %s",$table);
         return $this->db()->exec($sql);
     }
@@ -174,7 +167,7 @@ class ApiSqlite
     public function selectAllFromTable($table = 'services'): ?array
     {
         $sql = 'select * from ' . $table;
-        $res = $this->query($sql);
+        $res = $this->db()->query($sql);
         $return = [];
         while ($row = $res->fetchArray(SQLITE3_ASSOC)) {
             $return[] = $row;
@@ -198,14 +191,15 @@ class ApiSqlite
         return $value ;
     }
 
-    public function readConfig(): ?stdClass
+    public function readConfig(): ?object
     {
-        $this->read = $this->selectAllFromTable('config') ?? [];
-        $return = null;
-        foreach ($this->read as $row) {
-            $return[$row['key']] = $this->unStringify($row['value']);
+        $read = $this->selectAllFromTable('config') ?? [];
+        $cfg = new stdClass();
+        foreach ($read as $row) {
+            $key = $row['key'] ?? 'nokey';
+            $cfg->$key  = $this->unStringify($row['value']);
         }
-        return (object)$return;
+        return $cfg ;
     }
 
     public function saveConfig($fields): bool
@@ -238,42 +232,34 @@ class ApiSqlite
         $id = $this->db()->querySingle($query) ;
         return (bool) $id ;
     }
-    
-    public function execQuery($sql)
-    {
-        return $this->db()->exec($sql);
-    }
 
     public function singleQuery($sql,$entireRow=false)
     {
         return $this->db()->querySingle($sql,$entireRow);
     }
 
-    private function query($sql,$mode=2,$entireRow=null)
-    {
-        $db = $this->db();
-        $db->enableExceptions(true);
-        $modes = ['exec','querySingle','query'];
-        try {
-            $action = $modes[$mode] ?? 'query' ;
-            return $entireRow 
-                ? $db->$action($sql,$entireRow)
-                : $db->$action($sql);
-        } catch (Exception $err) {
-            die($this->error($err->getMessage()));
-        }
-    }
-
-    private function error($msg = 'failed')
-    {
-        $status = [
-            'status' => 'failed',
-            'error' => true,
-            'message' => "Sqlite3 error: " . $msg,
-        ];
-        return json_encode($status);
-    }
-
     public function __construct($path = null) { $this->path = $path ?? 'data/data.db';}
 
+}
+
+$apiSqlite = null ;
+$apiSqliteCache = null ;
+
+function mySqlite()
+{
+    global $apiSqlite ;
+    if(empty($apiSqlite)){
+        $apiSqlite = new ApiSqlite();
+    }
+    return $apiSqlite ;
+}
+
+function myCache()
+{
+    global $apiSqliteCache ;
+    $fn = 'data/cache.db';
+    if(empty($apiSqliteCache)){
+        $apiSqliteCache = new ApiSqlite($fn);
+    }
+    return $apiSqliteCache ;
 }

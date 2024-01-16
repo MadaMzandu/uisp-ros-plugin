@@ -72,7 +72,7 @@ class Validation extends Admin
         if (!in_array($field, $this->keys)) {
             return true;
         }
-        $db = new ApiSqlite();
+        $db = mySqlite();
         if ($this->data->id > 0) {
             $device = $db->selectDeviceById($this->data->id);
             if (strtolower($device->name) == strtolower($this->data->name)) {
@@ -127,7 +127,7 @@ class Validation extends Admin
         if (!in_array($field, $this->keys)) {
             return true;
         }
-        global $conf;
+        $conf = mySqlite()->readConfig();
         $savedToken = $conf->{$field};
         $conf->{$field} = $this->data->{$field};
         $test = (new ApiUcrm())->get('/service-plans');

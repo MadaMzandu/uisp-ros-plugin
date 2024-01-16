@@ -5,7 +5,7 @@ include_once 'api_logger.php' ;
 include_once 'admin.php';
 include_once 'api_action.php';
 
-$conf = (new ApiSqlite())->readConfig();
+$conf = mySqlite()->readConfig();
 
 
 class API_Router
