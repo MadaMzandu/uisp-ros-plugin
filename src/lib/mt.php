@@ -246,7 +246,7 @@ class MT extends Device
         $list = $this->read($path,$filter);
         $prefix = $list[0]['address'] ?? null ;
         $address = explode('/',$prefix)[0] ?? null ;
-        return $address ?? myApiIp()->local();
+        return $address ?? myIPClass()->local();
     }
 
     protected  function make_static_lease($id,$path): void
