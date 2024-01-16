@@ -1,10 +1,7 @@
 /src/vendor/
 /src/data/
 /nbproject/
-/src/test.php
-/src/test.json
-/src/lib/_temp.php
-/src/test_class.php
+/src/test*
 /src/*.zip
 /.idea/
 /src/test1.json
