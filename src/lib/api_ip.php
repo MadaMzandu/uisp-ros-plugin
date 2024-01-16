@@ -10,8 +10,6 @@ class ApiIP
     private int $len6 = 64;
     private bool $ipv6 = false;
     private ?object $_conf = null;
-    private ?ApiSqlite $_db = null ;
-    private ?ApiSqlite $_cache = null ;
     private array $ipv4_map = [] ;
     private array $ipv6_map = [] ;
 
@@ -263,4 +261,15 @@ class ApiIP
 
     public function __destruct() { $this->save_used(); }
 
+}
+
+$apiIpClass = null ;
+
+function myApiIp(): ApiIP
+{
+    global $apiIpClass ;
+    if(empty($apiIpClass)){
+        $apiIpClass = new ApiIP();
+    }
+    return $apiIpClass ;
 }
