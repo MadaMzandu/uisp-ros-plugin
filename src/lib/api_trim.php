@@ -61,7 +61,7 @@ class ApiTrim
         return $entity ;
     }
 
-    private function attributes()
+    private function attributes(): ApiAttributes
     {
         if(empty($this->_attrs)){
             $this->_attrs = new ApiAttributes() ;
