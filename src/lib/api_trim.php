@@ -8,13 +8,11 @@ class ApiTrim
 
     public function trim($type, $request): ?array
     {
-        switch (strtolower($type)){
-            case 'service':
-            case 'services': return $this->trim_service($request);
-            case 'client':
-            case 'clients': return $this->trim_client($request);
-        }
-        return null ;
+        return match (strtolower($type)) {
+            'service', 'services' => $this->trim_service($request),
+            'client', 'clients' => $this->trim_client($request),
+            default => null,
+        };
     }
 
     private function trim_client($request): array
