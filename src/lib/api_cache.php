@@ -164,7 +164,7 @@ class ApiCache{
         else return array_diff_key($opts,['statuses' => null]);
     }
 
-    private function attributes() { return new ApiAttributes(); }
+    private function attributes(): ApiAttributes { return new ApiAttributes(); }
 
     private function trimmer()
     {
