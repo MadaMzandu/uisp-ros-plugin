@@ -1,5 +1,4 @@
 <?php
-//remember to update cols file and repeats when schema changes
 const MY_VERSION = '2.0.2';
 const MAX_BACKUPS = 6 ;
 const REPEAT_STATEMENTS  = 6; //number of statements expected to fail during update
@@ -11,6 +10,7 @@ include_once 'api_timer.php';
 class ApiSetup
 {
     private $_db ;
+    private ?SQLite3 $_tmp = null ;
 
     public function run(){
         $timer = new ApiTimer('db setup: ');
@@ -29,11 +29,11 @@ class ApiSetup
         $timer->stop();
     }
 
-    private function db_update(): bool
+    private function db_update(): void
     {
         if(!$this->db_backup()){
             MyLog()->Append('setup: failed to backup - not updating');
-            return false ;
+            return ;
         }
         MyLog()->Append('starting db update');
         $schema = $this->update_schema();
@@ -51,9 +51,7 @@ class ApiSetup
             shell_exec('rm -f data/tmp.db');
             $this->set_version();
             $this->config_load();
-            return true;
         }
-        return false ;
     }
 
     private function db_create(): void
@@ -75,6 +73,31 @@ class ApiSetup
         $conf = (array) $this->dbApi()->readConfig();
         $diff = array_diff_key($default,$conf);
         return $this->dbApi()->saveConfig($diff);
+    }
+
+    private function get_cols($t,$tmp = true): array
+    {
+        $q = "select name,type from pragma_table_info('$t')";
+        $db = $tmp ? $this->tmp() : $this->db() ;
+        $f = $db->query($q);
+        $m = [];
+        while($r = $f->fetchArray(SQLITE3_ASSOC)){
+            $m[$r['name']] = $r['type'] ;
+        }
+        return $m ;
+    }
+
+    private function tmp(): SQLite3
+    {//memory db for col check
+        if(empty($this->_tmp))
+        {
+            $this->_tmp = new SQLite3(':memory:');
+            $fn = 'includes/schema.sql';
+            if(is_file($fn)) {
+                $this->_tmp->exec(file_get_contents($fn));
+            }
+        }
+        return $this->_tmp ;
     }
 
     private function update_schema(): ?array
@@ -102,7 +125,7 @@ class ApiSetup
         $file = 'data/data.db';
         $backup = sprintf('data/backup-%s',$state->backups);
         $copy = copy($file,$backup);
-        $state->backup = $this->now();
+        $state->backup = date('c');
         $this->save($state);
         return $copy ;
     }
@@ -114,7 +137,7 @@ class ApiSetup
         foreach(explode(',',$files) as $file){
             file_put_contents('data/'.$file,'');
         }
-        $state->cleanup = $this->now();
+        $state->cleanup = date('c');
         $this->save($state);
     }
 
@@ -140,35 +163,27 @@ class ApiSetup
 
     private function needs_update(): bool
     {
-        if($this->needs_columns()) return true ;
+        if($this->needs_cols()) return true ;
         $running = $this->dbApi()->readConfig()->version ?? '0.0.0' ;
         return trim($running) != MY_VERSION ;
     }
 
     private function needs_db(): bool
     {
-        $file = 'data/data.db';
-        if(!is_file($file)) return true ;
-        return false ;
+        return !is_file('data/data.db');
     }
 
-    private function needs_columns(): bool
+    public function needs_cols(): bool
     { //check for missing columns
-        $schema = [];
-        $file = 'includes/cols.json';
-        if(is_file($file)) $schema = json_decode(file_get_contents($file),true);
-        foreach(array_keys($schema) as $table){
-            $q = $this->db()->query(sprintf('PRAGMA table_info("%s")',$table));
-            $cols = [];
-            while($row = $q->fetchArray(SQLITE3_ASSOC)){ $cols[] = $row['name'];}
-            if(array_diff($schema[$table],$cols)) { return true; }
+        $tables = 'services,plans,network,devices,config';
+        foreach(explode(',',$tables) as $table){
+            $new = $this->get_cols($table);
+            $current = $this->get_cols($table,false);
+            if(array_diff_assoc($new,$current)){
+                return true ;
+            }
         }
         return false ;
-    }
-
-    private function now(): string
-    {
-        return (new DateTime())->format('Y-m-d H:i:s');
     }
 
     private function state(): stdClass
