@@ -55,7 +55,7 @@ class ApiCache{
         $timer->stop();
     }
 
-    private function populate($table)
+    public function populate($table)
     {
         $data = ['starter'];
         $opts = $this->opts($table);
@@ -81,7 +81,6 @@ class ApiCache{
         foreach ($request as $item){
             $values[] = array_diff_key($item,['network' => null]);
         }
-        MyLog()->Append("sending cache data to sqlite");
         $this->dbCache()->insert($values,$table,true);
     }
 
@@ -90,7 +89,8 @@ class ApiCache{
         $deleted = [];
         $values = [];
         foreach($request as $item){
-            $net = $item['network'] ?? [];
+            $net = $item['network'] ?? null;
+            if(!$net){ continue; }
             $net['id'] = $item['id'];
             if(in_array($item['status'],[2,5,8])) { $deleted[] = $item['id']; }
             else {
