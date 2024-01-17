@@ -145,3 +145,14 @@ class ApiAttributes
     private function ucrm(): ApiUcrm { return new ApiUcrm(); }
 
 }
+
+$apiAttributes = null ;
+
+function myAttr(): ApiAttributes
+{
+    global $apiAttributes ;
+    if(empty($apiAttributes)){
+        $apiAttributes = new ApiAttributes();
+    }
+    return $apiAttributes ;
+}

@@ -4,8 +4,6 @@ include_once 'api_attributes.php';
 class ApiTrim
 {// trim request to min and map to db fields
 
-    private $_attrs ;
-
     public function trim($type, $request): ?array
     {
         return match (strtolower($type)) {
@@ -40,7 +38,7 @@ class ApiTrim
 
     private function extract($item): array
     {
-        $entity = $this->attributes()->extract($item->attributes ?? []);
+        $entity = $this->attrs()->extract($item->attributes ?? []);
         $fields = "id,clientId,status,uploadSpeed,".
             "downloadSpeed,price,totalPrice,currencyCode";
         $array = json_decode(json_encode($item),true);
@@ -51,12 +49,9 @@ class ApiTrim
         return $entity ;
     }
 
-    private function attributes(): ApiAttributes
+    private function attrs(): ApiAttributes
     {
-        if(empty($this->_attrs)){
-            $this->_attrs = new ApiAttributes() ;
-        }
-        return $this->_attrs ;
+        return myAttr();
     }
 
 }

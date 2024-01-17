@@ -93,7 +93,7 @@ class ApiAction
                     MyLog()->Append('generating username and password for service');
                     $serviceId = $this->get('id',$data);
                     $clientId = $this->get('clientId',$data);
-                    $this->attributes()->set_user($serviceId,$clientId);
+                    $this->attrs()->set_user($serviceId,$clientId);
                     break ;
                 }
             }
@@ -285,7 +285,7 @@ class ApiAction
 
     private function trimmer(): ApiTrim { return new ApiTrim(); }
 
-    private function attributes(): ApiAttributes { return new ApiAttributes(); }
+    private function attrs(): ApiAttributes { return myAttr(); }
 
     private function db(): ApiSqlite
     {

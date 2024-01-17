@@ -7,7 +7,6 @@ include_once 'api_ucrm.php';
 class ApiCache{
 
     private $_trim ;
-    private $_cache ;
     private $_conf ;
 
     public function save($request,$type = 'service')
@@ -23,7 +22,7 @@ class ApiCache{
     public function sync($force = false)
     {
         if($force || $this->needs_update()){
-            if(!$this->attributes()->check_config()
+            if(!$this->attrs()->check_config()
                 || !$this->check_devices()){
                 return ;
             }
@@ -164,7 +163,7 @@ class ApiCache{
         else return array_diff_key($opts,['statuses' => null]);
     }
 
-    private function attributes(): ApiAttributes { return new ApiAttributes(); }
+    private function attrs(): ApiAttributes { return myAttr(); }
 
     private function trimmer()
     {
