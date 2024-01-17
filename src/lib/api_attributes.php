@@ -66,13 +66,11 @@ class ApiAttributes
 
     private function split($values): array
     {// split for network table
-        $netkeys = ['address','address6'];
-        $map = array_diff_key($values,array_fill_keys($netkeys,null));
-        foreach ($netkeys as $key){
-            $value = $values[$key] ?? null ;
-            if($value){
-                $map['network'][$key] = $value ;
-            }
+        $fill = array_fill_keys(['address','address6'],'&^%#@');
+        $net = array_intersect_key($values,$fill);
+        $map = array_diff_key($values,$fill);
+        if(preg_grep("#[\d.:a-fA-F]+#",$net)){
+            $map['network'] = $net ;
         }
         return $map ;
     }
