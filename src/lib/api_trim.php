@@ -20,11 +20,10 @@ class ApiTrim
     private function trim_client($request): array
     {
         $item = $request->extraData->entity ?? $request ;
-        $entity = array_fill_keys(['id','company','firstName','lastName'],null);
-        $map = ['company' => 'companyName'];
-        foreach (array_keys($entity) as $key){
-            $mapped = $map[$key] ?? $key ;
-            $entity[$key] = $item->$mapped ?? null; }
+        $array = json_decode(json_encode($item),true);
+        $entity = array_fill_keys(['id','firstName','lastName'],null);
+        $entity = array_intersect_key($array,$entity);
+        $entity['company'] = $item->companyName ?? null ;
         return ['entity' => $entity];
     }
 
@@ -34,30 +33,23 @@ class ApiTrim
         $previous = $request->extraData->entityBeforeEdit ?? null ;
         $return['action'] = $request->changeType ?? 'insert' ;
         $return['entity'] = $this->extract($entity);
-        $return['previous'] = $this->extract($previous);
+        if($previous){
+            $return['previous'] = $this->extract($previous);
+        }
+        MyLog()->Append($return);
         return $return;
     }
 
-    private function extract($item)
+    private function extract($item): array
     {
-        $attributes = $item->attributes ?? [];
-        $entity = $this->attributes()->extract($attributes);
-        $fields = [
-            'id',
-            'servicePlanId',
-            'clientId',
-            'status',
-            'uploadSpeed',
-            'downloadSpeed',
-            'price',
-            'totalPrice',
-            'currencyCode',
-        ];
-        $db_map = ['servicePlanId' => 'planId'];
-        foreach ($fields as $field) {
-            $db_key = $db_map[$field] ?? $field;
-            $entity[$db_key] = $item->$field ?? null;
-        }
+        $entity = $this->attributes()->extract($item->attributes ?? []);
+        $fields = "id,clientId,status,uploadSpeed,".
+            "downloadSpeed,price,totalPrice,currencyCode";
+        $array = json_decode(json_encode($item),true);
+        $trim = array_intersect_key($array,
+            array_fill_keys(explode(',',$fields),null));
+        $entity = array_replace($entity,$trim);
+        $entity['planId'] = $item->servicePlanId ?? null;
         return $entity ;
     }
 
