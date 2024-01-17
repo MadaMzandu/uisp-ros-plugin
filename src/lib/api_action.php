@@ -283,7 +283,7 @@ class ApiAction
         return null ;
     }
 
-    private function trimmer(): ApiTrim { return new ApiTrim(); }
+    private function trimmer(): ApiTrim { return myTrimmer() ; }
 
     private function attrs(): ApiAttributes { return myAttr(); }
 

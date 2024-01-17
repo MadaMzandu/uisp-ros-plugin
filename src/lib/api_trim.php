@@ -55,3 +55,14 @@ class ApiTrim
     }
 
 }
+
+$apiTrimmer = null ;
+
+function myTrimmer(): ApiTrim
+{
+    global $apiTrimmer ;
+    if(empty($apiTrimmer)){
+        $apiTrimmer = new ApiTrim() ;
+    }
+    return $apiTrimmer ;
+}
