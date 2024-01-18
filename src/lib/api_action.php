@@ -7,7 +7,7 @@ class ApiAction
     public function submit($request = null)
     {
         if($request){ $this->request = $request; }
-        $data = myTrimmer()->trim($this->type(),$request) ;
+        $data = myTrimmer()->trim($this->type(),$this->request) ;
         $this->execute($data);
     }
 
@@ -17,6 +17,10 @@ class ApiAction
         if($this->type() == 'client')
         {
             $this->save($data['entity']);
+        }
+        elseif ($this->is_auto($data['entity']))
+        {
+            myAttr()->set_user($this->entity()->id,$this->entity()->clientId);
         }
         elseif($action == 'insert')
         {
@@ -120,6 +124,16 @@ class ApiAction
         }
     }
 
+    private function is_auto($entity): bool
+    {
+        $user = $entity['mac'] ?? $entity['username'] ?? null ;
+        if($user){ return false ; }
+        $auto = $this->conf()->auto_ppp_user ?? false;
+        $hs = $entity['hotspot'] ?? 0 ;
+        if($hs){ $auto = $this->conf()->auto_hs_user ?? false; }
+        return $auto ;
+    }
+
     private function status(): int
     {
         return $this->entity()->status ?? 0 ;
@@ -138,6 +152,11 @@ class ApiAction
     private function action(): string
     {
         return $this->req()->changeType ?? 'no_change' ;
+    }
+
+    private function conf(): object
+    {
+        return mySqlite()->readConfig() ;
     }
 
     private function batch(): MtBatch
