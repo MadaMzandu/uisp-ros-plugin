@@ -29,7 +29,7 @@ class MtBatch extends MT
 
     public function del_accounts(array $ids)
     {
-        $deviceServices = $this->select_ids($ids,'delete');
+        $deviceServices = $this->select_data($ids,'delete');
         $plans = $this->find_plans();
         $deviceData = [];
         $mt = new MtData();
@@ -82,7 +82,7 @@ class MtBatch extends MT
 
     public function set_queues(array $ids,$on = true)
     {
-        $deviceServices = $this->select_ids($ids,'update');
+        $deviceServices = $this->select_data($ids,'update');
         $plans = $this->find_plans();
         $deviceData = [];
         $mt = new MtData();
@@ -115,7 +115,7 @@ class MtBatch extends MT
 
     public function set_accounts(array $ids)
     {
-        $deviceServices = $this->select_ids($ids,'update');
+        $deviceServices = $this->select_data($ids,'update');
         $plans = $this->find_plans();
         $deviceData = [];
         $mt = new MtData();
@@ -259,18 +259,24 @@ class MtBatch extends MT
        return $this->_service_plans ;
     }
 
-    private function select_ids(array $ids,$action): array
+    private function select_data(array $ids, $action): array
     {
-        $fields = 'services.*,clients.company,clients.firstName,clients.lastName,'.
-            'network.address,network.address6';
-        $sql = sprintf("SELECT %s FROM services LEFT JOIN clients ON services.clientId=clients.id ".
-            "LEFT JOIN network ON services.id=network.id ".
-            "WHERE services.id IN (%s) ",$fields,implode(',',$ids));
-        $data = $this->dbCache()->selectCustom($sql) ?? [];
+        $data = $ids ;
+        $first = $ids[0] ;
+        if(is_int($first)){
+            $fields = 'services.*,clients.company,clients.firstName,clients.lastName,'.
+                'network.address,network.address6';
+            $sql = sprintf("SELECT %s FROM services LEFT JOIN clients ON services.clientId=clients.id ".
+                "LEFT JOIN network ON services.id=network.id ".
+                "WHERE services.id IN (%s) ",$fields,implode(',',$ids));
+            $data = $this->dbCache()->selectCustom($sql) ?? [];
+        }
         $deviceMap = [];
+        $count = 0;
+        $date = date('c');
         foreach ($data as $item){
-            $item['action'] = $action ;
-            $item['batch'] = rand(2222,222222) + 44444 ;
+            $item['action'] ??= $action ;
+            $item['batch'] = $date . '-' . ++$count;
             $id = $item['device'] ?? 'nodev';
             $deviceMap[$id][] = $item ;
         }
