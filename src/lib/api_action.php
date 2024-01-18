@@ -71,7 +71,6 @@ class ApiAction
             if($dev && $user) {
                 $this->set($entity, 'upgrade');
             }
-
         }
         elseif(in_array('status',$changes) && in_array($this->status(),[2,5]))
         {// obsolete status requires delete
@@ -83,7 +82,6 @@ class ApiAction
             {//ignore network flapping
                 $this->set($data['entity'],'edit');
             }
-
         }
 
     }
