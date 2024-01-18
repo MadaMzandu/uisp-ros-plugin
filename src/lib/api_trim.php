@@ -32,7 +32,6 @@ class ApiTrim
         if($previous){
             $return['previous'] = $this->extract($previous);
         }
-        MyLog()->Append($return);
         return $return;
     }
 
