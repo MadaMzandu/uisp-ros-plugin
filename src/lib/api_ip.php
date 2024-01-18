@@ -12,7 +12,6 @@ class ApiIP
     private ?object $_conf = null;
     private array $assigned = [];
 
-
     public function assign($sid, $device = [], $ipv6 = false): ?string
     {
         $this->ipv6 = $ipv6;
@@ -78,11 +77,10 @@ class ApiIP
 
     }
 
-    public function find_assigned($sid,$ipv6 = false)
+    public function find_assigned($sid,$ipv6 = false): ?string
     {
         $type = $ipv6 ? 'v6' : 'v4';
-        $map = array_flip($this->assigned[$type] ?? []);
-        $found = $map[$sid] ?? null ;
+        $found = array_search($sid,$this->assigned[$type] ?? []);
         if($found){ return $found; }
         $found = $this->db()->selectAddress($sid,$ipv6);
         if($found){ $this->set($sid,$found,$ipv6); }
