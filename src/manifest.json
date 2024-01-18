@@ -35,5 +35,6 @@
       "type": "checkbox",
       "required": 0
     }
-  ]
+  ],
+  "supportsWebhookEvents": true
 }
