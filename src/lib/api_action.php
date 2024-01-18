@@ -79,7 +79,11 @@ class ApiAction
         }
         else
         {//normal edit
-            $this->set($data['entity'],'edit');
+            if(!$this->is_flap($data))
+            {//ignore network flapping
+                $this->set($data['entity'],'edit');
+            }
+
         }
 
     }
@@ -140,6 +144,15 @@ class ApiAction
         return 1;
     }
 
+    private function is_flap($data): bool
+    {//check network flapping
+        if(array_diff_assoc($data['entity'],$data['previous'] ?? []))
+        { //has changes
+            return false ;
+        }
+        return $this->entity()->hasOutage != $this->previous()->hasOutage ;
+    }
+
     private function is_auto($entity): bool
     {
         $auto = $this->conf()->auto_ppp_user ?? false;
@@ -156,6 +169,11 @@ class ApiAction
     private function entity(): object
     {
         return $this->req()->extraData->entity ?? new stdClass();
+    }
+
+    private function previous(): object
+    {
+        return $this->req()->extraData->entityBeforeEdit ?? new stdClass();
     }
 
     private function type(): string
