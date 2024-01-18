@@ -21,8 +21,12 @@ class ApiAttributes
         }
         $values['user']['value'] = sprintf('%s-%s',$this->string(5),$clientId);
         $values['pass']['value'] = $this->string();
-        if($values) $this->ucrm()
-            ->patch('clients/services/'.$serviceId,['attributes' => array_values($values)]);
+        if($values) {
+            MyLog()->Append(["AUTO USER SERVICE: ",$serviceId,$values]);
+           $done = $this->ucrm()
+                ->patch('clients/services/'.$serviceId,['attributes' => array_values($values)]);
+          if(!property_exists($done,'id')) MyLog()->Append($done);
+        };
     }
 
     public function check_config(): bool

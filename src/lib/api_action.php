@@ -18,9 +18,17 @@ class ApiAction
         {
             $this->save($data['entity']);
         }
-        elseif ($this->is_auto($data['entity']))
-        {
-            myAttr()->set_user($this->entity()->id,$this->entity()->clientId);
+        elseif ($check = $this->is_unset($data))
+        {//unset attributes
+            if($check < 0)
+            { //had prior settings
+                $this->delete($data['previous']);
+            }
+            if($this->is_auto($data['entity']))
+            {
+                myAttr()->set_user($this->entity()->id,$this->entity()->clientId);
+            }
+
         }
         elseif($action == 'insert')
         {
@@ -57,8 +65,13 @@ class ApiAction
         elseif($upgrade)
         { //changes requiring previous delete
             MyLog()->Append(["Update edit requires delete changes: ",$changes,$this->entity()->id]);
+            $dev = $entity['device'] ?? null ;
+            $user = $entity['username'] ?? $entity['mac'] ?? null ;
             $this->delete($data['previous']);
-            $this->set($data['entity'],'upgrade');
+            if($dev && $user) {
+                $this->set($entity, 'upgrade');
+            }
+
         }
         elseif(in_array('status',$changes) && in_array($this->status(),[2,5]))
         {// obsolete status requires delete
@@ -111,10 +124,24 @@ class ApiAction
         }
     }
 
+    private function is_unset($data): int
+    {
+        $entity = $data['entity'];
+        $previous = $data['previous'] ?? [];
+        $dev = $entity['device'] ?? null;
+        $user = $entity['mac'] ?? $entity['username'] ?? null ;
+        if($dev && $user){ return 0 ; }
+        if(!$previous){ return 1; }
+        $changes = array_diff_assoc($entity,$previous);
+        if(array_intersect(['device','mac','username'],array_keys($changes)))
+        { //has prior settings - delete
+            return -1;
+        }
+        return 1;
+    }
+
     private function is_auto($entity): bool
     {
-        $user = $entity['mac'] ?? $entity['username'] ?? null ;
-        if($user){ return false ; }
         $auto = $this->conf()->auto_ppp_user ?? false;
         $hs = $entity['hotspot'] ?? 0 ;
         if($hs){ $auto = $this->conf()->auto_hs_user ?? false; }
