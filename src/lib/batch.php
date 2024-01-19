@@ -74,11 +74,6 @@ class Batch
                     $item['action'] = 'remove';
                     $deviceData[$did][$key][] = $data[$key];
                 }
-                $dhcp6 = $data['dhcp6'] ?? null ;
-                if($dhcp6){
-                    $dhcp6['action'] = 'remove';
-                    $deviceData[$did]['accounts'][] = $dhcp6;
-                }
             }
         }
         unset($api);
@@ -135,9 +130,6 @@ class Batch
                 $data = $api->get_data($service,$plan);
                 foreach(array_keys($data) as $key){
                     $deviceData[$did][$key][] = $data[$key];
-                }
-                if(key_exists('dhcp6',$data)){
-                    $deviceData[$did]['accounts'][] = $data['dhcp6'];
                 }
             }
         }

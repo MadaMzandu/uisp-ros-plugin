@@ -12,20 +12,20 @@ class Data
     {
         $this->set_data($service,$plan) ;
         $data = [];
-        $keys = "pool,profile,parent,queue,account,disconn";
+        $keys = "pool,profiles,parents,queues,accounts,dhcp6,disconn";
         foreach(explode(',',$keys) as $key){
             $item = match ($key){
                 'pool' => $this->pool(),
-                'profile' => $this->profile(),
-                'parent' => $this->parent(),
-                'queue' => $this->queue(),
-                'account' => $this->account(),
+                'profiles' => $this->profile(),
+                'parents' => $this->parent(),
+                'queues' => $this->queue(),
+                'accounts' => $this->account(),
+                'dhcp6' => $this->dhcp6(),
                 'disconn' => $this->account_reset(),
+                default => null,
             };
             if($item){ $data[$key] = $item; }
         }
-        $dhcp6 = $this->dhcp6() ;
-        if($dhcp6){ $data['dhcp6'] = $dhcp6 ; }
         return $data ;
     }
 
