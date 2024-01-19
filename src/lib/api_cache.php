@@ -6,7 +6,7 @@ include_once 'api_ucrm.php';
 
 class ApiCache{
 
-    private $_conf ;
+    private ?object $_conf = null;
 
     public function save($request,$type = 'service')
     { //update a single service
@@ -77,7 +77,7 @@ class ApiCache{
     {
         $values = [];
         foreach ($request as $item){
-            $values[] = array_diff_key($item,['network' => null]);
+            $values[] = array_diff_key($item,['network' => '$%$%@']);
         }
         $this->dbCache()->insert($values,$table,true);
     }
