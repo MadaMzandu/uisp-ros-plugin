@@ -35,6 +35,6 @@ class ApiSystem extends Admin
     public function log_clear()
     {
         file_put_contents('data/plugin.log','');
-        MyLog()->Append('log has been cleared');
+        MyLog()->Append('log_cleared');
     }
 }

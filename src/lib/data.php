@@ -22,10 +22,8 @@ class Data
 
     protected function ip($ip6 = false): ?string
     {
-        MyLog()->Append('checking for assigned address');
         $assigned = $this->find_address($ip6);
         if($assigned){ return $assigned; }
-        MyLog()->Append('requesting address assignment');
         return $this->assign_address($ip6);
     }
 

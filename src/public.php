@@ -50,7 +50,7 @@ try
     }
 
 
-    MyLog()->Append('public: begin api request: '.$json);
+//    MyLog()->Append('public: begin api request: '.$json);
     $data = json_decode($json);
     $api = new API_Router($data);
     $api->route();

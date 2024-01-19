@@ -8,7 +8,7 @@ class MtData extends Data
     {
         $this->service = $service ;
         $this->plan = $plan ;
-        MyLog()->Append('account data: '.json_encode([$service,$plan]));
+//        MyLog()->Append('account data: '.json_encode([$service,$plan]));
     }
 
     public function account(): ?array

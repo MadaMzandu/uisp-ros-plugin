@@ -56,7 +56,6 @@ class ApiAction
         $diff = array_diff_assoc($entity,$previous);
         $changes = array_keys($diff);
         $upgrade = array_intersect(['device','mac','username','hotspot'],$changes);
-        MyLog()->Append($changes);
         if(in_array('status',$changes) && in_array($this->status(),[0,6]))
         { //deferred changes
             MyLog()->Append(sprintf("Deferred edit for service: %s client: %s",
@@ -78,7 +77,7 @@ class ApiAction
         }
         else
         {//normal edit
-            if(!$this->is_flap($data))
+            if($changes)
             {//ignore network flapping
                 $this->set($data['entity'],'edit');
             }

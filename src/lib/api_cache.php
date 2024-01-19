@@ -51,10 +51,9 @@ class ApiCache{
                 return ;
             }
             $timer = new ApiTimer('sync: ');
-            MyLog()->Append('populating services,clients');
             foreach(['clients','services','sites'] as $table){
                 $this->populate($table);
-                MyLog()->Append('finished populating: '.$table);
+                MyLog()->Append('cache_success_'.$table);
             }
             $state = ['last_cache' => $this->now()];
             $this->db()->saveConfig($state);
@@ -123,7 +122,6 @@ class ApiCache{
                 }
             }
         }
-        MyLog()->Append("SITE MAP: ". sizeof($site_map));
         return $site_map ;
     }
 
@@ -180,11 +178,9 @@ class ApiCache{
         if(!empty($deleted)){
             $sql = sprintf("delete from network where id in (%s)",
                 implode(',',$deleted));
-            MyLog()->Append('cache: network delete sql: '.$sql);
             $this->dbCache()->exec($sql); //clear inactive addresses
         }
         if(!empty($values)){
-            MyLog()->Append('sending cache network data to sqlite');
             $this->dbCache()->insert($values,'network',true);
         }
     }
@@ -193,10 +189,9 @@ class ApiCache{
     {
         $devices = $this->db()->selectAllFromTable('devices');
         if(empty($devices)) {
-            MyLog()->Append('devices not configured sync delayed');
+            MyLog()->Append('cache_devices_unset');
             return false ;
         }
-        MyLog()->Append('cache devices found: '. json_encode($devices));
         return true ;
     }
 

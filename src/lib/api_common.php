@@ -34,7 +34,7 @@ function backup_restore(){
 
 function fail($event, $data = []): never
 {
-    MyLog()->Append("Failure: $event data: ". json_encode($data));
+    MyLog()->Append("Failed: $event data: ". json_encode($data));
     respond($event,true,[]);
     exit();
 }

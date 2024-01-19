@@ -31,7 +31,6 @@ class ApiRebuild{
         $clear = $data->clear ?? false ;
         $select = [];
         $timer = new ApiTimer($type . ' rebuild: '.json_encode($data));
-        MyLog()->Append('selecting services to rebuild');
         if($type == 'all'){
             $select = $this->cache()->selectCustom('SELECT id FROM services WHERE status NOT IN (2,5,8)');
         }
@@ -47,7 +46,6 @@ class ApiRebuild{
             return ;
         }
         foreach ($select as $item) $ids[] = $item['id'];
-        MyLog()->Append(sprintf('found %s services to rebuild',sizeof($ids)));
         if($clear) { $this->clear($type,$ids); }
         $batch = new Batch();
         $batch->set_accounts($ids);

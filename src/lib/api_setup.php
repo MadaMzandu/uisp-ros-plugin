@@ -32,10 +32,8 @@ class ApiSetup
     private function db_update(): void
     {
         if(!$this->db_backup()){
-            MyLog()->Append('setup: failed to backup - not updating');
-            return ;
+            fail('backup_failure');
         }
-        MyLog()->Append('starting db update');
         $schema = $this->update_schema();
         shell_exec('rm -f data/tmp.db');
         $failed = 0 ; $total = sizeof($schema) ;

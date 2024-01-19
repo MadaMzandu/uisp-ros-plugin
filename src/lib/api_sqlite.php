@@ -15,7 +15,7 @@ class ApiSqlite
         $REPLACE = null ;
         if($replace) $REPLACE = 'OR REPLACE ';
         $query = sprintf("INSERT %s INTO %s (%s) VALUES %s",   $REPLACE,$table,$fields,$values);
-        MyLog()->Append("sqlite query: ".$query);
+//        MyLog()->Append("sqlite query: ".$query);
         return $this->db()->exec($query);
     }
 
@@ -255,7 +255,6 @@ function mySqlite()
 {
     global $apiSqlite ;
     if(empty($apiSqlite)){
-        MyLog()->Append("CREATING NEW DB INSTANCE");
         $apiSqlite = new ApiSqlite();
     }
     return $apiSqlite ;

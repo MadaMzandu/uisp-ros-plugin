@@ -36,7 +36,6 @@ class Batch
                 }
             }
         }
-        MyLog()->Append('Queues ready to delete');
         $this->run_batch($deviceData,true);
     }
 
@@ -105,7 +104,6 @@ class Batch
             }
         }
         unset($api);
-        MyLog()->Append('services ready to delete');
         $this->run_batch($deviceData,true);
         $this->unsave_batch($deviceServices);
         $this->queue_failed($deviceServices);
@@ -200,7 +198,6 @@ class Batch
             if(!(array)$device){ continue; }
             $type = $device->type ?? 'mikrotik';
             $api = $this->device_api($type);
-            MyLog()->Append('executing batch for device: '.$device->name);
             $keys = ['pool','parents','profiles','queues','accounts','dhcp6','disconn'];
             if($delete) {
                 $keys = array_reverse(array_diff($keys,['disconn']));
@@ -245,7 +242,6 @@ class Batch
                 }
             }
         }
-        MyLog()->Append('batch: saving data ');
         $this->db()->insert($save,'services',true);
         $this->set_sites($sites);
     }
@@ -266,7 +262,6 @@ class Batch
         foreach(['services','network'] as $table) {
             $sql = sprintf("delete from %s where id in (%s)",$table,
                 implode(',',$ids));
-            MyLog()->Append(sprintf("batch delete from %s sql: %s",$table,$sql));
             $this->db()->exec($sql);
         }
         $this->set_sites($ids,true);

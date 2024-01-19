@@ -158,7 +158,6 @@ class ApiDevices extends Admin
         $limit = $this->data->limit ?? 100 ;
         $offset = $this->data->offset ?? 0 ;
         $sql .= sprintf("ORDER BY main.services.id DESC LIMIT %s OFFSET %s",$limit,$offset);
-        MyLog()->Append("services sql: ".$sql);
         return $sql;
     }
 

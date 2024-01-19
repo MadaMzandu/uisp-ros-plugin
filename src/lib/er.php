@@ -71,7 +71,6 @@ class ER
             $this->setErr(array_values($error)[0]);
         }
         else{ $this->set_fw(); }
-        MyLog()->Append($ret);
         return sizeof($this->batch_success);
     }
 

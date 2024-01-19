@@ -37,32 +37,25 @@ class API_Router
 
     public function route(): void
     {
-        MyLog()->Append('router: begin route selection');
         if (!$this->data_is_valid()) { // check basic validity
-            MyLog()->Append('router: request is not valid '.json_encode($this->status));
-            return;
+            fail('request_invalid',$this->data);
         }
         if ($this->request_is_admin()) { // execute admin calls
-            MyLog()->Append('router: selected admin api');
             return;
         }
-        MyLog()->Append('router: begin device provisioning');
         $api = new ApiAction($this->data);
         $api->submit();
-        MyLog()->Append('router: routing completed');
     }
 
     private function data_is_valid(): bool
     {
         if (empty((array)$this->data)) {
             $this->set_message('No request data sent');
-            MyLog()->Append('route empty request');
             return false;
         }
         $entity = $this->data->entity ?? null ;
         if ($entity && !in_array($entity,['service','admin','client'])) {
             $this->set_message('ok');
-            MyLog()->Append('route wrong entity type: '.$entity);
             return false;
         }
         $change = $this->data->changeType ?? 'none';
@@ -70,7 +63,6 @@ class API_Router
         if (!in_array($change, ['insert', 'edit', 'end',
                 'suspend', 'unsuspend', 'admin','move','delete','rename'])) {
             $this->set_message('ok');
-            MyLog()->Append('route wrong entity action: '.$change);
             return false;
         }
         return true;
