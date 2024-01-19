@@ -68,35 +68,13 @@ class Batch
             foreach($deviceServices[$did] as $service){
                 $plan = $plans[$service['planId']] ?? null;
                 if(!$plan){ $plan = $this->make_plan($service); } //generate plan if not found
-                $api->set_data($service,$plan);
-                $account = $api->account();
-                if($account){
-                    $account['action'] = 'remove';
-                    $deviceData[$did]['accounts'][] = $account ;
+                $data = $api->get_data($service,$plan);
+                foreach(array_keys($data) as $key){
+                    $item = $data[$key];
+                    $item['action'] = 'remove';
+                    $deviceData[$did][$key][] = $data[$key];
                 }
-                $queue = $api->queue();
-                if($queue){
-                    $queue['action'] = 'remove';
-                    $deviceData[$did]['queues'][] = $queue ;
-                }
-                $profile = $api->profile();
-                if($profile){
-                    $profile['action'] = 'remove';
-                    $deviceData[$did]['profiles'][$profile['name']] = $profile ;
-                }
-                $parent = $api->parent();
-                if($parent){
-                    $parent['action'] = 'remove';
-                    $deviceData[$did]['parents'][$parent['name']] = $parent ;
-                }
-                $disconnect = $api->account_reset();
-                if($disconnect){$deviceData[$did]['disconn'][] = $disconnect; }
-                $pool = $api->pool();
-                if ($pool){
-                    $pool['action'] = 'remove';
-                    $deviceData[$did]['pool']['uisp_pool'] = $pool;
-                }
-                $dhcp6 = $api->dhcp6();
+                $dhcp6 = $data['dhcp6'] ?? null ;
                 if($dhcp6){
                     $dhcp6['action'] = 'remove';
                     $deviceData[$did]['accounts'][] = $dhcp6;
@@ -154,22 +132,13 @@ class Batch
                 if($did == 'nodev'){ continue; }
                 $plan = $plans[$service['planId']] ?? null ;
                 if(!$plan){ $plan = $this->make_plan($service); } //generate plan if not found
-                $api->set_data($service,$plan);
-                $account = $api->account();
-                if(!$account){ continue; }
-                $deviceData[$did]['accounts'][] = $account ; 
-                $queue = $api->queue();
-                if($queue){ $deviceData[$did]['queues'][] = $queue ; }
-                $profile = $api->profile();
-                if($profile){ $deviceData[$did]['profiles'][$profile['name']] = $profile ; }
-                $parent = $api->parent();
-                if($parent){ $deviceData[$did]['parents'][$parent['name']] = $parent ; }
-                $disconnect = $api->account_reset();
-                if($disconnect){$deviceData[$did]['disconn'][] = $disconnect; }
-                $pool = $api->pool();
-                if($pool){$deviceData[$did]['pool']['uisp_pool'] = $pool; }
-                $dhcp6 = $api->dhcp6();
-                if($dhcp6){$deviceData[$did]['accounts'][] = $dhcp6; }
+                $data = $api->get_data($service,$plan);
+                foreach(array_keys($data) as $key){
+                    $deviceData[$did][$key][] = $data[$key];
+                }
+                if(key_exists('dhcp6',$data)){
+                    $deviceData[$did]['accounts'][] = $data['dhcp6'];
+                }
             }
         }
         unset($api);
@@ -195,7 +164,7 @@ class Batch
         foreach (array_keys($deviceData) as $did)
         {
             $device  = $this->find_device($did);
-            if(!(array)$device){ continue; }
+            if(!is_object($device)){ continue; }
             $type = $device->type ?? 'mikrotik';
             $api = $this->device_api($type);
             $keys = ['pool','parents','profiles','queues','accounts','dhcp6','disconn'];
@@ -303,7 +272,7 @@ class Batch
         return $client ;
     }
 
-    private function datapi($did): object
+    private function datapi($did): MtData|ErData
     {
         return match ($this->find_device($did)->type){
             'mikrotik' => new MtData(),

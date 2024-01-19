@@ -8,6 +8,27 @@ class Data
     protected ?array $_devices = null ;
     protected ?object $_conf = null;
 
+    public function get_data($service,$plan): array
+    {
+        $this->set_data($service,$plan) ;
+        $data = [];
+        $keys = "pool,profile,parent,queue,account,disconn";
+        foreach(explode(',',$keys) as $key){
+            $item = match ($key){
+                'pool' => $this->pool(),
+                'profile' => $this->profile(),
+                'parent' => $this->parent(),
+                'queue' => $this->queue(),
+                'account' => $this->account(),
+                'disconn' => $this->account_reset(),
+            };
+            if($item){ $data[$key] = $item; }
+        }
+        $dhcp6 = $this->dhcp6() ;
+        if($dhcp6){ $data['dhcp6'] = $dhcp6 ; }
+        return $data ;
+    }
+
     public function set_data($service,$plan)
     {
         $this->service = $service ;

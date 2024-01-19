@@ -4,13 +4,6 @@ include_once 'data.php';
 class MtData extends Data
 {
 
-    public function set_data($service,$plan)
-    {
-        $this->service = $service ;
-        $this->plan = $plan ;
-//        MyLog()->Append('account data: '.json_encode([$service,$plan]));
-    }
-
     public function account(): ?array
     {
         return match ($this->type()) {
