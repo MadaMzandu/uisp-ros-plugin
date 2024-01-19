@@ -151,8 +151,7 @@ class ApiSites
 
     private function ucrm($unms = true)
     {
-        $api = new ApiUcrm();
-        $api->unms = $unms ;
+        $api = new ApiUcrm(null,false,$unms);
         return $api ;
     }
 
