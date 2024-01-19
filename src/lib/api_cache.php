@@ -40,7 +40,6 @@ class ApiCache{
     public function sync($force = false)
     {
         if($force || $this->needs_sites()){
-            MyLog()->Append("Syncing sites only");
             $this->populate('sites');
             $set['last_sites'] = $this->now() ;
             $this->db()->saveConfig($set);
