@@ -13,7 +13,7 @@ class MT extends Device
     protected ?array $batch_success;
     protected ?RouterosAPI $api ;
 
-    protected function write($post)
+    protected function write($post): null|array|string
     {
         $opened = $this->xor_connect();
         $timer = new ApiTimer('single write');
@@ -62,12 +62,11 @@ class MT extends Device
         $writes = 0;
         foreach ($this->batch as $post) {
             $result = $this->write($post);
+            $id = $post['batch'] ?? null ;
             if ($this->find_error($result)) {
-                $id = $post['batch'] ?? null ;
                 if($id)$this->batch_failed[$id] = json_encode($result);
                 MyLog()->Append('mt write error: ' . json_encode([$post, $result]), 6);
             } else {
-                $id = $post['batch'] ?? null ;
                 if($id) $this->batch_success[$id] = 1;
                 $writes++;
             }
@@ -100,7 +99,7 @@ class MT extends Device
         return false;
     }
 
-    protected function read($path,$filter = null): ?array
+    protected function read($path,$filter = null): null|array|string
     {  //implements mikrotik print
         $opened = $this->xor_connect() ;
         if(!$this->api) return  null ;
@@ -135,7 +134,7 @@ class MT extends Device
 
     protected function api_disconnect(): void
     {
-        if($this->api) $this->api->disconnect();
+        $this->api?->disconnect();
         $this->api = null ;
     }
 
@@ -143,14 +142,12 @@ class MT extends Device
     {
         $action = $data['action'];
         if($action != 'remove') return false ;
-        $path = trim($data['path'],'/') ;
-        if(!$this->needs_dep_check($path)) return false;
+        $deps = $this->dep_paths($data['path']) ;
         $name = $data['name'] ?? null ;
-        if(!$name) return false ; //we dont delete unless we are sure
-        foreach($this->dep_paths($path) as $dep_path)
+        if(!$deps || !$name) return false ; //profile/parent will have a name
+        foreach($deps as $path)
         {
-            $path = $dep_path;
-            $filter = sprintf('?%s=%s',$this->dep_filter_key($dep_path),$name);
+            $filter = sprintf('?%s=%s',$this->dep_key($path),$name);
             $read = $this->read($path,$filter);
             if(!empty($read)){
                 return true ;
@@ -159,43 +156,32 @@ class MT extends Device
         return false ;
     }
 
-    protected function dep_filter_key($path): string
+    protected function dep_key($path): string
     {
-        switch (trim($path,'/'))
-        {
-            case 'ppp/secret':
-            case 'ip/hotspot/user': return 'profile';
-            case 'queue/simple': return 'parent';
-            case 'ipv6/dhcp-server/binding': return 'prefix-pool';
-            default: return 'parent-queue';
-        }
+        return match (trim($path, '/')) {
+            'ppp/secret', 'ip/hotspot/user' => 'profile',
+            'queue/simple' => 'parent',
+            'ipv6/dhcp-server/binding' => 'prefix-pool',
+            default => 'parent-queue',
+        };
     }
 
-    protected function dep_paths($path): array
+    protected function dep_paths($path): ?array
     {
-        switch (trim($path,'/'))
+        return match (trim($path,'/'))
         {
-            case 'ppp/profile': return ['/ppp/secret'];
-            case 'ip/hotspot/user/profile': return ['/ip/hotspot/user'];
-            case 'ipv6/pool': return ['/ipv6/dhcp-server/binding'];
-            default: return ['/ppp/profile','/ip/hotspot/user/profile','/queue/simple'];
-        }
-    }
-
-    protected function needs_dep_check($path): bool
-    {
-        return in_array($path,[
-            'ppp/profile',
-            'ip/hotspot/user/profile',
-            'queue/simple',
-            'ipv6/pool',
-        ]);
+            'ppp/profile' => ['/ppp/secret'],
+            'ip/hotspot/user/profile' => ['/ip/hotspot/user'],
+            'ipv6/pool' => ['/ipv6/dhcp-server/binding'],
+            'queue/simple' => ['/ppp/profile','/ip/hotspot/user/profile','/queue/simple'],
+            default => null,
+        };
     }
 
     protected function find_id($data): ?string
     {
         if($this->is_queue($data['path']) //find broken name
-            && $q = $this->find_broken($data)){ MyLog()->Append(['FOUND ID:',$q]);
+            && $q = $this->find_broken($data)){
             return $q; }
         $name = $data['name'] ?? null ;
         $mac = $data['mac-address'] ?? null ;
@@ -210,7 +196,7 @@ class MT extends Device
             $item  = $read[0] ?? [];
             $id = $item['.id'] ?? null ;
             if($id && is_string($id)){
-                if(preg_match("/(binding)|(lease)/",$path)){ //convert dynamic lease
+                if(preg_match("/(binding|lease)/",$path)){ //convert dynamic lease
                     $dynamic = $item['dynamic'] ?? 'false' ;
                     if($dynamic == 'true'){ $this->make_static_lease($id,$path);}
                 }
@@ -225,18 +211,17 @@ class MT extends Device
         $n = $data['name'] ?? null ;
         if(!$n){ return null; }
         $filter = [];
-        $name = preg_replace("/ - \d+$/",'',$n);
-        if($name) $filter['name'] = $name;
+        $name = preg_replace("#\s*-\s*\d+$#",'',$n);
+        if($name != $n) $filter['name'] = $name;
         if(!$filter){ return null; }
         $r = $this->read('/queue/simple',$filter);
         $i = $r[0] ?? [];
         return $i['.id'] ?? null ;
     }
 
-    protected function is_queue($path)
+    protected function is_queue($path): bool
     {
-        return preg_match("/queue\/simple/",
-            trim(trim($path),'/'));
+        return str_contains($path,"queue/simple");
     }
 
     protected function find_local(): ?string
@@ -262,7 +247,7 @@ class MT extends Device
         $clean = [];
         $action = $data['action'] ?? null;
         if($action == 'remove') { return $clean ;} // return blank for remove
-        $diff = ['.id' => null,'action' => null,'path' => null,'batch' => null] ;
+        $diff = array_fill_keys(['.id','action','path','batch'],'#$%&');
         $clean = array_diff_key($data,$diff) ;
         if(key_exists('local-address',$data))
             $clean['local-address'] = $this->find_local();
