@@ -87,6 +87,7 @@ class ApiCache{
             $data = match ($table){
                 'clients' => $this->get_clients($offset,$limit),
                 'services' => $this->get_services($offset,$limit),
+                'sites' => $this->get_sites(),
             };
             if(empty($data)) continue ;
             $request = [];
@@ -99,7 +100,6 @@ class ApiCache{
             if(in_array($table,['service','services'])){
                 $this->batch_network($request);
             }
-            if(in_array($table,['site','sites'])){ break; }
             $offset += $limit ;
         }
     }
@@ -122,6 +122,7 @@ class ApiCache{
                 }
             }
         }
+        MyLog()->Append("SITE MAP: ". sizeof($site_map));
         return $site_map ;
     }
 
