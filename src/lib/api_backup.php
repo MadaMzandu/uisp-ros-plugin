@@ -32,7 +32,7 @@ class ApiBackup extends Admin
         $list = scandir($dir);
         $this->result = [];
         foreach ($list as $item) {
-            if (substr($item, 0, 6) != 'backup') {
+            if (!str_starts_with($item, 'backup')) {
                 continue;
             }
             $this->result[$item] = [];

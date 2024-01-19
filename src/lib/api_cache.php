@@ -2,7 +2,6 @@
 const MyCacheVersion = '1.8.11';
 
 include_once 'api_trim.php';
-//include_once '_web_ucrm.php';
 include_once 'api_ucrm.php';
 
 class ApiCache{
@@ -85,8 +84,10 @@ class ApiCache{
         $limit = 50 ;
         $offset = 0 ;
         while($data){
-            $method = 'get_' . $table ;
-            $data = $this->$method($offset,$limit);
+            $data = match ($table){
+                'clients' => $this->get_clients($offset,$limit),
+                'services' => $this->get_services($offset,$limit),
+            };
             if(empty($data)) continue ;
             $request = [];
             foreach($data as $item){
@@ -103,7 +104,7 @@ class ApiCache{
         }
     }
 
-    public function get_sites($offset,$limit)
+    public function get_sites()
     {
         $opts = ['type' => 'endpoint'];
         $sites = $this->get_data('sites',$opts,true);
@@ -113,7 +114,7 @@ class ApiCache{
         foreach($devices as $device){
             $site_id = $device->identification->site->id ?? null ;
             $name = $device->identification->name ?? null ;
-            if($site_id && preg_match("/^RosP_/",$name)){
+            if($site_id && str_starts_with($name, "RosP_")){
                 $site = $site_map[$site_id] ?? null ;
                 if(is_object($site)){
                     $site->device = $device->identification->id ?? null ;
@@ -130,7 +131,7 @@ class ApiCache{
         if(!is_array($devices)){ return null ;}
         foreach ($devices as $device){
             $name = $device->identification->name ?? null ;
-            if(preg_match("/^RosP_/",$name)){ return $device; }
+            if(str_starts_with($name, "RosP_")){ return $device; }
         }
         return null ;
     }
@@ -186,15 +187,6 @@ class ApiCache{
         }
     }
 
-    private function path($table): ?string
-    {
-        return match ($table) {
-            'clients' => 'clients',
-            'services' => 'clients/services',
-            default => null,
-        };
-    }
-
     private function check_devices(): bool
     {
         $devices = $this->db()->selectAllFromTable('devices');
@@ -215,6 +207,24 @@ class ApiCache{
         return date_add($sync,$cycle) < $now ;
     }
 
+    private function needs_net(): bool
+    {
+        $last = $this->conf()->last_net ?? '2020-01-01';
+        $cycle = DateInterval::createFromDateString('30 minute');
+        $sync = new DateTime($last);
+        $now = new DateTime();
+        return date_add($sync,$cycle) < $now ;
+    }
+
+    private function needs_sites(): bool
+    {
+        $time = $this->conf()->last_sites ?? '2023-01-01';
+        $last = new DateTime($time);
+        $now = new DateTime();
+        $interval = new DateInterval('PT1H');
+        return $last->add($interval) < $now ;
+    }
+
     private function needs_db(): bool
     {
         $file = 'data/cache.db';
@@ -223,13 +233,6 @@ class ApiCache{
             return true ;}
         $version = $this->conf()->cache_version ?? '0.0.0';
         return $version != MyCacheVersion ;
-    }
-
-    private function opts($table = 'services'): array
-    {
-        $opts = ['limit' => 500,'offset' => 0,'statuses' => [0,1,3,4,6,7]];
-        if($table == 'services') return $opts ;
-        else return array_diff_key($opts,['statuses' => null]);
     }
 
     private function attrs(): ApiAttributes { return myAttr(); }

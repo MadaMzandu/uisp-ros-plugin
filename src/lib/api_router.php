@@ -11,9 +11,9 @@ $conf = mySqlite()->readConfig();
 class API_Router
 {
 
-    private $data;
-    private $status;
-    private $result;
+    private ?object $data = null ;
+    private ?object $status = null ;
+    private mixed $result;
 
     public function __construct($data)
     {
