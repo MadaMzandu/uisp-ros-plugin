@@ -72,7 +72,7 @@ class Batch
                 foreach(array_keys($data) as $key){
                     $item = $data[$key];
                     $item['action'] = 'remove';
-                    $deviceData[$did][$key][] = $data[$key];
+                    $deviceData[$did][$key][] = $item;
                 }
             }
         }
