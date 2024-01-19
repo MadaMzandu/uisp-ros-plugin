@@ -1,4 +1,8 @@
 <?php
+
+use Ubnt\UcrmPluginSdk\Service\UcrmApi;
+use Ubnt\UcrmPluginSdk\Service\UnmsApi;
+
 require_once 'vendor/autoload.php';
 include_once '_web_ucrm.php';
 
@@ -8,9 +12,11 @@ class ApiUcrm
 {
 
     public bool $assoc = false ;
+    public bool $unms = false ;
     private ?string $method;
     private $data ;
     private ?string $url ;
+    private ?string $token = null;
 
     public function request($path,$method = 'get',$data = [])
     {
@@ -20,8 +26,8 @@ class ApiUcrm
 
     private function exec()
     {
-        if(USE_UCRM_CURL > 0 ) return $this->web_exec();
-        $api = \Ubnt\UcrmPluginSdk\Service\UcrmApi::create();
+        if(USE_UCRM_CURL) return $this->web_exec();
+        $api = $this->unms ? UnmsApi::create($this->token()) : UcrmApi::create();
         $action = $this->method;
         $response = $api->$action($this->url, $this->data);
         return json_decode(json_encode($response), $this->assoc);
@@ -29,8 +35,7 @@ class ApiUcrm
 
     private function web_exec()
     {
-        $api = new WebUcrm();
-        $api->assoc = $this->assoc ;
+        $api = new WebUcrm(null,$this->assoc,$this->unms);
         $action = $this->method ;
         return $api->$action($this->url,$this->data);
     }
@@ -64,6 +69,28 @@ class ApiUcrm
         $this->method = $method;
         $this->url = $path ;
         $this->data = $data ;
+    }
+
+    private function token(): ?string
+    {
+        return $this->config()->nmsToken ?? $this->token ;
+    }
+
+    private function config(): object
+    {
+        $fn = 'data/config.json';
+        if(is_file($fn)){
+            $read = json_decode(file_get_contents($fn));
+            if(is_object($read)) return $read ;
+        }
+        return new stdClass();
+    }
+
+    public function __construct($token=null,$assoc=false,$unms=false)
+    {
+        if($token) $this->token = $token ;
+        $this->assoc = $assoc ;
+        $this->unms = $unms ;
     }
 
 }

@@ -5,8 +5,9 @@ class ApiCurl
 {
 
     public bool $assoc = false;
-    public bool $no_ssl = true ;
-    public bool $no_json = false ;
+    public bool $no_ssl = false ;
+    protected bool $json = true ;
+    protected array $opts = [];
     protected ?CurlHandle $ch = null ;
 
     public function request($url, $method = 'GET', $post = [])
@@ -46,7 +47,7 @@ class ApiCurl
             trim($path,'/'));
         $this->ch = curl_init();
         $headers = [];
-        $opts = [
+        $this->opts = [
             CURLOPT_URL => $path,
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_ENCODING => '',
@@ -56,23 +57,19 @@ class ApiCurl
             CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
             CURLOPT_CUSTOMREQUEST => strtoupper($method),
         ];
-        if(!$this->no_json){
-            $headers[] = 'content-type: application/json';
-        }
         if($this->no_ssl) {
-            $opts[CURLOPT_SSL_VERIFYPEER] = false;
-            $opts[CURLOPT_SSL_VERIFYHOST] = false ;
+            $this->opts[CURLOPT_SSL_VERIFYPEER] = false;
+            $this->opts[CURLOPT_SSL_VERIFYHOST] = false ;
         }
         if($method != 'GET') {
-            $opts[CURLOPT_POSTFIELDS] = $this->no_json ? $post : json_encode($post);
+            $this->opts[CURLOPT_POSTFIELDS] = !$this->json ? $post : json_encode($post);
         }
         else {
-            $opts[CURLOPT_URL] = sprintf('%s?%s',$path,http_build_query($post));
+            $this->opts[CURLOPT_URL] = sprintf('%s?%s',$path,http_build_query($post));
         }
         if($headers){
-            $opts[CURLOPT_HTTPHEADER] = $headers;
+            $this->opts[CURLOPT_HTTPHEADER] = $headers;
         }
-        curl_setopt_array($this->ch,$opts);
     }
 
     protected function key()
@@ -82,6 +79,7 @@ class ApiCurl
 
     protected function exec()
     {
+        curl_setopt_array($this->ch,$this->opts);
         $response = curl_exec($this->ch);
         $error = null ;
         if (curl_errno($this->ch) !== 0) {
