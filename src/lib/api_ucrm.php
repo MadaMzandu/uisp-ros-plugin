@@ -80,7 +80,7 @@ class ApiUcrm
 
     private function token(): ?string
     {
-        return $this->config()->nmsToken ?? $this->token ;
+        return $this->config()->unmsToken ?? $this->token ;
     }
 
     private function config(): object
