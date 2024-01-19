@@ -21,7 +21,6 @@ class Admin
     protected ?object $status = null ;
     protected ?object $data = null ;
     protected mixed $result;
-    protected mixed $user;
     protected mixed $read;
 
     public function __construct($data = [])
@@ -71,7 +70,7 @@ class Admin
             $this->result = $api->result();
         }
         else{ //assume its a uisp api call
-            fail('admin_request_invalid');
+            fail('request_invalid');
         }
     }
 
