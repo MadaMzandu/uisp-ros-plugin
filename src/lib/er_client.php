@@ -1,12 +1,11 @@
 <?php
 include_once 'api_logger.php';
 
-class ErClient
+class ErClient extends ApiCurl
 {
     private ?string $host = null;
     private ?int $port = null;
     private ?string $base;
-    private $_curl = null;
     public bool $verbose = false ;
     private ?string $csrf = null ;
 
@@ -60,25 +59,13 @@ class ErClient
         return $this->exec();
     }
 
-    private function exec()
-    {
-        $response = curl_exec($this->curl());
-        if (curl_errno($this->curl()) !== 0) {
-            MyLog()->Append(["curl error: ",curl_error($this->curl())]);
-            return null;
-        }
-        $ecode = curl_getinfo($this->curl(), CURLINFO_HTTP_CODE);
-        if ($ecode != 200) {
-            $error = empty($response) ? 'http: '. $ecode : $response ;
-            if($ecode >= 400) MyLog()->Append(["edge router error: ",$error]);
-            return null;
-        }
-        return json_decode($response,true);
-    }
-
-    private function configure($path, $method, $data, $mime = 'json')
+    protected function configure($path, $method, $data, $mime = 'json')
     {
         curl_reset($this->curl());
+        $this->json = $mime == 'json';
+        $this->assoc = true ;
+        $this->no_ssl = true ;
+        parent::configure($path,$method,$data);
         curl_setopt_array($this->curl(), [
             CURLOPT_URL => $this->make_url($path, $method, $data),
             CURLOPT_RETURNTRANSFER => true,
@@ -96,7 +83,7 @@ class ErClient
         if($this->csrf){
             $headers[] = 'X-CSRF-Token: '. $this->csrf ;
         }
-        curl_setopt($this->curl(),CURLOPT_HTTPHEADER,$headers);
+        $this->opts[CURLOPT_HTTPHEADER] = $headers ;
         $this->make_post($method, $data, $mime);
         $this->set_method($method);
     }
@@ -105,9 +92,9 @@ class ErClient
     {
         $post = strtolower($method) == 'post';
         if ($post) {
-            curl_setopt($this->curl(), CURLOPT_POST, true);
+            $this->opts[CURLOPT_POST] = true ;
         } else {
-            curl_setopt($this->curl(), CURLOPT_CUSTOMREQUEST, strtoupper($method));
+            $this->opts[CURLOPT_CUSTOMREQUEST] = strtoupper($method);
         }
     }
 
@@ -120,7 +107,7 @@ class ErClient
         if (str_contains($mime, "form")) {
             $post = http_build_query($data);
         }
-        curl_setopt($this->curl(), CURLOPT_POSTFIELDS, $post);
+        $this->opts[CURLOPT_POSTFIELDS] = $post ;
     }
 
     private function make_url($path, $method, $data): string
@@ -145,19 +132,19 @@ class ErClient
 
     private function close()
     {
-        if(is_resource($this->_curl))
+        if(is_resource($this->ch))
         {
-            curl_close($this->_curl);
-            $this->_curl = null;
+            curl_close($this->ch);
+            $this->ch = null;
         }
     }
 
     private function curl()
     {
-        if (empty($this->_curl)) {
-            $this->_curl = curl_init();
+        if (empty($this->ch)) {
+            $this->ch = curl_init();
         }
-        return $this->_curl;
+        return $this->ch;
     }
 
     public function __construct($base = '/api/edge') { $this->base = $base; }
