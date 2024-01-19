@@ -14,13 +14,12 @@ class MtData extends MT
 
     public function account(): ?array
     {
-        $data = null ;
-        switch ($this->type()){
-            case 'dhcp': $data = $this->dhcp();break ;
-            case 'ppp': $data = $this->ppp(); break ;
-            case 'hotspot': $data = $this->hotspot(); break ;
-        }
-        return $data ;
+        return match ($this->type()) {
+            'dhcp' => $this->dhcp(),
+            'ppp' => $this->ppp(),
+            'hotspot' => $this->hotspot(),
+            default => null,
+        };
     }
 
     public function profile(): ?array

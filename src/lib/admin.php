@@ -46,22 +46,21 @@ class Admin
             '"message":"ok","session":false}');
     }
 
-    public function select()
+    public function select(): ?object
     {
         $target = $this->data->target ?? null ;
-        $request = $this->data ;
         $data = $this->data->data ?? null;
-        switch ($target){
-            case 'config': return new Settings($data);
-            case 'devices': return new AdminDevices($data);
-            case 'plans': return new AdminPlans($data);
-            case 'validation': return new Validation($data);
-            case 'jobs': return new Api_Jobs($data);
-            case 'system': return new Admin_System($data);
-            case 'backup': return new Admin_Backup($data);
-            case 'lang': return new Api_Lang($data);
-        }
-        return null ;
+        return match ($target) {
+            'config' => new Settings($data),
+            'devices' => new AdminDevices($data),
+            'plans' => new AdminPlans($data),
+            'validation' => new Validation($data),
+            'jobs' => new Api_Jobs($data),
+            'system' => new Admin_System($data),
+            'backup' => new Admin_Backup($data),
+            'lang' => new Api_Lang($data),
+            default => null,
+        };
     }
 
     public function exec(): void
