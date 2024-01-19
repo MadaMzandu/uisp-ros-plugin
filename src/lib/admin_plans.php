@@ -8,7 +8,7 @@ class AdminPlans extends Admin
         $this->result = $this->update();
     }
 
-    private function merge()
+    private function merge(): array
     {
         $plans = $this->get_plans();
         $config = $this->get_config() ;
@@ -54,10 +54,9 @@ class AdminPlans extends Admin
         $data = $this->ucrm()->get('service-plans',['servicePlanType' => 'internet']);
         $read = json_decode(json_encode($data),true);
         $tmp = [];
-        $trimmer = null ;
+        $trimmer = array_fill_keys(['id','uploadSpeed','downloadSpeed','name'],'$#@&');
         foreach ($read as $item) {
-            $trimmer ??= array_diff_key($item,['id' => 0,'uploadSpeed' => 0,'downloadSpeed' => 0,'name' => null]);
-            $trim = array_diff_key($item,$trimmer);
+            $trim = array_intersect_key($item,$trimmer);
             $trim['archive'] = false ;
             $tmp[$item['id']] = $trim;
         }
