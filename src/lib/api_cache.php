@@ -109,11 +109,11 @@ class ApiCache{
 
     private function path($table): ?string
     {
-        switch ($table){
-            case 'clients': return 'clients';
-            case 'services': return 'clients/services';
-        }
-        return null ;
+        return match ($table) {
+            'clients' => 'clients',
+            'services' => 'clients/services',
+            default => null,
+        };
     }
 
     private function check_devices(): bool
@@ -131,15 +131,6 @@ class ApiCache{
     {
         $last = $this->conf()->last_cache ?? '2020-01-01';
         $cycle = DateInterval::createFromDateString('7 day');
-        $sync = new DateTime($last);
-        $now = new DateTime();
-        return date_add($sync,$cycle) < $now ;
-    }
-
-    private function needs_net(): bool
-    {
-        $last = $this->conf()->last_net ?? '2020-01-01';
-        $cycle = DateInterval::createFromDateString('30 minute');
         $sync = new DateTime($last);
         $now = new DateTime();
         return date_add($sync,$cycle) < $now ;
@@ -169,13 +160,13 @@ class ApiCache{
         return myTrimmer() ;
     }
 
-    private function ucrm(){ return new ApiUcrm(); }
+    private function ucrm(): ApiUcrm { return new ApiUcrm(); }
 
     private function db(): ApiSqlite { return mySqlite(); }
 
     private function now(): string { return (new DateTime())->format('c'); }
 
-    private function conf()
+    private function conf(): ?object
     {
         if(empty($this->_conf)){
             $this->_conf = $this->db()->readConfig();
