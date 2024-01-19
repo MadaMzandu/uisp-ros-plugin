@@ -13,17 +13,16 @@ include_once 'api_system.php';
 include_once 'api_rebuild.php';
 include_once 'api_jobs.php';
 include_once 'api_cache.php' ;
-//include_once '_web_ucrm.php';
 include_once 'api_action.php';
 include_once 'batch.php';
 class Admin
 {
 
-    protected $status;
-    protected $data;
-    protected $result;
-    protected $user;
-    protected $read;
+    protected ?object $status = null ;
+    protected ?object $data = null ;
+    protected mixed $result;
+    protected mixed $user;
+    protected mixed $read;
 
     public function __construct($data = [])
     {
@@ -41,8 +40,8 @@ class Admin
 
     protected function init(): void
     {
-        $this->status = json_decode('{"status":"ok","error":false,'.
-            '"message":"ok","session":false}');
+        $status = '{"status":"ok","error":false,"message":"ok","session":false}';
+        $this->status = json_decode($status);
     }
 
     public function select(): ?object
@@ -50,22 +49,20 @@ class Admin
         $target = $this->data->target ?? null ;
         $data = $this->data->data ?? null;
         return match ($target) {
-            'config' => new Settings($data),
-            'devices' => new AdminDevices($data),
-            'plans' => new AdminPlans($data),
-            'validation' => new Validation($data),
-            'jobs' => new Api_Jobs($data),
-            'system' => new Admin_System($data),
-            'backup' => new Admin_Backup($data),
-            'lang' => new Api_Lang($data),
+            'config' => new ApiSettings($data),
+            'devices' => new ApiDevices($data),
+            'plans' => new ApiPlans($data),
+            'jobs' => new ApiJobs($data),
+            'system' => new ApiSystem($data),
+            'backup' => new ApiBackup($data),
+            'lang' => new ApiLang($data),
             default => null,
         };
     }
 
     public function exec(): void
     {
-        if(empty($this->data)) {
-            throw new Exception('admin: unable to route invalid request'); }
+        if(empty($this->data)) { fail('request_invalid'); }
         $api = $this->select();
         $action = $this->data->action ?? null ;
         if($api && method_exists($api,$action)){ //route found
@@ -74,13 +71,11 @@ class Admin
             $this->result = $api->result();
         }
         else{ //assume its a uisp api call
-            $data = $this->data->data ?? [];
-            $path = $this->data->path ?? null;
-            $this->result = $this->ucrm()->$action($path,(array)$data);
+            fail('admin_request_invalid');
         }
     }
 
-    public function status(): stdClass
+    public function status(): object
     {
         return $this->status;
     }
@@ -95,32 +90,19 @@ class Admin
         return myCache() ;
     }
 
-
-    protected function ucrm()
+    protected function ucrm(): ApiUcrm
     {
         return new ApiUcrm();
     }
 
-    protected function conf()
+    protected function conf(): object
     {
         return $this->db()->readConfig();
     }
 
-    public function result()
+    public function result(): mixed
     {
         return $this->result;
-    }
-
-    protected function get_attrib($key,$data): ?string
-    { //returns an attribute value
-        if(isset($data['attributes'])) {
-            foreach ($data['attributes'] as $attribute) {
-                if ($key == $attribute['key']) {
-                    return $attribute['value'];
-                }
-            }
-        }
-        return null;
     }
 
     protected function set_message($msg): bool

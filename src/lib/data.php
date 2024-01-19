@@ -7,8 +7,6 @@ class Data
     protected array $plan = [] ;
     protected ?array $_devices = null ;
     protected ?object $_conf = null;
-    protected ?ApiIP $_ipapi = null ;
-
 
     public function set_data($service,$plan)
     {
@@ -37,11 +35,11 @@ class Data
         $service = $this->service['id'] ?? 0 ;
         $fixed = $this->service[$type] ?? null ;
         if($fixed){
-            $this->ipapi()->set_ip($service,$fixed,$ip6);
+            $this->ipapi()->set($service,$fixed,$ip6);
             return $fixed;
         }
 
-        return $this->ipapi()->find_used($service,$ip6);
+        return $this->ipapi()->find_assigned($service,$ip6);
     }
 
     protected function assign_address($ip6): ?string
@@ -66,7 +64,7 @@ class Data
 
     protected function ipapi(): ApiIP
     {
-        return myIpApi();
+        return myIPClass();
     }
 
 

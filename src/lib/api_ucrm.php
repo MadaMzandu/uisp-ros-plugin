@@ -34,7 +34,7 @@ class ApiUcrm
             $response = $api->$action($this->url, $this->data);
             return json_decode(json_encode($response), $this->assoc);
         }
-        catch (\Exception $e){
+        catch (Exception $e){
             MyLog()->Append([$e->getMessage(),$e->getTraceAsString()]);
             return null ;
         }

@@ -9,8 +9,8 @@ include_once 'api_timer.php';
 
 class ApiSetup
 {
-    private $_db ;
-    private ?SQLite3 $_tmp = null ;
+    private ?object $_db = null ;
+    private ?object $_tmp = null ;
 
     public function run(){
         $timer = new ApiTimer('db setup: ');

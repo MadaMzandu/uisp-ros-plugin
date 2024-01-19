@@ -13,14 +13,6 @@ class ApiTrim
         };
     }
 
-    private function trim_site($request): array
-    {
-        $site['id'] = $request->id ?? 'nosite';
-        $site['service'] = $request->ucrm->service->id ?? 0 ;
-        $site['device'] = $request->device ?? null;
-        return ['entity' => $site];
-    }
-
     private function trim_client($request): array
     {
         $item = $request->extraData->entity ?? $request ;

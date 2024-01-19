@@ -4,7 +4,6 @@ class ApiSqlite
 {
 
     private string $path;
-    private $read;
     private ?SQLite3 $_db = null;
 
     public function insert($data,$table = 'services',$replace = false): bool

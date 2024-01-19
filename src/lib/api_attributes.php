@@ -26,7 +26,7 @@ class ApiAttributes
            $done = $this->ucrm()
                 ->patch('clients/services/'.$serviceId,['attributes' => array_values($values)]);
           if(!property_exists($done,'id')) MyLog()->Append($done);
-        };
+        }
     }
 
     public function check_config(): bool

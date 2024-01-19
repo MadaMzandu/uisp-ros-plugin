@@ -39,7 +39,7 @@ class ErClient
         $cookies = curl_getinfo($this->curl(),CURLINFO_COOKIELIST);
         $token = null ;
         foreach($cookies as $cookie){
-            if(preg_match("/CSRF/",$cookie)){
+            if(str_contains($cookie, "CSRF")){
                 $token = explode("\t",$cookie);
             }
         }
@@ -50,7 +50,7 @@ class ErClient
 
     public function get($path, $data = [])
     {
-        $this->configure($path, 'get', $data,);
+        $this->configure($path, 'get', $data);
         return $this->exec();
     }
 
@@ -117,7 +117,7 @@ class ErClient
             return;
         }
         $post = json_encode($data);
-        if (preg_match("/form/", $mime)) {
+        if (str_contains($mime, "form")) {
             $post = http_build_query($data);
         }
         curl_setopt($this->curl(), CURLOPT_POSTFIELDS, $post);

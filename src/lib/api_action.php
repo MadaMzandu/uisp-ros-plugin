@@ -190,9 +190,9 @@ class ApiAction
         return mySqlite()->readConfig() ;
     }
 
-    private function batch(): MtBatch
+    private function batch(): Batch
     {
-        return new MtBatch() ;
+        return new Batch() ;
     }
 
     private function  req(): object

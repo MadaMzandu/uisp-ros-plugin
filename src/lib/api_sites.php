@@ -2,12 +2,12 @@
 include_once 'api_sqlite.php';
 class ApiSites
 {
-    private $_sites ;
-    private $_blackboxes ;
+    private ?array $_sites = null ;
+    private ?array $_blackboxes = null ;
 
     public function set($ids)
     {
-        myIpApi()->flush(); //make sure recent ips are flushed
+        myIPClass()->flush(); //make sure recent ips are flushed
         $this->delete($ids); // just clean up before
         $services = $this->find_services($ids) ?? [];
         MyLog()->Append('SETTING SITES: '.sizeof($services));
@@ -138,21 +138,9 @@ class ApiSites
         return $data->interfaces ?? null ;
     }
 
-    private function find_link($router,$radio): bool
-    {
-        $links = $this->ucrm()->get("data-links/device/$router",[]) ?? [];
-        foreach($links as $link){
-            $from = $link->from->device->identification->id ?? null ;
-            $to = $link->to->device->identification->id ?? null;
-            if($from == $radio || $to == $radio){ return true; }
-        }
-        return false ;
-    }
-
     private function ucrm($unms = true)
     {
-        $api = new ApiUcrm(null,false,$unms);
-        return $api ;
+        return new ApiUcrm(null,false,$unms);
     }
 
     private function cache(){ return myCache(); }

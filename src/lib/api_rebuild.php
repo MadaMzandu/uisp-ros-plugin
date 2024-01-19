@@ -9,7 +9,7 @@ class ApiRebuild{
     private function clear($type,$ids = [])
     {
         if($type == 'all'){
-            $this->db()->deleteAll('services');
+            $this->db()->deleteAll();
             $this->db()->deleteAll('network');
         }
         else{

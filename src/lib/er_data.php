@@ -6,10 +6,10 @@ class ErData extends Data
 {
     public function account()
     {
-        switch ($this->type()){
-            case 'dhcp': return $this->dhcp();
-            default: return null ;
-        }
+        return match ($this->type()) {
+            'dhcp' => $this->dhcp(),
+            default => null,
+        };
     }
 
     public function queue()

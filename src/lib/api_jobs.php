@@ -4,10 +4,8 @@ include_once 'batch.php';
 
 class ApiJobs extends Admin
 { //scheduled job queue
-    private $queue;
-    private $file = 'data/queue.json';
-
-
+    private ?object $queue = null ;
+    private string $fn = 'data/queue.json';
 
     protected function init(): void
     {
@@ -22,7 +20,7 @@ class ApiJobs extends Admin
 
     public function clear()
     {
-        file_put_contents($this->file,null);
+        file_put_contents($this->fn,null);
     }
 
     public function delete()
@@ -43,8 +41,8 @@ class ApiJobs extends Admin
         $this->clear();
         foreach ($this->queue as $item){
             $action = $item['action'] ??  null;
-            if($action == 'update'){ $set[] = $item['id']; }
             if($action == 'delete'){ $delete[] = $item['id'] ;}
+            else{ $set[] = $item['id'] ; }
         }
         $api = new Batch();
         if($set) { $api->set_accounts($set); }
@@ -53,16 +51,16 @@ class ApiJobs extends Admin
 
     private function read()
     {
-        $json = '{}' ;
-        if(file_exists($this->file)){
-            $json = file_get_contents('data/queue.json') ?? '{}';
+        $r = null ;
+        if(is_file($this->fn)){
+            $r = json_decode(file_get_contents($this->fn));
         }
-        return json_decode($json,true);
+        return is_object($r) ? $r : new stdClass();
     }
 
-    private function save(): bool
+    private function save()
     {
         $json = json_encode($this->queue) ;
-        return file_put_contents($this->file,$json);
+        file_put_contents($this->fn,$json);
     }
 }

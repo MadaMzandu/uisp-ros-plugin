@@ -60,7 +60,7 @@ class Batch
 
     public function del_accounts(array $ids)
     {
-        $deviceServices = $this->select_data($ids,'delete');
+        $deviceServices = $this->find_services($ids,'delete');
         $plans = $this->find_plans();
         $deviceData = [];
         foreach (array_keys($deviceServices) as $did){
@@ -113,7 +113,7 @@ class Batch
 
     public function set_queues(array $ids,$on = true)
     {
-        $deviceServices = $this->select_data($ids,'update');
+        $deviceServices = $this->find_services($ids,'update');
         $plans = $this->find_plans();
         $deviceData = [];
         $device_ids = [];
@@ -146,7 +146,7 @@ class Batch
 
     public function set_accounts(array $ids)
     {
-        $deviceServices = $this->select_data($ids,'update');
+        $deviceServices = $this->find_services($ids,'update');
         $plans = $this->find_plans();
         $deviceData = [];
 
@@ -198,7 +198,7 @@ class Batch
         {
             $device  = $this->find_device($did);
             if(!(array)$device){ continue; }
-            $this->batch_device = $device ;
+//            $this->batch_device = $device ;
             $type = $device->type ?? 'mikrotik';
             $api = $this->device_api($type);
             MyLog()->Append('executing batch for device: '.$device->name);
@@ -251,9 +251,9 @@ class Batch
         $this->set_sites($sites);
     }
 
-    private function unsave_batch($deviceServices): array
+    private function unsave_batch($deviceServices): void
     {
-        if(empty($this->batch_success)) return [];
+        if(empty($this->batch_success)) return ;
         $ids = [];
         foreach ($deviceServices as $services){
             foreach ($services as $service){
@@ -271,7 +271,6 @@ class Batch
             $this->db()->exec($sql);
         }
         $this->set_sites($ids,true);
-        return $ids ;
     }
 
     private function queue_failed($deviceServices)
@@ -310,12 +309,13 @@ class Batch
         return $client ;
     }
 
-    private function datapi($did)
+    private function datapi($did): object
     {
-        $type = $this->find_device($did)->type ?? 'mikrotik';
-        if($type == 'mikrotik') return new MtData();
-        if(in_array($type,['edge','edgerouter','edgeos'])){ return new ErData(); }
-        throw new Exception('No api for this device type: '.$type);
+        return match ($this->find_device($did)->type){
+            'mikrotik' => new MtData(),
+            'edge','edgerouter','edgeos' => new ErData(),
+            default => fail('device_invalid'),
+        };
     }
 
     private function find_plans(): array
@@ -330,7 +330,7 @@ class Batch
         return $this->_plans ;
     }
 
-    private function select_data(array $ids, $action): array
+    private function find_services(array $ids, $action): array
     {
         $data = $ids ;
         $first = $ids[0] ;
@@ -385,12 +385,12 @@ class Batch
         return $plan ;
     }
 
-    private function db()
+    private function db(): ApiSqlite
     {
         return mySqlite();
     }
 
-    private function dbCache()
+    private function dbCache(): ApiSqlite
     {
         return myCache();
     }

@@ -49,13 +49,15 @@ class ER
         while ($this->has_lock()){ sleep(5); }
         $this->lock();
         $this->reset();
-        $type = $this->type();
-        $ret = $this->$type();
-        $this->unlock(); ;
+        $ret = match($this->type()){
+            'queue' => $this->set_queue(),
+            'dhcp' => $this->set_dhcp(),
+        };
+        $this->unlock();
         return $ret ;
     }
 
-    public function dhcp(): int
+    public function set_dhcp(): int
     {
         if(!$this->connect() ||
             !$this->_dhcp()->read() ||
@@ -79,7 +81,7 @@ class ER
         $nets = [];
         foreach($servers as $s){ $nets[$s] = $this->_dhcp()->findKeys($s . '>subnet')[0];}
         if(!$nets){ return 0; }
-        $ip = myIpApi();
+        $ip = myIPClass();
         foreach($this->batch as $i){
             $this->action = $i['action'] ?? 'set';
             $found = false ;
@@ -140,7 +142,7 @@ class ER
         }
     }
 
-    private function queue(): int
+    private function set_queue(): int
     {
         if(!$this->connect()){ return 0 ;}
         $t = new ApiTimer('Queue Write');

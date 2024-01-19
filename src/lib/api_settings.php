@@ -71,12 +71,9 @@ class ApiSettings extends Admin
     private function apply_disable_contention(): bool
     {
         $enable = !$this->data->disable_contention ?? false ;
-        $sys = new ApiRebuild();
-        if($enable){
-            $sys->rebuild(['type' => 'all']);
-        }
-        else{
-            $sys->rebuild(['type' => 'all']);
+//        $sys = new ApiRebuild();
+//        $sys->rebuild(['type' => 'all']);
+        if(!$enable) {
             $batch = new Batch();
             $batch->del_parents();
         }
