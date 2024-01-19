@@ -1,4 +1,5 @@
 <?php
+include_once 'batch.php';
 
 class ApiAction
 {
