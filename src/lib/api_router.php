@@ -13,7 +13,7 @@ class API_Router
 
     private ?object $data = null ;
     private ?object $status = null ;
-    private mixed $result;
+    private mixed $result = null ;
 
     public function __construct($data)
     {

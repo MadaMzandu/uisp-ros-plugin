@@ -97,6 +97,7 @@ class ApiCache{
                 $request[] = $trim ;
             }
             $this->batch($table,$request);
+            if(in_array($table,['site','sites'])){ break; }
             if(in_array($table,['service','services'])){
                 $this->batch_network($request);
             }

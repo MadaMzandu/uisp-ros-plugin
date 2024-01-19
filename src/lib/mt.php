@@ -6,12 +6,12 @@ include_once 'device.php';
 class MT extends Device
 {
 
-    protected ?stdClass $device;
-    protected ?array $batch ;
-    protected ?stdClass $batch_device ;
-    protected ?array $batch_failed ;
-    protected ?array $batch_success;
-    protected ?RouterosAPI $api ;
+    protected ?stdClass $device = null ;
+    protected ?array $batch = null;
+    protected ?object $batch_device = null ;
+    protected ?array $batch_failed = null;
+    protected ?array $batch_success = null;
+    protected ?object $api = null;
 
     protected function write($post): null|array|string
     {

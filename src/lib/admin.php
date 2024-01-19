@@ -20,8 +20,8 @@ class Admin
 
     protected ?object $status = null ;
     protected ?object $data = null ;
-    protected mixed $result;
-    protected mixed $read;
+    protected mixed $result = null ;
+    protected mixed $read = null ;
 
     public function __construct($data = [])
     {

@@ -6,7 +6,7 @@ class ErClient extends ApiCurl
 {
     private ?string $host = null;
     private ?int $port = null;
-    private ?string $base;
+    private ?string $base = null;
     public bool $verbose = false ;
     private ?string $csrf = null ;
 

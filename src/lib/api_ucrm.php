@@ -14,7 +14,7 @@ class ApiUcrm
 
     public bool $assoc = false ;
     public bool $unms = false ;
-    private ?string $method;
+    private ?string $method = 'get';
     private $data ;
     private ?string $url ;
     private ?string $token = null;

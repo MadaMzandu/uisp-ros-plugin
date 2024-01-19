@@ -3,7 +3,7 @@ include_once 'batch.php';
 
 class ApiAction
 {
-    private ?object $request ;
+    private ?object $request = null ;
 
     public function submit($request = null)
     {
