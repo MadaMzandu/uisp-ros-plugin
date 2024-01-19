@@ -9,8 +9,17 @@ class ApiTrim
         return match (strtolower($type)) {
             'service', 'services' => $this->trim_service($request),
             'client', 'clients' => $this->trim_client($request),
+            'site','sites' => $this->trim_site($request),
             default => null,
         };
+    }
+
+    private function trim_site($request): array
+    {
+        $site['id'] = $request->id ?? 'nosite';
+        $site['service'] = $request->ucrm->service->id ?? 0 ;
+        $site['device'] = $request->device ?? null;
+        return ['entity' => $site];
     }
 
     private function trim_client($request): array
