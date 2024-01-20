@@ -4,7 +4,7 @@ include_once 'batch.php';
 
 class ApiJobs extends Admin
 { //scheduled job queue
-    private ?object $queue = null ;
+    private ?array $queue = null ;
     private string $fn = 'data/queue.json';
 
     protected function init(): void
@@ -25,9 +25,12 @@ class ApiJobs extends Admin
 
     public function delete()
     {
-        $id = $this->data->id ?? 0 ;
-        unset($this->queue->$id);
-        $this->save();
+        $index = $this->data->id ?? 0 ;
+        if(is_int($index)){ $index = 'Q' . $index; }
+        if(key_exists($index,$this->queue)){
+            unset($this->queue[$index]);
+            $this->save();
+        }
     }
 
     public function run(): void
@@ -41,7 +44,7 @@ class ApiJobs extends Admin
         $this->clear();
         foreach ($this->queue as $item){
             $action = $item['action'] ??  null;
-            if($action == 'delete'){ $delete[] = $item['id'] ;}
+            if(in_array($action,['delete','remove'])){ $delete[] = $item['id'] ;}
             else{ $set[] = $item['id'] ; }
         }
         $api = new Batch();
@@ -53,9 +56,9 @@ class ApiJobs extends Admin
     {
         $r = null ;
         if(is_file($this->fn)){
-            $r = json_decode(file_get_contents($this->fn));
+            $r = json_decode(file_get_contents($this->fn),true);
         }
-        return is_object($r) ? $r : new stdClass();
+        return is_array($r) ? $r : [];
     }
 
     private function save()
