@@ -76,7 +76,6 @@ class Batch
                 }
             }
         }
-        unset($api);
         $this->run_batch($deviceData,true);
         $this->unsave_batch($deviceServices);
         $this->queue_failed($deviceServices);
@@ -133,7 +132,6 @@ class Batch
                 }
             }
         }
-        unset($api);
         $this->run_batch($deviceData);
         $this->save_batch($deviceServices);
         $this->queue_failed($deviceServices);
@@ -181,24 +179,19 @@ class Batch
     private function save_batch($deviceServices)
     {
         if(empty($this->batch_success)){ return ;}
-        $fields = [
-            'id',
-            'device',
-            'clientId',
-            'planId',
-            'status',
-        ];
+        $fill = array_fill_keys(['id','device','clientId',
+            'planId','status'],'%%$#');
         $save = [];
         $sites = [];
+        $now = date('c');
         foreach ($deviceServices as $services){
             foreach ($services as $service){
                 $id = $service['batch'] ?? null ;
                 $success = $this->batch_success[$id] ?? null ;
                 if($success){
                     $sites[] = $service['id'] ;
-                    $values = [];
-                    foreach ($fields as $key){ $values[$key] = $service[$key] ?? null ;}
-                    $values['last'] = $this->now();
+                    $values = array_intersect_key($service,$fill);
+                    $values['last'] = $now ;
                     $save[] = $values;
                 }
             }
@@ -327,15 +320,14 @@ class Batch
 
     private function make_plan($service): array
     {
+        $keys = ['limitUpload','limitDownload', 'burstUpload','burstDownload',
+            'threshUpload','threshDownload'];
         $ul = $service['uploadSpeed'] ?? 1 ;
         $dl = $service['downloadSpeed'] ?? 1 ;
-        $defaults = ['priorityUpload' => 8,'priorityDownload' => 8,'timeUpload' => 1,'timeDownload' => 1,
-            'uploadSpeed' => $ul,'downloadSpeed' => $dl];
-        $keys = ['ratio','priorityUpload','priorityDownload','limitUpload','limitDownload',
-            'burstUpload','burstDownload','threshUpload','threshDownload','timeUpload','timeDownload',
-            'uploadSpeed','downloadSpeed'];
-        $plan = [];
-        foreach ($keys as $key){ $plan[$key] = $defaults[$key] ?? 0 ;}
+        $defaults = ['ratio' => 1, 'priorityUpload' => 8,'priorityDownload' => 8,
+            'timeUpload' => 1,'timeDownload' => 1, 'uploadSpeed' => $ul,'downloadSpeed' => $dl];
+        $fill = array_fill_keys($keys,0);
+        $plan = array_replace($fill,$defaults);
         $plan['name'] = sprintf('Custom Plan %s/%s',$ul,$dl);
         return $plan ;
     }
@@ -349,8 +341,6 @@ class Batch
     {
         return myCache();
     }
-
-    private function now(): string {$date = new DateTime(); return $date->format('c'); }
 
 
 }
