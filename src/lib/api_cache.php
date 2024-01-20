@@ -71,9 +71,9 @@ class ApiCache{
                 $state = ['cache_version' => MyCacheVersion,
                     'last_cache' => '2020-01-01','last_net' => '2020-01-01'];
                 $this->db()->saveConfig($state);
+                $timer->stop();
             }
         }
-        $timer->stop();
     }
 
     public function populate($table)

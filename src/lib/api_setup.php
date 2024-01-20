@@ -19,6 +19,7 @@ class ApiSetup
         }
         if($this->needs_update()){
             $this->db_update();
+            $timer->stop();
         }
         if($this->needs_backup()){
             $this->db_backup();
@@ -26,7 +27,6 @@ class ApiSetup
         if($this->needs_cleanup()){
             $this->file_cleanup();
         }
-        $timer->stop();
     }
 
     private function db_update(): void
