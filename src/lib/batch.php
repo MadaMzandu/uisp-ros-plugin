@@ -190,16 +190,11 @@ class Batch
             foreach ($services as $service){
                 $id = $service['batch'] ?? null ;
                 $success = $this->batch_success[$id] ?? null ;
-                $fail = $this->batch_failed[$id] ?? null;
                 if($success){
                     $sites[] = $service['id'] ;
                     $values = array_intersect_key($service,$fill);
                     $values['last'] = $now ;
                     $save[] = $values;
-                }
-                if($fail){
-                    $msg = ['set_error',$fail,$service];
-                    MyLog()->Append($msg,6);
                 }
             }
         }
@@ -215,12 +210,8 @@ class Batch
             foreach ($services as $service){
                 $id = $service['batch'] ?? null ;
                 $success = $this->batch_success[$id] ?? null ;
-                $fail = $this->batch_failed[$id] ?? null ;
                 if($success){
                     $ids[] = $service['id'];
-                }
-                if($fail){
-                    MyLog()->Append(['delete_error',$fail,$service],6);
                 }
             }
         }
@@ -236,20 +227,23 @@ class Batch
     {
         if(empty($this->batch_failed)) return ;
         MyLog()->Append("batch queueing failed: ".sizeof($this->batch_failed));
-        $file = file_get_contents('data/queue.json') ?? '[]';
+        $fn = 'data/queue.json';
+        $file = file_get_contents($fn) ?? '[]';
         $queue = json_decode($file,true);
         foreach ($deviceServices as $services){
             foreach ($services as $service){
-                $id = $service['batch'] ?? null ;
-                $failed = $this->batch_failed[$id] ?? null ;
-                if($failed){ //do not requeue
+                $batch = $service['batch'] ?? null ;
+                $id = $service['id'] ?? 0 ;
+                $failed = $this->batch_failed[$batch] ?? null ;
+                if($failed){
+                    MyLog()->Append(['batch_error',$failed,$service],6);
                     $service['error'] = $failed ;
-                    $service['last'] = date_create()->format('Y-m-d H:i:s');
-                    $queue[]= $service ;
+                    $service['last'] = date('c');
+                    $queue["Q$id"] = $service ;
                 }
             }
         }
-        file_put_contents('data/queue.json',json_encode($queue));
+        file_put_contents($fn,json_encode($queue));
     }
 
     private function device_api($type)
