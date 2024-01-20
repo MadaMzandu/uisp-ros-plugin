@@ -224,7 +224,7 @@ class ApiDevices extends Admin
                 $device['status'] = true;
                 fclose($conn);
             }
-            catch (Exception $err){
+            catch (\Exception $err){
                 $device['status'] = false ;
             }
         }
