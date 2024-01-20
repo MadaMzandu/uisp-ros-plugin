@@ -37,4 +37,45 @@ class ApiSystem extends Admin
         file_put_contents('data/plugin.log','');
         MyLog()->Append('log_cleared');
     }
+
+    public function purge_orphans()
+    {
+        $fill = array_fill_keys(['.id','name','mac-address'],null);
+        $count = 0 ;
+        $date = date('c');
+        $batch = [];
+        foreach ($this->data as $item){
+            $trim = array_intersect_key($item,$fill);
+            $trim['action'] = 'remove';
+            $trim['batch'] = $date . "-" . ++$count ;
+            $trim['path'] = $item['path'];
+            $batch[] = $trim ;
+        }
+    }
+
+    public function get_orphans()
+    {
+        $did = $this->data->id
+            ?? $this->data->did ?? $this->data->device ?? 0;
+        $dev = $this->db()->selectDeviceById($did);
+        if(!is_object($dev)){ return ; }
+        $api = $this->device_data_api($dev->type);
+        $this->result = $api->get_orphans($dev);
+    }
+
+    private function device_data_api($type): ErData|MtData
+    {
+        return match ($type){
+            'edgeos,edgerouter,edge' => new ErData(),
+            default => new MtData(),
+        };
+    }
+
+    private function device_api($type): MT|ER
+    {
+        return match ($type){
+            'edgeos,edgerouter,edge' => new ER(),
+            default => new MT(),
+        };
+    }
 }
