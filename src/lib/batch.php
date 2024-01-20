@@ -188,11 +188,16 @@ class Batch
             foreach ($services as $service){
                 $id = $service['batch'] ?? null ;
                 $success = $this->batch_success[$id] ?? null ;
+                $fail = $this->batch_failed[$id] ?? null;
                 if($success){
                     $sites[] = $service['id'] ;
                     $values = array_intersect_key($service,$fill);
                     $values['last'] = $now ;
                     $save[] = $values;
+                }
+                if($fail){
+                    $msg = ['set_error',$fail,$service];
+                    MyLog()->Append($msg,6);
                 }
             }
         }
@@ -208,8 +213,12 @@ class Batch
             foreach ($services as $service){
                 $id = $service['batch'] ?? null ;
                 $success = $this->batch_success[$id] ?? null ;
+                $fail = $this->batch_failed[$id] ?? null ;
                 if($success){
                     $ids[] = $service['id'];
+                }
+                if($fail){
+                    MyLog()->Append(['delete_error',$fail,$service],6);
                 }
             }
         }
