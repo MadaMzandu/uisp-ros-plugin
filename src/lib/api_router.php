@@ -39,7 +39,7 @@ class API_Router
             fail('request_invalid',$this->data);
         }
         $type = $this->data->changeType
-            ?? $this->data->target ?? 'none';
+            ?? 'none';
         $api = match ($type){
             'admin' => new Admin(),
             'none' => new  stdClass(),
@@ -57,15 +57,14 @@ class API_Router
             return false;
         }
         $entity = $this->data->entity ?? null ;
-        if ($entity && !in_array($entity,['service','admin','client'])) {
-            $this->set_message('ok');
+        if ($entity && !in_array($entity,['service','client'])) { //webhooks only
+            $this->set_message("ignoring entity: $entity");
             return false;
         }
         $change = $this->data->changeType ?? 'none';
-        if($entity == 'admin') $change = 'admin';
         $allowed = "insert,edit,admin";
         if (!in_array($change, explode(',',$allowed))) {
-            $this->set_message('ok');
+            $this->set_message("ignoring change type: $change");
             return false;
         }
         return true;
