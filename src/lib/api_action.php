@@ -11,6 +11,9 @@ class ApiAction
         if($request){ $this->request = $request; }
         $data = myTrimmer()->trim($this->type(),$this->request) ;
         $this->route($data);
+        $action = $this->action();
+        $name = $this->name();
+        $this->status->message = "${action}_success $name";
     }
 
     private function route($data)
