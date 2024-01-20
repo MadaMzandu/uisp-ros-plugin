@@ -10,10 +10,16 @@ class ApiAction
     {
         if($request){ $this->request = $request; }
         $data = myTrimmer()->trim($this->type(),$this->request) ;
-        $this->route($data);
+        $done  = $this->route($data);
         $action = $this->action();
         $name = $this->name();
-        $this->status->message = "${action}_success $name";
+        $message = "${action}_success $name" ;
+        if(!$done){
+            $message = "${action}_failed $name";
+            $this->status->error = true ;
+            $this->status->status = 'failed';
+        }
+        $this->status->message = $message;
     }
 
     private function route($data)
@@ -21,17 +27,18 @@ class ApiAction
         $action = $this->action() ;
         if($this->type() == 'client')
         {
-            $this->save($data['entity']);
+            return $this->save($data['entity']);
         }
         elseif ($check = $this->is_unset($data))
         {//unset attributes
             if($check < 0)
             { //had prior settings
-                $this->delete($data['previous']);
+                return $this->delete($data['previous']);
             }
             if($this->is_auto($data['entity']))
             {
-                myAttr()->set_user($this->entity()->id,$this->entity()->clientId);
+               myAttr()->set_user($this->entity()->id,$this->entity()->clientId);
+               return true ;
             }
 
         }
@@ -41,16 +48,18 @@ class ApiAction
             { //deferred
                 MyLog()->Append(sprintf("Deferred insert client: %s service: %s",
                     $this->entity()->clientId,$this->entity()->id),6);
+                return true ;
             }
             else
             {
-                $this->set($data['entity'],$action);
+               return $this->set($data['entity'],$action);
             }
         }
         elseif($action == 'edit')
         {
-            $this->edit($data);
+            return $this->edit($data);
         }
+        return true ;
     }
 
     private function edit($data)
@@ -64,26 +73,27 @@ class ApiAction
         { //deferred changes
             MyLog()->Append(sprintf("Deferred edit for service: %s client: %s",
                 $this->entity()->id,$this->entity()->clientId),6);
+            return true ;
         }
         elseif($upgrade)
         { //changes requiring previous delete
             MyLog()->Append(["Update edit requires delete changes: ",$changes,$this->entity()->id]);
             $dev = $entity['device'] ?? null ;
             $user = $entity['username'] ?? $entity['mac'] ?? null ;
-            $this->delete($data['previous']);
+            $done = $this->delete($data['previous']);
             if($dev && $user) {
-                $this->set($entity, 'upgrade');
+                $done &= $this->set($entity, 'upgrade');
             }
         }
         elseif(in_array('status',$changes) && in_array($this->state(),[2,5]))
         {// obsolete status requires delete
-            $this->delete($data['previous']);
+            return $this->delete($data['previous']);
         }
         else
         {//normal edit
             if($changes)
             {//ignore network flapping
-                $this->set($data['entity'],'edit');
+                return $this->set($data['entity'],'edit');
             }
         }
 
@@ -124,36 +134,38 @@ class ApiAction
         return $ret ;
     }
 
-    private function set($entity,$action = 'set')
+    private function set($entity,$action = 'set'): bool
     {
         $this->save($entity);
         $client = $this->client() ;
         $data = array_replace($entity,$client);
         $data['action'] = $action ;
-        $this->batch()->set_accounts([$data]);
+        return $this->batch()->set_accounts([$data]);
     }
 
-    private function delete($entity)
+    private function delete($entity): bool
     {
         $client = $this->client() ;
         $data = array_replace($entity,$client);
         $data['action'] = 'delete' ;
-        $this->batch()->del_accounts([$data]);
-        $this->unsave($entity);
+        if($this->batch()->del_accounts([$data])){
+            return $this->unsave($entity);
+        }
+        return false ;
     }
 
-    private function save($entity)
+    private function save($entity): bool
     {
         $table = $this->type() . 's';
-        myCache()->insert($entity,$table,true);
+        return myCache()->insert($entity,$table,true);
     }
 
-    private function unsave($entity)
+    private function unsave($entity): bool
     {
         $id = $entity['id'] ;
         foreach(['services','network'] as $table)
         {
-            myCache()->delete($id,$table) ;
+           return  myCache()->delete($id,$table) ;
         }
     }
 

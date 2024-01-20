@@ -57,7 +57,7 @@ class Batch
         $this->run_batch($deviceData,true);
     }
 
-    public function del_accounts(array $ids)
+    public function del_accounts(array $ids): bool
     {
         $deviceServices = $this->find_services($ids,'delete');
         $plans = $this->find_plans();
@@ -79,6 +79,7 @@ class Batch
         $this->run_batch($deviceData,true);
         $this->unsave_batch($deviceServices);
         $this->queue_failed($deviceServices);
+        return empty($this->batch_failed);
     }
 
     public function set_queues(array $ids,$on = true)
@@ -114,7 +115,7 @@ class Batch
         $this->db()->saveConfig(['disabled_routers' => implode(',',$routers)]);
     }
 
-    public function set_accounts(array $ids)
+    public function set_accounts(array $ids): bool
     {
         $deviceServices = $this->find_services($ids,'update');
         $plans = $this->find_plans();
@@ -135,6 +136,7 @@ class Batch
         $this->run_batch($deviceData);
         $this->save_batch($deviceServices);
         $this->queue_failed($deviceServices);
+        return empty($this->batch_failed);
     }
 
     private function set_sites($ids,$delete = false)
