@@ -22,12 +22,10 @@ class API_Router
         $this->status = json_decode('{"status":"ok","error":false,"message":"ok","session":false}');
     }
 
-    private function toObject($data): ?stdClass
+    private function toObject($data): ?object
     {
-        if(empty($data)) return null ;
-        if(is_object($data)) return $data ;
-        if(is_array($data)) return json_decode(json_encode((object)$data));
-        return null;
+        $to = $data ? json_decode(json_encode($data)) : null ;
+        return is_object($to) ? $to : null ;
     }
 
     public function status(): ?stdClass
@@ -37,20 +35,25 @@ class API_Router
 
     public function route(): void
     {
-        if (!$this->data_is_valid()) { // check basic validity
+        if (!$this->data_check()) { // check basic validity
             fail('request_invalid',$this->data);
         }
-        if ($this->request_is_admin()) { // execute admin calls
-            return;
-        }
-        $api = new ApiAction($this->data);
-        $api->submit();
+        $type = $this->data->changeType
+            ?? $this->data->target ?? 'none';
+        $api = match ($type){
+            'admin' => new Admin(),
+            'none' => new  stdClass(),
+             default => new ApiAction()
+        };
+        $api?->exec($this->data);
+        $this->status = $api?->status();
+        $this->result = $api?->result();
     }
 
-    private function data_is_valid(): bool
+    private function data_check(): bool
     {
-        if (empty((array)$this->data)) {
-            $this->set_message('No request data sent');
+        if (!is_object($this->data)) {
+            $this->set_message('ok');
             return false;
         }
         $entity = $this->data->entity ?? null ;
@@ -60,8 +63,8 @@ class API_Router
         }
         $change = $this->data->changeType ?? 'none';
         if($entity == 'admin') $change = 'admin';
-        if (!in_array($change, ['insert', 'edit', 'end',
-                'suspend', 'unsuspend', 'admin','move','delete','rename'])) {
+        $allowed = "insert,edit,admin";
+        if (!in_array($change, explode(',',$allowed))) {
             $this->set_message('ok');
             return false;
         }
@@ -72,18 +75,6 @@ class API_Router
     {
         $this->status->error = false;
         $this->status->message = $msg;
-    }
-
-    private function request_is_admin(): bool
-    {
-        if ($this->data->changeType != 'admin') {
-            return false;
-        }
-        $admin = new Admin($this->data);
-        $admin->exec();
-        $this->status = $admin->status();
-        $this->result = $admin->result();
-        return true;
     }
 
     public function http_response(): void
@@ -98,8 +89,7 @@ class API_Router
         $response = [
             'status' => $stat,
             'error' => $error,
-            'message' => $this->status->message ?? 'Unknown error',
-            'duration' => $this->status->duration ?? 0,
+            'message' => $this->status->message ?? ($error ? 'error_unknown' : 'ok'),
             'data' => $this->result ?? [],
         ];
         echo json_encode($response,JSON_PRETTY_PRINT);
