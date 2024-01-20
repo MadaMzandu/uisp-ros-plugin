@@ -19,7 +19,7 @@ class Admin
 {
 
     protected ?object $status = null ;
-    protected ?object $data = null ;
+    protected mixed $data = null ;
     protected mixed $result = null ;
     protected mixed $read = null ;
 
@@ -29,12 +29,10 @@ class Admin
         $this->init();
     }
 
-    protected function toObject($data): ?stdClass
+    protected function toObject($data): mixed
     {
-        if(empty($data)) return null ;
-        if(is_object($data)){return $data; }
-        if(is_array($data)){ json_decode(json_encode($data)); }
-        return null;
+        $o = json_decode(json_encode($data));
+        return is_object($o) || is_array($o) ? $o : null;
     }
 
     protected function init(): void
