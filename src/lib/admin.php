@@ -59,8 +59,9 @@ class Admin
         };
     }
 
-    public function exec(): void
+    public function exec($request = null): void
     {
+        if($request){ $this->data = $request; }
         if(empty($this->data)) { fail('request_invalid'); }
         $api = $this->select();
         $action = $this->data->action ?? null ;
