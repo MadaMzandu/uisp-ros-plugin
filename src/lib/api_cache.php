@@ -39,24 +39,19 @@ class ApiCache{
 
     public function sync($force = false)
     {
-        if($force || $this->needs_sites()){
-            $this->populate('sites');
-            $set['last_sites'] = $this->now() ;
-            $this->db()->saveConfig($set);
-        }
+        if(!$this->attrs()->check_config()){ return ; }
+        $timer = new ApiTimer('sync: ');
         if($force || $this->needs_update()){
-            if(!$this->attrs()->check_config()
-                || !$this->check_devices()){
-                return ;
-            }
-            $timer = new ApiTimer('sync: ');
-            foreach(['clients','services','sites'] as $table){
+            $this->clean(); //clean tables
+            foreach(['clients','sites','services'] as $table){
                 $this->populate($table);
                 MyLog()->Append('cache_success_'.$table);
             }
-            $state = ['last_cache' => $this->now()];
-            $this->db()->saveConfig($state);
             $timer->stop();
+        }
+        elseif($this->needs_sites()){
+            $this->populate('sites');
+            $this->db()->saveConfig(['last_sites' => date('c')]);
         }
     }
 
@@ -219,6 +214,14 @@ class ApiCache{
         $now = new DateTime();
         $interval = new DateInterval('PT1H');
         return $last->add($interval) < $now ;
+    }
+
+    private function clean()
+    {
+        $tables = ['services','sites','clients','network'];
+        foreach($tables as $table){
+            $this->dbCache()->exec("delete * from $table");
+        }
     }
 
     private function needs_db(): bool
