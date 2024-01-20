@@ -16,7 +16,6 @@ class MT extends Device
     protected function write($post): null|array|string
     {
         $opened = $this->xor_connect();
-//        $timer = new ApiTimer('single write');
         //check and prepare
         $id = $this->find_id($post);
         $action = $id ? 'set' : 'add';
@@ -35,7 +34,6 @@ class MT extends Device
             $this->api->write('=' . $key . '=' . $data[$key], false);
         }
         $this->api->write(';');
-//        $timer->stop();
         $read = $this->api->read() ;
         if($opened) $this->api_disconnect();
         return $read ;
