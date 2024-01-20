@@ -24,7 +24,7 @@ function backup_restore(){
             if($ul){ copy($ul,'data/data.db'); }
         }
     }
-    catch (Exception $e){
+    catch (\Exception $e){
         $msg = sprintf('backup restore error: %s, trace: %s',
             $e->getMessage(),$e->getTraceAsString());
         MyLog()->Append($msg,6);
