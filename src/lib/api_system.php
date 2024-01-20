@@ -40,17 +40,30 @@ class ApiSystem extends Admin
 
     public function purge_orphans()
     {
-        $fill = array_fill_keys(['.id','name','mac-address'],null);
+        $fill = array_fill_keys(['.id','name','mac-address','duid'],null);
         $count = 0 ;
         $date = date('c');
         $batch = [];
-        foreach ($this->data as $item){
+        $did = null ;
+        $list = json_decode(json_encode($this->data),true);
+        foreach ($list as $item){
+            $did ??= $item['device'] ?? 0;
+            $sid = $item['service'] ?? 0 ;
             $trim = array_intersect_key($item,$fill);
             $trim['action'] = 'remove';
             $trim['batch'] = $date . "-" . ++$count ;
             $trim['path'] = $item['path'];
             $batch[] = $trim ;
+            if($sid){
+                mySqlite()->delete($sid,'services');
+                mySqlite()->delete($sid,'network');
+            }
         }
+        if(!$did){ return; }
+        $dev = mySqlite()->selectDeviceById($did);
+        if(!property_exists($dev,'type')){ return; }
+        $api = $this->device_api($dev->type);
+        $api->do_batch($dev,$batch);
     }
 
     public function get_orphans()
@@ -58,7 +71,7 @@ class ApiSystem extends Admin
         $did = $this->data->id
             ?? $this->data->did ?? $this->data->device ?? 0;
         $dev = $this->db()->selectDeviceById($did);
-        if(!is_object($dev)){ return ; }
+        if(!property_exists($dev,'type')){ return; }
         $api = $this->device_data_api($dev->type);
         $this->result = $api->get_orphans($dev);
     }

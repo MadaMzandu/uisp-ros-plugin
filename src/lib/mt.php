@@ -108,7 +108,8 @@ class MT extends Device
                 $r = $this->read($path) ;
                 if($r && is_array($r)){
                     $count += sizeof($r);
-                    $data[$path] = $r ;
+                    $data[] = $path ;
+                    $data = array_merge($data,$r);
                 }
             }
         }
