@@ -97,6 +97,25 @@ class MT extends Device
         return false;
     }
 
+    public function list($device,$paths)
+    {
+        $this->batch_device = $device ;
+        $data = [];
+        $count = 0 ;
+        if($api = $this->api_connect()){
+            $this->api = $api ;
+            foreach($paths as $path){
+                $r = $this->read($path) ;
+                if($r && is_array($r)){
+                    $count += sizeof($r);
+                    $data[$path] = $r ;
+                }
+            }
+        }
+        MyLog()->Append(['mt_list',"items: $count"]);
+        return $data ;
+    }
+
     protected function read($path,$filter = null): null|array|string
     {  //implements mikrotik print
         $opened = $this->xor_connect() ;
@@ -116,17 +135,17 @@ class MT extends Device
     protected function api_connect(): ?RouterosAPI
     {
         if(!$this->find_device()){
-            MyLog()->Append('mt: failed to get device information');
+            MyLog()->Append('mt_device_invalid');
             return null ;
         }
         $api = new Routerosapi();
         $api->timeout = 1;
         $api->attempts = 1;
-        //$api->debug = true;
+//        $api->debug = true;
         $port = $this->device->port ?? 8728 ;
         if (!$api->connect($this->device->ip . ':' . $port,
-            $this->device->user, $this->device->password)) {
-            MyLog()->Append('mt: failed to connect to: '. $this->device->ip);
+            $this->device->user, $this->device->password ?? null)) {
+            MyLog()->Append(['mt_connect_fail','ip: ' . $this->device->ip]);
             return null ;
         }
         return $api;

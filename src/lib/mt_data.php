@@ -3,6 +3,40 @@ include_once 'data.php';
 
 class MtData extends Data
 {
+    public function get_orphans($device): array
+    { //find orphans
+
+        $api = new MT();
+        $list = $api->list($device,['/ppp/secret','/queue/simple',
+            '/ip/dhcp-server/lease','/ipv6/dhcp-server/binding']);
+        $orphans = [];
+        $fill = array_fill_keys(['.id','name','mac-address',
+            'comment','remote-address','address','duid'],null);
+        foreach(array_keys($list) as $path){
+            foreach($list[$path] as $item){
+                $comment = $item['comment'] ?? 'none';
+                $sids = preg_split("#(\D+)#",$comment);
+                $sids = array_diff($sids,[""]);
+                if($sids){ //only entries with numeric comments
+                    $address = $item['address'] ?? $item['target']
+                        ?? $item['remote-address'] ?? '0.0.0.0';
+                    $id = $this->find_service($address);
+                    $check = abs($id) ;
+                    if($id < 1 || !in_array($check,$sids))
+                    { //not cached or not matching comment
+                        $trim = array_intersect_key($item,$fill);
+                        $trim['device'] = $device->id ;
+                        $trim['path'] = $path ;
+                        if(in_array($check,$sids)) $trim['service'] = $check; //to delete from provisioned
+                        $orphans[] = $trim ;
+                    }
+                }
+
+            }
+
+        }
+        return $orphans ;
+    }
 
     public function account(): ?array
     {

@@ -35,6 +35,26 @@ class Data
         $this->plan = $plan ;
     }
 
+    public function get_orphans($device): array
+    {
+        return [];
+    }
+
+    protected function find_service($addresses): int
+    {
+        $list = explode(',',$addresses);
+        foreach($list as $a6){
+            $a4 = preg_replace("#/\d+s*#",'',$a6);
+            $q = "select id from network where address='$a4' or address6='$a6'";
+            $id = mySqlite()->singleQuery($q) ;
+            if(!$id){ return 0 ; }
+            $q = "select id from services where id=$id";
+            $cid = myCache()->singleQuery($q);
+            return $cid ?  : -$id ;
+        }
+        return 0 ;
+    }
+
     protected function disabled(): bool
     {
         $status = $this->service['status'] ?? 1 ;
