@@ -4,15 +4,16 @@ include_once 'batch.php';
 class ApiAction
 {
     private ?object $request = null ;
+    private ?object $status = null ;
 
-    public function submit($request = null)
+    public function exec($request = null)
     {
         if($request){ $this->request = $request; }
         $data = myTrimmer()->trim($this->type(),$this->request) ;
-        $this->execute($data);
+        $this->route($data);
     }
 
-    private function execute($data)
+    private function route($data)
     { // only working with edits/inserts to avoid duplicates
         $action = $this->action() ;
         if($this->type() == 'client')
@@ -33,7 +34,7 @@ class ApiAction
         }
         elseif($action == 'insert')
         {
-            if(in_array($this->status(),[0,6]))
+            if(in_array($this->state(),[0,6]))
             { //deferred
                 MyLog()->Append(sprintf("Deferred insert client: %s service: %s",
                     $this->entity()->clientId,$this->entity()->id),6);
@@ -56,7 +57,7 @@ class ApiAction
         $diff = array_diff_assoc($entity,$previous);
         $changes = array_keys($diff);
         $upgrade = array_intersect(['device','mac','username','hotspot'],$changes);
-        if(in_array('status',$changes) && in_array($this->status(),[0,6]))
+        if(in_array('status',$changes) && in_array($this->state(),[0,6]))
         { //deferred changes
             MyLog()->Append(sprintf("Deferred edit for service: %s client: %s",
                 $this->entity()->id,$this->entity()->clientId),6);
@@ -71,7 +72,7 @@ class ApiAction
                 $this->set($entity, 'upgrade');
             }
         }
-        elseif(in_array('status',$changes) && in_array($this->status(),[2,5]))
+        elseif(in_array('status',$changes) && in_array($this->state(),[2,5]))
         {// obsolete status requires delete
             $this->delete($data['previous']);
         }
@@ -83,6 +84,21 @@ class ApiAction
             }
         }
 
+    }
+
+    private function name()
+    {
+        $client = $this->client() ;
+        $id = $this->cid() ;
+        $fn = $client['firstName'] ?? 'Client';
+        $ln = $client['lastName'] ?? null ;
+        $cn = $client['company'] ?? null ;
+        return $cn ? "$cn ($id)" : "$fn $ln ($id)" ;
+    }
+
+    private function cid(): int
+    {//client id
+        return $this->entity()->clientId ?? 0 ;
     }
 
     private function client(): ?array
@@ -171,9 +187,14 @@ class ApiAction
         return $auto ;
     }
 
-    private function status(): int
-    {
+    private function state(): int
+    {//service status
         return $this->entity()->status ?? 0 ;
+    }
+
+    public function status(): object
+    {
+        return $this->status ;
     }
 
     private function entity(): object
@@ -218,5 +239,6 @@ class ApiAction
     public function __construct($data = null)
     {
         $this->request = $data ;
+        $this->status = new stdClass();
     }
 }
