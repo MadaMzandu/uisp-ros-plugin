@@ -15,7 +15,7 @@ class ApiJobs extends Admin
 
     public function list()
     {
-        $this->result = $this->queue ?? [];
+        $this->result = array_values($this->queue);
     }
 
     public function clear()
