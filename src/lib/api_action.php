@@ -212,6 +212,11 @@ class ApiAction
         return $this->status ;
     }
 
+    public function result(): array
+    {
+        return [];
+    }
+
     private function entity(): object
     {
         return $this->req()->extraData->entity ?? new stdClass();
