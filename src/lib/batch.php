@@ -15,7 +15,7 @@ class Batch
     private array $batch_failed = [];
     private array $batch_success = [];
 
-    public function del_queues($ids)
+    public function del_queues($ids): bool
     {
         $deviceServices = $this->find_services($ids, 'delete');
         $plans = $this->find_plans();
@@ -37,9 +37,10 @@ class Batch
             }
         }
         $this->run_batch($deviceData,true);
+        return empty($this->batch_failed);
     }
 
-    public function del_parents()
+    public function del_parents(): bool
     {
         $plans = $this->find_plans();
         $devices = $this->find_devices();
@@ -55,6 +56,7 @@ class Batch
             }
         }
         $this->run_batch($deviceData,true);
+        return empty($this->batch_failed);
     }
 
     public function del_accounts(array $ids): bool
