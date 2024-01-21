@@ -189,6 +189,9 @@ class ApiCache{
         return true ;
     }
 
+    /**
+     * @throws Exception
+     */
     private function needs_update(): bool
     {
         $last = $this->conf()->last_cache ?? '2020-01-01';
@@ -198,6 +201,9 @@ class ApiCache{
         return date_add($sync,$cycle) < $now ;
     }
 
+    /**
+     * @throws Exception
+     */
     private function needs_net(): bool
     {
         $last = $this->conf()->last_net ?? '2020-01-01';
@@ -207,6 +213,9 @@ class ApiCache{
         return date_add($sync,$cycle) < $now ;
     }
 
+    /**
+     * @throws Exception
+     */
     private function needs_sites(): bool
     {
         $time = $this->conf()->last_sites ?? '2023-01-01';
@@ -244,8 +253,6 @@ class ApiCache{
     private function ucrm($unms = false): ApiUcrm { return new ApiUcrm(null,false,$unms); }
 
     private function db(): ApiSqlite { return mySqlite(); }
-
-    private function now(): string { return (new DateTime())->format('c'); }
 
     private function conf(): ?object
     {

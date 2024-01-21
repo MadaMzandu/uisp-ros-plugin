@@ -13,6 +13,9 @@ function dbUpdateHandler(){
     MyLog()->Append('Update chunk rejected - this is normal');
 }
 
+/**
+ * @throws \GuzzleHttp\Exception\GuzzleException
+ */
 function backup_restore(){
     try{
         $sec = UcrmSecurity::create();

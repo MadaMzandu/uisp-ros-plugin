@@ -139,6 +139,9 @@ class ApiSetup
         $this->save($state);
     }
 
+    /**
+     * @throws Exception
+     */
     private function needs_cleanup(): bool
     {
         $date = $this->state()->cleanup ?? '2020-01-01';
@@ -149,6 +152,9 @@ class ApiSetup
         return $now > $next ;
     }
 
+    /**
+     * @throws Exception
+     */
     private function needs_backup(): bool
     {
         $date = $this->state()->backup ?? '2020-01-01';
