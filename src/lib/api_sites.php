@@ -7,7 +7,6 @@ class ApiSites
 
     public function set($ids)
     {
-        myIPClass()->flush(); //make sure recent ips are flushed
         $this->delete($ids); // just clean up before
         $services = $this->find_services($ids) ?? [];
         foreach($services as $service){
