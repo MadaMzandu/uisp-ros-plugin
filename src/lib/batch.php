@@ -120,7 +120,6 @@ class Batch
         $deviceServices = $this->find_services($ids,'update');
         $plans = $this->find_plans();
         $deviceData = [];
-
         foreach (array_keys($deviceServices) as $did){
             $api = $this->datapi($did);
             foreach ($deviceServices[$did] as $service){
@@ -198,6 +197,7 @@ class Batch
                 }
             }
         }
+        $this->ip_flush();
         $this->db()->insert($save,'services',true);
         $this->set_sites($sites);
     }
@@ -215,6 +215,7 @@ class Batch
                 }
             }
         }
+        $this->ip_flush();
         foreach(['services','network'] as $table) {
             $sql = sprintf("delete from %s where id in (%s)",$table,
                 implode(',',$ids));
@@ -321,6 +322,11 @@ class Batch
             foreach ($devs as $dev){ $this->_devices[$dev['id']] = $dev; }
         }
         return $this->_devices ;
+    }
+
+    private function ip_flush(): void
+    {
+        myIPClass()->flush();
     }
 
     private function make_plan($service): array
