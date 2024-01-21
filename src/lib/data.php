@@ -35,11 +35,6 @@ class Data
         $this->plan = $plan ;
     }
 
-    public function get_orphans($device): array
-    {
-        return [];
-    }
-
     protected function find_service($addresses): int
     {
         $list = explode(',',$addresses);
@@ -100,6 +95,15 @@ class Data
         if($user) return 'ppp';
         return 'invalid';
     }
+
+    protected function pool(): ?array { return null; }
+    protected function account(): ?array { return null; }
+    protected function dhcp6(): ?array { return null; }
+    protected function account_reset(): ?array { return null; }
+    protected function parent(): ?array { return null; }
+    protected function queue(): ?array { return null; }
+    protected function profile(): ?array { return null; }
+    public function get_orphans($device): ?array { return null; }
 
     protected function ipapi(): ApiIP
     {
