@@ -4,7 +4,7 @@ include_once 'er_objects.php';
 include_once 'data.php';
 class ErData extends Data
 {
-    public function account()
+    public function account(): ?array
     {
         return match ($this->type()) {
             'dhcp' => $this->dhcp(),
@@ -12,7 +12,7 @@ class ErData extends Data
         };
     }
 
-    public function queue()
+    public function queue(): ?array
     {
         if(!in_array($this->type(),['dhcp','dhcp6'])) return null ;
         $ip = $this->ip();
