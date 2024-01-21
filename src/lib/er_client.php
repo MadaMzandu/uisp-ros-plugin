@@ -48,27 +48,27 @@ class ErClient extends ApiCurl
 
     private function exit_code(): int { return curl_getinfo($this->curl(), CURLINFO_RESPONSE_CODE); }
 
-    public function get($path, $data = [])
+    public function get($path, $post = [])
     {
-        $this->configure($path, 'get', $data);
+        $this->configure($path, 'get', $post);
         return $this->exec();
     }
 
-    public function post($path, $data = [])
+    public function post($path, $post = [])
     {
-        $this->configure($path, 'post', $data);
+        $this->configure($path, 'post', $post);
         return $this->exec();
     }
 
-    protected function configure($path, $method, $data, $mime = 'json')
+    protected function configure($path, $method, $post, $mime = 'json')
     {
         curl_reset($this->curl());
         $this->json = $mime == 'json';
         $this->assoc = true ;
         $this->no_ssl = true ;
-        parent::configure($path,$method,$data);
+        parent::configure($path,$method,$post);
         curl_setopt_array($this->curl(), [
-            CURLOPT_URL => $this->make_url($path, $method, $data),
+            CURLOPT_URL => $this->make_url($path, $method, $post),
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_ENCODING => '',
             CURLOPT_MAXREDIRS => 10,
@@ -85,7 +85,7 @@ class ErClient extends ApiCurl
             $headers[] = 'X-CSRF-Token: '. $this->csrf ;
         }
         $this->opts[CURLOPT_HTTPHEADER] = $headers ;
-        $this->make_post($method, $data, $mime);
+        $this->make_post($method, $post, $mime);
         $this->set_method($method);
     }
 
