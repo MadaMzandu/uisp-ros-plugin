@@ -19,7 +19,7 @@ class Admin
 {
 
     protected ?object $status = null ;
-    protected mixed $data = null ;
+    protected null|array|object $data = null ;
     protected mixed $result = null ;
     protected mixed $read = null ;
 
