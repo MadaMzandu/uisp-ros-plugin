@@ -55,7 +55,7 @@ class ApiSystem extends Admin
             $trim['path'] = $item['path'];
             $batch[] = $trim ;
             if($sid){
-                mySqlite()->delete($sid,'services');
+                mySqlite()->delete($sid);
                 mySqlite()->delete($sid,'network');
             }
         }
