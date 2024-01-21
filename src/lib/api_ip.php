@@ -108,6 +108,7 @@ class ApiIP
         $data = [];
         $ip = array_flip($this->assigned['v4'] ?? []) ;
         $ipv6 = array_flip($this->assigned['v6'] ?? []);
+        if(!($ip || $ipv6)){ return ;}
         $ids = array_keys($ip);
         $ids = array_merge($ids,array_diff($ids,array_keys($ipv6)));
         foreach($ids as $id){
