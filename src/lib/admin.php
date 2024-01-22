@@ -6,14 +6,13 @@ include_once 'api_trim.php';
 include_once 'api_lang.php';
 include_once 'api_sqlite.php';
 include_once 'api_settings.php';
-include_once 'api_devices.php';
-include_once 'api_plans.php';
 include_once 'api_backup.php';
 include_once 'api_system.php';
 include_once 'api_rebuild.php';
 include_once 'api_jobs.php';
 include_once 'api_cache.php' ;
 include_once 'api_action.php';
+include_once 'api_list.php';
 include_once 'batch.php';
 class Admin
 {
@@ -46,10 +45,10 @@ class Admin
         $target = $this->data->target ?? null ;
         $data = $this->data->data ?? null;
         return match ($target) {
-            'config' => new ApiSettings($data),
-            'devices' => new ApiDevices($data),
-            'plans' => new ApiPlans($data),
-            'jobs' => new ApiJobs($data),
+            'config','devices','plans','services','jobs' => new ApiList($this->data,$target),
+//            'devices' => new ApiDevices($data),
+//            'plans' => new ApiPlans($data),
+//            'jobs' => new ApiJobs($data),
             'system' => new ApiSystem($data),
             'backup' => new ApiBackup($data),
             'lang' => new ApiLang($data),
