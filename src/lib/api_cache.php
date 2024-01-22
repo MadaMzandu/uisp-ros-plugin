@@ -229,7 +229,7 @@ class ApiCache{
     {
         $tables = ['services','sites','clients','network'];
         foreach($tables as $table){
-            $this->dbCache()->exec("delete * from $table");
+            $this->dbCache()->exec("delete from $table");
         }
     }
 
