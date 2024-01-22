@@ -232,6 +232,8 @@ class ApiUpdate
 
     private function db(): ApiSqlite { return mySqlite(); }
     private function cachedb(): ApiSqlite { return myCache(); }
+    private function status(): object { return new stdClass(); }
+    private function result(): null|array|object { return $this->result; }
 
     public function __construct($data = null,$mode = 'services')
     {
