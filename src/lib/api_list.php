@@ -7,15 +7,24 @@ class ApiList
     private null|object|array $result = null ;
     private null|object|array $data;
 
+    public function update()
+    {
+        $api = new ApiUpdate($this->data,$this->mode);
+        $api->exec();
+        $this->result = $api->result() ;
+    }
+
     public function list(): null|array|object
     {
-        return match ($this->mode){
+        $this->result = match ($this->mode){
             'plans' => $this->list_plans(),
             'devices' => $this->list_devices(),
             'services' => $this->list_services(),
             'config' => $this->list_config(),
+            'jobs' => $this->read_jobs(),
             default => null
         };
+        return $this->result ;
     }
 
     private function list_config(): null|array|object
@@ -124,6 +133,15 @@ class ApiList
         MyLog()->Append(['list_services','items: '. sizeof($data['data'])]);
         return $data ;
 
+    }
+
+    private function read_jobs(): array
+    {
+        $r = null ;
+        if(is_file($this->fn)){
+            $r = json_decode(file_get_contents($this->fn),true);
+        }
+        return is_array($r) ? $r : [];
     }
 
     private function find_devices(): array
