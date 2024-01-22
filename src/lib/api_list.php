@@ -114,7 +114,7 @@ class ApiList
     {
         $q = 'select device,count(id) as count from services '.
             'where status not in (2,5,8) group by device';
-        $r = $this->db()->selectCustom($q) ;
+        $r = $this->db()->selectCustom($q) ?? [];
         $count = [];
         foreach($r as $item){ $count[$item['device']] = $item['count']; }
         return $count ;
@@ -129,6 +129,9 @@ class ApiList
         while($r = $f->fetchArray(SQLITE3_ASSOC)){
             $r['address'] ??= $r['a4'] ?? null;
             $r['address6'] ??= $r['a6'] ?? null;
+            $r['username'] = $r['username'] ?? $r['mac'];
+            $r['client'] = $r['company'] ?? $r['firstName'] . ' ' . $r['lastName'];
+            $r['pricef'] = sprintf('%01.2f',$r['price']);
             $data['data'][] = $r ;
         }
         MyLog()->Append(['list_services','items: '. sizeof($data['data'])]);
