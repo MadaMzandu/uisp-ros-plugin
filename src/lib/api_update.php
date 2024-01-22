@@ -9,6 +9,9 @@ class ApiUpdate
 
     public function exec()
     {
+        if(!in_array($this->mode,['services','devices','plans'])){
+            return ;
+        }
         $action = $this->data->action ?? null;
         match ($action){
             'insert' => $this->insert(),
@@ -219,7 +222,7 @@ class ApiUpdate
 
 
 
-    public function set_mode($mode)
+    private function set_mode($mode)
     {
         if(preg_match("#(service|device|plan)#",$mode)){ //append ending "s"
             $mode = preg_replace("#s\s*$#",'',$mode) . 's';
