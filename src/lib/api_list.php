@@ -21,7 +21,7 @@ class ApiList
             'devices' => $this->list_devices(),
             'services' => $this->list_services(),
             'config' => $this->list_config(),
-            'jobs' => $this->read_jobs(),
+            'jobs' => $this->list_jobs(),
             default => null
         };
         return $this->result ;
@@ -135,11 +135,12 @@ class ApiList
 
     }
 
-    private function read_jobs(): array
+    private function list_jobs(): array
     {
         $r = null ;
-        if(is_file($this->fn)){
-            $r = json_decode(file_get_contents($this->fn),true);
+        $fn = 'data/queue.json';
+        if(is_file($fn)){
+            $r = json_decode(file_get_contents($fn),true);
         }
         return is_array($r) ? $r : [];
     }
