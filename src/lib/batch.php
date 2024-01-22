@@ -277,9 +277,8 @@ class Batch
     private function find_plans(): array
     {
         if(empty($this->_plans)){
-            $api = new ApiPlans();
-            $api->get();
-            $plans = $api->result();
+            $api = new ApiList([],'plans');
+            $plans = $api->list();
             foreach ($plans as $plan){
                 $this->_plans[$plan['id']] = $plan; }
         }
