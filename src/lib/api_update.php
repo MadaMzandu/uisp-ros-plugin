@@ -238,6 +238,7 @@ class ApiUpdate
     public function __construct($data = null,$mode = 'services')
     {
         $this->set_mode($mode);
+        if(!$data){$data = new stdClass(); }
         $this->data = $data ;
     }
 }
