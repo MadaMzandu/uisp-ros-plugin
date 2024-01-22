@@ -12,7 +12,6 @@ include_once 'api_rebuild.php';
 include_once 'api_jobs.php';
 include_once 'api_cache.php' ;
 include_once 'api_action.php';
-include_once 'api_list.php';
 include_once 'batch.php';
 class Admin
 {
@@ -45,7 +44,7 @@ class Admin
         $target = $this->data->target ?? null ;
         $data = $this->data->data ?? null;
         return match ($target) {
-            'config','devices','plans','services','jobs' => new ApiList($this->data,$target),
+//            'config','devices','plans','services','jobs' => new ApiList($this->data,$target),
 //            'devices' => new ApiDevices($data),
 //            'plans' => new ApiPlans($data),
 //            'jobs' => new ApiJobs($data),

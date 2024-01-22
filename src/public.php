@@ -45,7 +45,7 @@ try
     }
 
     $data = json_decode($json);
-    $api = new API_Router($data);
+    $api = new ApiRouter($data);
     $api->route();
     $api->http_response();
 }

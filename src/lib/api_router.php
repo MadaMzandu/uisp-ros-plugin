@@ -4,11 +4,13 @@ include_once 'api_sqlite.php';
 include_once 'api_logger.php' ;
 include_once 'admin.php';
 include_once 'api_action.php';
+include_once 'api_update.php';
+include_once 'api_list.php';
 
 $conf = mySqlite()->readConfig();
 
 
-class API_Router
+class ApiRouter
 {
 
     private ?object $data = null ;
@@ -40,8 +42,11 @@ class API_Router
         }
         $type = $this->data->changeType
             ?? 'none';
+        $target = $this->data->target ?? 'none';
         $api = match ($type){
             'admin' => new Admin(),
+            'list' => new ApiList($this->data,$target),
+            'update' => new ApiUpdate($this->data,$target),
             'none' => new  stdClass(),
              default => new ApiAction()
         };
@@ -62,7 +67,7 @@ class API_Router
             return false;
         }
         $change = $this->data->changeType ?? 'none';
-        $allowed = "insert,edit,admin";
+        $allowed = "insert,edit,admin,update,list";
         if (!in_array($change, explode(',',$allowed))) {
             $this->set_message("ignoring change type: $change");
             return false;

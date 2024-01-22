@@ -7,16 +7,19 @@ class ApiList
     private null|object|array $result = null ;
     private null|object|array $data;
 
-    public function update()
+    public function exec(): null|array|object
     {
-        $api = new ApiUpdate($this->data,$this->mode);
-        $api->exec();
-        $this->result = $api->result() ;
+        $action = $this->data->action ?? 'none';
+        $this->result = match ($action){
+            'list' => $this->list(),
+            default => null,
+        };
+        return $this->result ;
     }
 
     public function list(): null|array|object
     {
-        $this->result = match ($this->mode){
+        return match ($this->mode){
             'plans' => $this->list_plans(),
             'devices' => $this->list_devices(),
             'services' => $this->list_services(),
@@ -24,7 +27,6 @@ class ApiList
             'jobs' => $this->list_jobs(),
             default => null
         };
-        return $this->result ;
     }
 
     private function list_config(): null|array|object
