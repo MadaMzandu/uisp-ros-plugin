@@ -7,14 +7,13 @@ class ApiList
     private null|object|array $result = null ;
     private null|object|array $data;
 
-    public function exec(): null|array|object
+    public function exec(): void
     {
         $action = $this->data->action ?? 'none';
         $this->result = match ($action){
             'list' => $this->list(),
             default => null,
         };
-        return $this->result ;
     }
 
     public function list(): null|array|object

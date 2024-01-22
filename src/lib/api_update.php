@@ -7,13 +7,13 @@ class ApiUpdate
     private null|array|object $result = null;
     private bool $fast = false ;
 
-    public function exec()
+    public function exec(): void
     {
         if(!in_array($this->mode,['services','devices','plans'])){
             return ;
         }
         $action = $this->data->action ?? null;
-        match ($action){
+        $this->result = match ($action){
             'insert' => $this->insert(),
             'edit' => $this->edit(),
             'delete' => $this->delete(),
@@ -155,13 +155,13 @@ class ApiUpdate
         }
     }
 
-    private function service_build($clear = false): bool
+    private function service_build($clear = false): array
     {
         $this->fast_finish();
         $id = $this->data->data->id ?? $this->result->id ?? null ;
-        if(!$id){ return false ; }
+        if(!$id){ return [] ; }
         $ids = $this->find_services() ;
-        if(!$ids){ return false ; }
+        if(!$ids){ return [] ; }
         $batch = new Batch();
         if($clear){
             $done = $batch->del_accounts($ids);
@@ -173,14 +173,14 @@ class ApiUpdate
             $n = $clear ? "clear" : 'build';
             MyLog()->Append(["service_${n}_success","items: ".sizeof($ids)],6);
         }
-        return $done ;
+        return [];
     }
 
-    private function qos_build($type = 0): bool
+    private function qos_build($type = 0): array
     {
         $this->fast_finish();
         MyLog()->Append("QOS TYPE: ". $type);
-        if(!$type){ return false; }
+        if(!$type){ return []; }
         if($type > 0){
            $done = $this->service_build();
         }
@@ -188,19 +188,19 @@ class ApiUpdate
             $batch = new Batch();
             $ids = $this->find_services() ;
             $done = $batch->del_queues($ids);
-            if($done){MyLog()->Append(['qos_remove_success',"items: ".sizeof($ids)]);}
         }
-        return $done ;
+        if($done){MyLog()->Append(['qos_update_success',"items: ".sizeof($ids)]);}
+        return [] ;
     }
 
-    private function cache_build($edit = false): bool
+    private function cache_build($edit = false): array
     {
         $this->fast_finish();
-        if($edit && !$this->name_change()){ return false; }
+        if($edit && !$this->name_change()){ return []; }
         $api = new ApiCache() ;
         $api->sync(true);
         MyLog()->Append("device_cache_success");
-        return true ;
+        return [] ;
     }
 
     private function qos_change(): int
