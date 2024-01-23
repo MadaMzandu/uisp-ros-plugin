@@ -24,6 +24,8 @@ class ApiList
             'services' => $this->list_services(),
             'config' => $this->list_config(),
             'jobs' => $this->list_jobs(),
+            'attrs','attributes' => $this->list_attrs(),
+            'backups' => $this->list_backups(),
             default => null
         };
     }
@@ -76,6 +78,75 @@ class ApiList
         return $list ;
     }
 
+    private function list_attrs(): array
+    {
+        $conf = $this->db()->readConfig() ;
+        $conf = json_decode(json_encode($conf),true);
+        $attributes = $this->ucrm()->get('custom-attributes') ?? [];
+        $return = [];
+        foreach ($attributes as $item){
+            $ros_key = $item['key'] ?? '$%^^&';
+            $native_key = array_search($ros_key,$conf,true);
+            if($native_key){
+                $item['roskey'] = $ros_key;
+                $item['native_key'] = $native_key ;
+            }
+            $return[] = $item;
+
+        }
+        return $return ;
+    }
+
+
+    private function list_services(): array
+    {
+        $db = $this->dbx2();
+        $data = ['data' => []];
+        $data['count'] = $db->querySingle($this->svc_sql(true)) ?? 0;
+        $f = $db->query($this->svc_sql());
+        while($r = $f->fetchArray(SQLITE3_ASSOC)){
+            $r['address'] ??= $r['a4'] ?? null;
+            $r['address6'] ??= $r['a6'] ?? null;
+            $r['username'] = $r['username'] ?? $r['mac'];
+            $r['client'] = $r['company'] ?? $r['firstName'] . ' ' . $r['lastName'];
+            $r['pricef'] = sprintf('%01.2f',$r['price']);
+            $data['data'][] = $r ;
+        }
+        $db->close();
+        MyLog()->Append(['list_services','items: '. sizeof($data['data'])]);
+        return $data ;
+
+    }
+
+    private function list_jobs(): array
+    {
+        $r = null ;
+        $fn = 'data/queue.json';
+        if(is_file($fn)){
+            $r = json_decode(file_get_contents($fn),true);
+        }
+        return is_array($r) ? $r : [];
+    }
+
+    private function list_backups(): array
+    {
+        $files = [];
+        $dir = 'data';
+        if(is_dir($dir)){
+            $re = '#^backup-\d+#';
+            $list = preg_grep($re,scandir($dir));
+            foreach ($list as $file){
+                $r = [];
+                $r['id'] = preg_replace("#\D+#",'',$file);
+                $r['name'] = $file ;
+                $r['date'] = date('c',filemtime("$dir/$file"));
+                $files[] = $r ;
+            }
+
+        }
+        return $files;
+    }
+
     private function find_disabled(): array
     {
         $conf = $this->db()->readConfig()->disabled_routers ?? null;
@@ -119,35 +190,6 @@ class ApiList
         return $count ;
     }
 
-    private function list_services(): array
-    {
-        $db = $this->dbx2();
-        $data = ['data' => []];
-        $data['count'] = $db->querySingle($this->svc_sql(true)) ?? 0;
-        $f = $db->query($this->svc_sql());
-        while($r = $f->fetchArray(SQLITE3_ASSOC)){
-            $r['address'] ??= $r['a4'] ?? null;
-            $r['address6'] ??= $r['a6'] ?? null;
-            $r['username'] = $r['username'] ?? $r['mac'];
-            $r['client'] = $r['company'] ?? $r['firstName'] . ' ' . $r['lastName'];
-            $r['pricef'] = sprintf('%01.2f',$r['price']);
-            $data['data'][] = $r ;
-        }
-        $db->close();
-        MyLog()->Append(['list_services','items: '. sizeof($data['data'])]);
-        return $data ;
-
-    }
-
-    private function list_jobs(): array
-    {
-        $r = null ;
-        $fn = 'data/queue.json';
-        if(is_file($fn)){
-            $r = json_decode(file_get_contents($fn),true);
-        }
-        return is_array($r) ? $r : [];
-    }
 
     private function find_devices(): array
     {
@@ -156,6 +198,8 @@ class ApiList
         foreach ($r as $item) { $tmp[$item['id']] = $item ; }
         return $tmp;
     }
+
+
 
     private function find_db_plans(): array
     {
@@ -180,7 +224,7 @@ class ApiList
 
     private function set_mode($mode)
     {
-        if(preg_match("#(service|device|plan)#",$mode)){ //append ending "s"
+        if(preg_match("#(serv|dev|plan|job|back|attr)#",$mode)){ //append ending "s"
             $mode = preg_replace("#s\s*$#",'',$mode) . 's';
         }
         $this->mode = $mode ;
