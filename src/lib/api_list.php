@@ -39,7 +39,6 @@ class ApiList
             '"priorityUpload":8,"priorityDownload":8,"limitUpload":0,"limitDownload":0,'.
             '"burstUpload":0,"burstDownload":0,"threshUpload":0,"threshDownload":0,'.
             '"timeUpload":1,"timeDownload":1}';
-        $this->db()->deleteAll('plans');
         $plans = $this->find_plans();
         $from_db = $this->find_db_plans();
         $defaults = json_decode($str,true);
@@ -57,7 +56,7 @@ class ApiList
             $this->db()->insert($trim,'plans',true);
         }
         MyLog()->Append(['list_plans','items: '.sizeof($from_db)]);
-        return $from_db ;
+        return array_values($from_db) ;
     }
 
     private function list_devices(): array
@@ -134,6 +133,7 @@ class ApiList
             $r['pricef'] = sprintf('%01.2f',$r['price']);
             $data['data'][] = $r ;
         }
+        $db->close();
         MyLog()->Append(['list_services','items: '. sizeof($data['data'])]);
         return $data ;
 
