@@ -66,6 +66,7 @@ class ApiSqlite
         $sql = sprintf("UPDATE %s SET ",$table);
         foreach($data as $row){
             $query = $sql . $this->to_edit($row);
+//            MyLog()->Append("sqlite query: ".$query);
             if(!$this->db()->exec($query)) return false ;
         }
         return true ;
@@ -101,6 +102,7 @@ class ApiSqlite
 
     public function exec($sql): ?bool
     {
+//        MyLog()->Append("sqlite query: ".$sql);
         return $this->db()->exec($sql);
     }
 
@@ -165,7 +167,7 @@ class ApiSqlite
 
     public function selectAllFromTable($table = 'services'): ?array
     {
-        $sql = 'select * from ' . $table;
+        $sql = "select * from $table";
         $res = $this->db()->query($sql);
         $return = [];
         while ($row = $res->fetchArray(SQLITE3_ASSOC)) {
