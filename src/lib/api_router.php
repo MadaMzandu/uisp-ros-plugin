@@ -58,19 +58,16 @@ class ApiRouter
     private function data_check(): bool
     {
         if (!is_object($this->data)) {
-            $this->set_message('ok');
-            return false;
+            bail('request_empty');
         }
         $entity = $this->data->entity ?? null ;
         if ($entity && !in_array($entity,['service','client'])) { //webhooks only
-            $this->set_message("ignoring entity: $entity");
-            return false;
+            bail('entity_unsupported: ' .$entity);
         }
         $change = $this->data->changeType ?? 'none';
         $allowed = "insert,edit,admin,update,list";
         if (!in_array($change, explode(',',$allowed))) {
-            $this->set_message("ignoring change type: $change");
-            return false;
+            bail('change_unsupported: ' .$change);
         }
         return true;
     }
