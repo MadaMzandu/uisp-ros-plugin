@@ -36,8 +36,9 @@ class ApiUpdate
         $next = "$dir/backup-$index";
         if(is_file($src) && copy($src,$next)){
             MyLog()->Append(['backup_success',$next,date('c',filemtime($next))]);
+            return [];
         }
-        return [];
+        fail('backup_fail',$this->data);
     }
 
     private function delete(): null|array|object
@@ -54,6 +55,7 @@ class ApiUpdate
     {
         return match ($this->mode){
             'devices,plans' => $this->edit_db(),
+            'attrs','attributes' => $this->edit_attr(),
             default => null,
         };
     }
@@ -63,6 +65,7 @@ class ApiUpdate
         return match ($this->mode){
             'devices,plans' => $this->insert_db(),
             'services' => $this->insert_services(),
+            'attrs','attributes' => $this->insert_attr(),
             default => null,
         };
     }
@@ -75,14 +78,17 @@ class ApiUpdate
         if($clear){
             if(is_file($dst) && unlink($dst)){
                 MyLog()->Append(['unpublish_success',$dst]);
+                return [];
             }
         }
         else{
             if(is_file($src) && copy($src,$dst)){
                 MyLog()->Append(['publish_success',$src,$dst]);
+                return [];
             }
         }
-        return [];
+        $un = $clear ? 'un' : null;
+        fail("${un}publish_fail",$this->data);
     }
 
     public function restore(): array
@@ -91,8 +97,9 @@ class ApiUpdate
         $fn = "$dir/" . ($this->data->data->name ?? 'none') ;
         if(is_file($fn) && copy($fn,"$dir/data.db")){
             MyLog()->Append(['restore_success',$fn,date('c',filemtime($fn))],6);
+            return [];
         }
-        return [];
+        fail('restore_fail',$this->data);
     }
 
     private function delete_db(): ?array
@@ -100,33 +107,32 @@ class ApiUpdate
         $data = json_decode(json_encode($this->data->data),true);
         $id = $data['id'] ?? null ;
         if($id){ $data = [$id]; }
-        MyLog()->Append(["DATA: ",$data]);
         $pk = $this->find_pk();
         if(!$data || !$pk){ return null; }
         $ids = implode(',',$data);
         $table = $this->mode ;
         $s = "select * from $table where $pk in ($ids)";
         $before = $this->db()->selectCustom($s);
-        MyLog()->Append(["BEFORE: ",$before]);
         $d = "delete from $table where $pk in ($ids)";
         if($this->db()->exec($d)){
             $this->result = $before ;
-            MyLog()->Append(["RESULT: ",$this->result]);
             match ($this->mode){
                 'devices' => $this->cache_build(),
                 default => null ,
             };
             return $this->result ;
         }
-        return null ;
+        fail('db_delete_fail',$this->data);
     }
 
     private function delete_jobs(): array
     {
         $fn = 'data/queue.json';
-        $done = file_put_contents($fn,'[]');
-        if($done) MyLog()->Append('delete_jobs_success');
-        return [] ;
+        if(file_put_contents($fn,[])){
+            MyLog()->Append('delete_jobs_success');
+            return [];
+        }
+        fail('delete_job_fail');
     }
 
     private function delete_services(): array
@@ -135,25 +141,47 @@ class ApiUpdate
         $ids = $this->find_services() ;
         if(!$ids){ return [] ; }
         $batch = new Batch();
-        $done = $batch->del_accounts($ids);
-        if($done){MyLog()->Append(['delete_services_success','items: '.sizeof($ids)]);}
-        return [];
+        if($batch->del_accounts($ids)){
+            MyLog()->Append(['delete_services_success','items: '.sizeof($ids)]);
+            return [];
+        }
+        fail('delete_services_fail',$this->data);
+    }
+
+    private function insert_attr()
+    {
+        $an = $this->data->data->name ?? null;
+        $key = $this->data->data->key ?? 'nokey' ;
+        $conf = $this->db()->readConfig();
+        if(!$an || !property_exists($conf,$key)){
+            fail('insert_attr_fail',$this->data);
+        }
+        $data = [
+            'name' => $an,
+            'type' => 'string',
+            'clientZoneVisible' => false,
+            'attributeType' => 'service',
+        ];
+        $done = $this->ucrm()->post('custom-attributes',$data);
+        $value = $done->key ?? null ;
+        if($key && $this->db()->saveConfig([$key => $value])){
+            MyLog()->Append(['insert_attr_success',$key,$value]);
+            return [];
+        }
+        fail('insert_attr_fail',$data);
     }
 
     private function insert_db()
     {
         $data = json_decode(json_encode($this->data->data),true);
-        MyLog()->Append(['DATA: ',$data]);
         $cols = $this->find_columns() ;
         $qos = $this->qos_change();
-        MyLog()->Append(['COLS,QOS: ',$cols,$qos]);
-        if(!$data || !$cols){ fail('insert_invalid',$data); }
+        if(!$data || !$cols){ fail('insert_invalid',$this->data); }
         $fill = array_fill_keys($cols,null);
         $trim = array_intersect_key($data,$fill);
         $now = date('c');
         $trim['last'] = $now ;
         $trim['created'] = $now ;
-        MyLog()->Append(['TRIM',$trim]);
         if($this->db()->insert($trim,$this->mode)){
             $id = $data['id'] ?? null ;
             $this->result = $this->find_last($id);
@@ -164,7 +192,7 @@ class ApiUpdate
             };
             return $this->result;
         }
-        return null ;
+        fail('db_insert_fail',$this->data);
     }
 
     private function insert_services(): array
@@ -173,29 +201,40 @@ class ApiUpdate
         $ids = $this->find_services() ;
         if(!$ids){ return [] ; }
         $batch = new Batch();
-        $done = $batch->set_accounts($ids);
-        if($done){MyLog()->Append(['insert_services_success','items: '.sizeof($ids)]);}
-        return [];
+        if($batch->set_accounts($ids)){
+            MyLog()->Append(['insert_services_success','items: '.sizeof($ids)]);
+            return [];
+        }
+        fail('insert_services_fail',$this->data);
+    }
+
+    private function edit_attr()
+    {
+        $key = $this->data->data->key ?? 'NoKey';
+        $value = $this->data->data->value ?? null ;
+        $conf = $this->db()->readConfig();
+        if(property_exists($conf,$key)
+            && $this->db()->saveConfig([$key => $value])){
+            MyLog()->Append(['edit_attr_success',$key,$value]);
+            return [];
+        }
+        fail('edit_attr_fail',$this->data);
     }
 
     private function edit_db(): ?array
     {
         $data = json_decode(json_encode($this->data->data),true);
-        MyLog()->Append(["DATA: ",$data]);
         $pk = $this->find_pk();
         $id = $data[$pk] ?? null ;
         $qos = $this->qos_change() ;
         $cols = array_diff($this->find_columns(),['created']) ;
-        MyLog()->Append(["PK,ID,QOS,COLS",$pk,$id,$qos,$cols]);
         if(!$data || !$pk || !$id || !$cols){
             fail('edit_invalid',$data);  }
         $fill = array_fill_keys($cols,null);
         $trim = array_intersect_key($data,$fill);
         $trim['last'] = date('c') ;
-        MyLog()->Append(['TRIM: ',$trim]);
         if($this->db()->edit($trim,$this->mode)){
             $this->result = $this->find_last($trim[$pk]);
-            MyLog()->Append(['RESULT',$this->result]);
             match ($this->mode){
                 'devices' => $this->cache_build(true) && $this->set_qos($qos),
                 'plans' => $this->insert_services(),
@@ -203,7 +242,7 @@ class ApiUpdate
             };
             return $this->result ;
         }
-        return null ;
+        fail('db_edit_fail',$this->data);
     }
 
     private function find_last($id = null)
@@ -330,6 +369,8 @@ class ApiUpdate
         }
         $this->mode = $mode ;
     }
+
+    private function ucrm(): ApiUcrm { return new ApiUcrm(); }
 
     private function db(): ApiSqlite { return mySqlite(); }
 
