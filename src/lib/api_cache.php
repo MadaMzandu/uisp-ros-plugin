@@ -47,6 +47,7 @@ class ApiCache{
                 $this->populate($table);
                 MyLog()->Append('cache_success_'.$table);
             }
+            $this->db()->saveConfig(['last_cache' => date('c')]);
             $timer->stop();
         }
         elseif($this->needs_sites()){
@@ -98,7 +99,7 @@ class ApiCache{
         }
     }
 
-    public function get_sites()
+    public function get_sites(): array
     {
         $opts = ['type' => 'endpoint'];
         $sites = $this->get_data('sites',$opts,true);
@@ -130,7 +131,7 @@ class ApiCache{
         return null ;
     }
 
-    private function get_clients($offset,$limit = 500)
+    private function get_clients($offset,$limit = 500): array
     {
         $opts = ['offset' => $offset, 'limit' => $limit];
         return $this->get_data('clients',$opts) ;
