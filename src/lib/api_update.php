@@ -3,15 +3,15 @@ include_once 'api_common.php';
 class ApiUpdate
 {
     private string $mode ;
-    private null|array|object $data = null;
-    private null|array|object $result = null;
+    private null|array|object $data;
+    private null|array|object $result;
     private bool $fast = false ;
 
     public function exec(): void
     {
-        $allowed = 'services,devices,plans,jobs,backups,attributes';
+        $allowed = 'services,config,devices,plans,jobs,backups,attributes,attrs,system';
         if(!in_array($this->mode,explode(',',$allowed))){
-            return ;
+            fail('invalid_mode',$this->data);
         }
         $action = $this->data->action ?? null;
         $this->result = match ($action){
@@ -22,12 +22,17 @@ class ApiUpdate
             'restore' => $this->restore(),
             'publish' => $this->publish(),
             'unpublish' => $this->publish(true),
-            default => null,
+            'cache' => $this->cache_build(),
+            'log_clear' => $this->log_clear(),
+            default => fail('invalid_action',$this->data),
         };
     }
 
     private function backup(): array
     {
+        if(!in_array($this->mode,['backups','system'])){
+            fail('invalid_mode',[$this->mode,$this->data]);
+        }
         $last = $this->find_last_backup() ;
         $index = preg_replace("/\D/",'',$last);
         if(++$index > 6) $index = 0 ;
@@ -44,30 +49,54 @@ class ApiUpdate
     private function delete(): null|array|object
     {
         return match ($this->mode){
-            'devices,plans' => $this->delete_db(),
-            'services' => $this->delete_services(),
+            'devices','delete' => $this->delete_db(),
+            'services','system' => $this->delete_services(),
             'jobs' => $this->delete_jobs(),
-            default => null,
+            default => fail('invalid_mode',[$this->mode,$this->data]),
         };
     }
 
     private function edit(): null|array|object
     {
         return match ($this->mode){
-            'devices,plans' => $this->edit_db(),
+            'devices','plans' => $this->edit_db(),
+            'config' => $this->edit_config(),
             'attrs','attributes' => $this->edit_attr(),
-            default => null,
+            default => fail('invalid_mode',[$this->mode,$this->data]),
         };
+    }
+
+    private function edit_config()
+    {
+        $data = json_decode(json_encode($this->data->data),true);
+        $conf = $this->db()->readConfig() ;
+        foreach (array_keys($data) as $k){ if(!property_exists($conf,$k)){
+            fail('invalid_config_key',$this->data); }}
+        if($this->db()->saveConfig($data)){
+            MyLog()->Append('config_edit_success');
+            return [];
+        }
+        fail('edit_config_fail',$this->data);
     }
 
     private function insert(): null|array|object
     {
         return match ($this->mode){
-            'devices,plans' => $this->insert_db(),
-            'services' => $this->insert_services(),
+            'devices','plans' => $this->insert_db(),
+            'services','system' => $this->insert_services(),
             'attrs','attributes' => $this->insert_attr(),
-            default => null,
+            default => fail('invalid_mode',[$this->mode,$this->data]),
         };
+    }
+
+    private function log_clear(): array
+    {
+        $fn = 'data/plugin.log';
+        if(file_put_contents($fn,date('c') . " log_reset\n")){
+            MyLog()->Append('log_clear_success');
+            return [];
+        }
+        fail('log_clear_fail');
     }
 
     private function publish($clear = false): array
@@ -150,7 +179,7 @@ class ApiUpdate
 
     private function insert_attr()
     {
-        $an = $this->data->data->name ?? null;
+        $an = $this->data->data->value ?? null;
         $key = $this->data->data->key ?? 'nokey' ;
         $conf = $this->db()->readConfig();
         if(!$an || !property_exists($conf,$key)){
@@ -185,7 +214,6 @@ class ApiUpdate
         if($this->db()->insert($trim,$this->mode)){
             $id = $data['id'] ?? null ;
             $this->result = $this->find_last($id);
-            MyLog()->Append(["RESULT: ",$this->result]);
             match ($this->mode){
                 'devices' => $this->cache_build(true) && $this->set_qos($qos),
                  default => null,
@@ -195,10 +223,10 @@ class ApiUpdate
         fail('db_insert_fail',$this->data);
     }
 
-    private function insert_services(): array
+    private function insert_services($type = null): array
     {
         $this->fast_finish();
-        $ids = $this->find_services() ;
+        $ids = $this->find_services($type) ;
         if(!$ids){ return [] ; }
         $batch = new Batch();
         if($batch->set_accounts($ids)){
@@ -237,9 +265,10 @@ class ApiUpdate
             $this->result = $this->find_last($trim[$pk]);
             match ($this->mode){
                 'devices' => $this->cache_build(true) && $this->set_qos($qos),
-                'plans' => $this->insert_services(),
+                'plans' => $this->insert_services('plans'),
                  default => null ,
             };
+            MyLog()->Append(['edit_db_success','mode: '. $this->mode,'id: '. $id]);
             return $this->result ;
         }
         fail('db_edit_fail',$this->data);
@@ -250,7 +279,7 @@ class ApiUpdate
         $table = $this->mode ;
         $pk = $this->find_pk() ;
         if(!$id){
-            $id = $this->db()->singleQuery("select max($pk) from services");
+            $id = $this->db()->singleQuery("select max($pk) from $table");
         }
         $q = "select * from $table where $pk=$id";
         $last = $this->db()->singleQuery($q,true);
@@ -292,16 +321,16 @@ class ApiUpdate
         return $fn;
     }
 
-    private function find_services(): array
+    private function find_services($type = null): array
     {
         $id = $this->data->data->id ?? 0 ;
-        $type = $this->data->data->type ?? 'device' ;
+        $type = $this->data->data->type ?? $type ?? 'device' ;
         if($type != 'all' && !$id){ return []; }
         $field = $type == 'device' ? 'device' : 'planId';
         $where = "where $field=$id and" ;
-        if($type == 'all') $where = null ;
-        $r = $this->cachedb()->selectCustom("select id from services ".
-                "$where status not in (0,2,5,8)") ?? [];
+        if($type == 'all') $where = 'where' ;
+        $q = "select id from services $where status not in (0,2,5,8)";
+        $r = $this->cachedb()->selectCustom($q) ?? [];
         $ids = [];
         foreach($r as $i){ $ids[] = $i['id']; }
         MyLog()->Append(['find_services','items: '. sizeof($ids)]);
@@ -321,7 +350,7 @@ class ApiUpdate
     private function set_qos($type = 0): array
     {
         $this->fast_finish();
-        MyLog()->Append("QOS TYPE: ". $type);
+        MyLog()->Append("set_qos type: ". $type);
         $ids = $this->find_services() ;
         if(!$ids || !$type){ return []; }
         $batch = new Batch();
@@ -338,11 +367,11 @@ class ApiUpdate
     private function cache_build($edit = false): array
     {
         $this->fast_finish();
-        if($edit && !$this->name_change()){ return []; }
+        if($edit && !$this->name_change()){ return [1]; }
         $api = new ApiCache() ;
         $api->sync(true);
         MyLog()->Append("device_cache_success");
-        return [] ;
+        return [1] ;
     }
 
     private function qos_change(): int
