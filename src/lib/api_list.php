@@ -26,6 +26,8 @@ class ApiList
             'jobs' => $this->list_jobs(),
             'attrs','attributes' => $this->list_attrs(),
             'backups' => $this->list_backups(),
+            'orphans' => $this->list_orphans(),
+            'messages' => $this->list_msg(),
             default => null
         };
     }
@@ -44,6 +46,7 @@ class ApiList
         $plans = $this->find_plans();
         $from_db = $this->find_db_plans();
         $defaults = json_decode($str,true);
+        $updates = [];
         foreach($plans as $plan){
             $saved = $from_db[$plan['id']] ?? [] ;
             $now = date('c');
@@ -55,10 +58,45 @@ class ApiList
             $update['last'] = $now ;
             $from_db[$plan['id']] = $update;
             $trim = array_diff_key($update,['archive' => null]);
-            $this->db()->insert($trim,'plans',true);
+            $updates[] = $trim ;
         }
+        $this->db()->insert($updates,'plans',true);
         MyLog()->Append(['list_plans','items: '.sizeof($from_db)]);
         return array_values($from_db) ;
+    }
+
+    public function list_msg(): array
+    {
+        $accept = $_SERVER['HTTP_ACCEPT_LANGUAGE'] ; //add trailing comma
+        $split = preg_split("/[;,]+/",$accept) ;
+        $grep = preg_grep("/\w+-\w/",$split);
+        $first = array_shift($grep) ?? 'en-USA' ;
+        $lang = preg_replace("/-.*/",'',$first);
+        $data = [];
+        foreach (['messages','fields'] as $name){
+            $dir = 'includes/l10n/';
+            $path = $dir . $name . '_' . strtolower($lang) . ".json";
+            if(!is_file($path)) $path = $dir . $name . "_en.json";
+            $data[] = json_decode(file_get_contents($path));
+        }
+        MyLog()->Append(['lang_read','lang: '.$lang,'items: '. sizeof($data)]);
+        return $data ;
+    }
+
+    private function list_orphans(): array
+    {
+        $id = $this->data->data->id ?? 0 ;
+        $device = $this->db()->selectDeviceById($id);
+        $type = $device->type ?? null ;
+        $api = match ($type){
+            'mikrotik' => new MtData(),
+            'edgeos' => new ErData(),
+            default => null,
+        };
+        if($api){
+            return $api->get_orphans($device);
+        }
+        fail('orphan_list_fail',[$device,$this->data]);
     }
 
     private function list_devices(): array
@@ -72,9 +110,9 @@ class ApiList
             $device['users'] = $count[$device['id']] ?? 0;
             $device['status'] = $status[$device['id']] ?? false;
             $device['disabled'] = $disabled[$device['id']] ?? false ;
-            MyLog()->Append(["DEVICE",$device]);
             $list[] = $device ;
         }
+        MyLog()->Append(['device_list_success','items: '.sizeof($list)]);
         return $list ;
     }
 
@@ -158,7 +196,7 @@ class ApiList
 
     private function check_status($devices): array
     {
-        $ports = ['mikrotik' => 8291,'edgos' => 443,
+        $ports = ['mikrotik' => 8291,'edgeos' => 443,
             'cisco' => 22,'radius' => 3301];
         $status = [];
         foreach ($devices as $device) {
@@ -262,7 +300,7 @@ class ApiList
         return $sql;
     }
 
-    private function dbx2()
+    private function dbx2(): SQLite3
     {
         $fn = 'data/data.db';
         $fn2 = 'data/cache.db';
@@ -273,13 +311,12 @@ class ApiList
 
     private function db(): ApiSqlite { return mySqlite(); }
 
-    private function cachedb(): ApiSqlite { return myCache(); }
-
     public function status(): object { return new stdClass(); }
 
     public function result(): null|array|object { return $this->result; }
 
-    private function ucrm($assoc = true): ApiUcrm { return new ApiUcrm(null,$assoc); }
+    private function ucrm(): ApiUcrm {
+        return new ApiUcrm(null, true); }
 
     public function __construct($data = null,$mode = 'services')
     {
