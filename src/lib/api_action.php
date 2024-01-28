@@ -3,8 +3,8 @@ include_once 'batch.php';
 
 class ApiAction
 {
-    private ?object $request = null ;
-    private ?object $status = null ;
+    private ?object $request;
+    private ?object $status ;
 
     public function exec($request = null)
     {
@@ -22,7 +22,7 @@ class ApiAction
         $this->status->message = $message;
     }
 
-    private function route($data)
+    private function route($data): bool
     { // only working with edits/inserts to avoid duplicates
         $action = $this->action() ;
         if($this->type() == 'client')
@@ -62,7 +62,7 @@ class ApiAction
         return true ;
     }
 
-    private function edit($data)
+    private function edit($data): bool
     {
         $entity = $data['entity'] ;
         $previous = $data['previous'] ?? [];
@@ -99,7 +99,7 @@ class ApiAction
         return  true ;
     }
 
-    private function name()
+    private function name(): string
     {
         $client = $this->client() ;
         $id = $this->cid() ;
