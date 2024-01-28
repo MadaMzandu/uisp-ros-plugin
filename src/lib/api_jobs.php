@@ -2,20 +2,19 @@
 include_once 'api_router.php';
 include_once 'batch.php';
 
-class ApiJobs extends Admin
+class ApiJobs
 { //scheduled job queue
     private ?array $queue = null ;
     private string $fn = 'data/queue.json';
 
     protected function init(): void
     {
-        parent::init();
         $this->queue = $this->read();
     }
 
     public function list()
     {
-        $this->result = array_values($this->queue);
+        $result = array_values($this->queue);
     }
 
     public function clear()
