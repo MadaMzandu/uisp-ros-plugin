@@ -25,7 +25,7 @@ class ApiLogger
         return false;
     }
 
-    private function Time()
+    private function Time(): string
     {
         return date('Y-m-d H:i:s.v');
     }
@@ -33,7 +33,8 @@ class ApiLogger
 
 $apiLogger = null ;
 
-function MyLog(){
+function MyLog(): ApiLogger
+{
     global $apiLogger;
     if(empty($apiLogger)){
         $apiLogger = new ApiLogger();
