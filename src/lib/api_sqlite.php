@@ -30,7 +30,7 @@ class ApiSqlite
         return implode(',',$values);
     }
 
-    private function quote($value)
+    private function quote($value): null|int|float|string
     {
         if(is_numeric($value)) return $value;
         if(empty($value)) return 'null';
@@ -253,7 +253,7 @@ class ApiSqlite
 $apiSqlite = null ;
 $apiSqliteCache = null ;
 
-function mySqlite()
+function mySqlite(): ApiSqlite
 {
     global $apiSqlite ;
     if(empty($apiSqlite)){
@@ -262,7 +262,7 @@ function mySqlite()
     return $apiSqlite ;
 }
 
-function myCache()
+function myCache(): ApiSqlite
 {
     global $apiSqliteCache ;
     $fn = 'data/cache.db';
