@@ -2,7 +2,6 @@
 
 include_once 'api_sqlite.php';
 include_once 'api_logger.php' ;
-include_once 'admin.php';
 include_once 'api_action.php';
 include_once 'api_update.php';
 include_once 'api_list.php';
@@ -13,9 +12,9 @@ $conf = mySqlite()->readConfig();
 class ApiRouter
 {
 
-    private ?object $data = null ;
-    private ?object $status = null ;
-    private mixed $result = null ;
+    private ?object $data;
+    private ?object $status;
+    private mixed $result;
 
     public function __construct($data)
     {
@@ -44,7 +43,6 @@ class ApiRouter
             ?? 'none';
         $target = $this->data->target ?? 'none';
         $api = match ($type){
-            'admin' => new Admin(),
             'list' => new ApiList($this->data,$target),
             'update' => new ApiUpdate($this->data,$target),
             'none' => new  stdClass(),
@@ -70,12 +68,6 @@ class ApiRouter
             bail('change_unsupported: ' .$change);
         }
         return true;
-    }
-
-    private function set_message($msg): void
-    {
-        $this->status->error = false;
-        $this->status->message = $msg;
     }
 
     public function http_response(): void
