@@ -10,8 +10,8 @@ class MtData extends Data
         $list = $api->list($device,['/ppp/secret','/queue/simple','/ip/hotspot/user',
             '/ip/dhcp-server/lease','/ipv6/dhcp-server/binding']);
         $orphans = [];
-        $fill = array_fill_keys(['.id','name','mac-address',
-            'comment','remote-address','address','duid','path'],null);
+        $fill = array_fill_keys(['.id','name','mac-address','target',
+            'comment','remote-address','address','duid','path','comment'],null);
         $path = null ;
         foreach($list as $item){
             if(is_string($item)){ $path = $item; continue; }
