@@ -1,5 +1,6 @@
 <?php
 include_once 'api_logger.php';
+include_once 'api_curl.php';
 
 class ErClient extends ApiCurl
 
