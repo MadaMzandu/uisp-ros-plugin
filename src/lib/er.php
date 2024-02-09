@@ -260,7 +260,20 @@ class ER
 
     private function lock() { touch('data/.er.lock'); }
 
-    private function has_lock(): bool { return is_file('data/.er.lock'); }
+    private function has_lock(): bool
+    {
+        $fn = 'data/.er.lock';
+        if(!is_file($fn)){ return false; }
+        $now = date_create();
+        $int = date_interval_create_from_date_string('3 minutes');
+        $mtime = date_create(date('c',filemtime($fn)));
+        date_add($mtime,$int) ;
+        if($mtime < $now){
+            $this->unlock();
+            return false ;
+        }
+        return true ;
+    }
 
     public function success(): array { return $this->batch_success; }
 
