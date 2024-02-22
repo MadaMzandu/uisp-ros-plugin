@@ -36,12 +36,6 @@ class ER
 
     private function client():ErClient { return erClient(); }
 
-    public function __call($name, $arguments)
-    {
-        MyLog()->Append("unimplemented ER: ".$name);
-        return 0;
-    }
-
     public function do_batch($device,$data): int
     {
 
@@ -53,6 +47,7 @@ class ER
         $ret = match($this->type()){
             'queue' => $this->set_queue(),
             'dhcp' => $this->set_dhcp(),
+            default => 0 ,
         };
         $this->unlock();
         return $ret ;
