@@ -126,13 +126,13 @@ class ApiIP
 
     private function is_prefix($prefix): bool
     {
-        $split = explode('/',$prefix);
-        if(sizeof($split) < 2) return false ;
-        $FLAG = $this->ipv6 ? FILTER_FLAG_IPV6 : FILTER_FLAG_IPV4 ;
-        $MAX = $this->ipv6 ? 128 : 32;
-        return
-            filter_var($split[0],FILTER_VALIDATE_IP,$FLAG)
-            && $split[1] >= 1 && $split[1] <= $MAX;
+        $str = preg_replace("#\s+#",'',$prefix);
+        $split = explode('/',$str);
+        if(sizeof($split) < 2 || !is_numeric($split[1])
+            || !filter_var($split[0],FILTER_VALIDATE_IP)) return false ;
+        $IP = filter_var($split[0],FILTER_VALIDATE_IP,FILTER_FLAG_IPV4);
+        $MAX = $IP ? 32 : 128;
+        return $split[1] > 0 && $split[1] <= $MAX;
     }
 
     private function is_odd($address): bool
