@@ -24,13 +24,14 @@ class ErClient extends ApiCurl
             $this->configure('/', 'post',['form' => $data]);
             $this->exec();
         }
+
         if($this->exit_code() == 303)
         {
             $this->set_token();
             return true;
         }
 
-        MyLog()->Append(['er_invalid_login',$username],6);
+        MyLog()->Append(['invalid_login',$username],6);
         $this->host = $this->port = null ;
         return false ;
     }
