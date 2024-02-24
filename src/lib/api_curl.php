@@ -6,7 +6,6 @@ class ApiCurl
 
     public bool $assoc = false;
     public bool $no_ssl = false ;
-    protected bool $json = true ;
     protected array $opts = [];
     protected ?CurlHandle $ch = null ;
 
@@ -46,6 +45,7 @@ class ApiCurl
             trim($this->api(),'/'),
             trim($path,'/'));
         $this->ch = curl_init();
+        $form = $post['form'] ?? null ;
         $headers = [];
         $this->opts = [
             CURLOPT_URL => $path,
@@ -61,10 +61,10 @@ class ApiCurl
             $this->opts[CURLOPT_SSL_VERIFYPEER] = false;
             $this->opts[CURLOPT_SSL_VERIFYHOST] = false ;
         }
-        if($method != 'GET') {
-            $this->opts[CURLOPT_POSTFIELDS] = !$this->json ? $post : json_encode($post);
+        if($post && $method != 'GET') {
+            $this->opts[CURLOPT_POSTFIELDS] = $form ? : json_encode($post);
         }
-        else {
+        else if($post) {
             $this->opts[CURLOPT_URL] = sprintf('%s?%s',$path,http_build_query($post));
         }
         if($headers){
