@@ -45,8 +45,8 @@ class ApiCurl
             trim($this->api(),'/'),
             trim($path,'/'));
         $this->ch = curl_init();
+        $method = strtoupper($method);
         $form = $post['form'] ?? null ;
-        $headers = [];
         $this->opts = [
             CURLOPT_URL => $path,
             CURLOPT_RETURNTRANSFER => true,
@@ -55,7 +55,7 @@ class ApiCurl
             CURLOPT_TIMEOUT => 0,
             CURLOPT_FOLLOWLOCATION => true,
             CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
-            CURLOPT_CUSTOMREQUEST => strtoupper($method),
+            CURLOPT_CUSTOMREQUEST => $method ,
         ];
         if($this->no_ssl) {
             $this->opts[CURLOPT_SSL_VERIFYPEER] = false;
@@ -66,9 +66,6 @@ class ApiCurl
         }
         else if($post) {
             $this->opts[CURLOPT_URL] = sprintf('%s?%s',$path,http_build_query($post));
-        }
-        if($headers){
-            $this->opts[CURLOPT_HTTPHEADER] = $headers;
         }
     }
 
