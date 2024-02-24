@@ -55,8 +55,13 @@ class ApiCurl
             CURLOPT_TIMEOUT => 0,
             CURLOPT_FOLLOWLOCATION => true,
             CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
-            CURLOPT_CUSTOMREQUEST => $method ,
         ];
+        if($method == 'POST'){
+            $this->opts[CURLOPT_POST] = true ;
+        }
+        else {
+            $this->opts[CURLOPT_CUSTOMREQUEST] = $method;
+        }
         if($this->no_ssl) {
             $this->opts[CURLOPT_SSL_VERIFYPEER] = false;
             $this->opts[CURLOPT_SSL_VERIFYHOST] = false ;
