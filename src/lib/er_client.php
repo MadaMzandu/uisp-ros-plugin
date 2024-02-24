@@ -21,7 +21,7 @@ class ErClient extends ApiCurl
         {
             $this->close();
             $data = ['username' => $username, 'password' => $password];
-            $this->configure('/', 'post', $data, 'x-www-form-urlencoded');
+            $this->configure('/', 'post',['form' => $data]);
             $this->exec();
         }
         if($this->exit_code() == 303)
@@ -61,55 +61,22 @@ class ErClient extends ApiCurl
         return $this->exec();
     }
 
-    protected function configure($path, $method, $post, $mime = 'json')
+    protected function configure($path, $method, $post)
     {
         curl_reset($this->curl());
-        $this->json = $mime == 'json';
         $this->assoc = true ;
         $this->no_ssl = true ;
+        $mime = key_exists('form',$post) ? 'x-www-form-urlencoded' : 'json';
         parent::configure($path,$method,$post);
-        curl_setopt_array($this->curl(), [
-            CURLOPT_URL => $this->make_url($path, $method, $post),
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_ENCODING => '',
-            CURLOPT_MAXREDIRS => 10,
-            CURLOPT_TIMEOUT => 0,
-            CURLOPT_FOLLOWLOCATION => false,
-            CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
-            CURLOPT_VERBOSE => $this->verbose,
-            CURLOPT_SSL_VERIFYHOST => false,
-            CURLOPT_SSL_VERIFYPEER => false,
-            CURLOPT_COOKIEFILE => "",
-        ]);
+        $this->opts[CURLOPT_URL] = $this->make_url($path,$method,$post);
+        $this->opts[CURLOPT_ENCODING] = '';
+        $this->opts[CURLOPT_COOKIEFILE] = '';
+        $this->opts[CURLOPT_FOLLOWLOCATION] = false ;
         $headers[] ='Content-Type: application/' . $mime;
         if($this->csrf){
             $headers[] = 'X-CSRF-Token: '. $this->csrf ;
         }
         $this->opts[CURLOPT_HTTPHEADER] = $headers ;
-        $this->make_post($method, $post, $mime);
-        $this->set_method($method);
-    }
-
-    private function set_method($method): void
-    {
-        $post = strtolower($method) == 'post';
-        if ($post) {
-            $this->opts[CURLOPT_POST] = true ;
-        } else {
-            $this->opts[CURLOPT_CUSTOMREQUEST] = strtoupper($method);
-        }
-    }
-
-    private function make_post($method, $data, $mime)
-    {
-        if (empty($data) || $method == 'get') {
-            return;
-        }
-        $post = json_encode($data);
-        if (str_contains($mime, "form")) {
-            $post = http_build_query($data);
-        }
-        $this->opts[CURLOPT_POSTFIELDS] = $post ;
     }
 
     private function make_url($path, $method, $data): string
@@ -134,17 +101,15 @@ class ErClient extends ApiCurl
 
     private function close()
     {
-        if(is_resource($this->ch))
-        {
-            curl_close($this->ch);
-            $this->ch = null;
-        }
+        curl_close($this->ch);
+        $this->ch = null;
     }
 
-    private function curl()
+    private function curl(): CurlHandle|null
     {
         if (empty($this->ch)) {
-            $this->ch = curl_init();
+            $ch = curl_init();
+            if($ch){ $this->ch = $ch; }
         }
         return $this->ch;
     }
