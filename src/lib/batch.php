@@ -149,7 +149,7 @@ class Batch
 
     private function run_batch($deviceData,$delete = false)
     {
-        $timer = new ApiTimer("mt batch write");
+        $timer = new ApiTimer("device batch write");
         $sent = 0 ;
         $writes = 0 ;
         $this->batch_failed = [];
