@@ -14,7 +14,7 @@ class ErClient extends ApiCurl
     public function connect($username, $password, $host, $port = 443): bool
     {
         if($host == $this->host
-            && $port == $this->port){ return true; }
+            && $port == $this->port){ return true; } //already connected
 
         { $this->host = $host ; $this->port = $port; }
 
@@ -22,9 +22,7 @@ class ErClient extends ApiCurl
             $this->close();
             $data = ['username' => $username, 'password' => $password];
             $this->configure('/', 'post',['form' => $data]);
-            MyLog()->Append($this->opts);
-            $r = $this->exec();
-            MyLog()->Append($r);
+            $this->exec();
         }
 
         if($this->exit_code() == 303)
@@ -41,13 +39,13 @@ class ErClient extends ApiCurl
     private function set_token()
     {
         $cookies = curl_getinfo($this->curl(),CURLINFO_COOKIELIST);
-        $token = null ;
+        $split = [] ;
         foreach($cookies as $cookie){
             if(str_contains($cookie, "X-CSRF")){
-                $token = preg_replace("#^.+X-CSRF-TOKEN\s*#",'',$cookie);
+                $split = preg_split('#\s+#',$cookie);
             }
         }
-        $this->csrf = $token ;
+        $this->csrf = array_pop($split);
     }
 
     private function exit_code(): int { return curl_getinfo($this->curl(), CURLINFO_RESPONSE_CODE); }
