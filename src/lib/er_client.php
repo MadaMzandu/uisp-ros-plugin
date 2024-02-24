@@ -22,7 +22,9 @@ class ErClient extends ApiCurl
             $this->close();
             $data = ['username' => $username, 'password' => $password];
             $this->configure('/', 'post',['form' => $data]);
-            $this->exec();
+            MyLog()->Append($this->opts);
+            $r = $this->exec();
+            MyLog()->Append($r);
         }
 
         if($this->exit_code() == 303)
@@ -41,11 +43,11 @@ class ErClient extends ApiCurl
         $cookies = curl_getinfo($this->curl(),CURLINFO_COOKIELIST);
         $token = null ;
         foreach($cookies as $cookie){
-            if(str_contains($cookie, "CSRF")){
-                $token = explode("\t",$cookie);
+            if(str_contains($cookie, "X-CSRF")){
+                $token = preg_replace("#^.+X-CSRF-TOKEN\s*#",'',$cookie);
             }
         }
-        $this->csrf = $token[6] ?? null ;
+        $this->csrf = $token ;
     }
 
     private function exit_code(): int { return curl_getinfo($this->curl(), CURLINFO_RESPONSE_CODE); }
@@ -102,7 +104,7 @@ class ErClient extends ApiCurl
 
     private function close()
     {
-        curl_close($this->ch);
+        if($this->ch)curl_close($this->ch);
         $this->ch = null;
     }
 
