@@ -6,6 +6,7 @@ class ApiCurl
 
     public bool $assoc = false;
     public bool $no_ssl = false ;
+    public bool $verbose = false ;
     protected array $opts = [];
     protected ?CurlHandle $ch = null ;
 
@@ -53,6 +54,7 @@ class ApiCurl
             CURLOPT_ENCODING => '',
             CURLOPT_MAXREDIRS => 10,
             CURLOPT_TIMEOUT => 0,
+            CURLOPT_VERBOSE => $this->verbose,
             CURLOPT_FOLLOWLOCATION => true,
             CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
         ];
