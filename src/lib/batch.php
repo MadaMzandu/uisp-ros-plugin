@@ -249,25 +249,21 @@ class Batch
         file_put_contents($fn,json_encode($queue));
     }
 
-    private function device_api($type)
+    private function device_api($type): MT|ER|null
     {
-        $client = $this->_apis[$type] ?? null ;
-        if(!$client){
-            if($type == 'mikrotik'){
-                $client = new MT();
-                $this->_apis[$type] = $client ;
-            }
-            if(in_array($type,['edge','edgeos','edgerouter'])){
-                $client = new ER();
-                $this->_apis[$type] = $client ;
-            }
+        if(!isset($this->_apis[$type])){
+            $this->_apis[$type] = match ($type){
+                'edge','edgeos','edgerouter' => new ER(),
+                default => new MT(),
+            };
         }
-        return $client ;
+        return $this->_apis[$type] ?? null ;
     }
 
     private function datapi($did): MtData|ErData
     {
-        return match ($this->find_device($did)->type){
+        $device = $this->find_device($did);
+        return match ($device->type){
             'mikrotik' => new MtData(),
             'edge','edgerouter','edgeos' => new ErData(),
             default => fail('device_invalid'),
