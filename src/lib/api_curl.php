@@ -69,7 +69,7 @@ class ApiCurl
             $this->opts[CURLOPT_SSL_VERIFYHOST] = false ;
         }
         if($post && $method != 'GET') {
-            $this->opts[CURLOPT_POSTFIELDS] = $form ? : json_encode($post);
+            $this->opts[CURLOPT_POSTFIELDS] = $form ? http_build_query($form): json_encode($post);
         }
         else if($post) {
             $this->opts[CURLOPT_URL] = sprintf('%s?%s',$path,http_build_query($post));
