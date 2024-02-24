@@ -95,8 +95,10 @@ class ApiCurl
         curl_close($this->ch);
         if($error){
             MyLog()->Append("API error: ". $error);
+            return null ;
         }
-        return $error ? null : json_decode($response, $this->assoc) ;
+        $json  = json_decode($response, $this->assoc) ;
+        return $json ? : $response ;
     }
 
     protected function config(): object
