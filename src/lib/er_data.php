@@ -34,7 +34,7 @@ class ErData extends Data
         return $this->conf()->disabled_rate ?? null ;
     }
 
-    private function dhcp()
+    private function dhcp(): ?array
     {
         $ip = $this->ip();
         if(!$ip){ return null; }
@@ -53,13 +53,6 @@ class ErData extends Data
     {
         $name = parent::account_name();
         return preg_replace("/[~`!@#$%^&*<>?;:'\s\"]*/",'',$name);
-    }
-
-    private function connect(): bool
-    {
-        $d = $this->find_device();
-        $c = erClient();
-        return $c->connect($d->user,$d->password,$d->ip);
     }
 
     public function __call($name, $arguments)
