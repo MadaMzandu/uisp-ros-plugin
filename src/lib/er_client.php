@@ -30,7 +30,7 @@ class ErClient extends ApiCurl
             return true;
         }
 
-        MyLog()->Append('edge router login failed username: '. $username,6);
+        MyLog()->Append(['er_invalid_login',$username],6);
         $this->host = $this->port = null ;
         return false ;
     }
