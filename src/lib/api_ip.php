@@ -17,7 +17,8 @@ class ApiIP
         $this->ip6 = $ip6;
         $pool = $this->conf()->ppp_pool ?? null ;
         if((array) $device){
-            $this->length6 = $device->pfxLength ?? 64;
+            $len = $device->pfxLength ?? null ;
+            $this->length6 = is_int($len) ? $len : 64;
             $pool = $ip6 ? $device->pool6 : $device->pool ;
         }
         if(!$pool){
