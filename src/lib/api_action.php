@@ -152,6 +152,25 @@ class ApiAction
         return false ;
     }
 
+    private function client(): ?array
+    {
+        $id = $this->entity()->clientId ?? 0;
+        $q = "select * from clients where id=$id";
+        $client = myCache()->singleQuery($q,true);
+        if($client){ return $client; }
+        return $this->get_client($id);
+    }
+
+    private  function get_client($id): array
+    {
+        $client = $this->ucrm()->get("clients/$id");
+        if(!$client){ return []; }
+        $ret['id'] = $id;
+        $ret['company'] = $client['companyName'] ?? null;
+        $ret['firstName'] = $client['firstName'] ?? null;
+        $ret['lastName'] = $client['lastName'] ?? null ;
+        return $ret ;
+    }
 
     private function has_changed($data): bool
     {
@@ -286,4 +305,17 @@ class ApiAction
 
     public function __construct($data = null){ $this->request = $data ; }
 
+    private function  req(): object
+    {
+        if(is_object($this->request)){
+            return $this->request; }
+        return new stdClass();
+    }
+
+    private function ucrm(): ApiUcrm { return new ApiUcrm(null,true); }
+
+    public function __construct($data = null)
+    {
+        $this->request = $data ;
+    }
 }
