@@ -214,6 +214,8 @@ class ApiAction
         return new stdClass();
     }
 
+    private function ucrm(): ApiUcrm { return new ApiUcrm(null,true); }
+
     public function __construct($data = null)
     {
         $this->request = $data ;
