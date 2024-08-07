@@ -2,7 +2,7 @@
   "version": "1",
   "information": {
     "name": "ros-er-plugin",
-    "displayName": "Ros ER Plugin",
+    "displayName": "Ros-ER Plugin",
     "description": "Real time provisioning for RouterOs",
     "url": "",
     "version": "2.3.1-beta1",
@@ -18,7 +18,7 @@
   },
   "menu": [
         {
-            "key": "Ros Plugin Beta",
+            "key": "Ros-ER Plugin",
             "label": "Panel",
             "type" : "admin",
             "target": "iframe",
