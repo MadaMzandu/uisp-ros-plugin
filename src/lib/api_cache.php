@@ -155,7 +155,9 @@ class ApiCache{
         foreach ($request as $item){
             $values[] = array_diff_key($item,['network' => 1,'unmsClientSiteId' => 1]);
         }
-        $this->dbCache()->insert($values,$table,true);
+        if($values){
+            $this->dbCache()->insert($values,$table,true);
+        }
     }
 
     private function batch_network($request)
