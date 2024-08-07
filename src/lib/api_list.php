@@ -27,7 +27,7 @@ class ApiList
             'attrs','attributes' => $this->list_attrs(),
             'backups' => $this->list_backups(),
             'orphans' => $this->list_orphans(),
-            'messages' => $this->list_msg(),
+            'messages','lang' => $this->list_msg(),
             default => null
         };
     }
