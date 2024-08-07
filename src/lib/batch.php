@@ -263,6 +263,7 @@ class Batch
     private function datapi($did): MtData|ErData
     {
         $device = $this->find_device($did);
+        if(!is_object($device)){ fail('device_invalid'); }
         return match ($device->type){
             'mikrotik' => new MtData(),
             'edge','edgerouter','edgeos' => new ErData(),
