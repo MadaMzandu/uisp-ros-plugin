@@ -35,12 +35,6 @@ class ER
 
     private function client():ErClient { return erClient(); }
 
-    public function __call($name, $arguments)
-    {
-        MyLog()->Append("unimplemented ER: ".$name);
-        return 0;
-    }
-
     public function do_batch($device,$data): int
     {
 
@@ -49,13 +43,16 @@ class ER
         while ($this->has_lock()){ sleep(5); }
         $this->lock();
         $this->reset();
-        $type = $this->type();
-        $ret = $this->$type();
-        $this->unlock(); ;
+        $ret = match($this->type()){
+            'queue' => $this->set_queue(),
+            'dhcp' => $this->set_dhcp(),
+            default => 0 ,
+        };
+        $this->unlock();
         return $ret ;
     }
 
-    public function dhcp(): int
+    public function set_dhcp(): int
     {
         if(!$this->connect() ||
             !$this->_dhcp()->read() ||
@@ -68,7 +65,6 @@ class ER
             $this->setErr(array_values($error)[0]);
         }
         else{ $this->set_fw(); }
-        MyLog()->Append($ret);
         return sizeof($this->batch_success);
     }
 
@@ -79,7 +75,7 @@ class ER
         $nets = [];
         foreach($servers as $s){ $nets[$s] = $this->_dhcp()->findKeys($s . '>subnet')[0];}
         if(!$nets){ return 0; }
-        $ip = myIpApi();
+        $ip = myIPClass();
         foreach($this->batch as $i){
             $this->action = $i['action'] ?? 'set';
             $found = false ;
@@ -140,7 +136,7 @@ class ER
         }
     }
 
-    private function queue(): int
+    private function set_queue(): int
     {
         if(!$this->connect()){ return 0 ;}
         $t = new ApiTimer('Queue Write');
@@ -258,7 +254,20 @@ class ER
 
     private function lock() { touch('data/.er.lock'); }
 
-    private function has_lock(): bool { return is_file('data/.er.lock'); }
+    private function has_lock(): bool
+    {
+        $fn = 'data/.er.lock';
+        if(!is_file($fn)){ return false; }
+        $now = date_create();
+        $int = date_interval_create_from_date_string('3 minutes');
+        $mtime = date_create(date('c',filemtime($fn)));
+        date_add($mtime,$int) ;
+        if($mtime < $now){
+            $this->unlock();
+            return false ;
+        }
+        return true ;
+    }
 
     public function success(): array { return $this->batch_success; }
 

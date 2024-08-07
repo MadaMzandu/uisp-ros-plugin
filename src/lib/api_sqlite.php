@@ -4,7 +4,6 @@ class ApiSqlite
 {
 
     private string $path;
-    private $read;
     private ?SQLite3 $_db = null;
 
     public function insert($data,$table = 'services',$replace = false): bool
@@ -16,7 +15,7 @@ class ApiSqlite
         $REPLACE = null ;
         if($replace) $REPLACE = 'OR REPLACE ';
         $query = sprintf("INSERT %s INTO %s (%s) VALUES %s",   $REPLACE,$table,$fields,$values);
-        MyLog()->Append("sqlite query: ".$query);
+//        MyLog()->Append("sqlite query: ".$query);
         return $this->db()->exec($query);
     }
 
@@ -31,7 +30,7 @@ class ApiSqlite
         return implode(',',$values);
     }
 
-    private function quote($value)
+    private function quote($value): null|int|float|string
     {
         if(is_numeric($value)) return $value;
         if(empty($value)) return 'null';
@@ -67,6 +66,7 @@ class ApiSqlite
         $sql = sprintf("UPDATE %s SET ",$table);
         foreach($data as $row){
             $query = $sql . $this->to_edit($row);
+//            MyLog()->Append("sqlite query: ".$query);
             if(!$this->db()->exec($query)) return false ;
         }
         return true ;
@@ -102,6 +102,7 @@ class ApiSqlite
 
     public function exec($sql): ?bool
     {
+//        MyLog()->Append("sqlite query: ".$sql);
         return $this->db()->exec($sql);
     }
 
@@ -166,7 +167,7 @@ class ApiSqlite
 
     public function selectAllFromTable($table = 'services'): ?array
     {
-        $sql = 'select * from ' . $table;
+        $sql = "select * from $table";
         $res = $this->db()->query($sql);
         $return = [];
         while ($row = $res->fetchArray(SQLITE3_ASSOC)) {
@@ -252,17 +253,16 @@ class ApiSqlite
 $apiSqlite = null ;
 $apiSqliteCache = null ;
 
-function mySqlite()
+function mySqlite(): ApiSqlite
 {
     global $apiSqlite ;
     if(empty($apiSqlite)){
-        MyLog()->Append("CREATING NEW DB INSTANCE");
         $apiSqlite = new ApiSqlite();
     }
     return $apiSqlite ;
 }
 
-function myCache()
+function myCache(): ApiSqlite
 {
     global $apiSqliteCache ;
     $fn = 'data/cache.db';

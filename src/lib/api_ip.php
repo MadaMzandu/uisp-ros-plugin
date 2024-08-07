@@ -12,15 +12,14 @@ class ApiIP
     private ?object $_conf = null;
     private array $assigned = [];
 
-
     public function assign($sid, $device = [], $ipv6 = false): ?string
     {
         $this->ipv6 = $ipv6;
         $pool = $this->conf()->ppp_pool ?? null ;
         if($device){ $device = json_decode(json_encode($device)); }
         if(is_object($device)){
-            $len = $device->pfxLength ?? 64 ;
-            $this->len6 = is_int($len) ? $len : 64;
+            $len = $device->pfxLength ?? null ;
+            $this->length6 = is_int($len) ? $len : 64;
             $pool = $ipv6 ? $device->pool6 : $device->pool ;
         }
         if(!$pool){
@@ -71,6 +70,22 @@ class ApiIP
         return gmp_cmp($a,$start) >= 0 && gmp_cmp($a,$end) <= 0;
     }
 
+    public function in_subnet($address,$subnet): bool
+    {
+        $a = $this->ip2gmp($address);
+        $start = $this->ip2gmp($subnet);
+        $end = $this->gmp_bcast($subnet);
+        return gmp_cmp($a,$start) >= 0 && gmp_cmp($a,$end) <= 0;
+    }
+
+    public function in_subnet($address,$subnet): bool
+    {
+        $a = $this->ip2gmp($address);
+        $start = $this->ip2gmp($subnet);
+        $end = $this->gmp_bcast($subnet);
+        return gmp_cmp($a,$start) >= 0 && gmp_cmp($a,$end) <= 0;
+    }
+
     private function find_unused($prefix): ?string
     {
         if(!$this->is_prefix($prefix)) return null ;
@@ -93,6 +108,7 @@ class ApiIP
         $data = [];
         $ip = array_flip($this->assigned['v4'] ?? []) ;
         $ipv6 = array_flip($this->assigned['v6'] ?? []);
+        if(!($ip || $ipv6)){ return ;}
         $ids = array_keys($ip);
         $ids = array_merge($ids,array_diff($ids,array_keys($ipv6)));
         foreach($ids as $id){
@@ -102,19 +118,21 @@ class ApiIP
             $data[] = $item ;
         }
         if($data){
-             $this->db()->insert($data,'network',true);
+             if($this->db()->insert($data,'network',true)){
+                 $this->assigned = [];
+             }
         }
     }
 
     private function is_prefix($prefix): bool
     {
-        $split = explode('/',$prefix);
-        if(sizeof($split) < 2) return false ;
-        $FLAG = $this->ipv6 ? FILTER_FLAG_IPV6 : FILTER_FLAG_IPV4 ;
-        $MAX = $this->ipv6 ? 128 : 32;
-        return
-            filter_var($split[0],FILTER_VALIDATE_IP,$FLAG)
-            && $split[1] >= 1 && $split[1] <= $MAX;
+        $str = preg_replace("#\s+#",'',$prefix);
+        $split = explode('/',$str);
+        if(sizeof($split) < 2 || !is_numeric($split[1])
+            || !filter_var($split[0],FILTER_VALIDATE_IP)) return false ;
+        $IP = filter_var($split[0],FILTER_VALIDATE_IP,FILTER_FLAG_IPV4);
+        $MAX = $IP ? 32 : 128;
+        return $split[1] > 0 && $split[1] <= $MAX;
     }
 
     private function is_odd($address): bool

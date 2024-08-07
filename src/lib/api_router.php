@@ -2,18 +2,19 @@
 
 include_once 'api_sqlite.php';
 include_once 'api_logger.php' ;
-include_once 'admin.php';
 include_once 'api_action.php';
+include_once 'api_update.php';
+include_once 'api_list.php';
 
 $conf = mySqlite()->readConfig();
 
 
-class API_Router
+class ApiRouter
 {
 
-    private $data;
-    private $status;
-    private $result;
+    private ?object $data;
+    private ?object $status;
+    private mixed $result;
 
     public function __construct($data)
     {
@@ -22,12 +23,10 @@ class API_Router
         $this->status = json_decode('{"status":"ok","error":false,"message":"ok","session":false}');
     }
 
-    private function toObject($data): ?stdClass
+    private function toObject($data): ?object
     {
-        if(empty($data)) return null ;
-        if(is_object($data)) return $data ;
-        if(is_array($data)) return json_decode(json_encode((object)$data));
-        return null;
+        $to = $data ? json_decode(json_encode($data)) : null ;
+        return is_object($to) ? $to : null ;
     }
 
     public function status(): ?stdClass
@@ -37,60 +36,37 @@ class API_Router
 
     public function route(): void
     {
-        MyLog()->Append('router: begin route selection');
-        if (!$this->data_is_valid()) { // check basic validity
-            MyLog()->Append('router: request is not valid '.json_encode($this->status));
-            return;
+        if (!$this->data_check()) { // check basic validity
+            fail('request_invalid',$this->data);
         }
-        if ($this->request_is_admin()) { // execute admin calls
-            MyLog()->Append('router: selected admin api');
-            return;
-        }
-        MyLog()->Append('router: begin device provisioning');
-        $api = new ApiAction($this->data);
-        $api->submit();
-        MyLog()->Append('router: routing completed');
+        $type = $this->data->changeType
+            ?? 'none';
+        $target = $this->data->target ?? 'none';
+        $api = match ($type){
+            'list' => new ApiList($this->data,$target),
+            'update' => new ApiUpdate($this->data,$target),
+            'none' => new  stdClass(),
+             default => new ApiAction()
+        };
+        $api?->exec($this->data);
+        $this->status = $api?->status();
+        $this->result = $api?->result();
     }
 
-    private function data_is_valid(): bool
+    private function data_check(): bool
     {
-        if (empty((array)$this->data)) {
-            $this->set_message('No request data sent');
-            MyLog()->Append('route empty request');
-            return false;
+        if (!is_object($this->data)) {
+            bail('request_empty');
         }
         $entity = $this->data->entity ?? null ;
-        if ($entity && !in_array($entity,['service','admin'])) {
-            $this->set_message('ok');
-            MyLog()->Append('route wrong entity type: '.$entity);
-            return false;
+        if ($entity && !in_array($entity,['service','client'])) { //webhooks only
+            bail('entity_unsupported: ' .$entity);
         }
         $change = $this->data->changeType ?? 'none';
-        if($entity == 'admin') $change = 'admin';
-        if (!in_array($change, ['insert', 'edit', 'end',
-                'suspend', 'unsuspend', 'admin','move','delete','rename'])) {
-            $this->set_message('ok');
-            MyLog()->Append('route wrong entity action: '.$change);
-            return false;
+        $allowed = "insert,edit,admin,update,list";
+        if (!in_array($change, explode(',',$allowed))) {
+            bail('change_unsupported: ' .$change);
         }
-        return true;
-    }
-
-    private function set_message($msg): void
-    {
-        $this->status->error = false;
-        $this->status->message = $msg;
-    }
-
-    private function request_is_admin(): bool
-    {
-        if ($this->data->changeType != 'admin') {
-            return false;
-        }
-        $admin = new Admin($this->data);
-        $admin->exec();
-        $this->status = $admin->status();
-        $this->result = $admin->result();
         return true;
     }
 
@@ -106,8 +82,7 @@ class API_Router
         $response = [
             'status' => $stat,
             'error' => $error,
-            'message' => $this->status->message ?? 'Unknown error',
-            'duration' => $this->status->duration ?? 0,
+            'message' => $this->status->message ?? ($error ? 'error_unknown' : 'ok'),
             'data' => $this->result ?? [],
         ];
         echo json_encode($response,JSON_PRETTY_PRINT);

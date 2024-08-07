@@ -6,7 +6,7 @@ class ApiCurl
 
     public bool $assoc = false;
     public bool $no_ssl = false ;
-    protected bool $json = true ;
+    public bool $verbose = false ;
     protected array $opts = [];
     protected ?CurlHandle $ch = null ;
 
@@ -46,29 +46,33 @@ class ApiCurl
             trim($this->api(),'/'),
             trim($path,'/'));
         $this->ch = curl_init();
-        $headers = [];
+        $method = strtoupper($method);
+        $form = $post['form'] ?? null ;
         $this->opts = [
             CURLOPT_URL => $path,
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_ENCODING => '',
             CURLOPT_MAXREDIRS => 10,
             CURLOPT_TIMEOUT => 0,
+            CURLOPT_VERBOSE => $this->verbose,
             CURLOPT_FOLLOWLOCATION => true,
             CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
-            CURLOPT_CUSTOMREQUEST => strtoupper($method),
         ];
+        if($method == 'POST'){
+            $this->opts[CURLOPT_POST] = true ;
+        }
+        else {
+            $this->opts[CURLOPT_CUSTOMREQUEST] = $method;
+        }
         if($this->no_ssl) {
             $this->opts[CURLOPT_SSL_VERIFYPEER] = false;
             $this->opts[CURLOPT_SSL_VERIFYHOST] = false ;
         }
-        if($method != 'GET') {
-            $this->opts[CURLOPT_POSTFIELDS] = !$this->json ? $post : json_encode($post);
+        if($post && $method != 'GET') {
+            $this->opts[CURLOPT_POSTFIELDS] = $form ? http_build_query($form): json_encode($post);
         }
-        else {
+        else if($post) {
             $this->opts[CURLOPT_URL] = sprintf('%s?%s',$path,http_build_query($post));
-        }
-        if($headers){
-            $this->opts[CURLOPT_HTTPHEADER] = $headers;
         }
     }
 
@@ -91,8 +95,10 @@ class ApiCurl
         curl_close($this->ch);
         if($error){
             MyLog()->Append("API error: ". $error);
+            return null ;
         }
-        return $error ? null : json_decode($response, $this->assoc) ;
+        $json  = json_decode($response, $this->assoc) ;
+        return $json ? : $response ;
     }
 
     protected function config(): object

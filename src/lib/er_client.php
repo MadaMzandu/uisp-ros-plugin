@@ -1,35 +1,37 @@
 <?php
 include_once 'api_logger.php';
+include_once 'api_curl.php';
 
-class ErClient
+class ErClient extends ApiCurl
+
 {
     private ?string $host = null;
     private ?int $port = null;
     private ?string $base;
-    private $_curl = null;
     public bool $verbose = false ;
     private ?string $csrf = null ;
 
     public function connect($username, $password, $host, $port = 443): bool
     {
         if($host == $this->host
-            && $port == $this->port){ return true; }
+            && $port == $this->port){ return true; } //already connected
 
         { $this->host = $host ; $this->port = $port; }
 
         {
             $this->close();
             $data = ['username' => $username, 'password' => $password];
-            $this->configure('/', 'post', $data, 'x-www-form-urlencoded');
+            $this->configure('/', 'post',['form' => $data]);
             $this->exec();
         }
+
         if($this->exit_code() == 303)
         {
             $this->set_token();
             return true;
         }
 
-        MyLog()->Append('edge router login failed username: '. $username,6);
+        MyLog()->Append(['invalid_login',$username],6);
         $this->host = $this->port = null ;
         return false ;
     }
@@ -37,90 +39,45 @@ class ErClient
     private function set_token()
     {
         $cookies = curl_getinfo($this->curl(),CURLINFO_COOKIELIST);
-        $token = null ;
+        $split = [] ;
         foreach($cookies as $cookie){
-            if(preg_match("/CSRF/",$cookie)){
-                $token = explode("\t",$cookie);
+            if(str_contains($cookie, "X-CSRF")){
+                $split = preg_split('#\s+#',$cookie);
             }
         }
-        $this->csrf = $token[6] ?? null ;
+        $this->csrf = array_pop($split);
     }
 
     private function exit_code(): int { return curl_getinfo($this->curl(), CURLINFO_RESPONSE_CODE); }
 
-    public function get($path, $data = [])
+    public function get($path, $post = [])
     {
-        $this->configure($path, 'get', $data,);
+        $this->configure($path, 'get', $post);
         return $this->exec();
     }
 
-    public function post($path, $data = [])
+    public function post($path, $post = [])
     {
-        $this->configure($path, 'post', $data);
+        $this->configure($path, 'post', $post);
         return $this->exec();
     }
 
-    private function exec()
-    {
-        $response = curl_exec($this->curl());
-        if (curl_errno($this->curl()) !== 0) {
-            MyLog()->Append(["curl error: ",curl_error($this->curl())]);
-            return null;
-        }
-        $ecode = curl_getinfo($this->curl(), CURLINFO_HTTP_CODE);
-        if ($ecode != 200) {
-            $error = empty($response) ? 'http: '. $ecode : $response ;
-            if($ecode >= 400) MyLog()->Append(["edge router error: ",$error]);
-            return null;
-        }
-        return json_decode($response,true);
-    }
-
-    private function configure($path, $method, $data, $mime = 'json')
+    protected function configure($path, $method, $post)
     {
         curl_reset($this->curl());
-        curl_setopt_array($this->curl(), [
-            CURLOPT_URL => $this->make_url($path, $method, $data),
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_ENCODING => '',
-            CURLOPT_MAXREDIRS => 10,
-            CURLOPT_TIMEOUT => 0,
-            CURLOPT_FOLLOWLOCATION => false,
-            CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
-            CURLOPT_VERBOSE => $this->verbose,
-            CURLOPT_SSL_VERIFYHOST => false,
-            CURLOPT_SSL_VERIFYPEER => false,
-            CURLOPT_COOKIEFILE => "",
-        ]);
+        $this->assoc = true ;
+        $this->no_ssl = true ;
+        $mime = key_exists('form',$post) ? 'x-www-form-urlencoded' : 'json';
+        parent::configure($path,$method,$post);
+        $this->opts[CURLOPT_URL] = $this->make_url($path,$method,$post);
+        $this->opts[CURLOPT_ENCODING] = '';
+        $this->opts[CURLOPT_COOKIEFILE] = '';
+        $this->opts[CURLOPT_FOLLOWLOCATION] = false ;
         $headers[] ='Content-Type: application/' . $mime;
         if($this->csrf){
             $headers[] = 'X-CSRF-Token: '. $this->csrf ;
         }
-        curl_setopt($this->curl(),CURLOPT_HTTPHEADER,$headers);
-        $this->make_post($method, $data, $mime);
-        $this->set_method($method);
-    }
-
-    private function set_method($method): void
-    {
-        $post = strtolower($method) == 'post';
-        if ($post) {
-            curl_setopt($this->curl(), CURLOPT_POST, true);
-        } else {
-            curl_setopt($this->curl(), CURLOPT_CUSTOMREQUEST, strtoupper($method));
-        }
-    }
-
-    private function make_post($method, $data, $mime)
-    {
-        if (empty($data) || $method == 'get') {
-            return;
-        }
-        $post = json_encode($data);
-        if (preg_match("/form/", $mime)) {
-            $post = http_build_query($data);
-        }
-        curl_setopt($this->curl(), CURLOPT_POSTFIELDS, $post);
+        $this->opts[CURLOPT_HTTPHEADER] = $headers ;
     }
 
     private function make_url($path, $method, $data): string
@@ -145,19 +102,17 @@ class ErClient
 
     private function close()
     {
-        if(is_resource($this->_curl))
-        {
-            curl_close($this->_curl);
-            $this->_curl = null;
-        }
+        if($this->ch)curl_close($this->ch);
+        $this->ch = null;
     }
 
-    private function curl()
+    private function curl(): CurlHandle|null
     {
-        if (empty($this->_curl)) {
-            $this->_curl = curl_init();
+        if (empty($this->ch)) {
+            $ch = curl_init();
+            if($ch){ $this->ch = $ch; }
         }
-        return $this->_curl;
+        return $this->ch;
     }
 
     public function __construct($base = '/api/edge') { $this->base = $base; }

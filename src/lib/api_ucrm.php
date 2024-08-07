@@ -6,15 +6,13 @@ include_once '_web_ucrm.php';
 const USE_UCRM_CURL = 0;
 
 use Ubnt\UcrmPluginSdk\Service\UcrmApi;
-use Ubnt\UcrmPluginSdk\Service\UnmsApi;
-
 
 class ApiUcrm
 {
 
     public bool $assoc = false ;
     public bool $unms = false ;
-    private ?string $method;
+    private ?string $method = 'get';
     private $data ;
     private ?string $url ;
     private ?string $token = null;
@@ -34,7 +32,7 @@ class ApiUcrm
             $response = $api->$action($this->url, $this->data);
             return json_decode(json_encode($response), $this->assoc);
         }
-        catch (\Exception $e){
+        catch (Exception $e){
             MyLog()->Append([$e->getMessage(),$e->getTraceAsString()]);
             return null ;
         }
@@ -80,7 +78,7 @@ class ApiUcrm
 
     private function token(): ?string
     {
-        return $this->config()->nmsToken ?? $this->token ;
+        return $this->config()->unmsToken ?? $this->token ;
     }
 
     private function config(): object

@@ -6,17 +6,16 @@ include_once 'device.php';
 class MT extends Device
 {
 
-    protected ?stdClass $device;
-    protected ?array $batch ;
-    protected ?stdClass $batch_device ;
-    protected ?array $batch_failed ;
-    protected ?array $batch_success;
-    protected ?RouterosAPI $api ;
+    protected ?stdClass $device = null ;
+    protected ?array $batch = null;
+    protected ?object $batch_device = null ;
+    protected ?array $batch_failed = null;
+    protected ?array $batch_success = null;
+    protected ?object $api = null;
 
     protected function write($post): null|array|string
     {
         $opened = $this->xor_connect();
-//        $timer = new ApiTimer('single write');
         //check and prepare
         $id = $this->find_id($post);
         $action = $id ? 'set' : 'add';
@@ -35,7 +34,6 @@ class MT extends Device
             $this->api->write('=' . $key . '=' . $data[$key], false);
         }
         $this->api->write(';');
-//        $timer->stop();
         $read = $this->api->read() ;
         if($opened) $this->api_disconnect();
         return $read ;
@@ -99,6 +97,26 @@ class MT extends Device
         return false;
     }
 
+    public function list($device,$paths)
+    {
+        $this->batch_device = $device ;
+        $data = [];
+        $count = 0 ;
+        if($api = $this->api_connect()){
+            $this->api = $api ;
+            foreach($paths as $path){
+                $r = $this->read($path) ;
+                if($r && is_array($r)){
+                    $count += sizeof($r);
+                    $data[] = $path ;
+                    $data = array_merge($data,$r);
+                }
+            }
+        }
+        MyLog()->Append(['mt_list',"items: $count"]);
+        return $data ;
+    }
+
     protected function read($path,$filter = null): null|array|string
     {  //implements mikrotik print
         $opened = $this->xor_connect() ;
@@ -118,17 +136,17 @@ class MT extends Device
     protected function api_connect(): ?RouterosAPI
     {
         if(!$this->find_device()){
-            MyLog()->Append('mt: failed to get device information');
+            MyLog()->Append('mt_device_invalid');
             return null ;
         }
         $api = new Routerosapi();
         $api->timeout = 1;
         $api->attempts = 1;
-        //$api->debug = true;
+//        $api->debug = true;
         $port = $this->device->port ?? 8728 ;
         if (!$api->connect($this->device->ip . ':' . $port,
-            $this->device->user, $this->device->password)) {
-            MyLog()->Append('mt: failed to connect to: '. $this->device->ip);
+            $this->device->user, $this->device->password ?? null)) {
+            MyLog()->Append(['mt_connect_fail','ip: ' . $this->device->ip]);
             return null ;
         }
         return $api;

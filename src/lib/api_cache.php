@@ -40,26 +40,20 @@ class ApiCache{
 
     public function sync($force = false)
     {
-        if($force || $this->needs_sites()){
-            MyLog()->Append("Syncing sites only");
-            $this->populate('sites');
-            $set['last_sites'] = $this->now() ;
-            $this->db()->saveConfig($set);
-        }
+        if(!$this->attrs()->check_config()){ return ; }
+        $timer = new ApiTimer('sync: ');
         if($force || $this->needs_update()){
-            if(!$this->attrs()->check_config()
-                || !$this->check_devices()){
-                return ;
-            }
-            $timer = new ApiTimer('sync: ');
-            MyLog()->Append('populating services,clients');
-            foreach(['clients','services','sites'] as $table){
+            $this->clean(); //clean tables
+            foreach(['clients','sites','services'] as $table){
                 $this->populate($table);
-                MyLog()->Append('finished populating: '.$table);
+                MyLog()->Append('cache_success_'.$table);
             }
-            $state = ['last_cache' => $this->now()];
-            $this->db()->saveConfig($state);
+            $this->db()->saveConfig(['last_cache' => date('c')]);
             $timer->stop();
+        }
+        elseif($this->needs_sites()){
+            $this->populate('sites');
+            $this->db()->saveConfig(['last_sites' => date('c')]);
         }
     }
 
@@ -74,9 +68,9 @@ class ApiCache{
                 $state = ['cache_version' => MyCacheVersion,
                     'last_cache' => '2020-01-01','last_net' => '2020-01-01'];
                 $this->db()->saveConfig($state);
+                $timer->stop();
             }
         }
-        $timer->stop();
     }
 
     public function populate($table)
@@ -85,8 +79,11 @@ class ApiCache{
         $limit = 50 ;
         $offset = 0 ;
         while($data){
-            $method = 'get_' . $table ;
-            $data = $this->$method($offset,$limit);
+            $data = match ($table){
+                'clients' => $this->get_clients($offset,$limit),
+                'services' => $this->get_services($offset,$limit),
+                'sites' => $this->get_sites(),
+            };
             if(empty($data)) continue ;
             $request = [];
             foreach($data as $item){
@@ -95,15 +92,15 @@ class ApiCache{
                 $request[] = $trim ;
             }
             $this->batch($table,$request);
+            if(in_array($table,['site','sites'])){ break; }
             if(in_array($table,['service','services'])){
                 $this->batch_network($request);
             }
-            if(in_array($table,['site','sites'])){ break; }
             $offset += $limit ;
         }
     }
 
-    public function get_sites($offset,$limit)
+    public function get_sites(): array
     {
         $opts = ['type' => 'endpoint'];
         $sites = $this->get_data('sites',$opts,true);
@@ -113,7 +110,7 @@ class ApiCache{
         foreach($devices as $device){
             $site_id = $device->identification->site->id ?? null ;
             $name = $device->identification->name ?? null ;
-            if($site_id && preg_match("/^RosP_/",$name)){
+            if($site_id && str_starts_with($name, "RosP_")){
                 $site = $site_map[$site_id] ?? null ;
                 if(is_object($site)){
                     $site->device = $device->identification->id ?? null ;
@@ -130,12 +127,12 @@ class ApiCache{
         if(!is_array($devices)){ return null ;}
         foreach ($devices as $device){
             $name = $device->identification->name ?? null ;
-            if(preg_match("/^RosP_/",$name)){ return $device; }
+            if(str_starts_with($name, "RosP_")){ return $device; }
         }
         return null ;
     }
 
-    private function get_clients($offset,$limit = 500)
+    private function get_clients($offset,$limit = 500): array
     {
         $opts = ['offset' => $offset, 'limit' => $limit];
         return $this->get_data('clients',$opts) ;
@@ -177,35 +174,26 @@ class ApiCache{
         if(!empty($deleted)){
             $sql = sprintf("delete from network where id in (%s)",
                 implode(',',$deleted));
-            MyLog()->Append('cache: network delete sql: '.$sql);
             $this->dbCache()->exec($sql); //clear inactive addresses
         }
         if(!empty($values)){
-            MyLog()->Append('sending cache network data to sqlite');
             $this->dbCache()->insert($values,'network',true);
         }
-    }
-
-    private function path($table): ?string
-    {
-        return match ($table) {
-            'clients' => 'clients',
-            'services' => 'clients/services',
-            default => null,
-        };
     }
 
     private function check_devices(): bool
     {
         $devices = $this->db()->selectAllFromTable('devices');
         if(empty($devices)) {
-            MyLog()->Append('devices not configured sync delayed');
+            MyLog()->Append('cache_devices_unset');
             return false ;
         }
-        MyLog()->Append('cache devices found: '. json_encode($devices));
         return true ;
     }
 
+    /**
+     * @throws Exception
+     */
     private function needs_update(): bool
     {
         $last = $this->conf()->last_cache ?? '2020-01-01';
@@ -213,6 +201,38 @@ class ApiCache{
         $sync = new DateTime($last);
         $now = new DateTime();
         return date_add($sync,$cycle) < $now ;
+    }
+
+    /**
+     * @throws Exception
+     */
+    private function needs_net(): bool
+    {
+        $last = $this->conf()->last_net ?? '2020-01-01';
+        $cycle = DateInterval::createFromDateString('30 minute');
+        $sync = new DateTime($last);
+        $now = new DateTime();
+        return date_add($sync,$cycle) < $now ;
+    }
+
+    /**
+     * @throws Exception
+     */
+    private function needs_sites(): bool
+    {
+        $time = $this->conf()->last_sites ?? '2023-01-01';
+        $last = new DateTime($time);
+        $now = new DateTime();
+        $interval = new DateInterval('PT1H');
+        return $last->add($interval) < $now ;
+    }
+
+    private function clean()
+    {
+        $tables = ['services','sites','clients','network'];
+        foreach($tables as $table){
+            $this->dbCache()->exec("delete from $table");
+        }
     }
 
     private function needs_db(): bool
@@ -225,13 +245,6 @@ class ApiCache{
         return $version != MyCacheVersion ;
     }
 
-    private function opts($table = 'services'): array
-    {
-        $opts = ['limit' => 500,'offset' => 0,'statuses' => [0,1,3,4,6,7]];
-        if($table == 'services') return $opts ;
-        else return array_diff_key($opts,['statuses' => null]);
-    }
-
     private function attrs(): ApiAttributes { return myAttr(); }
 
     private function trimmer(): ApiTrim
@@ -239,11 +252,9 @@ class ApiCache{
         return myTrimmer() ;
     }
 
-    private function ucrm(): ApiUcrm { return new ApiUcrm(); }
+    private function ucrm($unms = false): ApiUcrm { return new ApiUcrm(null,false,$unms); }
 
     private function db(): ApiSqlite { return mySqlite(); }
-
-    private function now(): string { return (new DateTime())->format('c'); }
 
     private function conf(): ?object
     {

@@ -15,6 +15,7 @@ class ApiLogger
 
     private function Debug(): bool
     {
+//        return '1'; //testing
         $fn = 'data/config.json';
         if(!is_file($fn)){ return false ;}
         $conf = json_decode(file_get_contents($fn));
@@ -24,7 +25,7 @@ class ApiLogger
         return false;
     }
 
-    private function Time()
+    private function Time(): string
     {
         return date('Y-m-d H:i:s.v');
     }
@@ -32,7 +33,8 @@ class ApiLogger
 
 $apiLogger = null ;
 
-function MyLog(){
+function MyLog(): ApiLogger
+{
     global $apiLogger;
     if(empty($apiLogger)){
         $apiLogger = new ApiLogger();

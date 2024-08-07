@@ -4,15 +4,15 @@ include_once 'er_objects.php';
 include_once 'data.php';
 class ErData extends Data
 {
-    public function account()
+    public function account(): ?array
     {
-        switch ($this->type()){
-            case 'dhcp': return $this->dhcp();
-            default: return null ;
-        }
+        return match ($this->type()) {
+            'dhcp' => $this->dhcp(),
+            default => null,
+        };
     }
 
-    public function queue()
+    public function queue(): ?array
     {
         if(!in_array($this->type(),['dhcp','dhcp6'])) return null ;
         $ip = $this->ip();
@@ -34,7 +34,7 @@ class ErData extends Data
         return $this->conf()->disabled_rate ?? null ;
     }
 
-    private function dhcp()
+    private function dhcp(): ?array
     {
         $ip = $this->ip();
         if(!$ip){ return null; }
@@ -53,13 +53,6 @@ class ErData extends Data
     {
         $name = parent::account_name();
         return preg_replace("/[~`!@#$%^&*<>?;:'\s\"]*/",'',$name);
-    }
-
-    private function connect(): bool
-    {
-        $d = $this->find_device();
-        $c = erClient();
-        return $c->connect($d->user,$d->password,$d->ip);
     }
 
     public function __call($name, $arguments)

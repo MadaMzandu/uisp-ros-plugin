@@ -2,7 +2,7 @@
 
 
 chdir(__DIR__);
-include_once 'includes/cors.php';
+//include_once 'includes/cors.php';
 require_once 'vendor/autoload.php';
 include_once 'lib/api_logger.php';
 include_once 'lib/api_common.php';
@@ -20,12 +20,9 @@ try
     include_once 'lib/api_setup.php';
 
     set_error_handler('myErrorHandler');
-    MyLog()->Append('public: checking databases');
     run_setup();
     cache_setup();
-    MyLog()->Append('public: checking cache sync');
     cache_sync();
-    MyLog()->Append('public: setup completed');
 
     include_once 'lib/api_router.php';
 
@@ -38,10 +35,8 @@ try
         exit();
     }
 
-
     if(!$json)
     {
-        MyLog()->Append('public: begin page load param '. json_encode($_GET ?? '{}'));
         if (isset($_GET['page']) && $_GET['page'] == 'panel')
         { //load panel
             include 'public/panel/index.php';
@@ -49,15 +44,11 @@ try
         exit();
     }
 
-
-    MyLog()->Append('public: begin api request: '.$json);
     $data = json_decode($json);
-    $api = new API_Router($data);
+    $api = new ApiRouter($data);
     $api->route();
     $api->http_response();
-    MyLog()->Append('api: finished without error : ' . json_encode($api->status()));
 }
-catch (NoActionException $noError){ respond($noError->getMessage()); }
 catch ( \Exception | Error $error)
 {
     MyLog()->Append(sprintf("Global exception message: %s \nTrace: %s",

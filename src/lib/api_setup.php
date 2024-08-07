@@ -9,8 +9,8 @@ include_once 'api_timer.php';
 
 class ApiSetup
 {
-    private $_db ;
-    private ?SQLite3 $_tmp = null ;
+    private ?object $_db = null ;
+    private ?object $_tmp = null ;
 
     public function run(){
         $timer = new ApiTimer('db setup: ');
@@ -19,6 +19,7 @@ class ApiSetup
         }
         if($this->needs_update()){
             $this->db_update();
+            $timer->stop();
         }
         if($this->needs_backup()){
             $this->db_backup();
@@ -26,16 +27,13 @@ class ApiSetup
         if($this->needs_cleanup()){
             $this->file_cleanup();
         }
-        $timer->stop();
     }
 
     private function db_update(): void
     {
         if(!$this->db_backup()){
-            MyLog()->Append('setup: failed to backup - not updating');
-            return ;
+            fail('backup_failure');
         }
-        MyLog()->Append('starting db update');
         $schema = $this->update_schema();
         shell_exec('rm -f data/tmp.db');
         $failed = 0 ; $total = sizeof($schema) ;
@@ -141,6 +139,9 @@ class ApiSetup
         $this->save($state);
     }
 
+    /**
+     * @throws Exception
+     */
     private function needs_cleanup(): bool
     {
         $date = $this->state()->cleanup ?? '2020-01-01';
@@ -151,6 +152,9 @@ class ApiSetup
         return $now > $next ;
     }
 
+    /**
+     * @throws Exception
+     */
     private function needs_backup(): bool
     {
         $date = $this->state()->backup ?? '2020-01-01';

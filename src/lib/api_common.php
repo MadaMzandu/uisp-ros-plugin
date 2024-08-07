@@ -1,4 +1,7 @@
 <?php
+
+use Ubnt\UcrmPluginSdk\Service\UcrmSecurity;
+
 include_once 'api_logger.php';
 
 function myErrorHandler($errno, $errstr, $errfile, $errline){
@@ -6,13 +9,16 @@ function myErrorHandler($errno, $errstr, $errfile, $errline){
         $errno,$errstr,$errfile,$errline),7);
 }
 
-function dbUpdateHandler($errno, $errstr, $errfile, $errline){
+function dbUpdateHandler(){
     MyLog()->Append('Update chunk rejected - this is normal');
 }
 
+/**
+ * @throws \GuzzleHttp\Exception\GuzzleException
+ */
 function backup_restore(){
     try{
-        $sec = \Ubnt\UcrmPluginSdk\Service\UcrmSecurity::create();
+        $sec = UcrmSecurity::create();
         $user = $sec->getUser();
         if(!$user || $user->isClient){ return; }
         $bu = new ApiBackup();
@@ -27,6 +33,20 @@ function backup_restore(){
         MyLog()->Append($msg,6);
         echo sprintf('{"status":"failed","error":true,"message":%s,"data":[]}',$msg);
     }
+}
+
+function fail($event, $data = []): never
+{
+    MyLog()->Append("Fail: $event data: ". json_encode($data));
+    respond($event,false,[]);
+    exit();
+}
+
+function bail($event, $data = []): never
+{
+    MyLog()->Append("Fail: $event data: ". json_encode($data));
+    respond($event,false,[]);
+    exit();
 }
 
 function respond($msg,$err = false,$data = [])

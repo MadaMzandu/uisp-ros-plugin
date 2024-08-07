@@ -15,7 +15,7 @@ class Batch
     private array $batch_failed = [];
     private array $batch_success = [];
 
-    public function del_queues($ids)
+    public function del_queues($ids): bool
     {
         $deviceServices = $this->find_services($ids, 'delete');
         $plans = $this->find_plans();
@@ -36,11 +36,11 @@ class Batch
                 }
             }
         }
-        MyLog()->Append('Queues ready to delete');
         $this->run_batch($deviceData,true);
+        return empty($this->batch_failed);
     }
 
-    public function del_parents()
+    public function del_parents(): bool
     {
         $plans = $this->find_plans();
         $devices = $this->find_devices();
@@ -56,11 +56,12 @@ class Batch
             }
         }
         $this->run_batch($deviceData,true);
+        return empty($this->batch_failed);
     }
 
-    public function del_accounts(array $ids)
+    public function del_accounts(array $ids): bool
     {
-        $deviceServices = $this->select_data($ids,'delete');
+        $deviceServices = $this->find_services($ids,'delete');
         $plans = $this->find_plans();
         $deviceData = [];
         foreach (array_keys($deviceServices) as $did){
@@ -69,51 +70,23 @@ class Batch
             foreach($deviceServices[$did] as $service){
                 $plan = $plans[$service['planId']] ?? null;
                 if(!$plan){ $plan = $this->make_plan($service); } //generate plan if not found
-                $api->set_data($service,$plan);
-                $account = $api->account();
-                if($account){
-                    $account['action'] = 'remove';
-                    $deviceData[$did]['accounts'][] = $account ;
-                }
-                $queue = $api->queue();
-                if($queue){
-                    $queue['action'] = 'remove';
-                    $deviceData[$did]['queues'][] = $queue ;
-                }
-                $profile = $api->profile();
-                if($profile){
-                    $profile['action'] = 'remove';
-                    $deviceData[$did]['profiles'][$profile['name']] = $profile ;
-                }
-                $parent = $api->parent();
-                if($parent){
-                    $parent['action'] = 'remove';
-                    $deviceData[$did]['parents'][$parent['name']] = $parent ;
-                }
-                $disconnect = $api->account_reset();
-                if($disconnect){$deviceData[$did]['disconn'][] = $disconnect; }
-                $pool = $api->pool();
-                if ($pool){
-                    $pool['action'] = 'remove';
-                    $deviceData[$did]['pool']['uisp_pool'] = $pool;
-                }
-                $dhcp6 = $api->dhcp6();
-                if($dhcp6){
-                    $dhcp6['action'] = 'remove';
-                    $deviceData[$did]['accounts'][] = $dhcp6;
+                $data = $api->get_data($service,$plan);
+                foreach(array_keys($data) as $key){
+                    $item = $data[$key];
+                    $item['action'] = 'remove';
+                    $deviceData[$did][$key][] = $item;
                 }
             }
         }
-        unset($api);
-        MyLog()->Append('services ready to delete');
         $this->run_batch($deviceData,true);
         $this->unsave_batch($deviceServices);
         $this->queue_failed($deviceServices);
+        return empty($this->batch_failed);
     }
 
     public function set_queues(array $ids,$on = true)
     {
-        $deviceServices = $this->select_data($ids,'update');
+        $deviceServices = $this->find_services($ids,'update');
         $plans = $this->find_plans();
         $deviceData = [];
         $device_ids = [];
@@ -144,40 +117,27 @@ class Batch
         $this->db()->saveConfig(['disabled_routers' => implode(',',$routers)]);
     }
 
-    public function set_accounts(array $ids)
+    public function set_accounts(array $ids): bool
     {
-        $deviceServices = $this->select_data($ids,'update');
+        $deviceServices = $this->find_services($ids,'update');
         $plans = $this->find_plans();
         $deviceData = [];
-
         foreach (array_keys($deviceServices) as $did){
             $api = $this->datapi($did);
             foreach ($deviceServices[$did] as $service){
                 if($did == 'nodev'){ continue; }
                 $plan = $plans[$service['planId']] ?? null ;
                 if(!$plan){ $plan = $this->make_plan($service); } //generate plan if not found
-                $api->set_data($service,$plan);
-                $account = $api->account();
-                if(!$account){ continue; }
-                $deviceData[$did]['accounts'][] = $account ; 
-                $queue = $api->queue();
-                if($queue){ $deviceData[$did]['queues'][] = $queue ; }
-                $profile = $api->profile();
-                if($profile){ $deviceData[$did]['profiles'][$profile['name']] = $profile ; }
-                $parent = $api->parent();
-                if($parent){ $deviceData[$did]['parents'][$parent['name']] = $parent ; }
-                $disconnect = $api->account_reset();
-                if($disconnect){$deviceData[$did]['disconn'][] = $disconnect; }
-                $pool = $api->pool();
-                if($pool){$deviceData[$did]['pool']['uisp_pool'] = $pool; }
-                $dhcp6 = $api->dhcp6();
-                if($dhcp6){$deviceData[$did]['accounts'][] = $dhcp6; }
+                $data = $api->get_data($service,$plan);
+                foreach(array_keys($data) as $key){
+                    $deviceData[$did][$key][] = $data[$key];
+                }
             }
         }
-        unset($api);
         $this->run_batch($deviceData);
         $this->save_batch($deviceServices);
         $this->queue_failed($deviceServices);
+        return empty($this->batch_failed);
     }
 
     private function set_sites($ids,$delete = false)
@@ -189,7 +149,7 @@ class Batch
 
     private function run_batch($deviceData,$delete = false)
     {
-        $timer = new ApiTimer("mt batch write");
+        $timer = new ApiTimer("device batch write");
         $sent = 0 ;
         $writes = 0 ;
         $this->batch_failed = [];
@@ -197,11 +157,9 @@ class Batch
         foreach (array_keys($deviceData) as $did)
         {
             $device  = $this->find_device($did);
-            if(!(array)$device){ continue; }
-            $this->batch_device = $device ;
+            if(!is_object($device)){ continue; }
             $type = $device->type ?? 'mikrotik';
             $api = $this->device_api($type);
-            MyLog()->Append('executing batch for device: '.$device->name);
             $keys = ['pool','parents','profiles','queues','accounts','dhcp6','disconn'];
             if($delete) {
                 $keys = array_reverse(array_diff($keys,['disconn']));
@@ -224,36 +182,31 @@ class Batch
     private function save_batch($deviceServices)
     {
         if(empty($this->batch_success)){ return ;}
-        $fields = [
-            'id',
-            'device',
-            'clientId',
-            'planId',
-            'status',
-        ];
+        $fill = array_fill_keys(['id','device','clientId',
+            'planId','status'],'%%$#');
         $save = [];
         $sites = [];
+        $now = date('c');
         foreach ($deviceServices as $services){
             foreach ($services as $service){
                 $id = $service['batch'] ?? null ;
                 $success = $this->batch_success[$id] ?? null ;
                 if($success){
                     $sites[] = $service['id'] ;
-                    $values = [];
-                    foreach ($fields as $key){ $values[$key] = $service[$key] ?? null ;}
-                    $values['last'] = $this->now();
+                    $values = array_intersect_key($service,$fill);
+                    $values['last'] = $now ;
                     $save[] = $values;
                 }
             }
         }
-        MyLog()->Append('batch: saving data ');
+        $this->ip_flush();
         $this->db()->insert($save,'services',true);
         $this->set_sites($sites);
     }
 
-    private function unsave_batch($deviceServices): array
+    private function unsave_batch($deviceServices): void
     {
-        if(empty($this->batch_success)) return [];
+        if(empty($this->batch_success)) return ;
         $ids = [];
         foreach ($deviceServices as $services){
             foreach ($services as $service){
@@ -264,73 +217,71 @@ class Batch
                 }
             }
         }
+        $this->ip_flush();
         foreach(['services','network'] as $table) {
             $sql = sprintf("delete from %s where id in (%s)",$table,
                 implode(',',$ids));
-            MyLog()->Append(sprintf("batch delete from %s sql: %s",$table,$sql));
             $this->db()->exec($sql);
         }
         $this->set_sites($ids,true);
-        return $ids ;
     }
 
     private function queue_failed($deviceServices)
     {
         if(empty($this->batch_failed)) return ;
         MyLog()->Append("batch queueing failed: ".sizeof($this->batch_failed));
-        $file = file_get_contents('data/queue.json') ?? '[]';
+        $fn = 'data/queue.json';
+        $file = file_get_contents($fn) ?? '[]';
         $queue = json_decode($file,true);
         foreach ($deviceServices as $services){
             foreach ($services as $service){
-                $id = $service['batch'] ?? null ;
-                $failed = $this->batch_failed[$id] ?? null ;
-                if($failed){ //do not requeue
+                $batch = $service['batch'] ?? null ;
+                $id = $service['id'] ?? 0 ;
+                $failed = $this->batch_failed[$batch] ?? null ;
+                if($failed){
+                    MyLog()->Append(['batch_error',$failed,$service],6);
                     $service['error'] = $failed ;
-                    $service['last'] = date_create()->format('Y-m-d H:i:s');
-                    $queue[]= $service ;
+                    $service['last'] = date('c');
+                    $queue["Q$id"] = $service ;
                 }
             }
         }
-        file_put_contents('data/queue.json',json_encode($queue));
+        file_put_contents($fn,json_encode($queue));
     }
 
-    private function device_api($type)
+    private function device_api($type): MT|ER|null
     {
-        $client = $this->_apis[$type] ?? null ;
-        if(!$client){
-            if($type == 'mikrotik'){
-                $client = new MT();
-                $this->_apis[$type] = $client ;
-            }
-            if(in_array($type,['edge','edgeos','edgerouter'])){
-                $client = new ER();
-                $this->_apis[$type] = $client ;
-            }
+        if(!isset($this->_apis[$type])){
+            $this->_apis[$type] = match ($type){
+                'edge','edgeos','edgerouter' => new ER(),
+                default => new MT(),
+            };
         }
-        return $client ;
+        return $this->_apis[$type] ?? null ;
     }
 
-    private function datapi($did)
+    private function datapi($did): MtData|ErData
     {
-        $type = $this->find_device($did)->type ?? 'mikrotik';
-        if($type == 'mikrotik') return new MtData();
-        if(in_array($type,['edge','edgerouter','edgeos'])){ return new ErData(); }
-        throw new Exception('No api for this device type: '.$type);
+        $device = $this->find_device($did);
+        return match ($device->type){
+            'mikrotik' => new MtData(),
+            'edge','edgerouter','edgeos' => new ErData(),
+            default => fail('device_invalid'),
+        };
     }
 
     private function find_plans(): array
     {
         if(empty($this->_plans)){
-            $api = new ApiPlans();
-            $api->get();
-            $plans = $api->result();
+            $api = new ApiList([],'plans');
+            $plans = $api->list();
             foreach ($plans as $plan){
                 $this->_plans[$plan['id']] = $plan; }
         }
         return $this->_plans ;
     }
 
-    private function select_data(array $ids, $action): array
+    private function find_services(array $ids, $action): array
     {
         $data = $ids ;
         $first = $ids[0] ;
@@ -370,32 +321,33 @@ class Batch
         return $this->_devices ;
     }
 
+    private function ip_flush(): void
+    {
+        myIPClass()->flush();
+    }
+
     private function make_plan($service): array
     {
+        $keys = ['limitUpload','limitDownload', 'burstUpload','burstDownload',
+            'threshUpload','threshDownload'];
         $ul = $service['uploadSpeed'] ?? 1 ;
         $dl = $service['downloadSpeed'] ?? 1 ;
-        $defaults = ['priorityUpload' => 8,'priorityDownload' => 8,'timeUpload' => 1,'timeDownload' => 1,
-            'uploadSpeed' => $ul,'downloadSpeed' => $dl];
-        $keys = ['ratio','priorityUpload','priorityDownload','limitUpload','limitDownload',
-            'burstUpload','burstDownload','threshUpload','threshDownload','timeUpload','timeDownload',
-            'uploadSpeed','downloadSpeed'];
-        $plan = [];
-        foreach ($keys as $key){ $plan[$key] = $defaults[$key] ?? 0 ;}
+        $defaults = ['ratio' => 1, 'priorityUpload' => 8,'priorityDownload' => 8,
+            'timeUpload' => 1,'timeDownload' => 1, 'uploadSpeed' => $ul,'downloadSpeed' => $dl];
+        $fill = array_fill_keys($keys,0);
+        $plan = array_replace($fill,$defaults);
         $plan['name'] = sprintf('Custom Plan %s/%s',$ul,$dl);
         return $plan ;
     }
 
-    private function db()
+    private function db(): ApiSqlite
     {
         return mySqlite();
     }
 
-    private function dbCache()
+    private function dbCache(): ApiSqlite
     {
         return myCache();
     }
-
-    private function now(): string {$date = new DateTime(); return $date->format('c'); }
-
 
 }

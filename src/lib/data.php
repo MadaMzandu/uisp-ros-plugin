@@ -7,13 +7,47 @@ class Data
     protected array $plan = [] ;
     protected ?array $_devices = null ;
     protected ?object $_conf = null;
-    protected ?ApiIP $_ipapi = null ;
 
+    public function get_data($service,$plan): array
+    {
+        $this->set_data($service,$plan) ;
+        $data = [];
+        $keys = "pool,profiles,parents,queues,accounts,dhcp6,disconn";
+        foreach(explode(',',$keys) as $key){
+            $item = match ($key){
+                'pool' => $this->pool(),
+                'profiles' => $this->profile(),
+                'parents' => $this->parent(),
+                'queues' => $this->queue(),
+                'accounts' => $this->account(),
+                'dhcp6' => $this->dhcp6(),
+                'disconn' => $this->account_reset(),
+                default => null,
+            };
+            if($item){ $data[$key] = $item; }
+        }
+        return $data ;
+    }
 
     public function set_data($service,$plan)
     {
         $this->service = $service ;
         $this->plan = $plan ;
+    }
+
+    protected function find_service($addresses): int
+    {
+        $list = explode(',',$addresses);
+        foreach($list as $a6){
+            $a4 = preg_replace("#/\d+s*#",'',$a6);
+            $q = "select id from network where address='$a4' or address6='$a6'";
+            $id = mySqlite()->singleQuery($q) ;
+            if(!$id){ return 0 ; }
+            $q = "select id from services where id=$id";
+            $cid = myCache()->singleQuery($q);
+            return $cid ?  : -$id ;
+        }
+        return 0 ;
     }
 
     protected function disabled(): bool
@@ -24,10 +58,8 @@ class Data
 
     protected function ip($ip6 = false): ?string
     {
-        MyLog()->Append('checking for assigned address');
         $assigned = $this->find_address($ip6);
         if($assigned){ return $assigned; }
-        MyLog()->Append('requesting address assignment');
         return $this->assign_address($ip6);
     }
 
@@ -37,11 +69,11 @@ class Data
         $service = $this->service['id'] ?? 0 ;
         $fixed = $this->service[$type] ?? null ;
         if($fixed){
-            $this->ipapi()->set_ip($service,$fixed,$ip6);
+            $this->ipapi()->set($service,$fixed,$ip6);
             return $fixed;
         }
 
-        return $this->ipapi()->find_used($service,$ip6);
+        return $this->ipapi()->find_assigned($service,$ip6);
     }
 
     protected function assign_address($ip6): ?string
@@ -64,9 +96,18 @@ class Data
         return 'invalid';
     }
 
+    protected function pool(): ?array { return null; }
+    protected function account(): ?array { return null; }
+    protected function dhcp6(): ?array { return null; }
+    protected function account_reset(): ?array { return null; }
+    protected function parent(): ?array { return null; }
+    protected function queue(): ?array { return null; }
+    protected function profile(): ?array { return null; }
+    public function get_orphans($device): ?array { return null; }
+
     protected function ipapi(): ApiIP
     {
-        return myIpApi();
+        return myIPClass();
     }
 
 
