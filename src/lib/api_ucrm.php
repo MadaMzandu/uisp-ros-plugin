@@ -6,6 +6,7 @@ include_once 'api_ucrm_web.php';
 const USE_UCRM_CURL = 0;
 
 use Ubnt\UcrmPluginSdk\Service\UcrmApi;
+use Ubnt\UcrmPluginSdk\Service\UnmsApi ;
 
 class ApiUcrm
 {
