@@ -151,12 +151,8 @@ class ApiAction
         if($this->batch()->del_accounts([$data])){
             return $this->unsave($entity);
         }
-        else
-        {//normal edit
-            if(!$this->is_flap($data))
-            {//ignore network flapping
-                $this->set($data['entity'],'edit');
-            }
+        return false ;
+    }
 
     private function save($entity): bool
     {
