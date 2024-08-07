@@ -69,23 +69,7 @@ class ApiIP
         $end = $this->gmp_bcast($subnet);
         return gmp_cmp($a,$start) >= 0 && gmp_cmp($a,$end) <= 0;
     }
-
-    public function in_subnet($address,$subnet): bool
-    {
-        $a = $this->ip2gmp($address);
-        $start = $this->ip2gmp($subnet);
-        $end = $this->gmp_bcast($subnet);
-        return gmp_cmp($a,$start) >= 0 && gmp_cmp($a,$end) <= 0;
-    }
-
-    public function in_subnet($address,$subnet): bool
-    {
-        $a = $this->ip2gmp($address);
-        $start = $this->ip2gmp($subnet);
-        $end = $this->gmp_bcast($subnet);
-        return gmp_cmp($a,$start) >= 0 && gmp_cmp($a,$end) <= 0;
-    }
-
+    
     private function find_unused($prefix): ?string
     {
         if(!$this->is_prefix($prefix)) return null ;
