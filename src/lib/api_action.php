@@ -27,7 +27,7 @@ class ApiAction
         $action = $this->action() ;
         if($this->type() == 'client')
         {
-            return $this->save($data['entity']);
+            return $this->set_client($data['entity']);
         }
         elseif ($check = $this->is_unset($data))
         {//unset attributes
@@ -80,11 +80,11 @@ class ApiAction
             MyLog()->Append(["Update edit requires delete changes: ",$changes,$this->entity()->id]);
             $dev = $entity['device'] ?? null ;
             $user = $entity['username'] ?? $entity['mac'] ?? null ;
-            $done = $this->delete($data['previous']);
+            $this->delete($data['previous']) ;
             if($dev && $user) {
-                $done &= $this->set($entity, 'upgrade');
+                return $this->set($entity, 'upgrade');
             }
-            return $done ;
+            return true ;
         }
         elseif(in_array('status',$changes) && in_array($this->state(),[2,5]))
         {// obsolete status requires delete
@@ -115,9 +115,9 @@ class ApiAction
         return $this->entity()->clientId ?? 0 ;
     }
 
-    private function client(): ?array
+    private function client($id = null): ?array
     {
-        $id = $this->entity()->clientId ?? 0;
+        if(!$id){ $id = $this->entity()->clientId ?? $this->entity()->id ?? 0; }
         $q = "select company,firstName,lastName from clients where id=$id";
         $client = myCache()->singleQuery($q,true);
         if($client){ return $client; }
@@ -133,6 +133,21 @@ class ApiAction
         $ret['firstName'] = $client['firstName'] ?? null;
         $ret['lastName'] = $client['lastName'] ?? null ;
         return $ret ;
+    }
+
+    private function  set_client($entity): bool
+    {
+        $id = $entity['id'];
+        $client = $this->client($id);
+        $changes = array_diff_assoc($entity,$client);
+        if(sizeof($changes) < 2){ return true ;} //no changes
+        $services = mySqlite()->selectCustom("select id from services where clientId=$id");
+        if(!$services){ return $this->save($entity); } //has no services - just save
+        $ids = [];
+        foreach($services as $service){ $ids[] = $service['id']; }
+        $this->batch()->del_queues($ids); //del queues before saving
+        $this->save($entity);
+        return $this->batch()->set_accounts($ids);
     }
 
     private function set($entity,$action = 'set'): bool
