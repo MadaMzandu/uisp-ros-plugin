@@ -84,6 +84,7 @@ class ApiAction
             if($dev && $user) {
                 $done &= $this->set($entity, 'upgrade');
             }
+            return $done ;
         }
         elseif(in_array('status',$changes) && in_array($this->state(),[2,5]))
         {// obsolete status requires delete
@@ -117,7 +118,7 @@ class ApiAction
     private function client(): ?array
     {
         $id = $this->entity()->clientId ?? 0;
-        $q = "select * from clients where id=$id";
+        $q = "select company,firstName,lastName from clients where id=$id";
         $client = myCache()->singleQuery($q,true);
         if($client){ return $client; }
         return $this->get_client($id);
