@@ -3,8 +3,8 @@ include_once 'api_common.php';
 class ApiUpdate
 {
     private string $mode ;
-    private null|array|object $data;
-    private null|array|object $result;
+    private $data;
+    private $result;
     private bool $fast = false ;
 
     public function exec(): void
@@ -25,7 +25,7 @@ class ApiUpdate
             case 'cache': $this->result =$this->cache_build(); break;
             case 'log_clear' : $this->result =$this->log_clear(); break;
             default: fail('invalid_action',$this->data);
-        };
+        }
     }
 
     private function backup(): array
@@ -46,7 +46,7 @@ class ApiUpdate
         fail('backup_fail',$this->data);
     }
 
-    private function delete(): null|array|object
+    private function delete()
     {
         switch ($this->mode){
             case 'devices':
@@ -58,7 +58,7 @@ class ApiUpdate
         }
     }
 
-    private function edit(): null|array|object
+    private function edit()
     {
         switch ($this->mode){
             case 'devices':
@@ -83,7 +83,7 @@ class ApiUpdate
         fail('edit_config_fail',$this->data);
     }
 
-    private function insert(): null|array|object
+    private function insert()
     {
         switch ($this->mode){
             case 'devices':
@@ -410,7 +410,7 @@ class ApiUpdate
 
     public function status(): object { return new stdClass(); }
 
-    public function result(): null|array|object { return $this->result; }
+    public function result() { return $this->result; }
 
     public function __construct($data = null,$mode = 'services')
     {

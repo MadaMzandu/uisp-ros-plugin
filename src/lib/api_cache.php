@@ -83,7 +83,7 @@ class ApiCache{
                 case 'services': $data = $this->get_services($offset,$limit); break;
                 case 'sites': $data = $this->get_sites(); break ;
                 default: $data = null ;
-            };
+            }
             if(empty($data)) continue ;
             $request = [];
             foreach($data as $item){

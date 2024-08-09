@@ -4,8 +4,8 @@ include_once 'api_ucrm.php';
 class ApiList
 {
     private string $mode ;
-    private null|object|array $result = null ;
-    private null|object|array $data;
+    private $result = null ;
+    private $data;
 
     public function exec(): void
     {
@@ -13,7 +13,7 @@ class ApiList
         $this->result = $this->list();
     }
 
-    public function list(): null|array|object
+    public function list()
     {
         switch ($this->mode){
             case 'plans':  return $this->list_plans();
@@ -31,7 +31,7 @@ class ApiList
         }
     }
 
-    private function list_config(): null|array|object
+    private function list_config()
     {
         return $this->db()->readConfig() ;
     }
@@ -306,7 +306,7 @@ class ApiList
 
     public function status(): object { return new stdClass(); }
 
-    public function result(): null|array|object { return $this->result; }
+    public function result() { return $this->result; }
 
     private function ucrm(): ApiUcrm {
         return new ApiUcrm(null, true); }

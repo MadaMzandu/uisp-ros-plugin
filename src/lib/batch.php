@@ -247,7 +247,7 @@ class Batch
         file_put_contents($fn,json_encode($queue));
     }
 
-    private function device_api($type): MT|null
+    private function device_api($type): ?object
     {
         if(!isset($this->_apis[$type])){
             if($type != 'mikrotik'){ fail('device_invalid'); }

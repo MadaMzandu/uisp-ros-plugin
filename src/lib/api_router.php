@@ -14,7 +14,7 @@ class ApiRouter
 
     private ?object $data;
     private ?object $status;
-    private mixed $result;
+    private $result;
 
     public function __construct($data)
     {

@@ -13,7 +13,7 @@ class MT extends Device
     protected ?array $batch_success = null;
     protected ?object $api = null;
 
-    protected function write($post): null|array|string
+    protected function write($post)
     {
         $opened = $this->xor_connect();
         //check and prepare
@@ -117,7 +117,7 @@ class MT extends Device
         return $data ;
     }
 
-    protected function read($path,$filter = null): null|array|string
+    protected function read($path,$filter = null)
     {  //implements mikrotik print
         $opened = $this->xor_connect() ;
         if(!$this->api) return  null ;

@@ -23,7 +23,7 @@ class Data
                 case 'accounts': $item = $this->account(); break;
                 case 'dhcp6':  $item = $this->dhcp6(); break;
                 case 'disconn': $item = $this->account_reset(); break;
-            };
+            }
             if($item){ $data[$key] = $item; }
         }
         return $data ;

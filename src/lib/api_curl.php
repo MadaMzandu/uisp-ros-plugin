@@ -8,7 +8,7 @@ class ApiCurl
     public bool $no_ssl = false ;
     public bool $verbose = false ;
     protected array $opts = [];
-    protected ?CurlHandle $ch = null ;
+    protected $ch = null ;
 
     public function request($url, $method = 'GET', $post = [])
     {

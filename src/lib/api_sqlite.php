@@ -30,7 +30,7 @@ class ApiSqlite
         return implode(',',$values);
     }
 
-    private function quote($value): null|int|float|string
+    private function quote($value)
     {
         if(is_numeric($value)) return $value;
         if(empty($value)) return 'null';
