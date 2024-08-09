@@ -21,8 +21,8 @@ function backup_restore(){
         $sec = UcrmSecurity::create();
         $user = $sec->getUser();
         if(!$user || $user->isClient){ return; }
-        $bu = new ApiBackup();
-        if($bu->run()){
+        $api = new ApiUpdate([],'system');
+        if($api->backup()){
             $ul = $_FILES['backup']['tmp_name'] ?? null;
             if($ul){ copy($ul,'data/data.db'); }
         }
