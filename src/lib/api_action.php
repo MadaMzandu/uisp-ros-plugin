@@ -128,7 +128,6 @@ class ApiAction
     {
         $client = $this->ucrm()->get("clients/$id");
         if(!$client){ return []; }
-        $ret['id'] = $id;
         $ret['company'] = $client['companyName'] ?? null;
         $ret['firstName'] = $client['firstName'] ?? null;
         $ret['lastName'] = $client['lastName'] ?? null ;
