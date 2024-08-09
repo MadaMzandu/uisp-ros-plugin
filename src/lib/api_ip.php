@@ -19,7 +19,7 @@ class ApiIP
         if($device){ $device = json_decode(json_encode($device)); }
         if(is_object($device)){
             $len = $device->pfxLength ?? null ;
-            $this->length6 = is_int($len) ? $len : 64;
+            $this->len6 = is_int($len) ? $len : 64;
             $pool = $ipv6 ? $device->pool6 : $device->pool ;
         }
         if(!$pool){
