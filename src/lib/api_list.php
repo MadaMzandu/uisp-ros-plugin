@@ -67,7 +67,7 @@ class ApiList
     {
         $accept = $_SERVER['HTTP_ACCEPT_LANGUAGE'] ; //add trailing comma
         $split = preg_split("/[;,]+/",$accept) ;
-        $grep = preg_grep("/\w+-\w/",$split);
+        $grep = preg_grep("/[a-zA-Z]+$/",$split);
         $first = array_shift($grep) ?? 'en-USA' ;
         $lang = preg_replace("/-.*/",'',$first);
         $data = [];
