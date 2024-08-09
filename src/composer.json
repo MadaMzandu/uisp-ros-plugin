@@ -3,7 +3,7 @@
   "version": "2.3.0",
   "license": "MIT",
   "require": {
-    "ubnt/ucrm-plugin-sdk": "v0.10.0",
+    "ubnt/ucrm-plugin-sdk": "*",
     "ext-gmp": "*",
     "ext-json": "*",
     "ext-curl": "*",
@@ -11,7 +11,7 @@
   },
   "config": {
     "platform": {
-      "php": "8.1"
+      "php": "7.4"
     }
   }
 }
