@@ -42,12 +42,13 @@ class ApiRouter
         $type = $this->data->changeType
             ?? 'none';
         $target = $this->data->target ?? 'none';
-        $api = match ($type){
-            'list' => new ApiList($this->data,$target),
-            'update' => new ApiUpdate($this->data,$target),
-            'none' => new  stdClass(),
-             default => new ApiAction()
-        };
+        //$api = null;
+        switch ($type){
+            case 'list': $api = new ApiList($this->data,$target); break;
+            case 'update': $api = new ApiUpdate($this->data,$target); break ;
+            case 'none': $api = new  stdClass(); break ;
+            default: $api = new ApiAction();
+        }
         $api?->exec($this->data);
         $this->status = $api?->status();
         $this->result = $api?->result();

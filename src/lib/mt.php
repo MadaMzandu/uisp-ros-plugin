@@ -178,24 +178,25 @@ class MT extends Device
 
     protected function dep_key($path): string
     {
-        return match (trim($path, '/')) {
-            'ppp/secret', 'ip/hotspot/user' => 'profile',
-            'queue/simple' => 'parent',
-            'ipv6/dhcp-server/binding' => 'prefix-pool',
-            default => 'parent-queue',
-        };
+        switch (trim($path, '/')) {
+            case 'ppp/secret':
+            case 'ip/hotspot/user': return 'profile';
+            case 'queue/simple': return 'parent';
+            case 'ipv6/dhcp-server/binding': return 'prefix-pool';
+            default: return 'parent-queue';
+        }
     }
 
     protected function dep_paths($path): ?array
     {
-        return match (trim($path,'/'))
+        switch (trim($path,'/'))
         {
-            'ppp/profile' => ['/ppp/secret'],
-            'ip/hotspot/user/profile' => ['/ip/hotspot/user'],
-            'ipv6/pool' => ['/ipv6/dhcp-server/binding'],
-            'queue/simple' => ['/ppp/profile','/ip/hotspot/user/profile','/queue/simple'],
-            default => null,
-        };
+            case 'ppp/profile': return ['/ppp/secret'];
+            case 'ip/hotspot/user/profile': return ['/ip/hotspot/user'];
+            case 'ipv6/pool': return ['/ipv6/dhcp-server/binding'];
+            case 'queue/simple': return ['/ppp/profile','/ip/hotspot/user/profile','/queue/simple'];
+            default: return null;
+        }
     }
 
     protected function find_id($data): ?string

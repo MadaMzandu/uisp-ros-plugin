@@ -40,12 +40,12 @@ class MtData extends Data
 
     public function account(): ?array
     {
-        return match ($this->type()) {
-            'dhcp' => $this->dhcp(),
-            'ppp' => $this->ppp(),
-            'hotspot' => $this->hotspot(),
-            default => null,
-        };
+        switch($this->type()) {
+            case 'dhcp': return $this->dhcp();
+            case 'ppp': return $this->ppp();
+            case 'hotspot': return $this->hotspot();
+            default: return null;
+        }
     }
 
     public function profile(): ?array

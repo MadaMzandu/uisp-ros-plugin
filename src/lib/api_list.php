@@ -10,26 +10,25 @@ class ApiList
     public function exec(): void
     {
         $action = $this->data->action ?? 'none';
-        $this->result = match ($action){
-            'list' => $this->list(),
-            default => null,
-        };
+        $this->result = $this->list();
     }
 
     public function list(): null|array|object
     {
-        return match ($this->mode){
-            'plans' => $this->list_plans(),
-            'devices' => $this->list_devices(),
-            'services' => $this->list_services(),
-            'config' => $this->list_config(),
-            'jobs' => $this->list_jobs(),
-            'attrs','attributes' => $this->list_attrs(),
-            'backups' => $this->list_backups(),
-            'orphans' => $this->list_orphans(),
-            'messages','lang' => $this->list_msg(),
-            default => null
-        };
+        switch ($this->mode){
+            case 'plans':  return $this->list_plans();
+            case 'devices': return $this->list_devices();
+            case 'services': return $this->list_services();
+            case 'config': return $this->list_config();
+            case 'jobs': return $this->list_jobs();
+            case 'attrs':
+            case 'attributes': return $this->list_attrs();
+            case 'backups': return $this->list_backups();
+            case 'orphans': return $this->list_orphans();
+            case 'messages':
+            case 'lang': return $this->list_msg();
+            default: return null;
+        }
     }
 
     private function list_config(): null|array|object
@@ -88,15 +87,9 @@ class ApiList
         $id = $this->data->data->id ?? 0 ;
         $device = $this->db()->selectDeviceById($id);
         $type = $device->type ?? null ;
-        $api = match ($type){
-            'mikrotik' => new MtData(),
-            'edgeos' => new ErData(),
-            default => null,
-        };
-        if($api){
-            return $api->get_orphans($device);
-        }
-        fail('orphan_list_fail',[$device,$this->data]);
+        $api = $type == 'mikrotik' ? new MtData() : null ;
+        if($api) fail('orphan_list_fail',[$device,$this->data]);
+        return $api->get_orphans($device);
     }
 
     private function list_devices(): array

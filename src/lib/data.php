@@ -14,15 +14,15 @@ class Data
         $data = [];
         $keys = "pool,profiles,parents,queues,accounts,dhcp6,disconn";
         foreach(explode(',',$keys) as $key){
-            $item = match ($key){
-                'pool' => $this->pool(),
-                'profiles' => $this->profile(),
-                'parents' => $this->parent(),
-                'queues' => $this->queue(),
-                'accounts' => $this->account(),
-                'dhcp6' => $this->dhcp6(),
-                'disconn' => $this->account_reset(),
-                default => null,
+            $item = null ;
+            switch ($key){
+                case 'pool': $item = $this->pool(); break ;
+                case 'profiles': $item = $this->profile(); break;
+                case 'parents': $item = $this->parent(); break;
+                case 'queues': $item = $this->queue(); break;
+                case 'accounts': $item = $this->account(); break;
+                case 'dhcp6':  $item = $this->dhcp6(); break;
+                case 'disconn': $item = $this->account_reset(); break;
             };
             if($item){ $data[$key] = $item; }
         }

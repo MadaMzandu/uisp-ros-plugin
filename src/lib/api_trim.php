@@ -6,11 +6,13 @@ class ApiTrim
 
     public function trim($type, $request): ?array
     {
-        return match (strtolower($type)) {
-            'service', 'services' => $this->trim_service($request),
-            'client', 'clients' => $this->trim_client($request),
-            default => null,
-        };
+        switch (strtolower($type)) {
+            case 'service':
+            case 'services': return $this->trim_service($request);
+            case 'client':
+            case 'clients': return $this->trim_client($request);
+            default: return null;
+        }
     }
 
     private function trim_site($request): array

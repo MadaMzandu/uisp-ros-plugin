@@ -78,10 +78,11 @@ class ApiCache{
         $limit = 50 ;
         $offset = 0 ;
         while($data){
-            $data = match ($table){
-                'clients' => $this->get_clients($offset,$limit),
-                'services' => $this->get_services($offset,$limit),
-                'sites' => $this->get_sites(),
+            switch ($table){
+                case 'clients': $data = $this->get_clients($offset,$limit); break;
+                case 'services': $data = $this->get_services($offset,$limit); break;
+                case 'sites': $data = $this->get_sites(); break ;
+                default: $data = null ;
             };
             if(empty($data)) continue ;
             $request = [];

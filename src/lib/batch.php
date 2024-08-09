@@ -250,23 +250,19 @@ class Batch
     private function device_api($type): MT|null
     {
         if(!isset($this->_apis[$type])){
-            $this->_apis[$type] = match ($type){
-                'mikrotik' => new MT(),
-                default => fail('device_invalid'),
-            };
+            if($type != 'mikrotik'){ fail('device_invalid'); }
+            $this->_apis['mikrotik'] = new MT();
         }
         return $this->_apis[$type] ?? null ;
     }
 
-    private function datapi($did): MtData|ErData
+    private function datapi($did): MtData
     {
         $device = $this->find_device($did);
         if(!is_object($device)){ fail('device_invalid'); }
-        return match ($device->type){
-            'mikrotik' => new MtData(),
-            'edge','edgerouter','edgeos' => new ErData(),
-            default => fail('device_invalid'),
-        };
+        $type = $device->type ?? null ;
+        if($type != 'mikrotik'){ fail('device_invalid'); }
+        return new MtData();
     }
 
     private function find_plans(): array

@@ -14,17 +14,17 @@ class ApiUpdate
             fail('invalid_mode',$this->data);
         }
         $action = $this->data->action ?? null;
-        $this->result = match ($action){
-            'insert' => $this->insert(),
-            'edit' => $this->edit(),
-            'delete' => $this->delete(),
-            'backup' => $this->backup(),
-            'restore' => $this->restore(),
-            'publish' => $this->publish(),
-            'unpublish' => $this->publish(true),
-            'cache' => $this->cache_build(),
-            'log_clear' => $this->log_clear(),
-            default => fail('invalid_action',$this->data),
+        switch ($action){
+            case 'insert': $this->result = $this->insert(); break;
+            case 'edit': $this->result = $this->edit(); break;
+            case 'delete': $this->result = $this->delete(); break;
+            case 'backup': $this->result = $this->backup(); break;
+            case 'restore': $this->result =$this->restore(); break;
+            case 'publish': $this->result =$this->publish(); break;
+            case 'unpublish' : $this->result =$this->publish(true); break;
+            case 'cache': $this->result =$this->cache_build(); break;
+            case 'log_clear' : $this->result =$this->log_clear(); break;
+            default: fail('invalid_action',$this->data);
         };
     }
 
@@ -48,22 +48,26 @@ class ApiUpdate
 
     private function delete(): null|array|object
     {
-        return match ($this->mode){
-            'devices','delete' => $this->delete_db(),
-            'services','system' => $this->delete_services(),
-            'jobs' => $this->delete_jobs(),
-            default => fail('invalid_mode',[$this->mode,$this->data]),
-        };
+        switch ($this->mode){
+            case 'devices':
+            case 'delete': return $this->delete_db();
+            case 'services':
+            case 'system': return $this->delete_services();
+            case 'jobs': return $this->delete_jobs();
+            default: fail('invalid_mode',[$this->mode,$this->data]);
+        }
     }
 
     private function edit(): null|array|object
     {
-        return match ($this->mode){
-            'devices','plans' => $this->edit_db(),
-            'config' => $this->edit_config(),
-            'attrs','attributes' => $this->edit_attr(),
-            default => fail('invalid_mode',[$this->mode,$this->data]),
-        };
+        switch ($this->mode){
+            case 'devices':
+            case 'plans': return $this->edit_db();
+            case 'config': return $this->edit_config();
+            case 'attrs':
+            case 'attributes': return $this->edit_attr();
+            default: fail('invalid_mode',[$this->mode,$this->data]);
+        }
     }
 
     private function edit_config()
@@ -81,12 +85,15 @@ class ApiUpdate
 
     private function insert(): null|array|object
     {
-        return match ($this->mode){
-            'devices','plans' => $this->insert_db(),
-            'services','system' => $this->insert_services(),
-            'attrs','attributes' => $this->insert_attr(),
-            default => fail('invalid_mode',[$this->mode,$this->data]),
-        };
+        switch ($this->mode){
+            case 'devices':
+            case 'plans': return $this->insert_db();
+            case 'services':
+            case 'system': return $this->insert_services();
+            case 'attrs':
+            case 'attributes': return $this->insert_attr();
+            default: fail('invalid_mode',[$this->mode,$this->data]);
+        }
     }
 
     private function log_clear(): array
@@ -145,10 +152,7 @@ class ApiUpdate
         $d = "delete from $table where $pk in ($ids)";
         if($this->db()->exec($d)){
             $this->result = $before ;
-            match ($this->mode){
-                'devices' => $this->cache_build(),
-                default => null ,
-            };
+            if($this->mode == 'devices'){ $this->cache_build(); }
             return $this->result ;
         }
         fail('db_delete_fail',$this->data);
@@ -214,10 +218,10 @@ class ApiUpdate
         if($this->db()->insert($trim,$this->mode)){
             $id = $data['id'] ?? null ;
             $this->result = $this->find_last($id);
-            match ($this->mode){
-                'devices' => $this->cache_build(true) && $this->set_qos($qos),
-                 default => null,
-            };
+            if($this->mode == 'devices')
+            {
+                $this->cache_build(true) && $this->set_qos($qos);
+            }
             return $this->result;
         }
         fail('db_insert_fail',$this->data);
@@ -263,11 +267,10 @@ class ApiUpdate
         $trim['last'] = date('c') ;
         if($this->db()->edit($trim,$this->mode)){
             $this->result = $this->find_last($trim[$pk]);
-            match ($this->mode){
-                'devices' => $this->cache_build(true) && $this->set_qos($qos),
-                'plans' => $this->insert_services('plans'),
-                 default => null ,
-            };
+            switch ($this->mode){
+                case 'devices': $this->cache_build(true) && $this->set_qos($qos); break;
+                case 'plans': $this->insert_services('plans'); break ;
+            }
             MyLog()->Append(['edit_db_success','mode: '. $this->mode,'id: '. $id]);
             return $this->result ;
         }
