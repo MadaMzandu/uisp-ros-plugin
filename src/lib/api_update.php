@@ -28,7 +28,7 @@ class ApiUpdate
         }
     }
 
-    private function backup(): array
+    public function backup(): array
     {
         if(!in_array($this->mode,['backups','system'])){
             fail('invalid_mode',[$this->mode,$this->data]);
