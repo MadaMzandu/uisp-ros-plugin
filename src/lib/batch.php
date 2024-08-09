@@ -1,7 +1,5 @@
 <?php
-include_once 'er.php';
 include_once 'mt.php';
-include_once 'er_data.php';
 include_once 'mt_data.php';
 include_once 'api_ip.php';
 include_once 'api_sqlite.php';
@@ -249,12 +247,12 @@ class Batch
         file_put_contents($fn,json_encode($queue));
     }
 
-    private function device_api($type): MT|ER|null
+    private function device_api($type): MT|null
     {
         if(!isset($this->_apis[$type])){
             $this->_apis[$type] = match ($type){
-                'edge','edgeos','edgerouter' => new ER(),
-                default => new MT(),
+                'mikrotik' => new MT(),
+                default => fail('device_invalid'),
             };
         }
         return $this->_apis[$type] ?? null ;
