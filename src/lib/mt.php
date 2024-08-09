@@ -154,7 +154,7 @@ class MT extends Device
 
     protected function api_disconnect(): void
     {
-        $this->api?->disconnect();
+        $this->api->disconnect();
         $this->api = null ;
     }
 

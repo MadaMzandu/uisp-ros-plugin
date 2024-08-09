@@ -49,9 +49,9 @@ class ApiRouter
             case 'none': $api = new  stdClass(); break ;
             default: $api = new ApiAction();
         }
-        $api?->exec($this->data);
-        $this->status = $api?->status();
-        $this->result = $api?->result();
+        $api->exec($this->data);
+        $this->status = $api->status();
+        $this->result = $api->result();
     }
 
     private function data_check(): bool
