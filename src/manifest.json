@@ -3,9 +3,9 @@
   "information": {
     "name": "ros-er-plugin",
     "displayName": "Ros-ER Plugin",
-    "description": "Real time provisioning for RouterOs",
+    "description": "Real time provisioning for RouterOs and EdgeOs",
     "url": "",
-    "version": "2.3.1-beta1",
+    "version": "2.3.1",
     "ucrmVersionCompliancy": {
       "min": "2.14.0-beta4",
       "max": null
