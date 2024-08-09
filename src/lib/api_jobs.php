@@ -12,9 +12,9 @@ class ApiJobs
         $this->queue = $this->read();
     }
 
-    public function list()
+    public function list(): array
     {
-        $result = array_values($this->queue);
+        return array_values($this->queue);
     }
 
     public function clear()

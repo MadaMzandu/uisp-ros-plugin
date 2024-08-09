@@ -9,7 +9,6 @@ class ApiList
 
     public function exec(): void
     {
-        $action = $this->data->action ?? 'none';
         $this->result = $this->list();
     }
 
