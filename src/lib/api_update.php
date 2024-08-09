@@ -41,7 +41,7 @@ class ApiUpdate
         $next = "$dir/backup-$index";
         if(is_file($src) && copy($src,$next)){
             MyLog()->Append(['backup_success',$next,date('c',filemtime($next))]);
-            return [];
+            return [1];
         }
         fail('backup_fail',$this->data);
     }
