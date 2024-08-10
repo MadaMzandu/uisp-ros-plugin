@@ -12,10 +12,10 @@ class ErClient extends ApiCurl
 
     public function connect($username, $password, $host, $port = 443): bool
     {
-        if($host == $this->host
-            && $port == $this->port){ return true; } //already connected
+        if(trim($host) == $this->host
+            && trim($port) == $this->port){ return true; } //already connected
 
-        { $this->host = $host ; $this->port = $port; }
+        { $this->host = trim($host) ; $this->port = trim($port); }
 
         {
             $this->close();
