@@ -7,7 +7,10 @@ class ApiCurl
     public bool $assoc = false;
     public bool $no_ssl = false ;
     public bool $verbose = false ;
+    protected string $base = '/api' ;
+    protected ?string $url = null ;
     protected array $opts = [];
+    protected array $heads = [];
     protected ?CurlHandle $ch = null ;
 
     public function request($url, $method = 'GET', $post = [])
@@ -42,14 +45,14 @@ class ApiCurl
 
     protected function configure($path, $method, $post)
     {
-        $path = sprintf("%s/%s",
-            trim($this->api(),'/'),
+        $fpath = sprintf('%s/%s/%s',
+            trim($this->url(),'/'),
+            trim($this->base,'/'),
             trim($path,'/'));
         $this->ch = curl_init();
         $method = strtoupper($method);
-        $form = $post['form'] ?? null ;
         $this->opts = [
-            CURLOPT_URL => $path,
+            CURLOPT_URL => $fpath,
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_ENCODING => '',
             CURLOPT_MAXREDIRS => 10,
@@ -57,22 +60,19 @@ class ApiCurl
             CURLOPT_VERBOSE => $this->verbose,
             CURLOPT_FOLLOWLOCATION => true,
             CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
+            CURLOPT_POST => $method == 'POST',
+            $this->opts[CURLOPT_SSL_VERIFYPEER] => !$this->no_ssl,
+            $this->opts[CURLOPT_SSL_VERIFYHOST] => !$this->no_ssl,
         ];
-        if($method == 'POST'){
-            $this->opts[CURLOPT_POST] = true ;
-        }
-        else {
+        if($method != 'POST'){
             $this->opts[CURLOPT_CUSTOMREQUEST] = $method;
         }
-        if($this->no_ssl) {
-            $this->opts[CURLOPT_SSL_VERIFYPEER] = false;
-            $this->opts[CURLOPT_SSL_VERIFYHOST] = false ;
-        }
         if($post && $method != 'GET') {
+            $form = $post['form'] ?? null ;
             $this->opts[CURLOPT_POSTFIELDS] = $form ? http_build_query($form): json_encode($post);
         }
         else if($post) {
-            $this->opts[CURLOPT_URL] = sprintf('%s?%s',$path,http_build_query($post));
+            $this->opts[CURLOPT_URL] = sprintf('%s?%s',$fpath,http_build_query($post));
         }
     }
 
@@ -83,6 +83,7 @@ class ApiCurl
 
     protected function exec()
     {
+        if($this->heads){ $this->opts[CURLOPT_HTTPHEADER] = $this->heads; }
         curl_setopt_array($this->ch,$this->opts);
         $response = curl_exec($this->ch);
         $error = null ;
@@ -111,9 +112,9 @@ class ApiCurl
         return new stdClass();
     }
 
-    protected function api():string
+    protected function url():string
     {
-        return 'https://127.0.0.1/api/v2.1' ;
+        return $this->url ?? 'https://127.0.0.1/api/v2.1' ;
     }
 
 }
