@@ -10,8 +10,12 @@ class WebUcrm extends ApiCurl
     protected function configure($path, $method, $post)
     {
         $this->no_ssl = true ;
+        $nms = null ;
+        if($this->unms) $nms = 'nms/';
+        $this->base = $nms . 'api/v2.1';
+        $this->url = 'https://127.0.0.1' ;
         parent::configure($path,$method,$post);
-        $this->opts[CURLOPT_HTTPHEADER] = [
+        $this->heads = [
             'content-type: application/json',
             'x-auth-token: ' . $this->key(),
             'x-auth-app-key: ' . $this->key(),
@@ -21,13 +25,6 @@ class WebUcrm extends ApiCurl
     protected function key()
     {
         return $this->config()->unmsToken ?? $this->key ;
-    }
-
-    protected function api(): string
-    {
-        $nms = null ;
-        if($this->unms) $nms = 'nms/';
-        return 'https://127.0.0.1/' . $nms . 'api/v2.1' ;
     }
 
     public function __construct($token = null,$assoc = false,$unms = false)
