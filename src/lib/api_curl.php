@@ -62,8 +62,8 @@ class ApiCurl
             CURLOPT_FOLLOWLOCATION => true,
             CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
             CURLOPT_POST => $method == 'POST',
-            $this->opts[CURLOPT_SSL_VERIFYPEER] => !$this->no_ssl,
-            $this->opts[CURLOPT_SSL_VERIFYHOST] => !$this->no_ssl,
+            CURLOPT_SSL_VERIFYPEER => !$this->no_ssl,
+            CURLOPT_SSL_VERIFYHOST => !$this->no_ssl,
         ];
         if($method != 'POST'){
             $this->opts[CURLOPT_CUSTOMREQUEST] = $method;
@@ -115,7 +115,7 @@ class ApiCurl
 
     protected function curl()
     {
-        if(!is_resource($this->ch))
+        if(empty($this->ch))
         {
             $this->ch = curl_init();
         }
