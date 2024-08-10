@@ -7,7 +7,6 @@ class ErClient extends ApiCurl
 {
     private ?string $host = null;
     private ?int $port = null;
-    private ?string $base;
     public bool $verbose = false ;
     private ?string $csrf = null ;
 
@@ -67,37 +66,15 @@ class ErClient extends ApiCurl
         curl_reset($this->curl());
         $this->assoc = true ;
         $this->no_ssl = true ;
+        $this->base = '/api/edge' ;
+        $this->url =  sprintf('https://%s:%s',$this->host,$this->port);
         $mime = key_exists('form',$post) ? 'x-www-form-urlencoded' : 'json';
         parent::configure($path,$method,$post);
-        $this->opts[CURLOPT_URL] = $this->make_url($path,$method,$post);
-        $this->opts[CURLOPT_ENCODING] = '';
-        $this->opts[CURLOPT_COOKIEFILE] = '';
         $this->opts[CURLOPT_FOLLOWLOCATION] = false ;
-        $headers[] ='Content-Type: application/' . $mime;
+        $this->heads[] ='Content-Type: application/' . $mime;
         if($this->csrf){
-            $headers[] = 'X-CSRF-Token: '. $this->csrf ;
+            $this->heads[] = 'X-CSRF-Token: '. $this->csrf ;
         }
-        $this->opts[CURLOPT_HTTPHEADER] = $headers ;
-    }
-
-    private function make_url($path, $method, $data): string
-    {
-        if ($path == '/') {
-            return sprintf("https://%s:%s/",
-                trim($this->host, '/'),
-                $this->port ?? 443,
-            );
-        }
-        $url = sprintf("https://%s:%s/%s/%s",
-            trim($this->host, '/'),
-            $this->port ?? 443,
-            trim($this->base, '/'),
-            trim($path, '/')
-        );
-        if ($method == 'get' && $data) {
-            $url .= '?' . http_build_query($data);
-        }
-        return $url;
     }
 
     private function close()
@@ -105,17 +82,6 @@ class ErClient extends ApiCurl
         if($this->ch)curl_close($this->ch);
         $this->ch = null;
     }
-
-    private function curl(): CurlHandle|null
-    {
-        if (empty($this->ch)) {
-            $ch = curl_init();
-            if($ch){ $this->ch = $ch; }
-        }
-        return $this->ch;
-    }
-
-    public function __construct($base = '/api/edge') { $this->base = $base; }
 
     public function __destruct() { $this->close(); }
 }
