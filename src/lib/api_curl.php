@@ -49,8 +49,9 @@ class ApiCurl
             trim($this->url(),'/'),
             trim($this->base,'/'),
             trim($path,'/'));
-        $this->ch = curl_init();
+        curl_reset($this->curl());
         $method = strtoupper($method);
+        $this->heads = [];
         $this->opts = [
             CURLOPT_URL => $fpath,
             CURLOPT_RETURNTRANSFER => true,
@@ -110,6 +111,15 @@ class ApiCurl
             if(is_object($read)) return $read ;
         }
         return new stdClass();
+    }
+
+    protected function curl()
+    {
+        if(!is_resource($this->ch))
+        {
+            $this->ch = curl_init();
+        }
+        return $this->ch ;
     }
 
     protected function url():string
