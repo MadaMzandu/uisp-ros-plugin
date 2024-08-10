@@ -24,31 +24,23 @@ class ErClient extends ApiCurl
             $this->configure('/', 'post',['form' => $data]);
             $this->exec();
         }
-
-        if($this->exit_code() == 303)
-        {
-            $this->set_token();
-            return true;
-        }
-
+        if($this->set_token()){ return true; }
         MyLog()->Append(['invalid_login',$username],6);
         $this->host = $this->port = null ;
         return false ;
     }
 
-    private function set_token()
+    private function set_token(): bool
     {
         $cookies = curl_getinfo($this->curl(),CURLINFO_COOKIELIST);
-        $split = [] ;
-        foreach($cookies as $cookie){
-            if(str_contains($cookie, "X-CSRF")){
-                $split = preg_split('#\s+#',$cookie);
-            }
-        }
+        if(!is_array($cookies)){ return false; }
+        $tokens = preg_grep('#X-CSRF#',$cookies);
+        if(!$tokens){ return false; }
+        $first = array_shift($tokens) ;
+        $split = preg_split('#\s+#',$first);
         $this->csrf = array_pop($split);
+        return is_string($this->csrf) && strlen($this->csrf) == 64 ;
     }
-
-    private function exit_code(): int { return curl_getinfo($this->curl(), CURLINFO_RESPONSE_CODE); }
 
     public function get($path, $post = [])
     {
