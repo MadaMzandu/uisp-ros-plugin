@@ -20,6 +20,7 @@ class ErClient extends ApiCurl
         {
             $this->close();
             $data = ['username' => $username, 'password' => $password];
+            $this->base = '/';
             $this->configure('/', 'post',['form' => $data]);
             $this->exec();
         }
@@ -51,12 +52,14 @@ class ErClient extends ApiCurl
 
     public function get($path, $post = [])
     {
+        $this->base = '/api/edge';
         $this->configure($path, 'get', $post);
         return $this->exec();
     }
 
     public function post($path, $post = [])
     {
+        $this->base = '/api/edge';
         $this->configure($path, 'post', $post);
         return $this->exec();
     }
@@ -66,11 +69,11 @@ class ErClient extends ApiCurl
         curl_reset($this->curl());
         $this->assoc = true ;
         $this->no_ssl = true ;
-        $this->base = '/api/edge' ;
         $this->url =  sprintf('https://%s:%s',$this->host,$this->port);
         $mime = key_exists('form',$post) ? 'x-www-form-urlencoded' : 'json';
         parent::configure($path,$method,$post);
         $this->opts[CURLOPT_FOLLOWLOCATION] = false ;
+        $this->opts[CURLOPT_COOKIEFILE] = '';
         $this->heads[] ='Content-Type: application/' . $mime;
         if($this->csrf){
             $this->heads[] = 'X-CSRF-Token: '. $this->csrf ;
