@@ -55,20 +55,16 @@ class ApiCurl
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_ENCODING => '',
             CURLOPT_MAXREDIRS => 10,
-            CURLOPT_TIMEOUT => 0,
+            CURLOPT_TIMEOUT => 10,
             CURLOPT_VERBOSE => $this->verbose,
             CURLOPT_FOLLOWLOCATION => true,
             CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
+            CURLOPT_POST => $method == 'POST',
+            CURLOPT_SSL_VERIFYPEER => !$this->no_ssl,
+            CURLOPT_SSL_VERIFYHOST => !$this->no_ssl,
         ];
-        if($method == 'POST'){
-            $this->opts[CURLOPT_POST] = true ;
-        }
-        else {
+        if($method != 'POST'){
             $this->opts[CURLOPT_CUSTOMREQUEST] = $method;
-        }
-        if($this->no_ssl) {
-            $this->opts[CURLOPT_SSL_VERIFYPEER] = false;
-            $this->opts[CURLOPT_SSL_VERIFYHOST] = false ;
         }
         if($post && $method != 'GET') {
             $this->opts[CURLOPT_POSTFIELDS] = $form ? http_build_query($form): json_encode($post);
