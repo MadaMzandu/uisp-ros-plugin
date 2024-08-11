@@ -8,6 +8,7 @@ class ApiCurl
     public bool $no_ssl = false ;
     public bool $verbose = false ;
     protected array $opts = [];
+    protected array $heads = [];
     protected $ch = null ;
 
     public function request($url, $method = 'GET', $post = [])
@@ -48,6 +49,7 @@ class ApiCurl
             trim($path,'/'));
         $method = strtoupper($method);
         $form = $post['form'] ?? null ;
+        $this->heads = [];
         $this->opts = [
             CURLOPT_URL => $path,
             CURLOPT_RETURNTRANSFER => true,
@@ -83,6 +85,7 @@ class ApiCurl
 
     protected function exec()
     {
+        if($this->heads){ $this->opts[CURLOPT_HTTPHEADER] = $this->heads; }
         curl_setopt_array($this->curl(),$this->opts);
         $response = curl_exec($this->curl());
         $error = null ;
