@@ -12,8 +12,8 @@ class ErClient extends ApiCurl
 
     public function connect($username, $password, $host, $port = 443): bool
     {
-        if(trim($host) == $this->host
-            && trim($port) == $this->port){ return true; } //already connected
+        if(!empty($this->ch) && trim($host) == curl_getinfo($this->curl(),CURLINFO_PRIMARY_IP)
+            && trim($port) == curl_getinfo($this->ch,CURLINFO_PRIMARY_PORT)){ return true; } //already connected
 
         { $this->host = trim($host) ; $this->port = trim($port); }
 
