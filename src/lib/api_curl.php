@@ -42,10 +42,10 @@ class ApiCurl
 
     protected function configure($path, $method, $post)
     {
+        curl_reset($this->curl());
         $path = sprintf("%s/%s",
             trim($this->api(),'/'),
             trim($path,'/'));
-        $this->ch = curl_init();
         $method = strtoupper($method);
         $form = $post['form'] ?? null ;
         $this->opts = [
@@ -83,16 +83,16 @@ class ApiCurl
 
     protected function exec()
     {
-        curl_setopt_array($this->ch,$this->opts);
-        $response = curl_exec($this->ch);
+        curl_setopt_array($this->curl(),$this->opts);
+        $response = curl_exec($this->curl());
         $error = null ;
-        if (curl_errno($this->ch) !== 0) {
-            $error = curl_error($this->ch);
+        if (curl_errno($this->curl()) !== 0) {
+            $error = curl_error($this->curl());
         }
-        if (curl_getinfo($this->ch, CURLINFO_HTTP_CODE) >= 400) {
+        if (curl_getinfo($this->curl(), CURLINFO_HTTP_CODE) >= 400) {
             $error = $response ;
         }
-        curl_close($this->ch);
+        curl_close($this->curl());
         if($error){
             MyLog()->Append("API error: ". $error);
             return null ;
@@ -114,6 +114,15 @@ class ApiCurl
     protected function api():string
     {
         return 'https://127.0.0.1/api/v2.1' ;
+    }
+
+    protected function curl()
+    {
+        if(empty($this->ch))
+        {
+            $this->ch = curl_init();
+        }
+        return $this->ch ;
     }
 
 }
