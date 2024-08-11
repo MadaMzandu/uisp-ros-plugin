@@ -7,6 +7,8 @@ class ApiCurl
     public bool $assoc = false;
     public bool $no_ssl = false ;
     public bool $verbose = false ;
+    protected string $base = '/api';
+    protected ?string $url = null ;
     protected array $opts = [];
     protected array $heads = [];
     protected $ch = null ;
@@ -44,14 +46,14 @@ class ApiCurl
     protected function configure($path, $method, $post)
     {
         curl_reset($this->curl());
-        $path = sprintf("%s/%s",
-            trim($this->api(),'/'),
+        $fpath = sprintf("%s/%s/%s",
+            trim($this->url(),'/'),
+            trim($this->base,'/'),
             trim($path,'/'));
         $method = strtoupper($method);
-        $form = $post['form'] ?? null ;
         $this->heads = [];
         $this->opts = [
-            CURLOPT_URL => $path,
+            CURLOPT_URL => $fpath,
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_ENCODING => '',
             CURLOPT_MAXREDIRS => 10,
@@ -67,10 +69,11 @@ class ApiCurl
             $this->opts[CURLOPT_CUSTOMREQUEST] = $method;
         }
         if($post && $method != 'GET') {
+            $form = $post['form'] ?? null ;
             $this->opts[CURLOPT_POSTFIELDS] = $form ? http_build_query($form): json_encode($post);
         }
         else if($post) {
-            $this->opts[CURLOPT_URL] = sprintf('%s?%s',$path,http_build_query($post));
+            $this->opts[CURLOPT_URL] = sprintf('%s?%s',$fpath,http_build_query($post));
         }
     }
 
@@ -110,9 +113,9 @@ class ApiCurl
         return new stdClass();
     }
 
-    protected function api():string
+    protected function url():string
     {
-        return 'https://127.0.0.1/api/v2.1' ;
+        return $this->url ?? 'https://127.0.0.1/' ;
     }
 
     protected function curl()
