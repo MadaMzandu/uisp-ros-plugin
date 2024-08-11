@@ -188,7 +188,7 @@ class ApiList
 
     private function check_status($devices): array
     {
-        $ports = ['mikrotik' => 8291,'edgeos' => 443,
+        $ports = ['mikrotik' => 8728,'edgeos' => 443,
             'cisco' => 22,'radius' => 3301];
         $status = [];
         foreach ($devices as $device) {
@@ -198,7 +198,7 @@ class ApiList
             try{
                 $conn = @fsockopen($device['ip'],
                     $port,
-                    $code, $err, 3);
+                    $code, $err, 8);
                 $state = is_resource($conn);
                 $status[$id] = $state ;
                 if($state){ fclose($conn); }
