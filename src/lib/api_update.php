@@ -99,6 +99,41 @@ class ApiUpdate
         fail('log_clear_fail');
     }
 
+    private function run_jobs(): array
+    {
+        $req = json_decode(json_encode($this->data->data),true);
+        $queue = $this->read_jobs() ;
+        $fn = 'data/queue.json';
+        if(!$queue || !$req){ fail('job_run_invalid',[$req,$queue]); }
+        $save = array_diff_key($queue,$req) ;
+        $jobs = array_diff_key($queue,$save);
+        $updates = [];
+        $deletes = [];
+        foreach($jobs as $item)
+        {
+            if($item['action'] == 'delete'){ $deletes[] = $item['id'] ;}
+            if($item['action'] == 'update'){ $updates[] = $item['id'] ;}
+        }
+        $batch = new Batch();
+        $set =  true ; $del = true ;
+        if($updates){ $set &= $batch->set_accounts($updates); }
+        if($deletes){ $del &= $batch->del_accounts($deletes); }
+        if($set && $del && file_put_contents($fn,$save)) { return $save; }
+        fail('job_run_fail',[$req,$jobs]);
+    }
+
+    private function read_jobs()
+    {
+        $fn = 'data/queue.json' ;
+        $r = [];
+        if(is_file($fn))
+        {
+            $r = json_decode(file_get_contents($fn),true);
+
+        }
+        return is_array($r) ? $r : [] ;
+    }
+
     private function publish($clear = false): array
     {
         $fn = $this->data->data->name ?? 'none';
@@ -157,14 +192,12 @@ class ApiUpdate
     private function delete_jobs(): array
     {
         $deletes = json_decode(json_encode($this->data->data),true) ;
-        $fn = 'data/queue.json';
-        if(!is_array($deletes) || !is_file($fn)){ return []; }
-        $jobs = json_decode(file_get_contents($fn),true);
-        if(!$jobs){ return []; }
-        $diff = array_diff_key($jobs,$deletes);
-        if(file_put_contents($fn,json_encode($diff))){
+        $queue = $this->read_jobs() ;
+        if(!$queue || !$deletes){ return []; }
+        $save = array_diff_key($queue,$deletes);
+        if(file_put_contents('data/queue.json',json_encode($save))){
             MyLog()->Append('delete_jobs_success');
-            return $diff;
+            return $save;
         }
         fail('delete_job_fail');
     }
