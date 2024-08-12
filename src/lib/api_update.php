@@ -156,10 +156,15 @@ class ApiUpdate
 
     private function delete_jobs(): array
     {
+        $deletes = json_decode(json_encode($this->data->data),true) ;
         $fn = 'data/queue.json';
-        if(file_put_contents($fn,[])){
+        if(!is_array($deletes) || !is_file($fn)){ return []; }
+        $jobs = json_decode(file_get_contents($fn),true);
+        if(!$jobs){ return []; }
+        $diff = array_diff_key($jobs,$deletes);
+        if(file_put_contents($fn,json_encode($diff))){
             MyLog()->Append('delete_jobs_success');
-            return [];
+            return $diff;
         }
         fail('delete_job_fail');
     }
