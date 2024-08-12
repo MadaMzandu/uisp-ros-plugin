@@ -23,8 +23,8 @@ class ApiUpdate
             'publish' => $this->publish(),
             'unpublish' => $this->publish(true),
             'cache' => $this->cache_build(),
-            'log_clear' => $this->log_clear(),
-            'run_jobs' => $this->run_jobs(),
+            'log_clear','clear' => $this->log_clear(),
+            'run','run_jobs' => $this->run_jobs(),
             default => fail('invalid_action',$this->data),
         };
     }
