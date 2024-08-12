@@ -24,6 +24,7 @@ class ApiUpdate
             'unpublish' => $this->publish(true),
             'cache' => $this->cache_build(),
             'log_clear' => $this->log_clear(),
+            'run_jobs' => $this->run_jobs(),
             default => fail('invalid_action',$this->data),
         };
     }
@@ -125,13 +126,18 @@ class ApiUpdate
     private function read_jobs()
     {
         $fn = 'data/queue.json' ;
-        $r = [];
         if(is_file($fn))
         {
-            $r = json_decode(file_get_contents($fn),true);
-
+            $read = json_decode(file_get_contents($fn),true);
+            if(!$read){ return []; }
+            $valid = preg_grep('#Q\d+$#',array_keys($read)) ;
+            if(sizeof($valid) == sizeof($read)){ return $read; } //queue format is valid
+            $fix = []; // remove invalid entries
+            foreach($valid as $key){ $fix[$key] = $read[$key] ;}
+            file_put_contents($fn,json_encode($fix)) ;
+            return $fix ;
         }
-        return is_array($r) ? $r : [] ;
+        return [] ;
     }
 
     private function publish($clear = false): array
