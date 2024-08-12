@@ -119,7 +119,8 @@ class ApiUpdate
         $set =  true ; $del = true ;
         if($updates){ $set &= $batch->set_accounts($updates); }
         if($deletes){ $del &= $batch->del_accounts($deletes); }
-        if($set && $del && file_put_contents($fn,$save)) { return $save; }
+        $put = $save ? json_encode($save): '';
+        if($set && $del && file_put_contents($fn,$put)) { return $save; }
         fail('job_run_fail',[$req,$jobs]);
     }
 
