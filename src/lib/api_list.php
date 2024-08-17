@@ -158,12 +158,19 @@ class ApiList
 
     private function list_jobs(): array
     {
-        $r = null ;
+        $r = [];
         $fn = 'data/queue.json';
         if(is_file($fn)){
-            $r = json_decode(file_get_contents($fn),true);
+            $g = json_decode(file_get_contents($fn),true);
+            $devices = $this->find_devices();
+            if(is_array($g)){
+                foreach ($g as $item){
+                    $item['device_name'] = $devices[$item['device']] ?? null;
+                    $r[] = array_diff_key($item,['password' => '$%^#']);
+                }
+            }
         }
-        return is_array($r) ? $r : [];
+        return $r ;
     }
 
     private function list_backups(): array
