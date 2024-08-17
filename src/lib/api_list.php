@@ -164,9 +164,10 @@ class ApiList
             $g = json_decode(file_get_contents($fn),true);
             $devices = $this->find_devices();
             if(is_array($g)){
-                foreach ($g as $item){
-                    $item['device_name'] = $devices[$item['device']] ?? null;
-                    $r[] = array_diff_key($item,['password' => '$%^#']);
+                foreach (array_keys($g) as $key){
+                    $item = $g[$key] ;
+                    $item['device_name'] = $devices[$item['device']]['name'] ?? null;
+                    $r[$key] = array_diff_key($item,['password' => '$%^#']);
                 }
             }
         }
