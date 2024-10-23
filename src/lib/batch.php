@@ -268,8 +268,18 @@ class Batch
     private function find_plans(): array
     {
         if(empty($this->_plans)){
-            $api = new ApiList([],'plans');
-            $plans = $api->list();
+            $st =[
+                'SELECT id,name,ratio,uploadSpeed,downloadSpeed,priorityUpload,priorityDownload,timeUpload,timeDownload,last,created,',
+                'CASE WHEN limitUpload = 0 THEN 0 ELSE uploadSpeed - ((limitUpload * uploadSpeed) / 100) END as limitUpload,',
+                'CASE WHEN limitDownload = 0 THEN 0 ELSE downloadSpeed - ((limitDownload * downloadSpeed) / 100) end as limitDownload, ',
+                'CASE WHEN threshUpload = 0 THEN 0 ELSE uploadSpeed - ((threshUpload * uploadSpeed) / 100) END as threshUpload,',
+                'CASE WHEN threshDownload = 0 THEN 0 ELSE downloadSpeed - ((threshDownload * downloadSpeed) / 100) END as threshDownload,',
+                'CASE WHEN burstUpload = 0 THEN 0 ELSE uploadSpeed + ((burstUpload * uploadSpeed) / 100) END as burstUpload,',
+                'CASE WHEN burstDownload = 0 THEN 0 ELSE downloadSpeed + ((burstDownload * downloadSpeed) / 100) END as burstDownload',
+                'FROM plans',
+
+            ];
+            $plans = $this->db()->selectCustom(implode(' ',$st));
             foreach ($plans as $plan){
                 $this->_plans[$plan['id']] = $plan; }
         }

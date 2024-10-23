@@ -215,10 +215,10 @@ class ApiSetup
         }
     }
 
-    private function conversions_data()
+    private function conversions_data(): array
     {
         return [
-            '2.0.2' => "UPDATE plans SET limitUpload = ((uploadSpeed-limitUpload)*100)/uploadSpeed, limitDownload = ((downloadSpeed-limitDownload)*100)/downloadSpeed, burstUpload = ((burstUpload-uploadSpeed)*100)/burstUpload, burstDownload = ((burstDownload-downloadSpeed)*100)/burstDownload, threshUpload = ((uploadSpeed-threshUpload)*100)/uploadSpeed, threshDownload = ((downloadSpeed-threshDownload)*100)/downloadSpeed",
+            '2.0.2' => "UPDATE plans SET limitUpload = ((uploadSpeed-limitUpload)*100)/uploadSpeed, limitDownload = ((downloadSpeed-limitDownload)*100)/downloadSpeed, burstUpload = ((burstUpload-uploadSpeed)*100)/uploadSpeed, burstDownload = ((burstDownload-downloadSpeed)*100)/downloadSpeed, threshUpload = ((uploadSpeed-threshUpload)*100)/uploadSpeed, threshDownload = ((downloadSpeed-threshDownload)*100)/downloadSpeed",
 
         ];
     }
