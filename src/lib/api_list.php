@@ -37,30 +37,18 @@ class ApiList
 
     private function list_plans(): array
     {
-        $str = '{"ratio":1,"uploadSpeed":0,"downloadSpeed":0,'.
-            '"priorityUpload":8,"priorityDownload":8,"limitUpload":0,"limitDownload":0,'.
-            '"burstUpload":0,"burstDownload":0,"threshUpload":0,"threshDownload":0,'.
-            '"timeUpload":1,"timeDownload":1}';
         $plans = $this->find_plans();
+        if($plans){ $this->db()->edit(array_values($plans),'plans'); }
         $from_db = $this->find_db_plans();
-        $defaults = json_decode($str,true);
-        $updates = [];
-        foreach($plans as $plan){
-            $saved = $from_db[$plan['id']] ?? [] ;
-            $now = date('c');
-            if(!$saved) {
-                $plan['created'] = $now ;
-                $plan = array_replace($defaults,$plan);
-            }
-            $update = array_replace($saved,$plan);
-            $update['last'] = $now ;
-            $from_db[$plan['id']] = $update;
-            $trim = array_diff_key($update,['archive' => null]);
-            $updates[] = $trim ;
+        $res = [];
+        foreach($from_db as $v){
+            $id = $v['id'];
+            $v['archive'] = !in_array($id,array_keys($plans));
+            $res[] = $v;
         }
-        $this->db()->insert($updates,'plans',INSERT_REPLACE);
-        MyLog()->Append(['list_plans','items: '.sizeof($from_db)]);
-        return array_values($from_db) ;
+
+        MyLog()->Append(['list_plans','items: '.sizeof($res)]);
+        return $res;
     }
 
     public function list_msg(): array
@@ -233,10 +221,16 @@ class ApiList
 
     private function find_db_plans(): array
     {
-        $read = $this->db()->selectAllFromTable('plans');
-        $tmp = [];
-        foreach($read as $item){ $tmp[$item['id']] = $item; }
-        return $tmp ;
+        $st = "SELECT id,name,uploadSpeed,downloadSpeed,last,created, IFNULL(ratio,1) as ratio, ".
+            "IFNULL(priorityUpload,8) as priorityUpload, IFNULL(priorityDownload,8) as priorityDownload, ".
+            "IFNULL(limitUpload,0) as limitUpload, IFNULL(limitDownload,0) as limitDownload, ".
+            "IFNULL(burstUpload,0) as burstUpload, IFNULL(burstDownload,0) as burstDownload, ".
+            "IFNULL(threshUpload,0) as threshUpload, IFNULL(threshDownload,0) as threshDownload, ".
+            "IFNULL(timeUpload,1) as timeUpload, IFNULL(timeDownload,1) as timeDownload FROM plans";
+        return $this->db()->selectCustom($st);
+//        $tmp = [];
+//        foreach($read as $item){ $tmp[$item['id']] = $item; }
+//        return $tmp ;
     }
 
     private function find_plans(): array
@@ -244,9 +238,11 @@ class ApiList
         $data = $this->ucrm()->get('service-plans',['servicePlanType' => 'internet']);
         $tmp = [];
         $trimmer = array_fill_keys(['id','uploadSpeed','downloadSpeed','name'],'$#@&');
+        $now = date('c');
         foreach ($data as $item) {
             $trim = array_intersect_key($item,$trimmer);
-            $trim['archive'] = false ;
+            $trim['created'] = $now;
+            $trim['last'] = $now;
             $tmp[$item['id']] = $trim;
         }
         return $tmp ;
