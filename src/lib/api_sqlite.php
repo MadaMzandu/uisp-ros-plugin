@@ -63,7 +63,7 @@ class ApiSqlite
         return null ;
     }
 
-    public function edit($data,$table = 'services'): bool
+    public function edit_old($data,$table = 'services'): bool
     {
         $data = $this->to_array($data);
         if(!$data) return false ;
@@ -75,6 +75,64 @@ class ApiSqlite
         }
         return true ;
     }
+
+
+    public function edit($data,$table = 'services'): bool
+    {
+        $pk = $this->find_pk($table);
+        $data = $this->to_array($data);
+        if(!is_array($data)){ return false; }
+
+        $first = array_values($data)[0];
+        $keys = array_keys($first) ;
+
+        $this->insert($data,$table,INSERT_IGNORE);
+
+        $tmp = $this->create_tmp($keys,$table) ;
+        if(!$tmp){ return false; }
+
+        if(!$this->insert($data,$tmp)){ return false; }
+
+        $key_pairs = [];
+        foreach($keys as $key){
+            if($key == $pk){ continue; }
+            $key_pairs[] = "$key='$tmp'.$key";}
+        $pkarr = $this->find_pk($table);
+        $pkpairs = [];
+        foreach($pkarr as $pk){
+            $pkpairs[] = "'$tmp'.$pk='$table'.$pk";
+        }
+        $pkstr = implode(' AND ',$pkpairs);
+        $st = "UPDATE $table SET " . implode(',',$key_pairs) . " FROM $tmp WHERE $pkstr";
+        return $this->exec($st);
+    }
+
+    private function create_tmp($keys, $table)
+    {
+        $tmp = "t_$table";
+        $columns = implode(',',$keys);
+        $st = "CREATE TEMP TABLE $tmp AS SELECT $columns FROM $table LIMIT 0";
+        if($this->db()->exec($st)){ return $tmp; }
+        return null;
+    }
+
+    private function find_pk($table = 'onts')
+    {
+        $columns = $this->find_columns($table) ;
+        $pks = array_diff_assoc($columns,array_fill_keys(array_keys($columns),0));
+        return array_keys($pks);
+    }
+
+    private function find_columns($table = 'service_ports')
+    {
+        $data = $this->selectCustom("PRAGMA TABLE_INFO('$table')") ?? [];
+        $columns= [];
+        foreach ($data as $item){
+            $columns[$item['name']] = $item['pk'] ;
+        }
+        return $columns;
+    }
+
 
     private function to_edit($row): ?string
     {
