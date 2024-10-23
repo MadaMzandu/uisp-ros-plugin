@@ -102,7 +102,7 @@ class ApiIP
             $data[] = $item ;
         }
         if($data){
-             if($this->db()->insert($data,'network',true)){
+             if($this->db()->insert($data,'network',INSERT_REPLACE)){
                  $this->assigned = [];
              }
         }

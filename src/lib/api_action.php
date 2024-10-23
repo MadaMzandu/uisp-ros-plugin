@@ -172,7 +172,7 @@ class ApiAction
     private function save($entity): bool
     {
         $table = $this->type() . 's';
-        return myCache()->insert($entity,$table,true);
+        return myCache()->insert($entity,$table,INSERT_REPLACE);
     }
 
     private function unsave($entity): bool

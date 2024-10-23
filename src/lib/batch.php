@@ -198,7 +198,7 @@ class Batch
             }
         }
         $this->ip_flush();
-        $this->db()->insert($save,'services',true);
+        $this->db()->insert($save,'services',INSERT_REPLACE);
         $this->set_sites($sites);
     }
 

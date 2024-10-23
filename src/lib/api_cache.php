@@ -34,7 +34,7 @@ class ApiCache{
         $post['id'] = $siteId ;
         $post['service'] = $id ;
         $post['device'] = $did;
-        $this->dbCache()->insert($post,'sites',true);
+        $this->dbCache()->insert($post,'sites',INSERT_REPLACE);
     }
 
     public function sync($force = false)
@@ -156,7 +156,7 @@ class ApiCache{
             $values[] = array_diff_key($item,['network' => 1,'unmsClientSiteId' => 1]);
         }
         if($values){
-            $this->dbCache()->insert($values,$table,true);
+            $this->dbCache()->insert($values,$table,INSERT_REPLACE);
         }
     }
 
@@ -179,7 +179,7 @@ class ApiCache{
             $this->dbCache()->exec($sql); //clear inactive addresses
         }
         if(!empty($values)){
-            $this->dbCache()->insert($values,'network',true);
+            $this->dbCache()->insert($values,'network',INSERT_REPLACE);
         }
     }
 

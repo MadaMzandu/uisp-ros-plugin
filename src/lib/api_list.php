@@ -58,7 +58,7 @@ class ApiList
             $trim = array_diff_key($update,['archive' => null]);
             $updates[] = $trim ;
         }
-        $this->db()->insert($updates,'plans',true);
+        $this->db()->insert($updates,'plans',INSERT_REPLACE);
         MyLog()->Append(['list_plans','items: '.sizeof($from_db)]);
         return array_values($from_db) ;
     }

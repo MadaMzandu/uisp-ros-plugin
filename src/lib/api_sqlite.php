@@ -1,20 +1,24 @@
 <?php
-
+const INSERT_NORMAL = 0;
+const INSERT_IGNORE = 1;
+const INSERT_REPLACE = 2;
 class ApiSqlite
 {
 
     private string $path;
     private ?SQLite3 $_db = null;
 
-    public function insert($data,$table = 'services',$replace = false): bool
+    public function insert($data,$table = 'services',$replace = INSERT_NORMAL): bool
     { //insert single row or batch
         $data = $this->to_array($data);
         if(!$data) return false ;
         $fields = $this->to_fields($data);
         $values = $this->to_values($data);
-        $REPLACE = null ;
-        if($replace) $REPLACE = 'OR REPLACE ';
-        $query = sprintf("INSERT %s INTO %s (%s) VALUES %s",   $REPLACE,$table,$fields,$values);
+        $INSERT = 'INSERT';
+        if($replace != INSERT_NORMAL){
+            $INSERT = $replace == INSERT_IGNORE ? 'INSERT OR IGNORE' : 'INSERT OR REPLACE';
+        }
+        $query = sprintf("%s INTO %s (%s) VALUES %s",   $INSERT,$table,$fields,$values);
 //        MyLog()->Append("sqlite query: ".$query);
         return $this->db()->exec($query);
     }
