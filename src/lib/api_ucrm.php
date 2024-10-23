@@ -27,7 +27,9 @@ class ApiUcrm
     private function exec()
     {
         if(USE_UCRM_CURL) return $this->web_exec();
-        $api = $this->unms ? UnmsApi::create($this->token()) : UcrmApi::create();
+        $api = $this->unms && is_string($this->token())
+            ? UnmsApi::create($this->token())
+            : UcrmApi::create();
         $action = $this->method;
         try{
             $response = $api->$action($this->url, $this->data);
