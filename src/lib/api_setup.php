@@ -1,5 +1,5 @@
 <?php
-const MY_VERSION = '2.0.2';
+const MY_VERSION = '2.3.0';
 const MAX_BACKUPS = 6 ;
 const REPEAT_STATEMENTS  = 6; //number of statements expected to fail during update
 
@@ -13,13 +13,12 @@ class ApiSetup
     private ?object $_tmp = null ;
 
     public function run(){
-        $timer = new ApiTimer('db setup: ');
         if($this->needs_db()){
             $this->db_create();
         }
         if($this->needs_update()){
+            $this->do_conversions(); //apply conversion while original version
             $this->db_update();
-            $timer->stop();
         }
         if($this->needs_backup()){
             $this->db_backup();
@@ -203,6 +202,25 @@ class ApiSetup
     {
         $this->db()->close();
         $this->_db = null ;
+    }
+
+    private function do_conversions()
+    {
+        $conf = $this->dbApi()->readConfig();
+        $version = $conf->version ?? '0.0.0';
+        foreach($this->conversions_data() as $ver => $update){
+            if(trim($version) <= $ver){
+                $this->db()->exec($update);
+            }
+        }
+    }
+
+    private function conversions_data()
+    {
+        return [
+            '2.0.2' => "UPDATE plans SET limitUpload = ((uploadSpeed-limitUpload)*100)/uploadSpeed, limitDownload = ((downloadSpeed-limitDownload)*100)/downloadSpeed, burstUpload = ((burstUpload-uploadSpeed)*100)/burstUpload, burstDownload = ((burstDownload-downloadSpeed)*100)/burstDownload, threshUpload = ((uploadSpeed-threshUpload)*100)/uploadSpeed, threshDownload = ((downloadSpeed-threshDownload)*100)/downloadSpeed",
+
+        ];
     }
 
     private function save($state): void
