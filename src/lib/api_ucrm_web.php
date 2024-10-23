@@ -5,7 +5,7 @@ class WebUcrm extends ApiCurl
 {
 
     public bool $unms;
-    private string $key = 'b59d8d21-913b-401d-9d00-2708bbabba0c';//'67830f0f-c732-4d32-b0e2-7458d4f97b52';
+    private string $key = '7e7ab4f0-b5a2-4ccb-8e38-569dd50007c3';
 
     protected function configure($path, $method, $post)
     {
@@ -22,7 +22,7 @@ class WebUcrm extends ApiCurl
 
     protected function key()
     {
-        return $this->config()->unmsToken ?? $this->key ;
+        return $this->key ?? $this->config()->unmsToken ;
     }
 
     public function __construct($token = null,$assoc = false,$unms = false)
