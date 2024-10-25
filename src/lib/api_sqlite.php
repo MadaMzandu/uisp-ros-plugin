@@ -79,7 +79,7 @@ class ApiSqlite
 
     public function edit($data,$table = 'services'): bool
     {
-        $pk = $this->find_pk($table);
+        $pks = $this->find_pk($table);
         $data = $this->to_array($data);
         if(!is_array($data)){ return false; }
 
@@ -95,11 +95,10 @@ class ApiSqlite
 
         $key_pairs = [];
         foreach($keys as $key){
-            if($key == $pk){ continue; }
+            if(in_array($key,$pks)){ continue; }
             $key_pairs[] = "$key='$tmp'.$key";}
-        $pkarr = $this->find_pk($table);
         $pkpairs = [];
-        foreach($pkarr as $pk){
+        foreach($pks as $pk){
             $pkpairs[] = "'$tmp'.$pk='$table'.$pk";
         }
         $pkstr = implode(' AND ',$pkpairs);
