@@ -53,7 +53,7 @@ class Data
     protected function disabled(): bool
     {
         $status = $this->service['status'] ?? 1 ;
-        return in_array($status,[3,5,2,8]);
+        return in_array($status,[3,4,5,2,8]);
     }
 
     protected function ip($ip6 = false): ?string
