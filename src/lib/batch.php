@@ -289,8 +289,8 @@ class Batch
     private function find_services(array $ids, $action): array
     {
         $data = $ids ;
-        $first = $ids[0] ;
-        if(is_int($first)){
+        $first = array_values($ids)[0] ;
+        if(!is_array($first)){
             $fields = 'services.*,clients.company,clients.firstName,clients.lastName,'.
                 'network.address,network.address6';
             $sql = sprintf("SELECT %s FROM services LEFT JOIN clients ON services.clientId=clients.id ".
