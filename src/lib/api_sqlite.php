@@ -77,9 +77,8 @@ class ApiSqlite
     }
 
 
-    public function edit($data,$table = 'services'): bool
+    public function edit($data,$table = 'onts'): bool
     {
-        $pks = $this->find_pk($table);
         $data = $this->to_array($data);
         if(!is_array($data)){ return false; }
 
@@ -88,12 +87,13 @@ class ApiSqlite
 
         $this->insert($data,$table,INSERT_IGNORE);
 
-        $tmp = $this->create_tmp($keys,$table) ;
+        $tmp = $this->create_tmp($table) ;
         if(!$tmp){ return false; }
 
         if(!$this->insert($data,$tmp)){ return false; }
 
         $key_pairs = [];
+        $pks = $this->find_pk($table);
         foreach($keys as $key){
             if(in_array($key,$pks)){ continue; }
             $key_pairs[] = "$key='$tmp'.$key";}
@@ -106,11 +106,10 @@ class ApiSqlite
         return $this->exec($st);
     }
 
-    private function create_tmp($keys, $table)
+    private function create_tmp($table)
     {
         $tmp = "t_$table";
-        $columns = implode(',',$keys);
-        $st = "CREATE TEMP TABLE $tmp AS SELECT $columns FROM $table LIMIT 0";
+        $st = "CREATE TEMP TABLE $tmp AS SELECT * FROM $table LIMIT 0";
         if($this->db()->exec($st)){ return $tmp; }
         return null;
     }
