@@ -14,6 +14,10 @@ if (isset($_SERVER['REQUEST_METHOD'])
 
 $json = file_get_contents('php://input') ?? null;
 
+if(!$json && is_file('test.json')){ // for testing
+    $json = file_get_contents('test.json');
+}
+
 try
 {
     include_once 'lib/api_cache.php';
