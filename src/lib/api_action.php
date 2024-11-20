@@ -42,7 +42,7 @@ class ApiAction
             }
 
         }
-        elseif($action == 'insert')
+        elseif(in_array($action,['insert,suspend,unsuspend']))
         {
             if(in_array($this->state(),[0,6]))
             { //deferred

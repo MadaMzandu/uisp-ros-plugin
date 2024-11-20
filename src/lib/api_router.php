@@ -64,7 +64,7 @@ class ApiRouter
             bail('entity_unsupported: ' .$entity);
         }
         $change = $this->data->changeType ?? 'none';
-        $allowed = "insert,edit,admin,update,list";
+        $allowed = "insert,edit,admin,update,list,suspend,unsuspend";
         if (!in_array($change, explode(',',$allowed))) {
             bail('change_unsupported: ' .$change);
         }
