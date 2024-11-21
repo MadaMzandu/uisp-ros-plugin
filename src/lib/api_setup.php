@@ -1,7 +1,7 @@
 <?php
 const MY_VERSION = '2.3.0';
 const MAX_BACKUPS = 6 ;
-const REPEAT_STATEMENTS  = 6; //number of statements expected to fail during update
+const REPEAT_STATEMENTS  = 7; //number of statements expected to fail during update
 
 include_once 'api_sqlite.php';
 include_once 'api_logger.php';
