@@ -41,18 +41,20 @@ class ApiCache{
     {
         if(!$this->attrs()->check_config()){ return ; }
         $timer = new ApiTimer('sync: ');
+        $next = date_create('+7 day');
         if($force || $this->needs_update()){
             $this->clean(); //clean tables
             foreach(['clients','sites','services'] as $table){
                 $this->populate($table);
                 MyLog()->Append('cache_success_'.$table);
             }
-            $this->db()->saveConfig(['last_cache' => date('c')]);
+
+            $this->db()->saveConfig(['next_cache' => $next->format('c')]);
             $timer->stop();
         }
         elseif($this->needs_sites()){
             $this->populate('sites');
-            $this->db()->saveConfig(['last_sites' => date('c')]);
+            $this->db()->saveConfig(['next_sites' => $next->format('c')]);
         }
     }
 
@@ -193,40 +195,19 @@ class ApiCache{
         return true ;
     }
 
-    /**
-     * @throws Exception
-     */
+
     private function needs_update(): bool
     {
-        $last = $this->conf()->last_cache ?? '2020-01-01';
-        $cycle = DateInterval::createFromDateString('7 day');
-        $sync = new DateTime($last);
-        $now = new DateTime();
-        return date_add($sync,$cycle) < $now ;
+        $next = $this->conf()->next_cache ?? '2020-01-01';
+        $now = date('c');
+        return $now > $next;
     }
 
-    /**
-     * @throws Exception
-     */
-    private function needs_net(): bool
-    {
-        $last = $this->conf()->last_net ?? '2020-01-01';
-        $cycle = DateInterval::createFromDateString('30 minute');
-        $sync = new DateTime($last);
-        $now = new DateTime();
-        return date_add($sync,$cycle) < $now ;
-    }
-
-    /**
-     * @throws Exception
-     */
     private function needs_sites(): bool
     {
-        $time = $this->conf()->last_sites ?? '2023-01-01';
-        $last = new DateTime($time);
-        $now = new DateTime();
-        $interval = new DateInterval('PT1H');
-        return $last->add($interval) < $now ;
+        $next = $this->conf()->next_sites ?? '2023-01-01';
+        $now = date('c');
+        return $now > $next;
     }
 
     private function clean()
