@@ -268,14 +268,18 @@ class Batch
     private function find_plans(): array
     {
         if(empty($this->_plans)){
+            $api = new ApiList([],'plans');
+            $api->list();
             $st =[
-                'SELECT id,name,ratio,uploadSpeed,downloadSpeed,priorityUpload,priorityDownload,timeUpload,timeDownload,last,created,',
-                'CASE WHEN limitUpload = 0 THEN 0 ELSE uploadSpeed - ((limitUpload * uploadSpeed) / 100) END as limitUpload,',
-                'CASE WHEN limitDownload = 0 THEN 0 ELSE downloadSpeed - ((limitDownload * downloadSpeed) / 100) end as limitDownload, ',
-                'CASE WHEN threshUpload = 0 THEN 0 ELSE uploadSpeed - ((threshUpload * uploadSpeed) / 100) END as threshUpload,',
-                'CASE WHEN threshDownload = 0 THEN 0 ELSE downloadSpeed - ((threshDownload * downloadSpeed) / 100) END as threshDownload,',
-                'CASE WHEN burstUpload = 0 THEN 0 ELSE uploadSpeed + ((burstUpload * uploadSpeed) / 100) END as burstUpload,',
-                'CASE WHEN burstDownload = 0 THEN 0 ELSE downloadSpeed + ((burstDownload * downloadSpeed) / 100) END as burstDownload',
+                'SELECT id,name,ratio,uploadSpeed,downloadSpeed,ifnull(priorityUpload,8) as priorityUpload,',
+                'ifnull(priorityDownload,8) as priorityDownload,ifnull(timeUpload,1) as timeUpload,',
+                'ifnull(timeDownload,1) as timeDownload,last,created,',
+                'CASE WHEN limitUpload = 0 THEN 0 ELSE (uploadSpeed * 1000000) - ((limitUpload * uploadSpeed * 1000000) / 100) END as limitUpload,',
+                'CASE WHEN limitDownload = 0 THEN 0 ELSE (downloadSpeed * 1000000) - ((limitDownload * downloadSpeed * 1000000) / 100) end as limitDownload, ',
+                'CASE WHEN threshUpload = 0 THEN 0 ELSE (uploadSpeed * 1000000) - ((threshUpload * uploadSpeed * 1000000) / 100) END as threshUpload,',
+                'CASE WHEN threshDownload = 0 THEN 0 ELSE (downloadSpeed * 1000000) - ((threshDownload * downloadSpeed * 1000000) / 100) END as threshDownload,',
+                'CASE WHEN burstUpload = 0 THEN 0 ELSE (uploadSpeed * 1000000) + ((burstUpload * uploadSpeed * 1000000) / 100) END as burstUpload,',
+                'CASE WHEN burstDownload = 0 THEN 0 ELSE (downloadSpeed * 1000000) + ((burstDownload * downloadSpeed* 1000000) / 100) END as burstDownload',
                 'FROM plans',
 
             ];
