@@ -100,7 +100,7 @@ class ApiCurl
             return null ;
         }
         $json  = json_decode($response, $this->assoc) ;
-        return $json ? : $response ;
+        return is_string($json) ? null : $json ;
     }
 
     protected function config(): object
