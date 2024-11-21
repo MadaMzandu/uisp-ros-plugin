@@ -100,9 +100,9 @@ class MtData extends Data
             'name' => sprintf('%s - %s',$this->account_name(),$id),
             'target' => $ip,
             'max-limit' => $this->to_pair($limits['rate']),
-            'limit-at' => $this->to_pair($limits['limit']),
-            'burst-limit' => $this->to_pair($limits['burst']),
-            'burst-threshold' => $this->to_pair($limits['thresh']),
+            'limit-at' => $this->to_pair($limits['limit'],false),
+            'burst-limit' => $this->to_pair($limits['burst'],false),
+            'burst-threshold' => $this->to_pair($limits['thresh'],false),
             'burst-time' => $this->to_pair($limits['time'],false),
             'priority' => $this->to_pair($limits['prio'],false),
             'parent' => $this->parent_name(),
@@ -275,7 +275,7 @@ class MtData extends Data
         $hs = $this->type() == 'hotspot';
         foreach (['rate','burst','thresh','time','prio','limit'] as $key) {
             $limit = $limits[$key];
-            $mbps = !in_array($key,['time','prio']);
+            $mbps = $key == 'rate';
             if($hs && $key == 'prio'){ $values[] = $limit[0] ?? 8 ;}
             else{ $values[] = $this->to_pair($limit, $mbps); }
         }
