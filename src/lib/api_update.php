@@ -232,12 +232,23 @@ class ApiUpdate
         $this->fast_finish();
         $ids = $this->find_services($type) ;
         if(!$ids){ return [] ; }
+        $this->clean_services($type);
         $batch = new Batch();
         if($batch->set_accounts($ids)){
             MyLog()->Append(['insert_services_success','items: '.sizeof($ids)]);
             return [];
         }
         fail('insert_services_fail',$this->data);
+    }
+
+    private function clean_services($type = null)
+    {
+        $id = $this->data->data->id ?? 0 ;
+        $type = $this->data->data->type ?? $type ?? 'device' ;
+        if(in_array($type,['service','services'])){ return; }
+        $sql = ["DELETE FROM services"];
+        if($type == 'device'){ $sql[] = "WHERE device = $id";}
+        $this->db()->exec(implode(' ',$sql));
     }
 
     private function edit_attr()
