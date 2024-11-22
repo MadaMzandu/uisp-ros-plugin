@@ -140,9 +140,19 @@ class Batch
 
     private function set_sites($ids,$delete = false)
     {
+        $token = $this->find_unms_key();
+        if(!(is_string($token) && strlen(trim($token)) >= 36)){ return; }
         $nms = new ApiSites();
         if($delete){ $nms->delete($ids);}
         else{ $nms->set($ids); }
+    }
+
+    private function find_unms_key()
+    {
+        if(!is_file('data/config.json')){ return null; }
+        $read = json_decode(file_get_contents('data/config.json'));
+        if(!is_object($read)){ return null; }
+        return $read->unmsToken ?? null ;
     }
 
     private function run_batch($deviceData,$delete = false)

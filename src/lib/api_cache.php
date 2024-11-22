@@ -207,7 +207,16 @@ class ApiCache{
     {
         $next = $this->conf()->next_sites ?? '2023-01-01';
         $now = date('c');
-        return $now > $next;
+        $token = $this->find_unms_key() ;
+        return $now > $next && is_string($token) && strlen(trim($token)) >= 36;
+    }
+
+    private function find_unms_key()
+    {
+        if(!is_file('data/config.json')){ return null; }
+        $read = json_decode(file_get_contents('data/config.json'));
+        if(!is_object($read)){ return null; }
+        return $read->unmsToken ?? null ;
     }
 
     private function clean()
