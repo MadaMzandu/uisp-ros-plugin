@@ -23,7 +23,9 @@ class ApiIP
             $pool = $ipv6 ? $device->pool6 : $device->pool ;
         }
         if(!$pool){
-            MyLog()->Append(['pool_invalid',"sid: $sid ipv6: $ipv6 device: ",$device],6);
+            if(!$ipv6){
+                MyLog()->Append(['pool_invalid',"sid: $sid ipv6: $ipv6 device: ",$device],6);
+            }
             return null ;
         }
         $prefixes = explode(',',$pool);
