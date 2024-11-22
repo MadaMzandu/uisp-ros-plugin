@@ -42,9 +42,14 @@ class ApiCache{
         if(!$this->attrs()->check_config()){ return ; }
         $timer = new ApiTimer('sync: ');
         $next = date_create('+7 day');
+        $types = ['clients','services'];
+        $token = $this->find_unms_key();
+        if(is_string($token) && strlen(trim($token)) >= 36){ //if token is set
+            $types[] = 'sites';
+        }
         if($force || $this->needs_update()){
             $this->clean(); //clean tables
-            foreach(['clients','sites','services'] as $table){
+            foreach($types as $table){
                 $this->populate($table);
                 MyLog()->Append('cache_success_'.$table);
             }
