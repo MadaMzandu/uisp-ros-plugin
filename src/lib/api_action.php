@@ -151,7 +151,8 @@ class ApiAction
 
     private function set($entity,$action = 'set'): bool
     {
-        $this->save($entity);
+        $save = $entity ;
+        $this->save($save);
         $client = $this->client() ;
         $data = array_replace($entity,$client);
         $data['action'] = $action ;
@@ -172,6 +173,13 @@ class ApiAction
     private function save($entity): bool
     {
         $table = $this->type() . 's';
+        $net = $entity['network'] ?? [];
+        if($net){
+            $net['id'] = $entity['id'];
+            myCache()->insert($net,'network',INSERT_REPLACE);
+            unset($entity['network']);
+        }
+
         return myCache()->insert($entity,$table,INSERT_REPLACE);
     }
 
