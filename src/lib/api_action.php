@@ -66,7 +66,7 @@ class ApiAction
     {
         $entity = $data['entity'] ;
         $previous = $data['previous'] ?? [];
-        $diff = array_diff_assoc($entity,$previous);
+        $diff = $this->changes($entity,$previous);
         $changes = array_keys($diff);
         $upgrade = array_intersect(['device','mac','username','hotspot'],$changes);
         if(in_array('status',$changes) && in_array($this->state(),[0,6]))
@@ -192,12 +192,25 @@ class ApiAction
         $user = $entity['mac'] ?? $entity['username'] ?? null ;
         if($dev && $user){ return 0 ; }
         if(!$previous){ return 1; }
-        $changes = array_diff_assoc($entity,$previous);
+        $changes = $this->changes($entity,$previous);
         if(array_intersect(['device','mac','username'],array_keys($changes)))
         { //has prior settings - delete
             return -1;
         }
         return 1;
+    }
+
+    private function changes($entity,$previous)
+    {
+        $net0 = $entity['network'] ?? []; $net1 = $previous['network'] ?? [];
+        $net = false;
+        if($net0 || $net1){
+            if(array_diff_assoc($net0,$net1)){ $net = true; }
+            $entity['network'] =  null ; $previous['network'] = null ;
+        }
+        $diff = array_diff_assoc($entity,$previous);
+        if($net){ $diff[] = 'network'; }
+        return $diff;
     }
 
     private function is_auto($entity): bool
