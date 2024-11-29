@@ -263,7 +263,7 @@ class MtData extends Data
     private function profile_name(): string
     {
         if($this->disabled())
-            return $this->conf->disabled_profile ?? 'default';
+            return $this->conf()->disabled_profile ?? 'default';
         return $this->plan['name'] ?? 'default';
     }
 
