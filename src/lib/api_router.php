@@ -5,6 +5,7 @@ include_once 'api_logger.php' ;
 include_once 'api_action.php';
 include_once 'api_update.php';
 include_once 'api_list.php';
+include_once 'api_trim.php';
 
 $conf = mySqlite()->readConfig();
 
