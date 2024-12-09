@@ -177,9 +177,8 @@ class ApiAction
         if($net){
             $net['id'] = $entity['id'];
             myCache()->insert($net,'network',INSERT_REPLACE);
-            unset($entity['network']);
         }
-
+        if(key_exists('network',$entity)){ unset($entity['network']); }
         return myCache()->insert($entity,$table,INSERT_REPLACE);
     }
 
