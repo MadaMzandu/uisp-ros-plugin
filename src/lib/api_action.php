@@ -68,7 +68,7 @@ class ApiAction
         $previous = $data['previous'] ?? [];
         $diff = $this->changes($entity,$previous);
         $changes = array_keys($diff);
-        $upgrade = array_intersect(['device','mac','username','hotspot'],$changes);
+        $upgrade = array_intersect(['device','mac','username','hotspot','netunset'],$changes);
         if(in_array('status',$changes) && in_array($this->state(),[0,6]))
         { //deferred changes
             MyLog()->Append(sprintf("Deferred edit for service: %s client: %s",
@@ -210,14 +210,15 @@ class ApiAction
     private function changes($entity,$previous)
     {
         $net0 = $entity['network'] ?? []; $net1 = $previous['network'] ?? [];
-        $net = false;
+        $netdiff = '';
         if($net0 || $net1){
-            $net = array_diff_assoc($net0,$net1) || array_diff_assoc($net1,$net0);
+            if(array_diff_assoc($net0,$net1)){ $netdiff = 'network'; }
+            if(array_diff_assoc($net1,$net0)){ $netdiff = 'netunset'; }
             $entity['network'] =  null ; $previous['network'] = null ;
         }
         $diff = array_diff_assoc($entity,$previous)
             ? : array_diff_assoc($previous,$entity);
-        if($net){ $diff[] = 'network'; }
+        if($netdiff){ $diff[$netdiff] = $net0 ; }
         return $diff;
     }
 
