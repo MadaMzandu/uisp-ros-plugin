@@ -212,10 +212,11 @@ class ApiAction
         $net0 = $entity['network'] ?? []; $net1 = $previous['network'] ?? [];
         $net = false;
         if($net0 || $net1){
-            if(array_diff_assoc($net0,$net1)){ $net = true; }
+            $net = array_diff_assoc($net0,$net1) || array_diff_assoc($net1,$net0);
             $entity['network'] =  null ; $previous['network'] = null ;
         }
-        $diff = array_diff_assoc($entity,$previous);
+        $diff = array_diff_assoc($entity,$previous)
+            ? : array_diff_assoc($previous,$entity);
         if($net){ $diff[] = 'network'; }
         return $diff;
     }
