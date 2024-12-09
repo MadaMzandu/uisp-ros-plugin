@@ -67,7 +67,7 @@ class Data
     {
         $type = $ip6 ? 'address6' : 'address';
         $service = $this->service['id'] ?? 0 ;
-        $fixed = $this->service[$type] ?? null ;
+        $fixed = $this->service[$type] ?? $this->service['network'][$type] ?? null;
         if($fixed){
             $this->ipapi()->set($service,$fixed,$ip6);
             return $fixed;
