@@ -108,8 +108,10 @@ class ApiSqlite
     private function create_tmp($table)
     {
         $tmp = "t_$table";
-        $st = "CREATE TEMP TABLE $tmp AS SELECT * FROM $table LIMIT 0";
-        if($this->db()->exec($st)){ return $tmp; }
+
+        $st = [ "DROP TABLE IF EXISTS $tmp",
+            "CREATE TEMP TABLE $tmp AS SELECT * FROM $table LIMIT 0" ];
+        if($this->db()->exec(implode(";\n",$st))){ return $tmp; }
         return null;
     }
 
