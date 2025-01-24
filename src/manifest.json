@@ -43,7 +43,7 @@
     },
     {
       "key": "syncAttrHour",
-      "label": "Sync Addresses from Router to UISP (Hour)",
+      "label": "Sync Addresses from Router to UISP Attribute (Hour)",
       "description": "Hour to sync addresses: 0-24 (empty to disable)",
       "required": 0
     }
