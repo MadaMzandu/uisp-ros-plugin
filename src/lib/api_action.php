@@ -29,6 +29,12 @@ class ApiAction
         {
             return $this->set_client($data['entity']);
         }
+        else if(in_array($this->state(),[0,6]))
+        { //deferred
+            MyLog()->Append(sprintf("Deferred insert client: %s service: %s",
+                $this->entity()->clientId,$this->entity()->id),6);
+            return true ;
+        }
         elseif ($check = $this->is_unset($data))
         {//unset attributes
             if($check < 0)
@@ -44,16 +50,7 @@ class ApiAction
         }
         elseif($action == 'insert')
         {
-            if(in_array($this->state(),[0,6]))
-            { //deferred
-                MyLog()->Append(sprintf("Deferred insert client: %s service: %s",
-                    $this->entity()->clientId,$this->entity()->id),6);
-                return true ;
-            }
-            else
-            {
-               return $this->set($data['entity'],$action);
-            }
+            return $this->set($data['entity'],$action);
         }
         elseif($action == 'edit')
         {
