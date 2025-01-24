@@ -38,13 +38,12 @@ function get_ips(): array
 
 $fn = 'data/config.json';
 $config = is_file($fn) ? json_decode(file_get_contents($fn),true) : [];
-$config['ipUpdateHour'] ??= 1;
-$hour = $config['ipUpdateHour'] ?? -1;
-$date = $config['ipUpdateDate'] ?? '2025-01-01';
+$hour = $config['syncAttrHour'] ?? -1;
+$date = $config['syncAttrDate'] ?? '2025-01-01';
 $now = date('Y-m-d');
 $curr = (int) date('G');
 if($hour != $curr || $date == $now){
-    //return  ;
+    return  ;
 }
 
 $attr = find_attr('ip_addr_attr') ;
@@ -56,5 +55,5 @@ foreach($ips as $id => $addr){
     $ud = [['customAttributeId' => $attrid,'value' => $addr]];
     $api->patch("clients/services/$id",['attributes' => $ud]);
 }
-$config['ipUpdateDate'] = $now;
+$config['syncAttrDate'] = $now;
 file_put_contents($fn,json_encode($config,128));

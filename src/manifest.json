@@ -5,7 +5,7 @@
     "displayName": "Ros Plugin",
     "description": "Real time provisioning for RouterOs",
     "url": "",
-    "version": "2.3.5",
+    "version": "2.3.6",
     "ucrmVersionCompliancy": {
       "min": "2.14.0-beta4",
       "max": null
@@ -39,6 +39,12 @@
       "label": "Enable Debugging",
       "description": "Enable verbose log output for debugging",
       "type": "checkbox",
+      "required": 0
+    },
+    {
+      "key": "syncAttrHour",
+      "label": "Sync Addresses from Router to UISP (Hour)",
+      "description": "Hour to sync addresses: 0-24 (empty to disable)",
       "required": 0
     }
   ],
