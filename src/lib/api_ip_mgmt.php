@@ -62,7 +62,11 @@ try{
     }
 
     $attr = find_attr('ip_addr_attr') ;
-    if(!$attr){ return ; }
+    if(!$attr){
+        prn("ip address attribute not found");
+        prn("</body></html>",1);
+        return ;
+    }
     $attrname = $attr['name'];
     $attrid = $attr['id'] ;
     prn("Attribute is #$attrname# id $attrid");
@@ -77,11 +81,10 @@ try{
     }
     $config['syncAttrDate'] = $now;
     file_put_contents($fn,json_encode($config,128));
+    prn("Completed!");
 }
 catch (Exception $e){
     $err = $e->getMessage() . $e->getTraceAsString() ;
     prn($err);
-    prn("</body></html>",1);
 }
-prn("Completed!");
 prn("</body></html>",1);
