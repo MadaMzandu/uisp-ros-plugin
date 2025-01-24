@@ -38,7 +38,7 @@ function get_ips(): array
 
 $fn = 'data/config.json';
 $config = is_file($fn) ? json_decode(file_get_contents($fn),true) : [];
-$hour = $config['syncAttrHour'] ?? -1;
+$hour = (int) ($config['syncAttrHour'] ?? '-1');
 $date = $config['syncAttrDate'] ?? '2025-01-01';
 $now = date('Y-m-d');
 $curr = (int) date('G');
