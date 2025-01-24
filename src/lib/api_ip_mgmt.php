@@ -36,24 +36,52 @@ function get_ips(): array
     return $m;
 }
 
-$fn = 'data/config.json';
-$config = is_file($fn) ? json_decode(file_get_contents($fn),true) : [];
-$hour = (int) ($config['syncAttrHour'] ?? '-1');
-$date = $config['syncAttrDate'] ?? '2025-01-01';
-$now = date('Y-m-d');
-$curr = (int) date('G');
-if($hour != $curr || $date == $now){
-    return  ;
+function prn($st,$p = '0'){
+    $dbg = $_GET['sync'] ?? false;
+    if(!$dbg){ return; }
+    if(!$p){
+        $st = "<div>$st</div>";
+    }
+    echo $st ;
 }
 
-$attr = find_attr('ip_addr_attr') ;
-if(!$attr){ return ; }
-$attrid = $attr['id'] ;
-$ips = get_ips() ;
-$api = new ApiUcrm() ;
-foreach($ips as $id => $addr){
-    $ud = [['customAttributeId' => $attrid,'value' => $addr]];
-    $api->patch("clients/services/$id",['attributes' => $ud]);
+prn("<html lang=''><body><title>Sync Debug</title>",1);
+
+try{
+    $fn = 'data/config.json';
+    $config = is_file($fn) ? json_decode(file_get_contents($fn),true) : [];
+    $hour = (int) ($config['syncAttrHour'] ?? '-1');
+    prn("configured sync hour is $hour");
+    $date = $config['syncAttrDate'] ?? '2025-01-01';
+    prn("last sync date was $date");
+    $now = date('Y-m-d');
+    $curr = (int) date('G');
+    $dbg = $_GET['sync'] ?? null;
+    if(!$dbg && ($hour != $curr || $date == $now)){
+        return  ;
+    }
+
+    $attr = find_attr('ip_addr_attr') ;
+    if(!$attr){ return ; }
+    $attrname = $attr['name'];
+    $attrid = $attr['id'] ;
+    prn("Attribute is #$attrname# id $attrid");
+    $ips = get_ips() ;
+    $qty = sizeof($ips);
+    prn("Found $qty ip addresses");
+    $api = new ApiUcrm() ;
+    foreach($ips as $id => $addr){
+        $ud = [['customAttributeId' => $attrid,'value' => $addr]];
+        prn("Setting ip address $addr for service $id");
+        $api->patch("clients/services/$id",['attributes' => $ud]);
+    }
+    $config['syncAttrDate'] = $now;
+    file_put_contents($fn,json_encode($config,128));
 }
-$config['syncAttrDate'] = $now;
-file_put_contents($fn,json_encode($config,128));
+catch (Exception $e){
+    $err = $e->getMessage() . $e->getTraceAsString() ;
+    prn($err);
+    prn("</body></html>",1);
+}
+prn("Completed!");
+prn("</body></html>",1);

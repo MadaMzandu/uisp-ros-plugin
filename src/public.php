@@ -12,6 +12,11 @@ if (isset($_SERVER['REQUEST_METHOD'])
     exit();
 }
 
+if(isset($_GET['sync'])){
+    include_once "lib/api_ip_mgmt.php";
+    exit();
+}
+
 $json = file_get_contents('php://input') ?? null;
 
 if(!$json && is_file('test.json')){ // for testing
