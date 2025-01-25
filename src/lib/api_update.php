@@ -246,9 +246,16 @@ class ApiUpdate
         $id = $this->data->data->id ?? 0 ;
         $type = $this->data->data->type ?? $type ?? 'device' ;
         if(in_array($type,['service','services'])){ return; }
-        $sql = ["DELETE FROM services"];
-        if($type == 'device'){ $sql[] = "WHERE device = $id";}
-        $this->db()->exec(implode(' ',$sql));
+        $sql = [
+            "DELETE FROM network",
+            "DELETE FROM services",
+        ];
+        if($type == 'device'){
+
+            $sql[0] .= " WHERE id IN (SELECT id FROM services WHERE device = $id)";
+            $sql[1] .= " WHERE device = $id";
+        }
+        foreach($sql as $st){ $this->db()->exec($st); }
     }
 
     private function edit_attr()
