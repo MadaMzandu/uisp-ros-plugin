@@ -1,7 +1,7 @@
 <?php
-const MY_VERSION = '2.3.0';
+const MY_VERSION = '2.3.1';
 const MAX_BACKUPS = 6 ;
-const REPEAT_STATEMENTS  = 7; //number of statements expected to fail during update
+const REPEAT_STATEMENTS  = 8; //number of statements expected to fail during update
 
 include_once 'api_sqlite.php';
 include_once 'api_logger.php';
@@ -101,10 +101,9 @@ class ApiSetup
     {
         $source = 'includes/update_schema.sql';
         $str = file_get_contents($source);
-        $arr = explode("\n",
-            preg_replace('/;/',";\n",
-                preg_replace('/\v+/',"",$str))); //convert to array
-        return array_diff($arr,["",null]);
+        $str = preg_replace('/[\n\r]+/','',$str); //remove line breaks
+        $str = preg_replace('/\s*;\s*/'," ;\n",$str); //line break at semicolon
+        return explode("\n",$str);
     }
 
     private  function set_version(): void

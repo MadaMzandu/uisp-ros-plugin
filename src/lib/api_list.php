@@ -221,16 +221,18 @@ class ApiList
 
     private function find_db_plans(): array
     {
-        $st = "SELECT id,name,uploadSpeed,downloadSpeed,last,created, IFNULL(ratio,1) as ratio, ".
-            "IFNULL(priorityUpload,8) as priorityUpload, IFNULL(priorityDownload,8) as priorityDownload, ".
-            "IFNULL(limitUpload,0) as limitUpload, IFNULL(limitDownload,0) as limitDownload, ".
-            "IFNULL(burstUpload,0) as burstUpload, IFNULL(burstDownload,0) as burstDownload, ".
-            "IFNULL(threshUpload,0) as threshUpload, IFNULL(threshDownload,0) as threshDownload, ".
-            "IFNULL(timeUpload,1) as timeUpload, IFNULL(timeDownload,1) as timeDownload FROM plans";
-        return $this->db()->selectCustom($st);
-//        $tmp = [];
-//        foreach($read as $item){ $tmp[$item['id']] = $item; }
-//        return $tmp ;
+        $st = [
+            "SELECT id,name,last,created, IFNULL(ratio,1) as ratio,",
+            "IFNULL(uploadOverride,uploadSpeed) as uploadSpeed,", //use override if set
+            "IFNULL(downloadOverride,downloadSpeed) as downloadSpeed,",
+            "IFNULL(priorityUpload,8) as priorityUpload, IFNULL(priorityDownload,8) as priorityDownload,",
+            "IFNULL(limitUpload,0) as limitUpload, IFNULL(limitDownload,0) as limitDownload,",
+            "IFNULL(burstUpload,0) as burstUpload, IFNULL(burstDownload,0) as burstDownload,",
+            "IFNULL(threshUpload,0) as threshUpload, IFNULL(threshDownload,0) as threshDownload,",
+            "IFNULL(timeUpload,1) as timeUpload, IFNULL(timeDownload,1) as timeDownload",
+            "FROM plans"
+        ];
+        return $this->db()->selectCustom(implode(' ',$st));
     }
 
     private function find_plans(): array

@@ -41,6 +41,8 @@ CREATE TABLE IF NOT EXISTS tmp."plans" (
     "uploadSpeed" INTEGER,
     "downloadSpeed" INTEGER,
     "priorityUpload" INTEGER,
+    "uploadOverride" INTEGER,
+    "downloadOverride" INTEGER,
     "priorityDownload" INTEGER,
     "limitUpload" INTEGER ,
     "limitDownload" INTEGER ,
@@ -77,6 +79,10 @@ SELECT id,device,clientId,planId,status,"last",created FROM "services" ;
 INSERT INTO tmp."plans" (id,ratio,priorityUpload,priorityDownload,limitUpload,limitDownload,
 burstUpload,burstDownload,threshUpload,threshDownload,timeUpload,timeDownload,"last",created)
 SELECT * FROM plans;
+INSERT INTO tmp."plans" (id,name,ratio,uploadSpeed,downloadSpeed,priorityUpload,priorityDownload,
+limitUpload ,limitDownload ,burstUpload ,burstDownload ,threshUpload,threshDownload ,timeUpload,
+timeDownload,last,created)
+SELECT * from plans;
 INSERT INTO tmp."plans" (id,ratio,priorityUpload,priorityDownload,limitUpload,limitDownload,
 burstUpload,burstDownload,threshUpload,threshDownload,timeUpload,timeDownload,"last",created) SELECT id,ratio,priority,
 priority,limitUpload,limitDownload,burstUpload,burstDownload,threshUpload,threshDownload,timeUpload,timeDownload,

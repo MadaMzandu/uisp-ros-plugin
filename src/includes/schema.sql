@@ -39,6 +39,8 @@ CREATE TABLE IF NOT EXISTS "plans" (
     "ratio" INTEGER,
     "uploadSpeed" INTEGER,
     "downloadSpeed" INTEGER,
+    "uploadOverride" INTEGER,
+    "downloadOverride" INTEGER,
     "priorityUpload" INTEGER,
     "priorityDownload" INTEGER,
     "limitUpload" INTEGER ,
