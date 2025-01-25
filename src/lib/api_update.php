@@ -24,6 +24,7 @@ class ApiUpdate
             case 'unpublish' : $this->result =$this->publish(true); break;
             case 'cache': $this->result =$this->cache_build(); break;
             case 'log_clear' : $this->result =$this->log_clear(); break;
+            case 'run': $this->result = $this->run_jobs() ; break ;
             default: fail('invalid_action',$this->data);
         }
     }
@@ -136,6 +137,31 @@ class ApiUpdate
             return [];
         }
         fail('restore_fail',$this->data);
+    }
+
+    private function run_jobs()
+    {
+        $fn = 'data/queue.json';
+        $read = is_file($fn) ? json_decode(file_get_contents($fn),true): [];
+        $data = $this->data->data ?? [];
+        if(!$data || !is_array($data)){ return [1]; }
+        $filter = array_fill_keys($data,'$%^%^');
+        $run = array_intersect_key($read,$filter) ;
+        $diff = array_diff_key($read,$filter);
+        $write = $diff ? json_encode($diff,128) : '{}';
+        if(!file_put_contents($fn,$write)){//remove run jobs from queue
+            fail('job_save_failed',$diff);
+        }
+        $edit = [];
+        $delete = [];
+        foreach ($run as $job){
+            if($job['action'] == 'delete'){ $delete[] = $job['id']; }
+            else{ $edit[] = $job['id']; }
+        }
+        $batch = new Batch();
+        if($edit){ $batch->set_accounts($edit); }
+        if($delete){ $batch->del_accounts($delete); }
+        return $run ;
     }
 
     private function delete_db(): ?array
