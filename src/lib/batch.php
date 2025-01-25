@@ -291,8 +291,8 @@ class Batch
                 'CASE WHEN burstUpload = 0 THEN 0 ELSE (uls * 1000000) + ((burstUpload * uls * 1000000) / 100) END as burstUpload,',
                 'CASE WHEN burstDownload = 0 THEN 0 ELSE (dls * 1000000) + ((burstDownload * dls* 1000000) / 100) END as burstDownload',
                 'FROM plans',
-                'LEFT JOIN (SELECT IFNULL(uploadOverride,uploadSpeed) AS uls,',
-                'IFNULL(downloadOverride,downloadSpeed) AS dls) AS tmp ON plans.id=tmp.id'
+                'LEFT JOIN (SELECT id as tmp_id,IFNULL(uploadOverride,uploadSpeed) AS uls,',
+                'IFNULL(downloadOverride,downloadSpeed) AS dls FROM plans) AS tmp ON id=tmp_id'
 
             ];
             $plans = $this->db()->selectCustom(implode(' ',$st));
