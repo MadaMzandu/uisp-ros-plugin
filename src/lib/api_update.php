@@ -75,7 +75,7 @@ class ApiUpdate
     {
         $data = json_decode(json_encode($this->data->data),true);
         $conf = $this->db()->readConfig() ;
-        foreach (array_keys($data) as $k){ if(!property_exists($conf,$k)){
+        foreach (array_keys($data) as $k){ if(!property_exists($conf,$k) && $k !== 'plugin_language'){
             fail('invalid_config_key',$this->data); }}
         if($this->db()->saveConfig($data)){
             MyLog()->Append('config_edit_success');
@@ -244,6 +244,7 @@ class ApiUpdate
         if(!$data || !$cols){ fail('insert_invalid',$this->data); }
         $fill = array_fill_keys($cols,null);
         $trim = array_intersect_key($data,$fill);
+        if($this->mode === 'devices' && empty($trim['port'])) { $trim['port'] = '8728'; }
         $now = date('c');
         $trim['last'] = $now ;
         $trim['created'] = $now ;
@@ -314,6 +315,7 @@ class ApiUpdate
             fail('edit_invalid',$data);  }
         $fill = array_fill_keys($cols,null);
         $trim = array_intersect_key($data,$fill);
+        if($this->mode === 'devices' && empty($trim['port'])) { $trim['port'] = '8728'; }
         $trim['last'] = date('c') ;
         if($this->db()->edit($trim,$this->mode)){
             $this->result = $this->find_last($trim[$pk]);

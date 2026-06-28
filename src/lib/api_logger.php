@@ -9,7 +9,7 @@ class ApiLogger
         if (!$this->Debug() && $level >= LOG_DEBUG){ return; }
         $fn = 'data/plugin.log';
         if(is_array($entry) || is_object($entry)){ $entry = json_encode($entry); }
-        error_log(sprintf("%s: %s",$this->Time(), $entry) . PHP_EOL,3,$fn);
+        @error_log(sprintf("%s: %s",$this->Time(), $entry) . PHP_EOL,3,$fn);
         if(API_DEBUG_ECHO) echo sprintf("%s: %s",$this->Time(), $entry) . PHP_EOL;
     }
 

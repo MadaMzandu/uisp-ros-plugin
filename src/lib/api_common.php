@@ -60,7 +60,9 @@ function respond($msg,$err = false,$data = [])
     ];
     if(!headers_sent()) header('content-type: application/json');
     if ($err && !headers_sent()) { // failed header
-        header('X-API-Response: 202', true, 202);
+        header('X-API-Response: 200', true, 200);
     }
-    echo json_encode($response,JSON_PRETTY_PRINT);
+    $json = json_encode($response, JSON_PRETTY_PRINT | JSON_INVALID_UTF8_SUBSTITUTE);
+    MyLog()->Append('Outputting JSON length: ' . strlen($json));
+    echo $json;
 }

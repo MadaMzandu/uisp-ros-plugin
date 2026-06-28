@@ -133,7 +133,7 @@ class ApiAction
 
     private function  set_client($entity): bool
     {
-        $id = $entity['id'];
+        $id = (int) ($entity['id'] ?? 0);
         $client = $this->client($id);
         $changes = array_diff_assoc($entity,$client);
         if(sizeof($changes) < 2){ return true ;} //no changes

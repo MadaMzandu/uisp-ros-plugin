@@ -53,11 +53,18 @@ class ApiList
 
     public function list_msg(): array
     {
-        $accept = $_SERVER['HTTP_ACCEPT_LANGUAGE'] ; //add trailing comma
-        $split = preg_split("/[;,]+/",$accept) ;
-        $grep = preg_grep("/[a-zA-Z]+$/",$split);
-        $first = array_shift($grep) ?? 'en-USA' ;
-        $lang = preg_replace("/-.*/",'',$first);
+        $config = $this->db()->readConfig();
+        $override_lang = $config->plugin_language ?? 'system';
+        
+        if ($override_lang !== 'system' && !empty($override_lang)) {
+            $lang = $override_lang;
+        } else {
+            $accept = $_SERVER['HTTP_ACCEPT_LANGUAGE'] ?? 'en'; //add trailing comma
+            $split = preg_split("/[;,]+/",$accept) ;
+            $grep = preg_grep("/[a-zA-Z]+$/",$split);
+            $first = array_shift($grep) ?? 'en-USA' ;
+            $lang = preg_replace("/-.*/",'',$first);
+        }
         $data = [];
         foreach (['messages','fields'] as $name){
             $dir = 'includes/l10n/';
@@ -186,7 +193,7 @@ class ApiList
             try{
                 $conn = @fsockopen($device['ip'],
                     $port,
-                    $code, $err, 8);
+                    $code, $err, 2);
                 $state = is_resource($conn);
                 $status[$id] = $state ;
                 if($state){ fclose($conn); }
@@ -232,7 +239,7 @@ class ApiList
             "IFNULL(timeUpload,1) as timeUpload, IFNULL(timeDownload,1) as timeDownload",
             "FROM plans"
         ];
-        return $this->db()->selectCustom(implode(' ',$st));
+        return $this->db()->selectCustom(implode(' ',$st)) ?? [];
     }
 
     private function find_plans(): array
@@ -241,11 +248,13 @@ class ApiList
         $tmp = [];
         $trimmer = array_fill_keys(['id','uploadSpeed','downloadSpeed','name'],'$#@&');
         $now = date('c');
-        foreach ($data as $item) {
-            $trim = array_intersect_key($item,$trimmer);
-            $trim['created'] = $now;
-            $trim['last'] = $now;
-            $tmp[$item['id']] = $trim;
+        if (is_array($data) || is_object($data)) {
+            foreach ($data as $item) {
+                $trim = array_intersect_key($item,$trimmer);
+                $trim['created'] = $now;
+                $trim['last'] = $now;
+                $tmp[$item['id']] = $trim;
+            }
         }
         return $tmp ;
     }
