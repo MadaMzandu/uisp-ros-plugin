@@ -51,6 +51,8 @@ function bail($event, $data = [])
 
 function respond($msg,$err = false,$data = [])
 {
+    if (defined('JSON_RESPOND_SENT')) return;
+    define('JSON_RESPOND_SENT', true);
     $status = $err ? 'failed' : 'ok';
     $response = [
         'status' => $status,
@@ -65,4 +67,7 @@ function respond($msg,$err = false,$data = [])
     $json = json_encode($response, JSON_PRETTY_PRINT | JSON_INVALID_UTF8_SUBSTITUTE);
     MyLog()->Append('Outputting JSON length: ' . strlen($json));
     echo $json;
+    if(ob_get_level() > 0) ob_flush();
+    flush();
+    if(session_id()) session_write_close();
 }

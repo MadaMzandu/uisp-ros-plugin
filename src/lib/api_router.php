@@ -93,6 +93,8 @@ class ApiRouter
 
     public function http_response(): void
     {
+        if (defined('JSON_RESPOND_SENT')) return;
+        define('JSON_RESPOND_SENT', true);
         if(!headers_sent())header('content-type: application/json');
         $stat = 'ok';
         $error = $this->status->error ?? false ;

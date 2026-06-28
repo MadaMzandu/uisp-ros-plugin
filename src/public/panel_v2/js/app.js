@@ -571,7 +571,7 @@ document.addEventListener('DOMContentLoaded', () => {
             hideLoader();
             if (!res.error) {
                 alert('Sincronización completada con éxito.');
-                loadData();
+                await loadData(currentView);
             } else {
                 alert('Error al sincronizar: ' + res.message);
             }
@@ -585,7 +585,7 @@ document.addEventListener('DOMContentLoaded', () => {
             hideLoader();
             if (!res.error) {
                 alert('Cuentas vaciadas con éxito.');
-                loadData();
+                await loadData(currentView);
             } else {
                 alert('Error al vaciar cuentas: ' + res.message);
             }
@@ -597,7 +597,7 @@ document.addEventListener('DOMContentLoaded', () => {
             showLoader();
             const res = await api.send('update', 'devices', 'delete', { id: id });
             hideLoader();
-            if (!res.error) loadData();
+            if (!res.error) await loadData(currentView);
             else alert("Error: " + res.message);
         });
     }

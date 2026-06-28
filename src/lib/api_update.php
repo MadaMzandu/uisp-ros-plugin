@@ -397,6 +397,7 @@ class ApiUpdate
         if($this->fast){ return; }
         respond('ok',false,$this->result ?? []);
         $this->fast = true ;
+        if(session_id()) session_write_close();
         if(function_exists('fastcgi_finish_request')){
             fastcgi_finish_request();
         }

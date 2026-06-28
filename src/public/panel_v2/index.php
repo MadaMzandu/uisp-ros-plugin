@@ -370,8 +370,8 @@
     </div>
 
     <!-- Scripts -->
-    <script src="js/api.js?v=2.0.2"></script>
-    <script src="js/app.js?v=2.0.14"></script>
+    <script src="js/api.js?v=2.0.15"></script>
+    <script src="js/app.js?v=2.0.15"></script>
     <script>
         feather.replace();
     </script>
