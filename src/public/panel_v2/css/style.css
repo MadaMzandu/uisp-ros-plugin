@@ -355,3 +355,16 @@ body {
     border-color: var(--primary);
     background-color: rgba(0, 0, 0, 0.4);
 }
+
+/* Sortable Headers */
+th.sortable {
+    cursor: pointer;
+    user-select: none;
+}
+th.sortable:hover {
+    color: var(--primary);
+}
+th.sortable.asc,
+th.sortable.desc {
+    color: var(--primary);
+}

@@ -13,7 +13,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     
     <!-- Custom CSS -->
-    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/style.css?v=2.0.16">
     
     <!-- Icons (Feather Icons) -->
     <script src="https://unpkg.com/feather-icons"></script>
@@ -68,15 +68,19 @@
                 
                 <!-- Dynamic Content Views -->
                 <div id="view-devices" class="view-section" style="display: none;">
+                    <div style="margin-bottom: 15px; position: relative; max-width: 300px;">
+                        <i data-feather="search" style="position: absolute; left: 10px; top: 10px; color: #888; width: 18px;"></i>
+                        <input type="text" id="search-devices" class="form-control" placeholder="Buscar dispositivos..." style="padding-left: 35px;">
+                    </div>
                     <div class="table-container">
                         <table class="data-table" id="devices-table">
                             <thead>
                                 <tr>
-                                    <th>ID</th>
-                                    <th>Nombre</th>
-                                    <th>IP / Hostname</th>
-                                    <th>Usuarios</th>
-                                    <th>Estado</th>
+                                    <th data-sort="id" class="sortable">ID</th>
+                                    <th data-sort="name" class="sortable">Nombre</th>
+                                    <th data-sort="ip" class="sortable">IP / Hostname</th>
+                                    <th data-sort="users" class="sortable">Usuarios</th>
+                                    <th data-sort="status" class="sortable">Estado</th>
                                     <th>Acciones</th>
                                 </tr>
                             </thead>
@@ -89,6 +93,10 @@
                 
                 <!-- View Plans -->
                 <div id="view-plans" class="view-section" style="display: none;">
+                    <div style="margin-bottom: 15px; position: relative; max-width: 300px;">
+                        <i data-feather="search" style="position: absolute; left: 10px; top: 10px; color: #888; width: 18px;"></i>
+                        <input type="text" id="search-plans" class="form-control" placeholder="Buscar planes..." style="padding-left: 35px;">
+                    </div>
                     <div class="table-container">
                         <table class="data-table" id="plans-table">
                             <thead>
@@ -118,8 +126,9 @@
                     <div class="table-container" style="padding: 20px;">
                         <form id="config-form">
                             <div id="config-fields-container"></div>
-                            <div style="margin-top: 20px; text-align: right;">
-                                <button class="btn btn-primary" id="save-config-btn">Guardar Configuración</button>
+                            <div style="margin-top: 20px; text-align: right; display: flex; justify-content: flex-end; gap: 10px;">
+                                <button type="button" class="btn btn-secondary" id="sync-attrs-btn" style="display: none;">Crear atributos en UCRM automáticamente</button>
+                                <button type="button" class="btn btn-primary" id="save-config-btn">Guardar Configuración</button>
                             </div>
                         </form>
                     </div>
@@ -151,8 +160,15 @@
             </div>
         </section>
 
-                <!-- View System -->
+        <!-- View System -->
         <section id="view-system" class="view-section" style="display: none;">
+            <div class="panel" style="margin-bottom: 20px;">
+                <h4 style="color: var(--primary); margin-bottom: 20px;">Información del Sistema</h4>
+                <div id="system-info-container" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 20px; color: var(--text-main);">
+                    <!-- Injected via JS -->
+                </div>
+            </div>
+
             <div class="panel" style="margin-bottom: 20px;">
                 <h4 style="color: var(--primary); margin-bottom: 20px;">Utilidades del sistema</h4>
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 30px;">
@@ -273,6 +289,33 @@
         </div>
     </div>
 
+    <!-- Orphan Modal -->
+    <div id="orphan-modal" class="modal-overlay" style="display: none;">
+        <div class="modal" style="max-height: 90vh; overflow-y: auto; max-width: 600px; width: 90%;">
+            <div class="modal-header">
+                <h3>Cuentas Huérfanas</h3>
+                <button class="close-modal"><i data-feather="x"></i></button>
+            </div>
+            <div class="modal-body">
+                <p style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 15px;">Estas son las cuentas registradas en el dispositivo que no están asociadas a ningún servicio en UCRM.</p>
+                <div class="table-container">
+                    <table class="data-table" id="orphan-table">
+                        <thead>
+                            <tr>
+                                <th>Nombre</th>
+                                <th>MAC</th>
+                                <th>Dirección (v4/v6)</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <!-- Injected via JS -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Modal Plan Ratio -->
     <div id="plan-modal" class="modal-overlay" style="display: none;">
         <div class="modal" style="max-height: 90vh; overflow-y: auto;">
@@ -370,8 +413,8 @@
     </div>
 
     <!-- Scripts -->
-    <script src="js/api.js?v=2.0.15"></script>
-    <script src="js/app.js?v=2.0.15"></script>
+    <script src="js/api.js?v=2.0.17"></script>
+    <script src="js/app.js?v=2.0.17"></script>
     <script>
         feather.replace();
     </script>

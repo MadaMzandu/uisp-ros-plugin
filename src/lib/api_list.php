@@ -26,6 +26,7 @@ class ApiList
             case 'orphans': return $this->list_orphans();
             case 'messages':
             case 'lang': return $this->list_msg();
+            case 'sys': return $this->list_sys();
             default: return null;
         }
     }
@@ -82,8 +83,18 @@ class ApiList
         $device = $this->db()->selectDeviceById($id);
         $type = $device->type ?? null ;
         $api = $type == 'mikrotik' ? new MtData() : null ;
-        if($api) fail('orphan_list_fail',[$device,$this->data]);
-        return $api->get_orphans($device);
+        if(!$api) fail('orphan_list_fail',[$device,$this->data]);
+        $raw = $api->get_orphans($device);
+        $mapped = [];
+        foreach ($raw as $item) {
+            $mapped[] = [
+                'name' => $item['name'] ?? $item['comment'] ?? null,
+                'mac' => $item['mac-address'] ?? null,
+                'address' => $item['address'] ?? $item['target'] ?? $item['remote-address'] ?? null,
+                'path' => $item['path'] ?? null
+            ];
+        }
+        return $mapped;
     }
 
     private function list_devices(): array
@@ -322,5 +333,20 @@ class ApiList
         $this->set_mode($mode);
         if(!$data){$data = new stdClass(); }
         $this->data = $data ;
+    }
+
+    private function list_sys(): array
+    {
+        $config = $this->db()->readConfig();
+        $version = defined('MY_VERSION') ? MY_VERSION : 'unknown';
+        if ($version === 'unknown' && defined('MyCacheVersion')) {
+            $version = MyCacheVersion;
+        }
+        return [
+            'app_version' => $version,
+            'php_version' => phpversion(),
+            'last_cache' => $config->last_cache ?? 'never',
+            'next_cache' => $config->next_cache ?? 'never',
+        ];
     }
 }

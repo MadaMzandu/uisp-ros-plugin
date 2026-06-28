@@ -13,6 +13,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // UI Referencias Modal
     const deviceModal = document.getElementById('device-modal');
     const planModal = document.getElementById('plan-modal');
+    const orphanModal = document.getElementById('orphan-modal');
     const closeButtons = document.querySelectorAll('.close-modal');
 
     // Estado local
@@ -21,6 +22,10 @@ document.addEventListener('DOMContentLoaded', () => {
     let plansCache = [];
     let configCache = {};
     let fieldsCache = null;
+
+    // Sorting variables
+    let currentSortColumn = 'id';
+    let currentSortDirection = 'asc';
 
     // --- Ruteo y Navegación ---
     function switchView(viewName, title) {
@@ -86,15 +91,48 @@ document.addEventListener('DOMContentLoaded', () => {
         if (response.error) return alert('Error: ' + response.message);
 
         devicesCache = response.data || [];
+        renderDevicesTable();
+    }
+
+    function renderDevicesTable() {
         const tbody = document.querySelector('#devices-table tbody');
         tbody.innerHTML = '';
 
-        if (devicesCache.length === 0) {
+        // Sort devices
+        const sortedDevices = [...devicesCache].sort((a, b) => {
+            let valA = a[currentSortColumn];
+            let valB = b[currentSortColumn];
+
+            if (valA === null || valA === undefined) valA = '';
+            if (valB === null || valB === undefined) valB = '';
+
+            if (typeof valA === 'string') valA = valA.toLowerCase();
+            if (typeof valB === 'string') valB = valB.toLowerCase();
+            
+            if (currentSortColumn === 'id' || currentSortColumn === 'users') {
+                valA = parseInt(valA) || 0;
+                valB = parseInt(valB) || 0;
+            }
+
+            if (valA < valB) return currentSortDirection === 'asc' ? -1 : 1;
+            if (valA > valB) return currentSortDirection === 'asc' ? 1 : -1;
+            return 0;
+        });
+
+        // Update headers UI
+        document.querySelectorAll('#devices-table th.sortable').forEach(th => {
+            th.classList.remove('asc', 'desc');
+            if (th.getAttribute('data-sort') === currentSortColumn) {
+                th.classList.add(currentSortDirection);
+            }
+        });
+
+        if (sortedDevices.length === 0) {
             tbody.innerHTML = `<tr><td colspan="6" class="empty-state">No hay dispositivos</td></tr>`;
             return;
         }
 
-        devicesCache.forEach(dev => {
+        sortedDevices.forEach(dev => {
             const statusBadge = dev.status 
                 ? `<span class="badge badge-success">En línea</span>` 
                 : `<span class="badge badge-danger">Desconectado</span>`;
@@ -107,6 +145,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 <td>${dev.users || 0}</td>
                 <td>${statusBadge}</td>
                 <td>
+                    <button class="btn btn-secondary" style="padding:4px 8px; font-size: 0.75rem;" onclick="viewOrphans(${dev.id})" title="Ver cuentas huérfanas"><i data-feather="users" style="width:14px;height:14px;"></i></button>
                     <button class="btn btn-secondary" style="padding:4px 8px; font-size: 0.75rem;" onclick="editDevice(${dev.id})" title="Editar"><i data-feather="edit-2" style="width:14px;height:14px;"></i></button>
                     <button class="btn btn-secondary" style="padding:4px 8px; font-size: 0.75rem;" onclick="syncDevice(${dev.id})" title="Sincronizar cuentas"><i data-feather="refresh-cw" style="width:14px;height:14px;"></i></button>
                     <button class="btn btn-secondary" style="padding:4px 8px; font-size: 0.75rem;" onclick="clearDevice(${dev.id})" title="Vaciar cuentas"><i data-feather="x-circle" style="width:14px;height:14px;"></i></button>
@@ -117,6 +156,20 @@ document.addEventListener('DOMContentLoaded', () => {
         });
         feather.replace();
     }
+
+    // Handle Sorting Clicks
+    document.querySelectorAll('#devices-table th.sortable').forEach(th => {
+        th.addEventListener('click', () => {
+            const column = th.getAttribute('data-sort');
+            if (currentSortColumn === column) {
+                currentSortDirection = currentSortDirection === 'asc' ? 'desc' : 'asc';
+            } else {
+                currentSortColumn = column;
+                currentSortDirection = 'asc';
+            }
+            renderDevicesTable();
+        });
+    });
 
     // --- Planes ---
     async function renderPlans() {
@@ -279,16 +332,18 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
     
-    // Config Tabs listener
+    // Configuración Tabs
     document.getElementById('tab-general').addEventListener('click', (e) => {
-        document.getElementById('tab-general').classList.add('active');
-        document.getElementById('tab-attrs').classList.remove('active');
+        document.querySelectorAll('#view-config .btn-secondary').forEach(b => b.classList.remove('active'));
+        e.target.classList.add('active');
+        document.getElementById('sync-attrs-btn').style.display = 'none';
         renderConfig();
     });
     
     document.getElementById('tab-attrs').addEventListener('click', (e) => {
-        document.getElementById('tab-attrs').classList.add('active');
-        document.getElementById('tab-general').classList.remove('active');
+        document.querySelectorAll('#view-config .btn-secondary').forEach(b => b.classList.remove('active'));
+        e.target.classList.add('active');
+        document.getElementById('sync-attrs-btn').style.display = 'inline-block';
         renderConfig();
     });
 
@@ -305,6 +360,20 @@ document.addEventListener('DOMContentLoaded', () => {
             window.location.reload();
         }
         else alert("Error: " + res.message);
+    });
+
+    document.getElementById('sync-attrs-btn').addEventListener('click', async (e) => {
+        e.preventDefault();
+        customConfirm("¿Deseas crear automáticamente los atributos personalizados en UCRM que faltan?", async () => {
+            showLoader();
+            const res = await api.send('update', 'config', 'sync_attrs');
+            hideLoader();
+            if (!res.error) {
+                alert((res.data && res.data.message) || 'Atributos verificados y creados exitosamente.');
+            } else {
+                alert('Error al crear atributos: ' + res.message);
+            }
+        });
     });
 
     // --- Trabajos ---
@@ -382,6 +451,32 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- Sistema ---
     async function renderSystem() {
+        // Fetch System Info
+        const sysRes = await api.send('list', 'sys', 'get');
+        if (!sysRes.error && sysRes.data) {
+            const sys = sysRes.data;
+            const sysContainer = document.getElementById('system-info-container');
+            sysContainer.innerHTML = `
+                <div style="background: rgba(0,0,0,0.2); padding: 15px; border-radius: 4px;">
+                    <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 5px;">Plugin Version</div>
+                    <div style="font-weight: 500;">${sys.app_version}</div>
+                </div>
+                <div style="background: rgba(0,0,0,0.2); padding: 15px; border-radius: 4px;">
+                    <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 5px;">PHP Version</div>
+                    <div style="font-weight: 500;">${sys.php_version}</div>
+                </div>
+                <div style="background: rgba(0,0,0,0.2); padding: 15px; border-radius: 4px;">
+                    <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 5px;">Última Caché</div>
+                    <div style="font-weight: 500;">${sys.last_cache !== 'never' ? new Date(sys.last_cache).toLocaleString() : 'Nunca'}</div>
+                </div>
+                <div style="background: rgba(0,0,0,0.2); padding: 15px; border-radius: 4px;">
+                    <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 5px;">Próxima Caché</div>
+                    <div style="font-weight: 500;">${sys.next_cache !== 'never' ? new Date(sys.next_cache).toLocaleString() : 'Nunca'}</div>
+                </div>
+            `;
+        }
+
+        // Fetch Backups
         const response = await api.getBackups();
         const grid = document.getElementById('backups-grid');
         grid.innerHTML = '';
@@ -602,6 +697,39 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    // --- Huérfanos ---
+    window.viewOrphans = async function(id) {
+        showLoader();
+        const res = await api.send('list', 'orphans', 'get', { id: id });
+        hideLoader();
+        
+        if (res.error) return alert("Error al cargar huérfanos: " + res.message);
+        
+        const orphans = res.data || [];
+        const tbody = document.querySelector('#orphan-table tbody');
+        tbody.innerHTML = '';
+        
+        if (orphans.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="3" class="empty-state" style="padding: 20px;">No hay cuentas huérfanas en este dispositivo.</td></tr>`;
+        } else {
+            orphans.forEach(o => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td style="font-weight: 500;">${o.name || '-'}</td>
+                    <td><span class="badge" style="background: rgba(255,255,255,0.1);">${o.mac || '-'}</span></td>
+                    <td>
+                        ${o.address ? `<div style="font-size:0.8rem; margin-bottom:2px;">IPv4: ${o.address}</div>` : ''}
+                        ${o.address6 ? `<div style="font-size:0.8rem;">IPv6: ${o.address6}</div>` : ''}
+                        ${!o.address && !o.address6 ? '-' : ''}
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+        
+        orphanModal.style.display = 'flex';
+    }
+
     document.getElementById('save-device-btn').addEventListener('click', async (e) => {
         e.preventDefault();
         const data = Object.fromEntries(new FormData(document.getElementById('device-form')).entries());
@@ -694,12 +822,28 @@ document.addEventListener('DOMContentLoaded', () => {
     function closeModals() {
         deviceModal.style.display = 'none';
         planModal.style.display = 'none';
+        orphanModal.style.display = 'none';
     }
     
     closeButtons.forEach(btn => btn.addEventListener('click', closeModals));
 
     function showLoader() { loader.style.display = 'flex'; }
     function hideLoader() { loader.style.display = 'none'; }
+
+    // --- Búsqueda en Tablas ---
+    function applySearch(inputId, tableId) {
+        document.getElementById(inputId)?.addEventListener('input', (e) => {
+            const term = e.target.value.toLowerCase();
+            const rows = document.querySelectorAll(`#${tableId} tbody tr`);
+            rows.forEach(row => {
+                const text = row.textContent.toLowerCase();
+                row.style.display = text.includes(term) ? '' : 'none';
+            });
+        });
+    }
+
+    applySearch('search-devices', 'devices-table');
+    applySearch('search-plans', 'plans-table');
 
     // --- Inicialización ---
     switchView('devices', 'Dispositivos Administrados');

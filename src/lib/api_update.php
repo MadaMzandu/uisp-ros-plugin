@@ -25,6 +25,7 @@ class ApiUpdate
             case 'cache': $this->result =$this->cache_build(); break;
             case 'log_clear' : $this->result =$this->log_clear(); break;
             case 'run': $this->result = $this->run_jobs() ; break ;
+            case 'sync_attrs': $this->result = $this->sync_attrs(); break;
             default: fail('invalid_action',$this->data);
         }
     }
@@ -162,6 +163,26 @@ class ApiUpdate
         if($edit){ $batch->set_accounts($edit); }
         if($delete){ $batch->del_accounts($delete); }
         return $run ;
+    }
+
+
+    private function sync_attrs(): array
+    {
+        $api = new ApiUcrm(null, true);
+        $attrs = [
+            ['name' => 'macAddress', 'key' => 'macAddress', 'attributeType' => 'client'],
+            ['name' => 'routerUser', 'key' => 'routerUser', 'attributeType' => 'client'],
+            ['name' => 'routerPass', 'key' => 'routerPass', 'attributeType' => 'client'],
+            ['name' => 'ipPool', 'key' => 'ipPool', 'attributeType' => 'client'],
+            ['name' => 'ipv6Pool', 'key' => 'ipv6Pool', 'attributeType' => 'client'],
+            ['name' => 'roskey', 'key' => 'roskey', 'attributeType' => 'client']
+        ];
+        $count = 0;
+        foreach ($attrs as $attr) {
+            $res = $api->post('custom-attributes', $attr);
+            if ($res && isset($res->id)) $count++;
+        }
+        return ['status' => 'success', 'message' => "Se intentó crear los atributos faltantes. Creados exitosamente: $count"];
     }
 
     private function delete_db(): ?array
