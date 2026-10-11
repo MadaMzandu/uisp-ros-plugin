@@ -13,48 +13,66 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     
     <!-- Custom CSS -->
-    <link rel="stylesheet" href="css/style.css?v=2.0.16">
-    
-    <!-- Icons (Feather Icons) -->
-    <script src="https://unpkg.com/feather-icons"></script>
+    <script src="js/theme.js?v=2.0.35"></script>
+    <link rel="stylesheet" href="css/style.css?v=2.0.35">
 </head>
 <body>
+
+    <div id="notifications" class="toast-region" aria-live="polite" aria-relevant="additions"></div>
 
     <div class="app-container">
         <!-- Sidebar -->
         <aside class="sidebar">
             <div class="sidebar-header">
                 <h2>ROS Plugin</h2>
-                <p>Real-time Provisioning</p>
+                <p data-i18n="Real-time Provisioning">Real-time Provisioning</p>
             </div>
             <nav class="sidebar-nav">
                 <a href="#" class="nav-item active" data-view="devices">
                     <i data-feather="server"></i>
-                    <span>Dispositivos</span>
+                    <span data-i18n="Dispositivos">Dispositivos</span>
                 </a>
                 <a href="#" class="nav-item" data-view="plans">
                     <i data-feather="box"></i>
-                    <span>Planes</span>
+                    <span data-i18n="Planes">Planes</span>
                 </a>
                 <a href="#" class="nav-item" data-view="config">
                     <i data-feather="settings"></i>
-                    <span>Configuración</span>
+                    <span data-i18n="Configuración">Configuración</span>
                 </a>
                 <a href="#" class="nav-item" data-view="jobs">
                     <i data-feather="list"></i>
-                    <span>Trabajos</span>
+                    <span data-i18n="Trabajos">Trabajos</span>
                 </a>
                 <a href="#" class="nav-item" data-view="system">
                     <i data-feather="cpu"></i>
-                    <span>Sistema</span>
+                    <span data-i18n="Sistema">Sistema</span>
                 </a>
             </nav>
+            <div class="preference-controls">
+                <label class="preference-control" for="panel-theme">
+                    <span data-i18n="appearance.label">Apariencia</span>
+                    <select id="panel-theme" class="form-control" aria-label="Apariencia" data-i18n-aria-label="appearance.label">
+                        <option value="dark" data-i18n="theme.dark">Oscuro</option>
+                        <option value="light" data-i18n="theme.light">Claro</option>
+                        <option value="system" data-i18n="theme.system">Sistema</option>
+                    </select>
+                </label>
+                <label class="preference-control" for="panel-language">
+                    <span data-i18n="Idioma">Idioma</span>
+                    <select id="panel-language" class="form-control" aria-label="Idioma" data-i18n-aria-label="Idioma">
+                        <option value="es">Español</option><option value="en">English</option>
+                        <option value="pt">Português</option><option value="fr">Français</option>
+                        <option value="de">Deutsch</option><option value="it">Italiano</option>
+                    </select>
+                </label>
+            </div>
         </aside>
 
         <!-- Main Content -->
         <main class="main-content">
             <header class="topbar">
-                <h1 id="page-title">Dispositivos Administrados</h1>
+                <h1 id="page-title" data-i18n="Dispositivos administrados">Dispositivos administrados</h1>
                 <div class="topbar-actions" id="topbar-actions">
                     <!-- Dynamic actions like Add Device will go here -->
                 </div>
@@ -68,20 +86,22 @@
                 
                 <!-- Dynamic Content Views -->
                 <div id="view-devices" class="view-section" style="display: none;">
-                    <div style="margin-bottom: 15px; position: relative; max-width: 300px;">
-                        <i data-feather="search" style="position: absolute; left: 10px; top: 10px; color: #888; width: 18px;"></i>
-                        <input type="text" id="search-devices" class="form-control" placeholder="Buscar dispositivos..." style="padding-left: 35px;">
+                    <div class="list-toolbar">
+                        <div class="search-field">
+                            <i data-feather="search"></i>
+                            <input type="search" id="search-devices" class="form-control" placeholder="Buscar dispositivos..." data-i18n-placeholder="Buscar dispositivos..." aria-label="Buscar dispositivos" data-i18n-aria-label="Buscar dispositivos">
+                        </div>
                     </div>
                     <div class="table-container">
                         <table class="data-table" id="devices-table">
                             <thead>
                                 <tr>
                                     <th data-sort="id" class="sortable">ID</th>
-                                    <th data-sort="name" class="sortable">Nombre</th>
-                                    <th data-sort="ip" class="sortable">IP / Hostname</th>
-                                    <th data-sort="users" class="sortable">Usuarios</th>
-                                    <th data-sort="status" class="sortable">Estado</th>
-                                    <th>Acciones</th>
+                                    <th data-sort="name" class="sortable" data-i18n="Nombre">Nombre</th>
+                                    <th data-sort="ip" class="sortable" data-i18n="IP / Hostname">IP / Hostname</th>
+                                    <th data-sort="users" class="sortable" data-i18n="Usuarios">Usuarios</th>
+                                    <th data-sort="status" class="sortable" data-i18n="Estado">Estado</th>
+                                    <th data-i18n="Acciones">Acciones</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -93,21 +113,23 @@
                 
                 <!-- View Plans -->
                 <div id="view-plans" class="view-section" style="display: none;">
-                    <div style="margin-bottom: 15px; position: relative; max-width: 300px;">
-                        <i data-feather="search" style="position: absolute; left: 10px; top: 10px; color: #888; width: 18px;"></i>
-                        <input type="text" id="search-plans" class="form-control" placeholder="Buscar planes..." style="padding-left: 35px;">
+                    <div class="list-toolbar">
+                        <div class="search-field">
+                            <i data-feather="search"></i>
+                            <input type="search" id="search-plans" class="form-control" placeholder="Buscar planes..." data-i18n-placeholder="Buscar planes..." aria-label="Buscar planes" data-i18n-aria-label="Buscar planes">
+                        </div>
                     </div>
                     <div class="table-container">
                         <table class="data-table" id="plans-table">
                             <thead>
                                 <tr>
                                     <th>ID</th>
-                                    <th>Plan</th>
-                                    <th>Upload Max</th>
-                                    <th>Download Max</th>
-                                    <th>Upload Burst</th>
-                                    <th>Download Burst</th>
-                                    <th>Actions</th>
+                                    <th data-i18n="Plan">Plan</th>
+                                    <th data-i18n="Subida (Mbps)">Subida (Mbps)</th>
+                                    <th data-i18n="Bajada (Mbps)">Bajada (Mbps)</th>
+                                    <th data-i18n="Burst subida (+%)">Burst subida (+%)</th>
+                                    <th data-i18n="Burst bajada (+%)">Burst bajada (+%)</th>
+                                    <th data-i18n="Acciones">Acciones</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -119,37 +141,48 @@
                 
                 <!-- View Config -->
                 <div id="view-config" class="view-section" style="display: none;">
-                    <div style="display: flex; gap: 20px; margin-bottom: 20px;">
-                        <button class="btn btn-secondary active" id="tab-general">General</button>
-                        <button class="btn btn-secondary" id="tab-attrs">Atributos</button>
+                    <div class="config-tabs" aria-label="Secciones de configuración" data-i18n-aria-label="Secciones de configuración">
+                        <button type="button" class="btn btn-secondary active" id="tab-general" data-i18n="General">General</button>
+                        <button type="button" class="btn btn-secondary" id="tab-attrs" data-i18n="Atributos">Atributos</button>
                     </div>
-                    <div class="table-container" style="padding: 20px;">
-                        <form id="config-form">
-                            <div id="config-fields-container"></div>
-                            <div style="margin-top: 20px; text-align: right; display: flex; justify-content: flex-end; gap: 10px;">
-                                <button type="button" class="btn btn-secondary" id="sync-attrs-btn" style="display: none;">Crear atributos en UCRM automáticamente</button>
-                                <button type="button" class="btn btn-primary" id="save-config-btn">Guardar Configuración</button>
+                    <form id="config-form">
+                        <div class="config-actions">
+                            <span class="config-actions-note" id="config-save-status" aria-live="polite" data-i18n="Guarda para aplicar los cambios.">Guarda para aplicar los cambios.</span>
+                            <div class="config-action-buttons">
+                                <button type="button" class="btn btn-secondary" id="sync-attrs-btn" style="display: none;" data-i18n="Guardar y crear faltantes">Guardar y crear faltantes</button>
+                                <button type="button" class="btn btn-primary" id="save-config-btn"><i data-feather="save"></i><span data-i18n="Guardar cambios">Guardar cambios</span></button>
                             </div>
-                        </form>
-                    </div>
+                        </div>
+                        <div id="config-fields-container"></div>
+                    </form>
                 </div>
 
                 <!-- View Jobs -->
         <section id="view-jobs" class="view-section" style="display: none;">
             <div class="panel">
-                <div class="flex-between" style="margin-bottom: 20px;">
-                    <div style="display: flex; gap: 15px; align-items: center;">
-                        <h4 style="color: var(--primary); margin: 0;">Trabajos programados</h4>
-                        <span class="badge badge-success" id="jobs-total" style="font-size: 0.85rem;">Total: 0</span>
-                        <span class="text-muted" id="jobs-selected" style="font-size: 0.85rem;">Selected: 0</span>
+                <div class="jobs-toolbar">
+                    <div class="toolbar-summary">
+                        <h4 data-i18n="Trabajos programados">Trabajos programados</h4>
+                        <span class="badge badge-success" id="jobs-total" data-i18n="Total: {count}" data-i18n-values='{"count":0}'>Total: 0</span>
+                        <span class="text-muted" id="jobs-selected" data-i18n="Seleccionados: {count}" data-i18n-values='{"count":0}'>Seleccionados: 0</span>
                     </div>
-                    <div style="display: flex; gap: 10px; align-items: center;">
-                        <button class="btn btn-primary" id="btn-run-jobs" title="Ejecutar seleccionados"><i data-feather="play" style="width: 16px; height: 16px;"></i></button>
-                        <button class="btn btn-danger" id="btn-delete-jobs" title="Eliminar seleccionados"><i data-feather="trash-2" style="width: 16px; height: 16px;"></i></button>
-                        <input type="checkbox" id="jobs-select-all" style="width: 18px; height: 18px; cursor: pointer;">
+                    <div class="toolbar-actions">
+                        <button type="button" class="btn btn-secondary" id="btn-refresh-jobs" title="Refrescar la lista de trabajos" data-i18n-title="Refrescar la lista de trabajos"><i data-feather="refresh-cw"></i><span data-i18n="Refrescar">Refrescar</span></button>
+                        <label class="select-all-label" for="jobs-refresh-interval"><span data-i18n="Refresco automático">Refresco automático</span></label>
+                        <select id="jobs-refresh-interval" class="form-control" style="width: auto;" aria-label="Intervalo de refresco automático" data-i18n-aria-label="Intervalo de refresco automático">
+                            <option value="0" data-i18n="Desactivado">Desactivado</option>
+                            <option value="5" data-i18n="Cada {seconds} s" data-i18n-values='{"seconds":5}'>Cada 5 s</option>
+                            <option value="10" data-i18n="Cada {seconds} s" data-i18n-values='{"seconds":10}'>Cada 10 s</option>
+                            <option value="30" data-i18n="Cada {seconds} s" data-i18n-values='{"seconds":30}'>Cada 30 s</option>
+                            <option value="60" data-i18n="Cada {seconds} s" data-i18n-values='{"seconds":60}'>Cada 60 s</option>
+                        </select>
+                        <button type="button" class="btn btn-primary" id="btn-run-jobs" title="Ejecutar seleccionados y sus trabajos anteriores" data-i18n-title="Ejecutar seleccionados y sus trabajos anteriores"><i data-feather="play"></i><span data-i18n="Ejecutar">Ejecutar</span></button>
+                        <button type="button" class="btn btn-danger" id="btn-delete-jobs" title="Eliminar seleccionados" data-i18n-title="Eliminar seleccionados"><i data-feather="trash-2"></i><span data-i18n="Eliminar">Eliminar</span></button>
+                        <label class="select-all-label"><input type="checkbox" id="jobs-select-all"><span data-i18n="Todos">Todos</span></label>
                     </div>
                 </div>
-
+                <p class="text-muted" id="jobs-refresh-status" role="status" aria-live="polite" data-i18n="Sin actualizar.">Sin actualizar.</p>
+                <p class="text-muted" data-i18n="Ejecutar procesa también los trabajos anteriores del mismo servicio. Eliminar cancela los pendientes sin cambiar el router y conserva información para una futura sincronización. Los trabajos en ejecución deben terminar primero.">Ejecutar procesa también los trabajos anteriores del mismo servicio. Eliminar cancela los pendientes sin cambiar el router y conserva información para una futura sincronización. Los trabajos en ejecución deben terminar primero.</p>
                 <div class="table-container">
                     <table class="table" id="jobs-table" style="width: 100%; border-collapse: collapse;">
                         <tbody>
@@ -162,61 +195,61 @@
 
         <!-- View System -->
         <section id="view-system" class="view-section" style="display: none;">
-            <div class="panel" style="margin-bottom: 20px;">
-                <h4 style="color: var(--primary); margin-bottom: 20px;">Información del Sistema</h4>
-                <div id="system-info-container" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 20px; color: var(--text-main);">
+            <div class="system-panel">
+                <h4 class="section-title" data-i18n="Información del sistema">Información del sistema</h4>
+                <div id="system-info-container" class="system-grid">
                     <!-- Injected via JS -->
                 </div>
             </div>
 
-            <div class="panel" style="margin-bottom: 20px;">
-                <h4 style="color: var(--primary); margin-bottom: 20px;">Utilidades del sistema</h4>
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 30px;">
-                    <div class="flex-between" style="align-items: flex-start;">
+            <div class="system-panel">
+                <h4 class="section-title" data-i18n="Utilidades del sistema">Utilidades del sistema</h4>
+                <div class="system-utilities">
+                    <div class="utility-card">
                         <div>
-                            <strong style="color: #fff;">Reconstruir datos del complemento</strong>
-                            <p style="color: var(--text-muted); font-size: 0.85rem; margin-top: 5px;">Esto reconstruirá la caché del complemento y llenará las cuentas que faltan en los enrutadores.</p>
+                            <strong data-i18n="Reconstruir datos">Reconstruir datos</strong>
+                            <p data-i18n="Actualiza la caché y vuelve a aplicar las cuentas de servicio en los routers.">Actualiza la caché y vuelve a aplicar las cuentas de servicio en los routers.</p>
                         </div>
-                        <button class="btn btn-primary" id="btn-rebuild">Reconstruir</button>
+                        <button class="btn btn-primary" id="btn-rebuild" data-i18n="Reconstruir">Reconstruir</button>
                     </div>
 
-                    <div class="flex-between" style="align-items: flex-start;">
+                    <div class="utility-card">
                         <div>
-                            <strong style="color: #fff;">Rebuild Cache</strong>
-                            <p style="color: var(--text-muted); font-size: 0.85rem; margin-top: 5px;">Cache customer and service information for better performance.</p>
+                            <strong data-i18n="Actualizar caché">Actualizar caché</strong>
+                            <p data-i18n="Descarga la información de clientes y servicios desde UISP.">Descarga la información de clientes y servicios desde UISP.</p>
                         </div>
-                        <button class="btn btn-primary" id="btn-cache">Cache</button>
+                        <button class="btn btn-secondary" id="btn-cache" data-i18n="Actualizar">Actualizar</button>
                     </div>
 
-                    <div class="flex-between" style="align-items: flex-start;">
+                    <div class="utility-card">
                         <div>
-                            <strong style="color: #fff;">Restore Backup</strong>
-                            <p style="color: var(--text-muted); font-size: 0.85rem; margin-top: 5px;">Upload and restore a backfile from this computer.</p>
+                            <strong data-i18n="Restaurar desde archivo">Restaurar desde archivo</strong>
+                            <p data-i18n="Selecciona un respaldo del plugin guardado en este equipo.">Selecciona un respaldo del plugin guardado en este equipo.</p>
                         </div>
-                        <button class="btn btn-primary" id="btn-upload">Upload</button>
+                        <button class="btn btn-secondary" id="btn-upload" data-i18n="Elegir archivo">Elegir archivo</button>
                     </div>
 
-                    <div class="flex-between" style="align-items: flex-start;">
+                    <div class="utility-card">
                         <div>
-                            <strong style="color: #fff;">Clear Plugin Log</strong>
-                            <p style="color: var(--text-muted); font-size: 0.85rem; margin-top: 5px;">Clears the log file for the plugin in crm settings.</p>
+                            <strong data-i18n="Limpiar registro">Limpiar registro</strong>
+                            <p data-i18n="Vacía el registro de eventos del plugin.">Vacía el registro de eventos del plugin.</p>
                         </div>
-                        <button class="btn btn-primary" id="btn-log-clear">Clear Log</button>
+                        <button class="btn btn-secondary" id="btn-log-clear" data-i18n="Limpiar">Limpiar</button>
                     </div>
 
-                    <div class="flex-between" style="grid-column: 1 / -1; border-top: 1px solid var(--border-color); padding-top: 20px; align-items: flex-start;">
+                    <div class="utility-card">
                         <div>
-                            <strong style="color: #fff;">Descargar o restaurar una copia de seguridad</strong>
-                            <p style="color: var(--text-muted); font-size: 0.85rem; margin-top: 5px;">Creará una copia de seguridad de la caché del complemento.</p>
+                            <strong data-i18n="Crear respaldo">Crear respaldo</strong>
+                            <p data-i18n="Guarda una copia de la base de datos del plugin.">Guarda una copia de la base de datos del plugin.</p>
                         </div>
-                        <button class="btn btn-primary" id="btn-backup">Respaldo</button>
+                        <button class="btn btn-primary" id="btn-backup" data-i18n="Crear respaldo">Crear respaldo</button>
                     </div>
                 </div>
             </div>
 
-            <div class="panel">
-                <h4 style="color: var(--primary); margin-bottom: 20px;">Restaurar o descargar una copia de seguridad</h4>
-                <div id="backups-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 15px;">
+            <div class="system-panel">
+                <h4 class="section-title" data-i18n="Respaldos disponibles">Respaldos disponibles</h4>
+                <div id="backups-grid" class="backups-grid">
                     <!-- Contenido dinámico -->
                 </div>
             </div>
@@ -227,11 +260,11 @@
     </div>
 
     <!-- Modals -->
-    <div id="device-modal" class="modal-overlay" style="display: none;">
-        <div class="modal" style="max-height: 90vh; overflow-y: auto;">
+    <div id="device-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="modal-title" style="display: none;">
+        <div class="modal">
             <div class="modal-header">
-                <h3 id="modal-title">Agregar Dispositivo</h3>
-                <button class="close-modal"><i data-feather="x"></i></button>
+                <h3 id="modal-title" data-i18n="Agregar Dispositivo">Agregar Dispositivo</h3>
+                <button type="button" class="close-modal" aria-label="Cerrar" data-i18n-aria-label="Cerrar"><i data-feather="x"></i></button>
             </div>
             <div class="modal-body">
                 <form id="device-form">
@@ -239,72 +272,76 @@
                     
                     <div class="form-row">
                         <div class="form-group">
-                            <label>Nombre del dispositivo</label>
+                            <label for="dev-name" data-i18n="Nombre del dispositivo">Nombre del dispositivo</label>
                             <input type="text" id="dev-name" name="name" required class="form-control">
                         </div>
                         <div class="form-group">
-                            <label>Dirección IP o Hostname</label>
+                            <label for="dev-ip" data-i18n="Dirección IP o Hostname">Dirección IP o Hostname</label>
                             <input type="text" id="dev-ip" name="ip" required class="form-control">
                         </div>
                     </div>
                     
                     <div class="form-row">
                         <div class="form-group">
-                            <label>Puerto (API)</label>
-                            <input type="number" id="dev-port" name="port" class="form-control" placeholder="Ej: 8728">
+                            <label for="dev-port" data-i18n="Puerto (API)">Puerto (API)</label>
+                            <input type="number" id="dev-port" name="port" class="form-control" min="1" max="65535" step="1" placeholder="Predeterminado: 8728">
                         </div>
                         <div class="form-group">
-                            <label>Nombre de usuario</label>
+                            <label for="dev-user" data-i18n="Nombre de usuario">Nombre de usuario</label>
                             <input type="text" id="dev-user" name="user" required class="form-control">
                         </div>
                     </div>
                     
                     <div class="form-row">
                         <div class="form-group">
-                            <label>Contraseña</label>
-                            <input type="password" id="dev-password" name="password" class="form-control" placeholder="Dejar en blanco para no cambiar">
+                            <label for="dev-password" data-i18n="Contraseña">Contraseña</label>
+                            <input type="password" id="dev-password" name="password" class="form-control" autocomplete="new-password" placeholder="Dejar en blanco para no cambiar" data-i18n-placeholder="Dejar en blanco para no cambiar">
                         </div>
                         <div class="form-group">
-                            <label>Prefijo IPv6 del cliente</label>
-                            <input type="text" id="dev-pfxLength" name="pfxLength" class="form-control" placeholder="Ej: /64">
+                            <label for="dev-pfxLength" data-i18n="Prefijo IPv6 del cliente">Prefijo IPv6 del cliente</label>
+                            <input type="text" id="dev-pfxLength" name="pfxLength" class="form-control" placeholder="Ej: /64" data-i18n-placeholder="Ej: /64">
                         </div>
                     </div>
 
                     <div class="form-row">
                         <div class="form-group">
-                            <label>Pool IPv4 <small style="color: var(--text-muted);">(Separar por comas)</small></label>
-                            <input type="text" id="dev-pool" name="pool" class="form-control" placeholder="Ej: 10.88.1.0/24">
+                            <label for="dev-pool"><span data-i18n="Pool IPv4">Pool IPv4</span> <small style="color: var(--text-muted);" data-i18n="(Separar por comas)">(Separar por comas)</small></label>
+                            <input type="text" id="dev-pool" name="pool" class="form-control" placeholder="Ej: 10.88.1.0/24" data-i18n-placeholder="Ej: 10.88.1.0/24">
                         </div>
                         <div class="form-group">
-                            <label>Pool IPv6 <small style="color: var(--text-muted);">(Separar por comas)</small></label>
-                            <input type="text" id="dev-pool6" name="pool6" class="form-control" placeholder="Ej: fddc:9057:1bea::/48">
+                            <label for="dev-pool6"><span data-i18n="Pool IPv6">Pool IPv6</span> <small style="color: var(--text-muted);" data-i18n="(Separar por comas)">(Separar por comas)</small></label>
+                            <input type="text" id="dev-pool6" name="pool6" class="form-control" placeholder="Ej: fddc:9057:1bea::/48" data-i18n-placeholder="Ej: fddc:9057:1bea::/48">
                         </div>
+                    </div>
+                    <div class="connection-options">
+                        <label class="switch-control"><input type="checkbox" role="switch" id="dev-ssl" name="ssl" value="1"><span class="switch-track" aria-hidden="true"></span><span class="switch-copy" data-i18n="Usar TLS (API SSL)">Usar TLS (API SSL)</span></label>
+                        <label class="switch-control"><input type="checkbox" role="switch" id="dev-allowSelfSigned" name="allowSelfSigned" value="1" disabled><span class="switch-track" aria-hidden="true"></span><span class="switch-copy" data-i18n="Aceptar certificado autofirmado">Aceptar certificado autofirmado</span></label>
                     </div>
                 </form>
             </div>
             <div class="modal-footer">
-                <button class="btn btn-secondary close-modal">Cancelar</button>
-                <button class="btn btn-primary" id="save-device-btn">Guardar</button>
+                <button class="btn btn-secondary close-modal" data-i18n="Cancelar">Cancelar</button>
+                <button class="btn btn-primary" id="save-device-btn" data-i18n="Guardar">Guardar</button>
             </div>
         </div>
     </div>
 
     <!-- Orphan Modal -->
     <div id="orphan-modal" class="modal-overlay" style="display: none;">
-        <div class="modal" style="max-height: 90vh; overflow-y: auto; max-width: 600px; width: 90%;">
+        <div class="modal">
             <div class="modal-header">
-                <h3>Cuentas Huérfanas</h3>
-                <button class="close-modal"><i data-feather="x"></i></button>
+                <h3 data-i18n="Cuentas Huérfanas">Cuentas Huérfanas</h3>
+                <button type="button" class="close-modal" aria-label="Cerrar" data-i18n-aria-label="Cerrar"><i data-feather="x"></i></button>
             </div>
             <div class="modal-body">
-                <p style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 15px;">Estas son las cuentas registradas en el dispositivo que no están asociadas a ningún servicio en UCRM.</p>
+                <p style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 15px;" data-i18n="Estas son las cuentas registradas en el dispositivo que no están asociadas a ningún servicio en UCRM.">Estas son las cuentas registradas en el dispositivo que no están asociadas a ningún servicio en UCRM.</p>
                 <div class="table-container">
                     <table class="data-table" id="orphan-table">
                         <thead>
                             <tr>
-                                <th>Nombre</th>
+                                <th data-i18n="Nombre">Nombre</th>
                                 <th>MAC</th>
-                                <th>Dirección (v4/v6)</th>
+                                <th data-i18n="Dirección (v4/v6)">Dirección (v4/v6)</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -317,106 +354,139 @@
     </div>
 
     <!-- Modal Plan Ratio -->
-    <div id="plan-modal" class="modal-overlay" style="display: none;">
-        <div class="modal" style="max-height: 90vh; overflow-y: auto;">
+    <div id="plan-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-label="Editar plan" data-i18n-aria-label="Editar plan" style="display: none;">
+        <div class="modal">
             <div class="modal-header">
-                <h3>Editar Plan</h3>
-                <button class="close-modal"><i data-feather="x"></i></button>
+                <h3 data-i18n="Editar Plan">Editar Plan</h3>
+                <button type="button" class="close-modal" aria-label="Cerrar" data-i18n-aria-label="Cerrar"><i data-feather="x"></i></button>
             </div>
             <div class="modal-body">
                 <form id="plan-form">
                     <input type="hidden" id="plan-id" name="id">
-                    
+                    <section id="plan-numeric-warning" class="plan-numeric-warning" role="alert" hidden>
+                        <strong data-i18n="Este plan contiene valores inválidos.">Este plan contiene valores inválidos.</strong>
+                        <p data-i18n="Revisa los campos indicados. Abrir este editor no modifica los valores guardados.">Revisa los campos indicados. Abrir este editor no modifica los valores guardados.</p>
+                        <ul id="plan-numeric-issues"></ul>
+                        <p id="plan-numeric-source-hint" data-i18n="La velocidad original no es válida. Corrígela en UISP y vuelve a cargar los planes." hidden>La velocidad original no es válida. Corrígela en UISP y vuelve a cargar los planes.</p>
+                        <button type="button" class="btn btn-secondary" id="plan-reset-invalid" data-i18n="Restablecer ajustes inválidos">Restablecer ajustes inválidos</button>
+                        <p class="form-note" data-i18n="El restablecimiento sólo cambia este borrador. Pulsa Guardar para aplicarlo.">El restablecimiento sólo cambia este borrador. Pulsa Guardar para aplicarlo.</p>
+                    </section>
                     <div class="form-row">
                         <div class="form-group">
-                            <label>Ratio de Contención</label>
-                            <input type="number" id="plan-ratio" name="ratio" required class="form-control" min="1">
+                            <label for="plan-ratio" data-i18n="Ratio de contención">Ratio de contención</label>
+                            <input type="number" id="plan-ratio" name="ratio" required class="form-control" min="1" step="1" aria-describedby="plan-ratio-help">
+                            <p id="plan-ratio-help" class="form-note" data-i18n="Introduce un entero desde 1 para calcular la capacidad compartida de este plan.">Introduce un entero desde 1 para calcular la capacidad compartida de este plan.</p>
                         </div>
                     </div>
-
-                    <h4 style="margin-top: 15px; margin-bottom: 10px; color: var(--primary);">Speed Rates</h4>
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label>Max upload rate (Override) <small style="color: var(--text-muted);">Mbps</small></label>
-                            <input type="number" id="plan-uploadOverride" name="uploadOverride" class="form-control">
+                    <section class="burst-templates" aria-labelledby="plan-burst-templates-title">
+                        <div class="burst-template-header">
+                            <h4 id="plan-burst-templates-title" data-i18n="Plantillas de burst del plugin">Plantillas de burst del plugin</h4>
+                            <span id="plan-burst-preset-status" class="burst-preset-status" role="status" data-i18n="Personalizado">Personalizado</span>
                         </div>
-                        <div class="form-group">
-                            <label>Max download rate (Override) <small style="color: var(--text-muted);">Mbps</small></label>
-                            <input type="number" id="plan-downloadOverride" name="downloadOverride" class="form-control">
+                        <p id="plan-burst-preset-description" class="form-note" data-i18n="Ajusta los campos manualmente o elige una plantilla del plugin.">Ajusta los campos manualmente o elige una plantilla del plugin.</p>
+                        <p class="form-note" data-i18n="Elige una plantilla para rellenar los campos. Pulsa Guardar para aplicarla.">Elige una plantilla para rellenar los campos. Pulsa Guardar para aplicarla.</p>
+                        <div class="burst-template-options">
+                            <button type="button" id="plan-preset-none" class="burst-preset-btn" data-burst-preset="none" aria-pressed="false"><strong data-i18n="Sin burst">Sin burst</strong><small data-i18n="Velocidad normal">Velocidad normal</small></button>
+                            <button type="button" id="plan-preset-soft" class="burst-preset-btn" data-burst-preset="soft" aria-pressed="false"><strong data-i18n="Suave">Suave</strong><small data-i18n="+25% · umbral 80% · 8 s">+25% · umbral 80% · 8 s</small></button>
+                            <button type="button" id="plan-preset-balanced" class="burst-preset-btn" data-burst-preset="balanced" aria-pressed="false"><strong data-i18n="Equilibrado">Equilibrado</strong><small data-i18n="+50% · umbral 75% · 12 s">+50% · umbral 75% · 12 s</small></button>
+                            <button type="button" id="plan-preset-fast" class="burst-preset-btn" data-burst-preset="fast" aria-pressed="false"><strong data-i18n="Rápido">Rápido</strong><small data-i18n="+100% · umbral 70% · 10 s">+100% · umbral 70% · 10 s</small></button>
                         </div>
+                        <div id="plan-burst-preview" class="burst-preview" aria-live="polite">
+                            <div><h5 data-i18n="Subida">Subida</h5><p id="plan-burst-preview-upload" data-i18n="Introduce la velocidad para ver el resultado.">Introduce la velocidad para ver el resultado.</p></div>
+                            <div><h5 data-i18n="Bajada">Bajada</h5><p id="plan-burst-preview-download" data-i18n="Introduce la velocidad para ver el resultado.">Introduce la velocidad para ver el resultado.</p></div>
+                        </div>
+                        <details class="field-help burst-help">
+                            <summary data-i18n="Cómo funciona el burst">Cómo funciona el burst</summary>
+                            <p data-i18n="Burst es el pico de velocidad; el umbral controla cuándo puede activarse. La ventana es el promedio de tráfico (burst-time), no la duración garantizada del pico. El burst puede activarse cuando ese promedio está por debajo del umbral, si la cola principal y el enlace tienen capacidad disponible. La estimación inicial supone que la conexión venía en reposo.">Burst es el pico de velocidad; el umbral controla cuándo puede activarse. La ventana es el promedio de tráfico (burst-time), no la duración garantizada del pico. El burst puede activarse cuando ese promedio está por debajo del umbral, si la cola principal y el enlace tienen capacidad disponible. La estimación inicial supone que la conexión venía en reposo.</p>
+                        </details>
+                    </section>
+                    <div class="plan-settings-grid">
+                        <section class="plan-setting-card">
+                            <h4 data-i18n="Velocidad">Velocidad</h4>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label for="plan-uploadOverride" data-i18n="Subida (Mbps)">Subida (Mbps)</label>
+                                    <input type="number" id="plan-uploadOverride" name="uploadOverride" class="form-control" min="0" step="any">
+                                </div>
+                                <div class="form-group">
+                                    <label for="plan-downloadOverride" data-i18n="Bajada (Mbps)">Bajada (Mbps)</label>
+                                    <input type="number" id="plan-downloadOverride" name="downloadOverride" class="form-control" min="0" step="any">
+                                </div>
+                            </div>
+                            <p class="form-note" data-i18n="Vacío: usar la velocidad de UISP.">Vacío: usar la velocidad de UISP.</p>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label for="plan-limitUpload" data-i18n="Límite subida (%)">Límite subida (%)</label>
+                                    <input type="number" id="plan-limitUpload" name="limitUpload" class="form-control" min="0" max="100" step="any">
+                                </div>
+                                <div class="form-group">
+                                    <label for="plan-limitDownload" data-i18n="Límite bajada (%)">Límite bajada (%)</label>
+                                    <input type="number" id="plan-limitDownload" name="limitDownload" class="form-control" min="0" max="100" step="any">
+                                </div>
+                            </div>
+                        </section>
+                        <section class="plan-setting-card">
+                            <h4>Burst</h4>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label for="plan-burstUpload"><span data-i18n="Subida">Subida</span><small class="field-label-detail" data-i18n="Incremento de burst (%)">Incremento de burst (%)</small></label>
+                                    <input type="number" id="plan-burstUpload" name="burstUpload" class="form-control" min="0" step="any">
+                                </div>
+                                <div class="form-group">
+                                    <label for="plan-burstDownload"><span data-i18n="Bajada">Bajada</span><small class="field-label-detail" data-i18n="Incremento de burst (%)">Incremento de burst (%)</small></label>
+                                    <input type="number" id="plan-burstDownload" name="burstDownload" class="form-control" min="0" step="any">
+                                </div>
+                            </div>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label for="plan-threshUpload"><span data-i18n="Subida">Subida</span><small class="field-label-detail" data-i18n="Reducción del umbral (%)">Reducción del umbral (%)</small></label>
+                                    <input type="number" id="plan-threshUpload" name="threshUpload" class="form-control" min="0" max="100" step="any">
+                                </div>
+                                <div class="form-group">
+                                    <label for="plan-threshDownload"><span data-i18n="Bajada">Bajada</span><small class="field-label-detail" data-i18n="Reducción del umbral (%)">Reducción del umbral (%)</small></label>
+                                    <input type="number" id="plan-threshDownload" name="threshDownload" class="form-control" min="0" max="100" step="any">
+                                </div>
+                            </div>
+                        </section>
+                        <section class="plan-setting-card">
+                            <h4 data-i18n="Promedio de tráfico">Promedio de tráfico</h4>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label for="plan-timeUpload"><span data-i18n="Subida">Subida</span><small class="field-label-detail" data-i18n="Ventana de promedio (s)">Ventana de promedio (s)</small></label>
+                                    <input type="number" id="plan-timeUpload" name="timeUpload" class="form-control" min="0" step="any">
+                                </div>
+                                <div class="form-group">
+                                    <label for="plan-timeDownload"><span data-i18n="Bajada">Bajada</span><small class="field-label-detail" data-i18n="Ventana de promedio (s)">Ventana de promedio (s)</small></label>
+                                    <input type="number" id="plan-timeDownload" name="timeDownload" class="form-control" min="0" step="any">
+                                </div>
+                            </div>
+                        </section>
+                        <section class="plan-setting-card">
+                            <h4 data-i18n="Prioridad de cola">Prioridad de cola</h4>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label for="plan-priorityUpload" data-i18n="Subida (1–8)">Subida (1–8)</label>
+                                    <input type="number" id="plan-priorityUpload" name="priorityUpload" class="form-control" min="1" max="8">
+                                </div>
+                                <div class="form-group">
+                                    <label for="plan-priorityDownload" data-i18n="Bajada (1–8)">Bajada (1–8)</label>
+                                    <input type="number" id="plan-priorityDownload" name="priorityDownload" class="form-control" min="1" max="8">
+                                </div>
+                            </div>
+                        </section>
                     </div>
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label>Limit upload Percent <small style="color: var(--text-muted);">%</small></label>
-                            <input type="number" id="plan-limitUpload" name="limitUpload" class="form-control">
-                        </div>
-                        <div class="form-group">
-                            <label>Limit download Percent <small style="color: var(--text-muted);">%</small></label>
-                            <input type="number" id="plan-limitDownload" name="limitDownload" class="form-control">
-                        </div>
-                    </div>
-
-                    <h4 style="margin-top: 15px; margin-bottom: 10px; color: var(--primary);">Burst Rates</h4>
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label>Upload burst Percent <small style="color: var(--text-muted);">%</small></label>
-                            <input type="number" id="plan-burstUpload" name="burstUpload" class="form-control">
-                        </div>
-                        <div class="form-group">
-                            <label>Download burst Percent <small style="color: var(--text-muted);">%</small></label>
-                            <input type="number" id="plan-burstDownload" name="burstDownload" class="form-control">
-                        </div>
-                    </div>
-                    
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label>Upload threshold Percent <small style="color: var(--text-muted);">%</small></label>
-                            <input type="number" id="plan-threshUpload" name="threshUpload" class="form-control">
-                        </div>
-                        <div class="form-group">
-                            <label>Download threshold Percent <small style="color: var(--text-muted);">%</small></label>
-                            <input type="number" id="plan-threshDownload" name="threshDownload" class="form-control">
-                        </div>
-                    </div>
-
-                    <h4 style="margin-top: 15px; margin-bottom: 10px; color: var(--primary);">Burst Timers</h4>
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label>Upload burst time <small style="color: var(--text-muted);">Seconds</small></label>
-                            <input type="number" id="plan-timeUpload" name="timeUpload" class="form-control">
-                        </div>
-                        <div class="form-group">
-                            <label>Download burst time <small style="color: var(--text-muted);">Seconds</small></label>
-                            <input type="number" id="plan-timeDownload" name="timeDownload" class="form-control">
-                        </div>
-                    </div>
-
-                    <h4 style="margin-top: 15px; margin-bottom: 10px; color: var(--primary);">Queue Priority</h4>
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label>Upload priority</label>
-                            <input type="number" id="plan-priorityUpload" name="priorityUpload" class="form-control" min="1" max="8">
-                        </div>
-                        <div class="form-group">
-                            <label>Download priority</label>
-                            <input type="number" id="plan-priorityDownload" name="priorityDownload" class="form-control" min="1" max="8">
-                        </div>
-                    </div>
-                    
                 </form>
             </div>
             <div class="modal-footer">
-                <button class="btn btn-secondary close-modal">Cancelar</button>
-                <button class="btn btn-primary" id="save-plan-btn">Guardar</button>
+                <button class="btn btn-secondary close-modal" data-i18n="Cancelar">Cancelar</button>
+                <button class="btn btn-primary" id="save-plan-btn" data-i18n="Guardar">Guardar</button>
             </div>
         </div>
     </div>
 
     <!-- Scripts -->
-    <script src="js/api.js?v=2.0.17"></script>
-    <script src="js/app.js?v=2.0.17"></script>
-    <script>
-        feather.replace();
-    </script>
+    <script src="js/i18n.js?v=2.0.35"></script>
+    <script src="js/api.js?v=2.0.35"></script>
+    <script src="js/app.js?v=2.0.35"></script>
 </body>
 </html>

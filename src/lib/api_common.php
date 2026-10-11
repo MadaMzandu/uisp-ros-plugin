@@ -5,8 +5,10 @@ use Ubnt\UcrmPluginSdk\Service\UcrmSecurity;
 include_once 'api_logger.php';
 
 function myErrorHandler($errno, $errstr, $errfile, $errline){
+    if (!(error_reporting() & $errno)) return false;
     MyLog()->Append(sprintf('error no: %s error: %s file %s line: %s',
-        $errno,$errstr,$errfile,$errline),7);
+        $errno,$errstr,$errfile,$errline),LOG_ERR);
+    return false;
 }
 
 function dbUpdateHandler(){
@@ -17,36 +19,20 @@ function dbUpdateHandler(){
  * @throws \GuzzleHttp\Exception\GuzzleException
  */
 function backup_restore(){
-    try{
-        $sec = UcrmSecurity::create();
-        $user = $sec->getUser();
-        if(!$user || $user->isClient){ return; }
-       $api = new ApiUpdate([],'system');
-        if($api->backup()){
-            $ul = $_FILES['backup']['tmp_name'] ?? null;
-            if($ul){ copy($ul,'data/data.db'); }
-        }
-    }
-    catch (\Exception $e){
-        $msg = sprintf('backup restore error: %s, trace: %s',
-            $e->getMessage(),$e->getTraceAsString());
-        MyLog()->Append($msg,6);
-        echo sprintf('{"status":"failed","error":true,"message":%s,"data":[]}',$msg);
-    }
+    require_once __DIR__ . '/api_backup.php';
+    ApiBackup::restoreUpload($_FILES['backup'] ?? []);
 }
 
 function fail($event, $data = [])
 {
-    MyLog()->Append("Fail: $event data: ". json_encode($data));
-    respond($event,false,[]);
-    exit();
+    MyLog()->Append(['event' => $event, 'data' => $data], LOG_ERR);
+    throw new RuntimeException($event);
 }
 
 function bail($event, $data = [])
 {
-    MyLog()->Append("Fail: $event data: ". json_encode($data));
-    respond($event,false,[]);
-    exit();
+    MyLog()->Append(['event' => $event, 'data' => $data], LOG_ERR);
+    throw new InvalidArgumentException($event);
 }
 
 function respond($msg,$err = false,$data = [])
@@ -62,7 +48,7 @@ function respond($msg,$err = false,$data = [])
     ];
     if(!headers_sent()) header('content-type: application/json');
     if ($err && !headers_sent()) { // failed header
-        header('X-API-Response: 200', true, 200);
+        if (http_response_code() < 400) http_response_code(400);
     }
     $json = json_encode($response, JSON_PRETTY_PRINT | JSON_INVALID_UTF8_SUBSTITUTE);
     MyLog()->Append('Outputting JSON length: ' . strlen($json));

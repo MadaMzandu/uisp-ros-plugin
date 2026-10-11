@@ -1,9 +1,11 @@
 {
   "description": "ros-plugin",
-  "version": "2.3.0",
+  "version": "2.4.19",
   "license": "MIT",
   "require": {
-    "ubnt/ucrm-plugin-sdk": "*",
+    "ubnt/ucrm-plugin-sdk": "0.8.2",
+    "guzzlehttp/guzzle": "^7.15.2",
+    "guzzlehttp/psr7": "^2.12.3",
     "ext-gmp": "*",
     "ext-json": "*",
     "ext-curl": "*",

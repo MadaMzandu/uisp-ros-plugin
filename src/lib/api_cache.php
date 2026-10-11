@@ -7,6 +7,7 @@ include_once 'api_ucrm.php';
 class ApiCache{
 
     private ?object $_conf = null;
+    private ?ApiSqlite $staging = null;
 
     public function save($request,$type = 'service')
     { //update a single service
@@ -48,17 +49,12 @@ class ApiCache{
             $types[] = 'sites';
         }
         if($force || $this->needs_update()){
-            $this->clean(); //clean tables
-            foreach($types as $table){
-                $this->populate($table);
-                MyLog()->Append('cache_success_'.$table);
-            }
-
-            $this->db()->saveConfig(['next_cache' => $next->format('c')]);
+            $this->refresh($types);
+            $this->db()->saveConfig(['last_cache' => date('c'), 'next_cache' => $next->format('c'), 'next_sites' => $next->format('c')]);
             $timer->stop();
         }
         elseif($this->needs_sites()){
-            $this->populate('sites');
+            $this->refresh(['sites']);
             $this->db()->saveConfig(['next_sites' => $next->format('c')]);
         }
     }
@@ -67,7 +63,6 @@ class ApiCache{
     {
         $timer = new ApiTimer('cache setup: ');
         if($this->needs_db()){
-            shell_exec('rm -f data/cache.db');
             $schema_file = 'includes/cache.sql';
             $schema = file_get_contents($schema_file);
             if($this->dbCache()->exec($schema)){//reset cache time
@@ -153,7 +148,9 @@ class ApiCache{
 
     private function get_data($path,$opts,$unms = false): array
     {
-        return $this->ucrm($unms)->get($path,$opts) ?? [];
+        $result = $this->ucrm($unms)->get($path,$opts);
+        if (!is_array($result)) throw new RuntimeException('UISP returned an invalid collection: ' . $path);
+        return $result;
     }
 
     public function batch($table, $request)
@@ -232,6 +229,35 @@ class ApiCache{
         }
     }
 
+    private function refresh(array $tables): void
+    {
+        $cache = myCache();
+        $generation = $cache->singleQuery('PRAGMA data_version');
+        $localChanges = $cache->singleQuery('SELECT total_changes()');
+        // Download into a separate database; failed pages never replace the last valid cache.
+        $staging = new ApiSqlite(':memory:');
+        $staging->exec(file_get_contents('includes/cache.sql'));
+        $this->staging = $staging;
+        try {
+            foreach ($tables as $table) $this->populate($table);
+            $publish = $tables;
+            if (in_array('services', $tables, true)) $publish[] = 'network';
+            $cache->transaction(function () use ($publish, $staging, $cache, $generation, $localChanges) {
+                if ($cache->singleQuery('PRAGMA data_version') !== $generation || $cache->singleQuery('SELECT total_changes()') !== $localChanges) {
+                    throw new RuntimeException('cache_changed_during_refresh_retry_later');
+                }
+                foreach ($publish as $table) {
+                    $cache->deleteAll($table);
+                    $rows = $staging->selectAllFromTable($table);
+                    if ($rows) $cache->insert($rows, $table, INSERT_REPLACE);
+                }
+            });
+        } finally {
+            $this->staging = null;
+            $staging->close();
+        }
+    }
+
     private function needs_db(): bool
     {
         $file = 'data/cache.db';
@@ -263,11 +289,11 @@ class ApiCache{
 
     private function dbCache(): ApiSqlite
     {
-        return myCache() ;
+        return $this->staging ?? myCache();
     }
 
    }
 
-function cache_sync() { $api = new ApiCache(); $api->sync();}
+function cache_sync() { return myJobQueue()->withAdministrativeLock(function () { $api = new ApiCache(); $api->sync(); }); }
 
-function cache_setup(){ $cache = new ApiCache(); $cache->setup();}
+function cache_setup(){ return myJobQueue()->withAdministrativeLock(function () { $cache = new ApiCache(); $cache->setup(); }); }

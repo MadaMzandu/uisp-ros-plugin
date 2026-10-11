@@ -65,7 +65,7 @@ class ApiRouter
             bail('entity_unsupported: ' .$entity);
         }
         $change = $this->data->changeType ?? 'none';
-        $allowed = "insert,edit,admin,data,update,list";
+        $allowed = "insert,edit,delete,suspend,unsuspend,suspend_cancel,end,activate,update,list";
         if (!in_array($change, explode(',',$allowed))) {
             bail('change_unsupported: ' .$change);
         }
@@ -99,7 +99,7 @@ class ApiRouter
         $stat = 'ok';
         $error = $this->status->error ?? false ;
         if ($error) { // failed response
-            if(!headers_sent()) header('X-API-Response: 200', true, 200);
+            if(!headers_sent()) http_response_code(502);
             $stat = 'failed';
         }
         $response = [

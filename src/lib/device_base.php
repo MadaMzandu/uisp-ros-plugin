@@ -30,8 +30,8 @@ class Device_Base
 
     protected function init(): void
     {
-        $this->load_config();
         $this->status = json_decode('{"error":false,"message":"ok"}');
+        $this->load_config();
     }
 
     protected function load_config(): void

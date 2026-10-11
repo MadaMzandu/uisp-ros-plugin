@@ -1,0 +1,301 @@
+# UISP ROS Plugin — mejoras acumuladas
+
+[English changelog](CHANGELOG_EN.md) · [Texto completo del PR](PR_DESCRIPTION.md) · [Guía del webhook en inglés](WEBHOOK_SETUP_EN.md)
+
+Esta revisión reúne las modificaciones de [dhanielsnieto en el PR #89](https://github.com/MadaMzandu/uisp-ros-plugin/pull/89) y las correcciones posteriores preparadas en este repositorio. La comparación parte de `7ca8dc8`; el PR original termina en `056b89f`. Las modificaciones posteriores todavía deben validarse en una instalación real de UISP y RouterOS antes de considerarlas listas para producción.
+
+El plugin comunica UISP CRM con los MikroTik mediante la **API nativa de RouterOS**. Los puertos habituales son `8728` para API y `8729` para API con TLS. El panel permite administrar esa integración; no cambia el transporte a SSH, WinBox o REST.
+
+## Candidato 2.4.19: tipo Internet y diagnóstico de metadatos
+
+- La validación de 2.4.18 comparaba el tipo con `internet` de forma sensible a mayúsculas y rechazaba la forma `Internet` devuelta por UISP. Se normaliza esa comparación sin aceptar tipos generales ni valores mal formados.
+- Las pruebas del catálogo y de la recuperación del plan 38 utilizan ahora `Internet`; incluyen ambas formas válidas, tipos rechazados y el diagnóstico del campo causante.
+- Se reconoce el campo documentado `archived`, conservando compatibilidad con `isArchived`. El [esquema oficial de Apiary](https://jsapi.apiary.io/apis/unmscrm) distingue el filtro `internet`, la respuesta `Internet`/`General` y velocidades en Mbps. La consulta del plan archivado sigue siendo por su ID exacto.
+- Los fallos emiten `plan_metadata_failed` con ID, causa y campo, incluso sin depuración. No se registran cuerpos de respuesta ni mensajes arbitrarios de excepciones. Se conserva el catálogo previo y no se aplican velocidades inventadas.
+- La prueba real del usuario sobre 2.4.18 completó siete de ocho servicios del router 2 y rechazó el servicio 814 por metadatos del plan 38; el log genérico no identificaba el campo. Después de probar 2.4.19, el usuario confirmó el 11 de octubre de 2026 que la recuperación de velocidades de planes archivados funciona correctamente.
+
+**Validación 2.4.19 aprobada:** 28 suites aisladas, sintaxis de 40 archivos PHP propios y comprobación del instalador de 352 entradas, 119 archivos propios y 13 dependencias. Informe: `dist/verification-2.4.19.json`. SHA-256: `9be1f9102bf835f04e9bcc9e7c459bc567555425ce27763fe06341ed02b7118f`. Una primera ejecución agotó el tiempo al arrancar PHP en la prueba HTTP local; la repetición aislada y la verificación completa posterior pasaron. El informe inicial se conserva en `dist/verification-2.4.19-first-run.json`. La recuperación de velocidades archivadas cuenta además con confirmación del usuario en su instalación; los demás escenarios de la matriz requieren sus propias comprobaciones.
+
+## Candidato 2.4.18: planes archivados referenciados
+
+- Se consulta `GET service-plans/{id}` cuando un plan positivo carece de metadatos utilizables, incluidos planes archivados que la colección habitual omite. No se presupone un filtro de archivo no verificado ni se requiere abrir primero Planes.
+- Se recuperan nombre y velocidades base sin sobrescribir overrides, porcentajes, burst o prioridades locales. Los perfiles administrados conservan su identidad y las cuentas mantienen IP y credenciales congeladas.
+- La lista incorpora los archivados referenciados por servicios; una descarga fallida conserva el catálogo anterior completo. Los fallos de un plan durante una sincronización se informan por servicio, sin generar un perfil con datos de respaldo. No se consulta UISP para retirar cuentas.
+- Prueba nueva con transporte RouterOS en memoria: plan 38 archivado, renombre del perfil existente, 5/25 Mbps, overrides, atomicidad del catálogo, reintentos preparados y fallos acotados.
+
+**Validación 2.4.18 aprobada:** 28 suites aisladas, sintaxis de 40 archivos PHP propios y comprobación del instalador de 352 entradas, 119 archivos propios y 13 dependencias. Informe: `dist/verification-2.4.18.json`. SHA-256: `2a0c4da46b426e7fabf38f2ec642d9a5de3be927fb063c4a9a20b0e6bc260c21`. La integración con una instalación real de UISP/RouterOS sigue pendiente.
+
+## Candidato 2.4.17: cancelación y recuperación posterior
+
+- **Eliminar cancela todos los pendientes**, incluidos trabajos preparados, intentados e importados. Los que están en ejecución siguen protegidos. La cancelación detiene los reintentos y no envía comandos ni crea trabajos; no revierte lo que ya pudo cambiar en RouterOS.
+- Los recursos que pudieron aplicarse conservan un registro privado exacto: identidades, direcciones, comandos y destinos originales, además de las reservas. Una cuenta parcialmente creada en otro router no se pierde al cancelar o reiniciar el worker.
+- Sólo un cambio nuevo del servicio o una sincronización completa posterior inicia su limpieza. Antes de aplicar la configuración nueva, se retiran los recursos originales con sus comprobaciones de propiedad. No se vuelven a ejecutar los comandos de actualización cancelados. Si falla algún destino, el trabajo nuevo y el registro de recuperación siguen pendientes; no se liberan prematuramente sus reservas.
+- Las operaciones que sólo cambian colas no consumen ese registro. Una retirada cancelada mantiene la protección de su reemplazo y puede cancelar también los sucesores pendientes que dependían de ella. Un UUID cancelado no vuelve a ejecutar su operación al reenviarse.
+- Se conserva la evidencia de una creación parcial del perfil de suspensión. La limpieza verifica un perfil existente antes de modificar cuentas/sesiones; si no coincide con los valores congelados, se mantiene el fallo. Un perfil ausente no se recrea durante esta limpieza, y el existente no se sobrescribe.
+- El ciclo de conexiones no cambia: cada lote de servicio abre y cierra su conexión API; las consultas y limpiezas pueden abrir otras. Los logs de login/logout de API no equivalen por sí solos a desconectar PPP. No se incorpora una conexión compartida entre lotes.
+
+La validación de 2.4.17 pasó 27 suites, 39 archivos PHP propios y un ZIP de 351 entradas, 118 archivos propios y 13 dependencias fijadas. Su informe y hash históricos se conservan más abajo; la validación del candidato actual 2.4.19 se indica arriba.
+
+## Cambios aportados en el PR #89
+
+- **Nuevo panel:** interfaz HTML, CSS y JavaScript para dispositivos, planes, configuración, trabajos y sistema, con menor dependencia del frontend anterior.
+- **Búsqueda y ordenación:** filtros de dispositivos y planes por nombre/ID y ordenación de columnas.
+- **Acceso administrativo:** comprobación de sesión UISP en el punto de entrada. La autorización inicial para webhooks por dirección de origen fue sustituida posteriormente por el secreto descrito más abajo.
+- **Consultas de cliente:** validación numérica del ID como primera corrección frente a inyección SQL. Las consultas actuales utilizan parámetros preparados.
+- **JSON válido:** limpieza recursiva de valores `INF`/`NaN` y manejo de fallos de serialización para evitar que una respuesta inutilice el panel.
+- **Errores visibles:** respuesta estructurada para fallos del servidor. La versión actual registra detalles internamente y evita exponerlos al navegador.
+- **Auditoría de cuentas huérfanas:** reparación de la condición que invertía el resultado de la API y normalización de MAC y direcciones RouterOS; consulta desde cada dispositivo.
+- **Planes eliminados:** exclusión de planes archivados del listado habitual, conservando datos necesarios para servicios existentes.
+- **Idioma de configuración:** selección manual de los metadatos de campos, además del idioma indicado por el navegador.
+- **Atributos personalizados:** comprobación y creación de atributos faltantes desde el panel.
+- **Información de sistema:** versión del plugin/PHP y fechas de mantenimiento de caché.
+
+## Interfaz y uso diario
+
+La configuración se distribuye en secciones funcionales y columnas adaptables. En escritorio, varios campos comparten fila; en pantallas pequeñas se reorganizan en una columna. Las ayudas se despliegan bajo demanda y las acciones de guardado permanecen accesibles. Los formularios de dispositivos y planes, tablas y utilidades siguen el mismo estilo.
+
+- Modos **oscuro, claro y sistema**, con preferencia persistida en el navegador. El modo sistema sigue los cambios de apariencia del sistema operativo.
+- Selector de **español, inglés, portugués, francés, alemán e italiano** para navegación, formularios, ayudas, acciones, avisos y editor de burst.
+- La apariencia y el idioma del panel son preferencias locales: cambiarlos no guarda planes ni modifica la configuración global.
+- Borradores conservados al cambiar de pestaña/vista y durante solicitudes asíncronas. Cambiar idioma conserva los valores sin guardar.
+- Interruptores para opciones booleanas, acciones habituales con un botón y avisos sin bloquear la pantalla.
+- Confirmaciones en operaciones destructivas; valores dinámicos escapados antes de insertarlos en HTML.
+- Iconos SVG locales; el panel no necesita descargar iconos de un CDN.
+- Rutas de solicitudes y validación de altas, ediciones y eliminaciones reparadas. Las contraseñas vacías al editar conservan la credencial anterior.
+- El editor de planes admite páginas antiguas en caché y conserva controles manuales cuando falta HTML de las plantillas.
+- Corrección del bloqueo por ratio `0` cuando la contención está deshabilitada: el campo se desactiva y no se envía. Con contención habilitada se valida un entero desde `1`.
+- Apertura de modales sin activar el cargador de red; eliminación del desenfoque que provocaba problemas gráficos en el navegador afectado. El usuario confirmó que el parpadeo dejó de ocurrir tras instalar 2.4.5.
+- Los controles antiguos sin implementación efectiva (`hs_enable`, `unsuspend_date_fix`, `unsuspend_fix_wait`) se ocultan; sus valores históricos se conservan.
+
+## Planes, velocidad, burst y contención
+
+El editor permite ajustar velocidad normal, mínimo garantizado, prioridad, incremento de burst, umbral y ventana de promedio por separado para subida y bajada. Una velocidad modificada en el plugin se utiliza tanto en el límite normal como en los cálculos de burst; anteriormente el límite normal podía ignorarla.
+
+| Plantilla | Máximo de burst | Umbral respecto a velocidad normal | Ventana |
+| --- | --- | --- | --- |
+| Sin burst | Desactivado | Desactivado | 0 s |
+| Suave | 125% | 80% | 8 s |
+| Equilibrado | 150% | 75% | 12 s |
+| Rápido | 200% | 70% | 10 s |
+
+Seleccionar una plantilla rellena el formulario. Sólo **Guardar** inicia su aplicación a los servicios. Los valores siguen siendo editables en ambas direcciones.
+
+La vista previa muestra Mbps normales, burst y umbral y explica el funcionamiento de cada plantilla. La ventana es el período usado para medir el tráfico medio, **no la duración del burst**. Tras reposo, una estimación inicial es `umbral × ventana / velocidad de burst`; el tráfico reciente y las colas superiores afectan el resultado. Las plantillas son propuestas del plugin, no garantías de rendimiento. [Documentación de MikroTik](https://manual.mikrotik.com/docs/firewall-and-quality-of-service/queues/queue-burst/).
+
+La contención agrupa servicios de un plan/router bajo colas padre. Con ratio `1` no se reduce el total por reparto; un divisor mayor configura el reparto correspondiente. Al deshabilitarla, se retiran los vínculos de los servicios con esos padres mediante trabajos. Los padres antiguos sin uso pueden permanecer; no se promete su eliminación automática.
+
+## Automatización y recuperación
+
+- **Cola SQLite persistente:** sustituye la gestión vulnerable de `queue.json`; importa los trabajos antiguos en una transacción y conserva el archivo si la importación falla.
+- **Instantáneas:** cada trabajo conserva el router, identidad, direcciones, configuración y comandos que necesita. Un cambio posterior no altera silenciosamente una operación pendiente.
+- **Versiones por servicio:** una intención antigua no debe reemplazar una más reciente; se corrigió la secuencia `A → B → A` y la limpieza de identidades anteriores.
+- **Deduplicación:** los UUID repetidos de webhooks de servicio conservan recibos mínimos para impedir reaplicar la misma entrega.
+- **Reintentos:** espera creciente desde 30 segundos hasta una hora cuando RouterOS no está disponible.
+- **Confirmación completa:** el servicio se considera aplicado y libera recursos anteriores sólo cuando todos sus comandos se confirman; los fallos parciales quedan recuperables.
+- **Eliminaciones idempotentes:** un recurso ya ausente no convierte un reintento de eliminación en un fallo permanente.
+- **Bloqueos por servicio y cliente:** serializan webhooks, cambios de nombre, workers y ajustes de planes/configuración. Los archivos de bloqueo se comparten entre cron y PHP web.
+- **Diario de aplicación:** guardar planes/configuración registra los servicios pendientes en la misma transacción que el cambio. Su preparación lee el estado vigente de facturación y continúa cuando un servicio estaba ocupado.
+- **Restauración exclusiva:** la restauración no se cruza con un worker o una escritura administrativa.
+- **Estado terminal durable:** terminar/eliminar un servicio registra la intención junto con su trabajo de limpieza. Guardar planes, configuración o reconstruir desde una caché antigua no puede recrearlo mientras el router está desconectado. Una nueva activación explícita de UISP permite volver a provisionarlo.
+- **Recuperación de trabajos anteriores:** se reconocen terminaciones de la cola anterior pendientes, completadas y reducidas a recibos. Los reemplazos de una migración del mismo evento se distinguen de una terminación. Si una actualización antigua no permite demostrar una nueva intención de UISP, permanece pendiente hasta recibir un evento de servicio nuevo.
+- **Retirada de routers protegida:** se bloquea si existen servicios, operaciones pendientes o estado aplicado que todavía los utiliza.
+- **Eventos parciales:** los campos omitidos conservan su valor; `null` explícito mantiene su significado. Un servicio nuevo incompleto debe hidratarse o fallar sin publicarse como completo.
+- **Credenciales literales:** valores como `0` y `00123` se conservan como texto; no se convierten en números ni se pierden por comprobaciones de falsedad.
+- **Historial reducido:** los trabajos completados guardan un resumen sin comandos/credenciales; se purgan a los 30 días. Los pendientes y el estado aplicado mantienen los datos necesarios para recuperación.
+- **Cancelación local:** los pendientes cancelados salen del ciclo de reintentos, pero los recursos posiblemente aplicados siguen registrados de forma privada hasta confirmar su limpieza ante una intención posterior. Conservar `jobs.db` es necesario para esa recuperación.
+
+## RouterOS y propiedad de recursos
+
+- Perfiles activos administrados con nombres `Nombre completo del plan [UISP#ID]` y comentarios legibles como `Plan #94`; servicios sin plan real utilizan un perfil individual. Los comentarios históricos `uisp-ros-plugin:plan:ID` y nombres técnicos `uisp-plan-ID` siguen siendo reconocidos para migrar perfiles e instantáneas anteriores.
+- Los perfiles propios se localizan mediante comprobaciones de propiedad e identidad y se renombran usando el mismo `.id`, comprobando el resultado antes de actualizar cuentas. Un comentario legible por sí solo no permite adoptar un perfil externo. Los nombres ocupados por un perfil externo o las marcas duplicadas generan un conflicto. Las eliminaciones históricas conservan su nombre original.
+- Verificación de propiedad antes de modificar/eliminar los perfiles y límites de suspensión reservados del plugin.
+- Cuentas PPP/Hotspot, concesiones DHCP/DHCPv6 y colas individuales: comprobar el cliente y servicio propietario antes de modificar, convertir a estático o eliminar. Se aceptan comentarios históricos con el formato exacto `CID - nombre - SID`, sin confiar en un número aislado dentro del comentario.
+- Los registros estáticos creados manualmente o por otro servicio producen un conflicto visible. Sólo una concesión dinámica sin comentario puede adoptarse al crear/actualizar, con identidad MAC o DUID/IAID coincidente; una eliminación no la adopta.
+- Las desconexiones PPP/Hotspot comprueban primero la propiedad de la cuenta principal. Un lote se valida antes de crear recursos asociados a una cuenta ajena.
+- Colas padre nuevas `uisp-plan-ID-parent` con marca `uisp-ros-plugin:plan-parent:ID`. Las antiguas `servicePlan-ID-parent` se conservan; sus límites y posición deben revisarse en laboratorio.
+- Los reintentos conservan cuenta/IP/credenciales individuales, pero leen el plan y configuración actuales para perfiles y padres compartidos, bajo bloqueos del router. Un trabajo antiguo ya no devuelve a otro cliente a una velocidad anterior.
+- Los padres agrupan direcciones actuales y todavía aplicadas/preparadas, incluyendo alias del mismo endpoint y IPv4/IPv6. Cada servicio se cuenta una sola vez y la caché terminal no vuelve a introducir cuentas retiradas.
+- Los pools IPv6 administrados utilizan nombres por revisión de prefijo/tamaño y marca de propiedad. Un trabajo antiguo conserva su pool y binding sin sobrescribir el pool nuevo de otro plan. El pool histórico `uisp-pool` no se modifica ni se elimina automáticamente.
+- El cambio de cliente de un servicio limpia la identidad del propietario anterior antes de crear la nueva.
+- Migración de comandos pendientes de versiones antiguas para evitar modificar perfiles externos por coincidencia de nombre.
+- El perfil de suspensión PPP/Hotspot existente **se utiliza sin sobrescribirlo**. Desde 2.4.15 se crea si falta, con la lista y el límite configurados. Las reglas del firewall del router deben aplicar la política de acceso correspondiente a esa lista.
+- El límite adicional de suspensión PPP/Hotspot utiliza una cola individual `uisp-service-ID-suspension`, colocada al principio de las colas simples. Al reactivar se elimina ese límite adicional.
+- Lecturas fallidas/desconexiones ya no se presentan como listas vacías correctas. Los sockets se cierran incluso cuando ocurre una excepción.
+- Correcciones de encuadre binario de la API, EOF, timeouts, traps y respuestas fatales.
+- API TLS configurable; `8729` infiere TLS en registros antiguos sin opción explícita. Verificación de certificados y nombre del host; certificados autofirmados requieren una opción explícita.
+- Correcciones en sesiones PPP/Hotspot, normalización de tipos de dispositivos y uso de DUID/IAID, incluyendo IAID `0`.
+
+La actualización migra una cuenta al procesar su trabajo. **Instalar el paquete no reconstruye automáticamente todos los routers.** Los perfiles técnicos propios de 2.4.8 se renombran al procesarlos. Los perfiles históricos sin la marca de propiedad no se adoptan ni eliminan automáticamente. La conservación de las referencias y sesiones durante un renombre debe comprobarse en RouterOS real.
+
+## Correcciones tras las pruebas de 2.4.8
+
+Los mensajes `invalid_cached_address` e `Inf and NaN cannot be JSON encoded` son problemas distintos. Un servicio sin site puede contener datos de otro proveedor únicamente como documentación; esos atributos se conservan y no autorizan aprovisionamiento.
+
+| Fallo | Comportamiento corregido en 2.4.9 |
+| --- | --- |
+| Las IP documentales sin site entraban en las reservas y generaban avisos. | Sólo participan atributos de servicios con router configurado y estado administrable. Las reservas aplicadas/preparadas siguen retenidas hasta confirmar la limpieza. |
+| Añadir site a un servicio documental intentaba migrar desde un router inexistente. | Alta directa cuando no había identidad gestionada anterior; no se generan credenciales automáticas sin site. |
+| Quitar site o dar de baja podía dejar una identidad creada parcialmente durante una migración. | Limpieza de todas las identidades aplicadas/preparadas, en orden y conservando sus direcciones hasta finalizar. |
+| Los cálculos SQL de velocidades, porcentajes o contención podían producir `INF`, `NaN` o un `NULL` derivado de desbordamiento. | Validación de valores originales, cálculos, conversión Mbps/bps y ratio entero; diagnóstico por servicio, plan y campo, sin convertir el error en velocidad cero. |
+| Una edición parcial podía guardar valores finitos cuyos cálculos desbordaban. | Validación de la fila efectiva dentro de la transacción; el rechazo conserva la fila anterior y no crea nuevas solicitudes. |
+| Un servicio inválido detenía el resto de una sincronización. | Continúan los servicios válidos; se devuelve un resumen parcial y un aviso persistente. Los diagnósticos se conservan también en respuestas HTTP 502. |
+| Los perfiles sólo mostraban `uisp-plan-ID`. | Nombre completo del plan más ID estable; los reintentos siguen el nombre vigente sin cambiar la identidad, IP o credencial congeladas. |
+
+Una **IPv4 manual lleva sólo la IP del cliente**, sin `/30`, `/32` ni otra máscara. El plugin no convierte un atributo documental CIDR en una IP gestionada. Si se asigna site, el atributo manual debe corregirse o dejarse vacío para usar el pool del router/global según configuración. Los prefijos de los pools y los atributos IPv6 conservan su tratamiento específico.
+
+Los registros posteriores de 2.4.10 confirmaron `limitUpload` con `reason=non_finite`, `stage=source` y `value=Infinity` en tres planes, afectando cinco servicios. El dato inválido ya está almacenado en el plugin; el diagnóstico no demuestra qué operación histórica lo generó. La recuperación disponible consiste en revisar los planes, corregir o restablecer explícitamente sus ajustes inválidos y guardar. El usuario informó después que pudo sincronizar; esa confirmación no sustituye las pruebas de suspensión/reactivación ni la comprobación de todos los servicios.
+
+## Hallazgos de la segunda revisión
+
+### Diagnóstico de planes en 2.4.10
+
+- Un campo numérico opcional vacío o con espacios se interpreta como no configurado antes del cálculo SQL; no se convierte accidentalmente en una garantía del 100% ni se modifica la fila al leerla.
+- El listado identifica los campos inválidos antes de serializar JSON. Un infinito almacenado deja de aparecer como un `0` aparentemente válido en el editor.
+- El modal exige corregir explícitamente los campos afectados. Restablecer ajustes inválidos modifica el borrador; sólo Guardar aplica el cambio. Las velocidades base se revisan en UISP.
+- El diagnóstico incluye `serviceId`, `planId`, `field`, `reason`, `stage` y un valor seguro. Se conservan las comprobaciones de rangos, enteros y desbordamientos; los servicios válidos siguen procesándose.
+- Se reproduce el caso de velocidades base 5/25 Mbps correctas con un `limitUpload` corrupto. Los registros reales posteriores confirmaron el infinito almacenado en ese porcentaje. Estar archivado no elimina un plan local ni invalida a sus clientes; la operación histórica que produjo el infinito sigue sin determinarse.
+
+| Fallo reproducido | Corrección |
+| --- | --- |
+| Primer evento de un cliente fuera de caché fallaba porque el SDK entregaba un objeto. | Normalización de la respuesta y conservación de nombres omitidos en el evento. |
+| Usuario/MAC/DUID/cola coincidente permitía alterar una cuenta de otro servicio o manual. | Propiedad comprobada antes de las operaciones y desconexiones. |
+| Una cola padre externa con nombre coincidente podía modificarse. | Namespace propio con marca de propiedad y migración de referencias. |
+| Un servicio terminado con router desconectado reaparecía al guardar plan/configuración. | Intención terminal durable, filtro de automatizaciones y activación explícita posterior. |
+| Los trabajos de terminación de la versión anterior no tenían ese estado durable. | Recuperación de pendientes, completados y recibos históricos, conservadora ante estados ambiguos. |
+| Reintentar un cliente restauraba perfiles/padres compartidos antiguos y afectaba a otros. | Lectura actual de recursos compartidos bajo bloqueo, manteniendo la cuenta original del trabajo. |
+| Un reintento DHCPv6 podía sobrescribir el pool nuevo de otro plan. | Pools por revisión y propiedad; referencias antiguas adaptadas sin tocar el pool externo. |
+| `Accept-Language: es-419` perdía español; se ignoraban prioridades `q`. | Análisis de subtags numéricos, prioridades y exclusión de `q=0`. |
+| Una respuesta lenta de Atributos podía revertir la última elección de General. | Descartar respuestas obsoletas y conservar controles y borradores de la última vista elegida. |
+
+Las reproducciones y regresiones se encuentran en `tests/regression_second_audit.php`, `regression_ownership.php`, `regression_shared_resources.php`, `regression_shared_pool.php`, `regression_locale.php` y `regression_panel.js`. Los conflictos con cuentas manuales requieren resolución explícita en el router: el plugin no toma su propiedad por coincidencia de nombre.
+
+## Direcciones, caché y base de datos
+
+- Reservas IP atómicas que consideran servicios aplicados, pendientes y operaciones de migración; prevención de asignaciones duplicadas.
+- Manejo de IPv4/IPv6 con GMP, prefijos del router y direcciones manuales sin depender del tamaño utilizado por un servicio anterior.
+- Intervalos excluidos ordenados y fusionados: un rango IPv6 amplio se salta como intervalo en lugar de recorrer millones de prefijos.
+- Una dirección inválida en caché bloquea su servicio y conserva las reservas previas; no invalida silenciosamente todos los servicios.
+- Descargas de caché preparadas aparte y publicación sólo después de una descarga completa y sin cambios concurrentes.
+- Migraciones SQL transaccionales, parámetros preparados y edición parcial que conserva columnas/campos omitidos.
+- Detección de conflictos de direcciones al crear índices únicos, sin borrar reservas automáticamente.
+- Backups SQLite con comprobación de cabecera, integridad, esquema y versión antes de sustituir la base activa; restauración sobre los handles abiertos.
+- Versiones conservadas como texto: una base/backup posterior al código instalado sigue rechazándose, con información de versión de base, runtime y paquete.
+
+## Suspensiones, reconexiones y trabajos en 2.4.11
+
+- La sincronización anterior incluía una desconexión incondicional de PPP/Hotspot. Ahora compara las propiedades de cuenta/perfil con la instantánea aplicada y con una lectura de RouterOS. Una sincronización idéntica conserva las sesiones. Los cambios efectivos, la ausencia de referencia anterior y las bajas conservan la reconexión necesaria; puede haber escrituras de configuración aunque se omita desconectar.
+- La necesidad de reconectar se persiste antes de cualquier escritura. Si el intento falla después de actualizar un perfil, el reintento no pierde la reconexión pendiente. Una revisión durable por perfil/router permite que los siguientes servicios detecten una reparación compartida aunque el primero ya haya corregido el perfil. La dirección local de un perfil propio sin IP estática permanece estable; renombrar el mismo perfil propio no obliga por sí solo a reconectar.
+- Un `edit` podía perderse si `cache_sync()` ya había publicado el nuevo estado de UISP y no se recibía un estado anterior distinto. La comparación adicional contra lo realmente aplicado detecta suspensión/reactivación, plan, identidad, credenciales y red. Los eventos parciales sin estado explícito mantienen la barrera de una baja pendiente.
+- Trabajos refresca sus filas tras una ejecución/eliminación fallida y muestra estado, intentos, próximo reintento y último error. Si falla también la consulta, conserva el aviso original e informa que la tabla no se actualizó.
+- Una entrega real aportada por el usuario devolvió HTTP 403 `unauthorized` antes de crear trabajo o acceder al router. El requisito de secreto añadido anteriormente necesita configurarse también en el terminal de UISP. La URL mostrada no incluía token; no se aportaron cabeceras para distinguir token ausente de incorrecto. El nuevo log diferencia `webhook_secret_not_configured`, `webhook_token_missing` y `webhook_token_mismatch`, con metadatos mínimos y sin datos del cliente ni credenciales.
+
+Para corregir una entrega 403, configurar un valor aleatorio de al menos 32 caracteres en **Configuración del plugin de UISP → Secreto del webhook** y utilizar el mismo valor en la URL del terminal (`public.php?webhookToken=EL_MISMO_SECRETO`). El receptor admite también `X-Webhook-Token` y Bearer si el emisor permite enviarlos. Comprobar una entrega nueva y el resultado en Trabajos/RouterOS. Configurar sólo el plugin, o instalar este ZIP, no repara por sí solo la credencial del terminal existente.
+
+## Reconexión y eventos asociados en 2.4.13
+
+- Por elección del usuario, el botón del dispositivo pasa a **Sincronizar y reconectar cuentas**: cada uso sincroniza las cuentas administradas de ese router y fuerza el cierre de sus sesiones PPP/Hotspot después de actualizar la cuenta. La confirmación y el resultado lo explican en los seis idiomas del panel.
+- Los eventos explícitos `suspend`, `unsuspend`, `suspend_cancel` y `activate` llevan también una solicitud de reconexión. Un UUID ya completado no la vuelve a ejecutar.
+- La solicitud queda persistida incluso antes de preparar los comandos, sobrevive a fallos y reinicios, y se retira del estado aplicado al terminar. No modifica permanentemente la política de otras actualizaciones.
+- Las escrituras repetidas observadas correspondían al evento de facturación y al `edit` asociado. Cuando ese `edit` sólo repite el estado y coinciden la referencia aplicada completa, dispositivo, plan y configuración actuales, sin pendientes del servicio, devuelve `already_applied` y no crea otro trabajo ni vuelve a escribir en RouterOS. Los cambios adicionales, referencias incompletas y fallos pendientes siguen procesándose.
+- Se mantiene la reconexión por cambios efectivos para las actualizaciones ordinarias y la reconstrucción general. Forzar la reconexión manual no elimina comprobaciones de propiedad, validación ni barreras de baja.
+
+Este cambio de comportamiento se hizo después de confirmar que el incidente anterior se debía a los logs, para cumplir la preferencia operativa del usuario. La suspensión/reactivación ya cerraba sesiones al cambiar efectivamente el perfil; ahora los eventos explícitos también fuerzan esa intención cuando el perfil coincide.
+
+## Diagnóstico de aprovisionamiento en 2.4.14
+
+- Se corrigió una omisión comprobada: el rechazo previo a las escrituras por un perfil externo no verificable quedaba en la cola, pero no aparecía en el log, incluso con depuración activada.
+- El diagnóstico de perfil distingue ausencia, error de lectura, ambigüedad e identidad inválida. Incluye el nombre solicitado y la ruta del perfil; PPP y Hotspot utilizan catálogos distintos. Un perfil válido sigue aceptándose, y el fallo conserva la cuenta, sesión y trabajo pendiente.
+- Cada intento fallido persistido produce un registro seguro de cola con sus identificadores, operación, número de intento, próximo reintento y código de error. No registra credenciales ni texto arbitrario de excepciones. Consultar pendientes o repetir un UUID completado no genera un fallo nuevo.
+- La sincronización manual genera un resumen con su alcance, intención de reconexión y cantidades solicitadas, completadas y pendientes/con error. Los registros nuevos se conservan con depuración desactivada; un error al escribir el log no revierte resultados de aprovisionamiento.
+- El registro real aportado después de instalar 2.4.13 confirma una suspensión y una reactivación con un trabajo cada una, seguidas por `edit` con `already_applied`. El fallo posterior de perfiles en otros servicios es independiente: su causa en el router requiere contrastar nombre, tipo de cuenta y resultado de lectura, y no se da por resuelta sólo con estos diagnósticos.
+
+## Acceso, transporte y dependencias
+
+### Historial de cancelación y conexión en 2.4.16
+
+La política limitada de cancelación de esta versión se sustituye en 2.4.17 por la cancelación local de todos los pendientes; la protección de trabajos en ejecución permanece.
+
+- Un cambio nuevo por webhook podía quedar esperando un trabajo preparado anterior aunque el router ya se hubiera recuperado: su ejecución inmediata sólo incluía los Q nuevos. Se utiliza ahora la misma recuperación ordenada que en Ejecutar, limitada a antecesores del mismo servicio y sin procesar versiones posteriores. Aplica también a migraciones y reentregas pendientes de un UUID. Se conservan las barreras de baja, exclusión de workers y bloqueos de servicio; el worker programado mantiene su backoff.
+- La cola confundía comandos copiados de una cuenta aplicada con una retirada ya iniciada. En 2.4.16 se permitió cancelar una retirada nativa pendiente con cero intentos, sin limpieza intermedia ni preparación congelada de ejecución. Se conservaron el estado aplicado, las reservas y las barreras de baja; sus reemplazos pendientes también se cancelaban. Las tareas preparadas ya intentadas o importadas de procedencia incierta seguían protegidas en esa versión.
+- El resultado de Eliminar cuenta también los seleccionados cancelados como consecuencia de cancelar su antecesor. No crea IDs, no transforma actualizaciones en retiradas y no contacta el router.
+- La evidencia del router 6 mostró dos intentos fallidos de conexión y cuatro retiradas esperando. El usuario confirmó que sigue en uso y su puerto es accesible. Eso no confirma autenticación API ni TLS. Se sustituye el error genérico de conexión por motivos fijos y seguros en intentos nuevos; los errores históricos se conservan hasta reintentar.
+
+### Recuperación y presentación en 2.4.15
+
+- La evidencia del servicio 662 mostró un trabajo antiguo preparado con tres intentos y `disabled` ausente, seguido por otro trabajo del mismo servicio sin intentos. El usuario confirmó que había borrado los perfiles del router para probar la reconstrucción. El plan archivado no era la causa de ese rechazo.
+- Se recupera la creación automática del perfil PPP/Hotspot de suspensión configurado, usando la lista de suspendidos y el límite configurados; PPP resuelve también la dirección local. La creación se prepara de forma durable y se verifica antes de asignar la cuenta y desconectarla. Los perfiles existentes se conservan. Lecturas fallidas, nombres reservados e identidades ambiguas no autorizan crear ni sobrescribir perfiles.
+- RouterOS añade la IP conectada a la address-list del perfil. No hay entradas ficticias para simular una lista vacía. Las reglas de firewall que usan la lista siguen determinando el bloqueo; lista y perfil por sí solos no son una regla de denegación. Una creación nueva necesita lista o límite positivo, para evitar un perfil sin política de suspensión.
+- Ejecutar una selección incluye sus antecesores pendientes del mismo servicio, una sola vez por petición, sin ejecutar versiones posteriores ni otros servicios. Se conservan las barreras de baja, migración y concurrencia.
+- Trabajos muestra qué Q bloquea a otro, cuáles tienen borrado protegido y sus motivos. La API devuelve resultados y contadores concretos incluso si la operación falla parcialmente; el panel los muestra y actualiza las filas. `job_action_result` registra la acción y cantidades sin credenciales, también sin depuración.
+- Se añaden Refrescar y actualización automática configurable en Trabajos, con preferencia local al navegador. La consulta mantiene la selección de los Q que siguen presentes y no ejecuta ni crea tareas. El auto refresco se limita a la vista visible y se coordina con las acciones para no solapar consultas.
+- Ante la captura de nuevas retiradas tras Eliminar, se revisó también el ZIP 2.4.14: ese botón sólo cancela trabajos y no encola retiradas. Una regresión comprueba que no crea IDs ni cambia operaciones. El origen concreto de los Q mostrados no se confirmó con la captura; el registro nuevo permite correlacionar cada acción.
+- Comentarios visibles de perfiles: `Plan #94` o `Servicio #1353`, sin branding. La identidad interna sigue estable; la lectura admite los comentarios anteriores y comprueba también el nombre reservado antes de aceptar una etiqueta nueva. Las migraciones conservan la `.id`, no adoptan perfiles manuales sólo por una etiqueta genérica y rechazan propietarios duplicados entre formatos.
+- Los renombres de planes deben hacerse en UISP. Si se cambia manualmente el nombre del perfil en RouterOS y se elimina su identificador estable, una etiqueta genérica como `Plan #94` no basta para reconocerlo: se conserva ese perfil y se crea el nombre reservado. Esto evita apropiarse de perfiles manuales por un comentario coincidente.
+
+### Resultado del webhook y compatibilidad en 2.4.12
+
+- La respuesta incluye `provisioning`, servicio, router resuelto, estado solicitado/aplicado, claves y conteos de trabajos conocidos. Distingue aplicación confirmada, pendientes, evento repetido, servicio documental, estado diferido, solicitud de credenciales y retirada. Una tabla de pendientes vacía o un HTTP 200 no prueban por sí solos que cambió la cuenta del router.
+- Los registros `webhook_result` y `webhook_processing_failed` funcionan con depuración desactivada; contienen identificadores y códigos seguros, sin usuarios, contraseñas, URL/token ni cuerpo del evento. La severidad interna de depuración se separa de INFO también en PHP Windows, cuyas constantes pueden coincidir.
+- Un Site seleccionado desconocido o ambiguo deja de convertirse silenciosamente en Site vacío. Se rechaza antes de cambiar la caché o limpiar la cuenta aplicada. Se conserva el Site vacío para documentación y para la retirada explícita prevista.
+- Un nombre de Site histórico obsoleto se recupera únicamente de una identidad aplicada verificable del mismo servicio; los campos actuales prevalecen. Si falta el router anterior, se conserva la limpieza pendiente y no se inventa otro destino.
+- La falta de identidad con generación automática desactivada devuelve `service_credentials_missing`, en lugar de éxito sin trabajos.
+- La casilla **Permitir webhooks sin secreto (compatibilidad)** es optativa y queda desactivada por defecto. Activarla acepta eventos válidos sin autenticar su emisor; conserva POST/JSON, validación del evento y permisos del panel. No se activa por una clave incorrecta ni por actualizar el plugin.
+- Se aclara en la configuración que el campo Secreto lleva sólo la clave y el terminal lleva la URL completa. Pegar una URL como secreto produce `webhook_secret_contains_url`.
+
+La evidencia real posterior identificó tokens ausentes y una URL pegada como secreto. Tras corregirlo, las entregas pasaron a HTTP 200 y el plugin registró suspensión/reactivación completadas. El 11 de octubre de 2026 el usuario confirmó que la aparente falta de aplicación era un problema de visibilidad de logs; su captura de RouterOS muestra accesos por API y modificaciones de perfil y cuenta PPP. Se conserva 2.4.12 para este incidente, sin otro parche de aprovisionamiento. Los fallos de asociación reproducidos localmente no fueron la causa de este caso. Las mediciones de tráfico y los demás escenarios de integración no se dan por validados por esa captura.
+
+### Controles de acceso
+
+- El panel exige una sesión administrativa UISP; los usuarios de la zona de clientes no tienen acceso.
+- Permisos `system/plugins` de lectura/edición; cambios y descarga de respaldos requieren edición.
+- Por defecto, los webhooks requieren un secreto aleatorio de al menos 32 caracteres, por `X-Webhook-Token`, Bearer o `?webhookToken=...`; comparación segura y validación de UUID/esquema. La opción de compatibilidad permite desactivar expresamente sólo la comprobación del secreto.
+- Las IP privadas ya no autorizan por sí solas ninguna operación. Un secreto de webhook tampoco autoriza acciones administrativas.
+- Las escrituras administrativas de sesión validan el origen contra `ucrmPublicUrl`.
+- Respuestas autenticadas con `no-store`; errores públicos sin detalles internos; logs con credenciales redactadas.
+- CRM, NMS y autenticación: límite de 5 segundos para conectar y 15 por solicitud, sin seguir redirecciones. Se conserva la política TLS del SDK.
+- Guzzle 7.15.5 y PSR-7 2.13.1, dependencias fijadas en `composer.lock`. El SDK permanece en 0.8.2.
+- La comprobación de dependencias de 2.4.7 no encontró avisos aplicables a las versiones instaladas. No equivale a garantizar ausencia de vulnerabilidades futuras.
+- Paquetes reproducibles, exclusivos por versión en sus fechas, y renovación selectiva de PHP en OPcache para evitar mezclar código antiguo con una base migrada.
+- El ZIP excluye datos operativos, claves generadas por UISP, herramientas y pruebas.
+- Se retiró la prueba antigua de EdgeRouter con credenciales y destino externos. Las nuevas regresiones emplean datos ficticios y sockets locales; los fixtures de desarrollo del SDK también se excluyen del ZIP.
+
+## Preparación para instalar y validar
+
+La versión actual es 2.4.19; su informe automatizado y la confirmación de recuperación de planes archivados se indican al principio. La [guía de pruebas reales](PRUEBAS_REALES.md) contiene 65 escenarios para las comprobaciones restantes.
+
+### Resultado histórico de 2.4.17
+
+**Validación 2.4.17 aprobada:** 27 suites aisladas, sintaxis de 39 archivos PHP propios, correspondencia del código/dependencias, CRC y exclusión de datos/fixtures. El instalador contiene 351 entradas, 118 archivos propios y 13 dependencias. Informe: `dist/verification-2.4.17.json`. SHA-256: `af81d06f968012d7928014c4f1dc3d03f3f6ba9af7b382d1a04ff10be883fcc3`. Los casos nuevos cubren cancelación preparada/intentada/importada, limpieza de múltiples recursos y destinos, fallo/reinicio, creación parcial del perfil de suspensión, UUID cancelados y exclusión de trabajos en ejecución. Cancelar un trabajo nativo nunca iniciado no inventa una limpieza de su cuenta aplicada, incluido historial compactado. Queda validar este candidato en UISP/RouterOS real.
+
+### Resultado histórico de 2.4.16
+
+El candidato 2.4.16 pasó las **26 suites aisladas** y la comprobación de sintaxis de **39 archivos PHP propios**. Ese ZIP verifica 351 entradas, 118 de código propio, 13 dependencias fijadas, CRC y ausencia de datos operativos/fixtures. Composer no encontró avisos aplicables en su consulta del 11 de octubre de 2026 para 2.4.9; 2.4.16 conserva las mismas dependencias. La revisión previa en Chrome de 2.4.8 comprobó los tres modos, seis idiomas, persistencia y borradores, sin errores de consola capturados. Los avisos parciales y el diagnóstico numérico de 2.4.10 se verificaron con regresiones del panel, incluyendo HTTP 502, apertura sin cambios, corrección explícita, borradores y traducciones; no se hizo una nueva revisión visual en navegador. Estas verificaciones describen paquetes anteriores; la validación automatizada de 2.4.17 se informa arriba y las pruebas reales siguen pendientes.
+
+La verificación conserva las regresiones de reconexión por cambios efectivos, renombres, reparaciones de perfiles compartidos, fallos parciales y reinicio de la cola. En 2.4.12 añade suspensión/reactivación con normalización, caché y cola reales y transporte RouterOS simulado; resultados de duplicados, pendientes, retiradas, servicios documentales, Site inválido y credenciales ausentes. Comprueba registros INFO sin depuración y ambos modos de autenticación con HTTP local, sin acceso a sistemas reales. En 2.4.13 se añade la cadena real ApiAction/ApiUpdate, cola, Batch, MtData y MT con un transporte RouterOS en memoria: una escritura y desconexión por transición, omisión del edit asociado, repetición de UUID, reconexión explícita sin cambio, recuperación de pendientes, perfil de suspensión ausente, dos sincronizaciones manuales con otro router excluido y una sincronización general posterior. Cambios de plan/configuración y revisiones de perfiles compartidos impiden omitir una actualización necesaria. Los textos nuevos del panel se comprobaron con las regresiones de interfaz e idiomas. En 2.4.14 se verifican las cuatro causas de rechazo de perfil PPP/Hotspot, la conservación de sesiones y cuentas ante rechazo, nombres con espacios/caracteres de control, resumen de sincronizaciones parciales y registros de intentos fallidos con el logger real y depuración desactivada. También se comprueba que los errores del logger no reviertan resultados ni reintentos y que la consulta de pendientes no repita eventos. Informe reproducible: `dist/verification-2.4.16.json`.
+
+En 2.4.15 se añade la recuperación de un perfil de suspensión ausente con catálogo PPP/Hotspot en memoria, alta antes de cuenta/reconexión, conservación de perfiles personalizados y rechazo de lectura fallida o creación parcial. La deuda de verificación y la dirección local sobreviven al reintento; un perfil incompleto no se acepta sólo porque exista. La cadena real de API administrativa comprueba eliminación parcial protegida, ejecución ordenada del trabajo antiguo y su sucesor, suspensión/reactivación y actualizaciones ordinarias sin cortes adicionales. La prueba del simulador utiliza IDs únicos entre conexiones. Las pruebas de nombres cubren migración de comentarios, colisiones entre formatos y etiquetas manuales; las de Trabajos cubren HTTP 502, errores concretos, refresco, selección y temporizadores.
+
+En 2.4.16 se comprobaron cancelación de retiradas nativas sin intentos, conteos de dependencias en ambos órdenes de selección, conservación del estado aplicado/reservas tras reinicio y la protección de operaciones intentadas o importadas de aquella versión. Esa última restricción ya no rige en 2.4.17. Los sockets locales cubren fallos de transporte, rechazo de login, timeout/cierre/protocolo, challenge antiguo y recuperación a login válido, sin escrituras de aprovisionamiento tras fallo de autenticación. La recuperación inmediata del webhook comprueba antecesor fallido seguido de cambio nuevo, fallo persistente, alcance y deduplicación. El usuario confirmó que un cambio bloqueado por Q16 se aplicó al ejecutarlo manualmente; la recuperación automática debe contrastarse después de instalarla.
+
+SHA-256 histórico de 2.4.16: `e02d1697e13d1fd5a708cf5849b781ae2229c4bae234087bf720fe54b0f8850b`.
+
+1. Guardar el instalador anterior y copias privadas de `data/data.db` y `data/jobs.db`. Los respaldos del panel contienen `data.db`; **no incluyen la cola `jobs.db`**.
+2. Pausar workers y entregas anteriores mientras se sustituye el paquete. Comprobar la migración antes de reanudarlos.
+3. Comprobar el modo del webhook. Por defecto, guardar sólo la clave en `webhookSecret` y enviarla también desde UISP; el plugin no modifica el terminal. Para funcionar sin clave, activar expresamente la compatibilidad descrita en la [guía](PRUEBAS_REALES.md#configurar-el-secreto-del-webhook).
+4. Si PHP web conserva el punto de entrada anterior con `opcache.validate_timestamps=0`, renovar su caché/reiniciar ese servicio. La consola y la recarga del navegador no renuevan OPcache web.
+5. En laboratorio, comprobar alta, cambio de plan, suspensión, pago, cambio de router/IP, errores parciales, router desconectado, entregas repetidas, certificados, restart del worker y restauración.
+6. Verificar IPv4/IPv6, reglas de firewall, FastTrack y posición de colas dinámicas después de reconectar. Restaurar SQLite no deshace cambios ya aplicados al router.
+
+La regresión local usa PHP 8.5.11, bases temporales, mocks y sockets locales. El resolver de Composer mantiene la compatibilidad declarada con PHP 7.4, pero aún requiere ejecutar el candidato en el PHP incluido con la instalación de UISP.
+
+## Pendientes conocidos
+
+- Confirmación posterior de propiedades de cuenta/perfil y eliminación de sesiones: actualmente se comprueban las respuestas de la API y el estado previo, con lectura posterior específica para renombres de perfiles y creación del perfil de suspensión. La verificación posterior general se investigó pero continúa pendiente en 2.4.17.
+- Revisar la retirada de una cola individual de suspensión que tenga dependencias inesperadas: la comprobación actual puede conservarla y considerar completado el comando. Reproducido con transporte simulado; no se observó como causa del incidente de logs reportado.
+- Reconciliación periódica entre UISP, estado aplicado y estado observado en RouterOS.
+- Ordenar eventos distintos recibidos fuera de orden mediante una revisión fiable del origen; deduplicar el mismo UUID no resuelve este caso.
+- Escrituras de topología NMS desactivadas: el código anterior podía borrar nodos de otros servicios. Se conserva la lectura. Reactivarlas requiere una relación persistente `serviceId → deviceId` y propiedad comprobada.
+- Pruebas reales en versiones de UISP/RouterOS, certificados y políticas de red de la instalación.
+- Revisión lingüística por hablantes nativos de las traducciones nuevas.
+
+El [borrador de descripción del PR](PR_DESCRIPTION.md) resume el cambio para revisión upstream. Este documento describe el comportamiento implementado y sus límites; no declara el PR publicado ni la integración real validada.

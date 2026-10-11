@@ -1,110 +1,101 @@
 <?php
-
 chdir(__DIR__);
 set_time_limit(120);
 ini_set('memory_limit', '512M');
-//include_once 'includes/cors.php';
+ini_set('display_errors', '0');
+// The panel HTML and authenticated responses must not survive a plugin update in browser/proxy caches.
+header('Cache-Control: private, no-store, no-cache, must-revalidate');
+header('Pragma: no-cache');
+header('Expires: 0');
+require_once 'lib/api_runtime.php';
+$runtimeRefresh = refresh_plugin_runtime();
 require_once 'vendor/autoload.php';
-include_once 'lib/api_logger.php';
-include_once 'lib/api_common.php';
+require_once 'lib/api_common.php';
+require_once 'lib/api_security.php';
+require_once 'lib/api_uisp_client.php';
 
-register_shutdown_function(function() {
-    $error = error_get_last();
-    if ($error !== null && in_array($error['type'], [E_ERROR, E_CORE_ERROR, E_COMPILE_ERROR, E_USER_ERROR])) {
-        if (!headers_sent()) {
-            header('Content-Type: application/json');
-        }
-        echo json_encode([
-            'status' => 'error',
-            'error' => true,
-            'message' => 'PHP Fatal Error: ' . $error['message'] . ' in ' . $error['file'] . ' on line ' . $error['line']
-        ]);
-    }
-});
-
-if (isset($_SERVER['REQUEST_METHOD'])
-    && $_SERVER['REQUEST_METHOD'] == 'OPTIONS') { //skip redirect for options
-    exit();
-}
-
-if(isset($_GET['sync'])){
-    include_once "lib/api_ip_mgmt.php";
-    exit();
-}
-
-$json = file_get_contents('php://input') ?? null;
-
-if(!$json && is_file('test.json')){ // for testing
-    $json = file_get_contents('test.json');
-}
-
-try
-{
-    include_once 'lib/api_cache.php';
-    include_once 'lib/api_setup.php';
-
-    set_error_handler('myErrorHandler');
-    run_setup();
-    cache_setup();
-    cache_sync();
-
-    include_once 'lib/api_router.php';
-
-    if(isset($_FILES) && !empty($_FILES))
-    {//backup restore
-        $bak = $_FILES['backup'] ?? null ;
-        if($bak){ backup_restore(); }
-        header('content-type: application/json');
-        echo '{"status":"ok","error":false,"message":"ok","data":[]}';
-        exit();
-    }
-
-    if(!$json)
-    {
-        if (isset($_GET['page']) && $_GET['page'] == 'panel')
-        { //load new panel_v2
-            include 'public/panel_v2/index.php';
-        }
-        exit();
-    }
-
-    $data = json_decode($json);
-    
-    // --- SECURITY CHECK ---
-    $user = null;
-    try {
-        $sec = \Ubnt\UcrmPluginSdk\Service\UcrmSecurity::create();
-        $user = $sec->getUser();
-    } catch (\Exception $e) {
-        // Ignore exception if security class fails to load or session is invalid
-    }
-    
-    $ip = $_SERVER['REMOTE_ADDR'] ?? '';
-    $server_ip = $_SERVER['SERVER_ADDR'] ?? '';
-    // Allow if IP is localhost, server IP, or any private IP (Docker internal networks)
-    $isLocal = in_array($ip, ['127.0.0.1', '::1', $server_ip]) || filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE) === false;
-
-    if (!$user && !$isLocal) {
-        header('HTTP/1.1 403 Forbidden');
-        header('Content-Type: application/json');
-        echo json_encode(['status' => 'error', 'message' => 'Unauthorized: Invalid session or non-local webhook']);
+try {
+    $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
+    if (!in_array($method, ['GET', 'POST'], true)) {
+        http_response_code(405);
+        header('Allow: GET, POST');
+        respond('method_not_allowed', true);
         exit;
     }
-    // --- END SECURITY CHECK ---
-
+    $raw = file_get_contents('php://input', false, null, 0, 1048577);
+    if ($raw === false) throw new RuntimeException('request_read_failed');
+    if (strlen($raw) > 1048576) throw new InvalidArgumentException('request_too_large');
+    $data = $raw !== '' ? json_decode($raw, false, 512, JSON_THROW_ON_ERROR) : null;
+    $config = is_file('data/config.json') ? json_decode(file_get_contents('data/config.json'), true) : [];
+    $webhook = $method === 'POST' && ApiSecurity::webhookAuthorized($data, $_SERVER, $_GET, is_array($config) ? $config : []);
+    $user = null;
+    if (!$webhook) {
+        try { $user = ApiUispClient::security()->getUser(); }
+        catch (Throwable $ignored) {}
+    }
+    $write = isset($_GET['download']) || ($method === 'POST' && (($data->changeType ?? '') !== 'list' || !empty($_FILES)));
+    if (!$webhook && !ApiSecurity::isAdmin($user, $write)) {
+        if ($method === 'POST' && ApiSecurity::isWebhook($data)) {
+            // Authentication failures occur before setup/queue creation. Log only
+            // validated routing metadata, never the request body or credentials.
+            MyLog()->Append([
+                'webhook_rejected',
+                'reason' => ApiSecurity::webhookRejectionReason($data, $_SERVER, $_GET, is_array($config) ? $config : []),
+                'entity' => $data->entity,
+                'entityId' => (int) $data->entityId,
+                'changeType' => $data->changeType,
+            ], LOG_WARNING);
+        }
+        http_response_code(403);
+        respond('unauthorized', true);
+        exit;
+    }
+    $options = is_file('ucrm.json') ? json_decode(file_get_contents('ucrm.json')) : null;
+    if (!$webhook && $method === 'POST' && !ApiSecurity::sameOrigin($_SERVER, $options->ucrmPublicUrl ?? null)) {
+        http_response_code(403);
+        respond('invalid_origin', true);
+        exit;
+    }
+    if ($method === 'POST' && empty($_FILES) && stripos($_SERVER['CONTENT_TYPE'] ?? '', 'application/json') !== 0) {
+        throw new InvalidArgumentException('json_content_type_required');
+    }
+    set_error_handler('myErrorHandler');
+    require_once 'lib/api_setup.php';
+    require_once 'lib/api_cache.php';
+    run_setup();
+    cache_setup();
+    require_once 'lib/api_router.php';
+    require_once 'lib/api_backup.php';
+    if (isset($_GET['download'])) {
+        if ($method !== 'GET') throw new InvalidArgumentException('invalid_download_method');
+        ApiBackup::download($_GET['download']);
+        exit;
+    }
+    if (isset($_GET['sync'])) throw new InvalidArgumentException('use_authenticated_sync_action');
+    if (!empty($_FILES)) {
+        ApiBackup::restoreUpload($_FILES['backup'] ?? []);
+        respond('backup_restored');
+        exit;
+    }
+    if ($method === 'GET') {
+        if (($_GET['page'] ?? '') !== 'panel') throw new InvalidArgumentException('page_not_found');
+        header('Content-Type: text/html; charset=utf-8');
+        // This file contains static HTML; read it from disk instead of caching it as PHP bytecode.
+        if (readfile('public/panel_v2/index.php') === false) throw new RuntimeException('panel_read_failed');
+        exit;
+    }
+    if (!is_object($data)) throw new InvalidArgumentException('request_empty');
+    // Refresh failure does not block billing events: retain the last valid cache.
+    try { cache_sync(); }
+    catch (Throwable $error) { MyLog()->Append('Cache refresh failed; retained previous snapshot', LOG_ERR); }
     $api = new ApiRouter($data);
     $api->route();
     $api->http_response();
-}
-catch ( \Exception | Error $error)
-{
-    MyLog()->Append(sprintf("Global exception message: %s \nTrace: %s",
-        $error->getMessage(),$error->getTraceAsString()));
-    
-    header('Content-Type: application/json');
-    echo json_encode([
-        'status' => 'error',
-        'error' => true,
-        'message' => 'PHP Error: ' . $error->getMessage()
-    ]);
+} catch (Throwable $error) {
+    MyLog()->Append(['request_failed', 'type' => get_class($error), 'message' => $error->getMessage()], LOG_ERR);
+    if (!headers_sent()) http_response_code($error instanceof InvalidArgumentException || $error instanceof JsonException ? 400 : 500);
+    $details = $error instanceof ApiVersionMismatchException ? $error->getVersions() : [];
+    if ($details) $details['runtime_cache_needs_restart'] = (bool) ($runtimeRefresh['needs_restart'] ?? false);
+    if ($details) MyLog()->Append(['version_mismatch' => $details], LOG_ERR);
+    respond($error instanceof InvalidArgumentException ? $error->getMessage() : 'operation_failed_check_log', true, $details);
 }

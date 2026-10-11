@@ -21,6 +21,7 @@ class RouterosAPI
     var $connected = false; //  Connection state
     var $port = 8728;  //  Port to connect to (default 8729 for ssl)
     var $ssl = false; //  Connect using SSL (must enable api-ssl in IP/Services)
+    var $allow_self_signed = false;
     var $timeout = 3;     //  Connection attempt timeout and data read timeout
     var $attempts = 5;     //  Connection attempt count
     var $delay = 3;     //  Delay between connection attempts in seconds
@@ -28,6 +29,8 @@ class RouterosAPI
     var $socket;            //  Variable for storing socket resource
     var $error_no;          //  Variable for storing connection error number, if any
     var $error_str;         //  Variable for storing connection error text, if any
+    private ?string $connection_failure = null;
+    private bool $logging_in = false;
 
     /* Check, can be var used in foreach  */
 
@@ -42,53 +45,93 @@ class RouterosAPI
      */
     public function connect($ip, $login, $password)
     {
+        $host = trim((string)$ip, '[]');
+        $target = strpos($host, ':') !== false ? '[' . $host . ']' : $host;
+        $transportFailure = $this->ssl ? 'router_tls_connect_failed' : 'router_tcp_connect_failed';
+        $this->connection_failure = $transportFailure;
+        $this->error_no = 0;
+        $this->error_str = $transportFailure;
         for ($ATTEMPT = 1; $ATTEMPT <= $this->attempts; $ATTEMPT++) {
             $this->connected = false;
-            $PROTOCOL = ($this->ssl ? 'ssl://' : '');
-            $context = stream_context_create(array('ssl' => array('ciphers' => 'ADH:ALL', 'verify_peer' => false, 'verify_peer_name' => false)));
-            $this->debug('Connection attempt #' . $ATTEMPT . ' to ' . $PROTOCOL . $ip . ':' . $this->port . '...');
-            $this->socket = @stream_socket_client($PROTOCOL . $ip . ':' . $this->port, $this->error_no, $this->error_str, $this->timeout, STREAM_CLIENT_CONNECT, $context);
+            $this->connection_failure = null;
+            $this->error_no = 0;
+            $this->error_str = null;
+            $PROTOCOL = ($this->ssl ? 'tls://' : 'tcp://');
+            $context = stream_context_create(['ssl' => ['verify_peer' => true, 'verify_peer_name' => true,
+                'allow_self_signed' => (bool)$this->allow_self_signed, 'peer_name' => $host]]);
+            $this->debug('Connection attempt #' . $ATTEMPT . ' to ' . $PROTOCOL . $target . ':' . $this->port . '...');
+            try { $this->socket = $this->openSocket($PROTOCOL . $target . ':' . $this->port, $context); }
+            catch (Throwable $error) { $this->socket = false; }
             if ($this->socket) {
-                socket_set_timeout($this->socket, $this->timeout);
+                stream_set_timeout($this->socket, $this->timeout);
+                try {
+                $this->logging_in = true;
                 $this->write('/login', false);
                 $this->write('=name=' . $login, false);
                 $this->write('=password=' . $password);
                 $RESPONSE = $this->read(false);
-                if (isset($RESPONSE[0])) {
-                    if ($RESPONSE[0] == '!done') {
-                        if (!isset($RESPONSE[1])) {
-                            // Login method post-v6.43
-                            $this->connected = true;
-                            break;
-                        } else {
-                            // Login method pre-v6.43
-                            $MATCHES = array();
-                            if (preg_match_all('/[^=]+/i', $RESPONSE[1], $MATCHES)) {
-                                if ($MATCHES[0][0] == 'ret' && strlen($MATCHES[0][1]) == 32) {
-                                    $this->write('/login', false);
-                                    $this->write('=name=' . $login, false);
-                                    $this->write('=response=00' . md5(chr(0) . $password . pack('H*', $MATCHES[0][1])));
-                                    $RESPONSE = $this->read(false);
-                                    if (isset($RESPONSE[0]) && $RESPONSE[0] == '!done') {
-                                        $this->connected = true;
-                                        break;
-                                    }
-                                }
-                            }
-                        }
-                    }
+                $state = $this->loginResponseState($RESPONSE, true);
+                if ($state === 'challenge') {
+                    // Login method pre-v6.43; only a valid hexadecimal challenge is usable.
+                    $challenge = substr($RESPONSE[1], 5);
+                    $this->write('/login', false);
+                    $this->write('=name=' . $login, false);
+                    $this->write('=response=00' . md5(chr(0) . $password . pack('H*', $challenge)));
+                    $state = $this->loginResponseState($this->read(false), false);
                 }
-                fclose($this->socket);
-            }
-            sleep($this->delay);
+                if ($state === 'success') { $this->connected = true; break; }
+                $this->connection_failure = $state;
+                } catch (Throwable $error) {
+                    $this->connection_failure = $this->loginExceptionCode($error);
+                } finally {
+                    $this->logging_in = false;
+                }
+                $this->error_str = $this->connection_failure;
+                $this->disconnect();
+            } else $this->error_str = $this->connection_failure = $transportFailure;
+            if ($ATTEMPT < $this->attempts) sleep($this->delay);
         }
 
         if ($this->connected) {
+            $this->connection_failure = null;
+            $this->error_no = 0;
+            $this->error_str = null;
             $this->debug('Connected...');
         } else {
             $this->debug('Error...');
         }
         return $this->connected;
+    }
+
+    /** Safe diagnostic only; a TLS connection failure can involve network or negotiation. */
+    public function connectionFailure(): ?string { return $this->connection_failure; }
+
+    protected function openSocket(string $address, $context)
+    {
+        $transportError = '';
+        return @stream_socket_client($address, $this->error_no, $transportError, $this->timeout, STREAM_CLIENT_CONNECT, $context);
+    }
+
+    private function loginResponseState($response, bool $allowChallenge): string
+    {
+        if (!is_array($response)) return 'router_login_protocol_error';
+        if (in_array('!trap', $response, true)) return 'router_login_rejected';
+        if (in_array('!fatal', $response, true)) return 'router_login_connection_closed';
+        if ($response === ['!done']) return 'success';
+        if ($allowChallenge && count($response) === 2 && ($response[0] ?? null) === '!done'
+            && is_string($response[1]) && preg_match('/^=ret=[a-fA-F0-9]{32}$/D', $response[1]) === 1) return 'challenge';
+        return 'router_login_protocol_error';
+    }
+
+    private function loginExceptionCode(Throwable $error): string
+    {
+        switch ($error->getMessage()) {
+            case 'RouterOS response timed out': return 'router_login_timeout';
+            case 'RouterOS connection is closed':
+            case 'RouterOS connection closed during response': return 'router_login_connection_closed';
+            case 'RouterOS connection failed while writing': return 'router_login_write_failed';
+            default: return 'router_login_protocol_error';
+        }
     }
 
     /**
@@ -119,24 +162,59 @@ class RouterosAPI
     public function write($command, $param2 = true)
     {
         if ($command) {
-            $data = explode("\n", $command);
-            foreach ($data as $com) {
-                $com = trim($com);
-                fwrite($this->socket, $this->encodeLength(strlen($com)) . $com);
-                $this->debug('<<< [' . strlen($com) . '] ' . $com);
-            }
+            $command = (string)$command;
+            $this->writeBytes($this->encodeLength(strlen($command)) . $command);
+            $safe = $this->logging_in && strpos($command, '=') === 0 ? '=login-attribute=[redacted]'
+                : (preg_match('/^=(password|response)=/i', $command) ? '=secret=[redacted]' : $command);
+            $this->debug('<<< [' . strlen($command) . '] ' . $safe);
 
             if (gettype($param2) == 'integer') {
-                fwrite($this->socket, $this->encodeLength(strlen('.tag=' . $param2)) . '.tag=' . $param2 . chr(0));
+                $this->writeBytes($this->encodeLength(strlen('.tag=' . $param2)) . '.tag=' . $param2 . chr(0));
                 $this->debug('<<< [' . strlen('.tag=' . $param2) . '] .tag=' . $param2);
             } elseif (gettype($param2) == 'boolean') {
-                fwrite($this->socket, ($param2 ? chr(0) : ''));
+                if ($param2) $this->writeBytes(chr(0));
             }
 
             return true;
         } else {
             return false;
         }
+    }
+
+    private function writeBytes(string $bytes): void
+    {
+        if (!is_resource($this->socket)) throw new RuntimeException('RouterOS connection is closed');
+        $offset = 0;
+        while ($offset < strlen($bytes)) {
+            $written = @fwrite($this->socket, substr($bytes, $offset));
+            if ($written === false || $written === 0) {
+                $this->connected = false;
+                throw new RuntimeException('RouterOS connection failed while writing');
+            }
+            $offset += $written;
+        }
+    }
+
+    public function finishSentence(): void
+    {
+        $this->writeBytes(chr(0));
+    }
+
+    private function readBytes(int $length): string
+    {
+        if (!is_resource($this->socket)) throw new RuntimeException('RouterOS connection is closed');
+        $bytes = '';
+        while (strlen($bytes) < $length) {
+            $chunk = @fread($this->socket, $length - strlen($bytes));
+            if ($chunk === false || $chunk === '') {
+                $status = stream_get_meta_data($this->socket);
+                $this->connected = false;
+                throw new RuntimeException(!empty($status['timed_out'])
+                    ? 'RouterOS response timed out' : 'RouterOS connection closed during response');
+            }
+            $bytes .= $chunk;
+        }
+        return $bytes;
     }
 
     /**
@@ -180,7 +258,8 @@ class RouterosAPI
         while (true) {
             // Read the first byte of input which gives us some or all of the length
             // of the remaining reply.
-            $BYTE = ord(fread($this->socket, 1));
+            $BYTE = ord($this->readBytes(1));
+            if ($BYTE > 0xF0) throw new RuntimeException('RouterOS returned an unsupported control byte');
             $LENGTH = 0;
             // If the first bit is set then we need to remove the first four bits, shift left 8
             // and then read another byte in.
@@ -189,21 +268,21 @@ class RouterosAPI
             // and then read in yet another byte.
             if ($BYTE & 128) {
                 if (($BYTE & 192) == 128) {
-                    $LENGTH = (($BYTE & 63) << 8) + ord(fread($this->socket, 1));
+                    $LENGTH = (($BYTE & 63) << 8) + ord($this->readBytes(1));
                 } else {
                     if (($BYTE & 224) == 192) {
-                        $LENGTH = (($BYTE & 31) << 8) + ord(fread($this->socket, 1));
-                        $LENGTH = ($LENGTH << 8) + ord(fread($this->socket, 1));
+                        $LENGTH = (($BYTE & 31) << 8) + ord($this->readBytes(1));
+                        $LENGTH = ($LENGTH << 8) + ord($this->readBytes(1));
                     } else {
                         if (($BYTE & 240) == 224) {
-                            $LENGTH = (($BYTE & 15) << 8) + ord(fread($this->socket, 1));
-                            $LENGTH = ($LENGTH << 8) + ord(fread($this->socket, 1));
-                            $LENGTH = ($LENGTH << 8) + ord(fread($this->socket, 1));
+                            $LENGTH = (($BYTE & 15) << 8) + ord($this->readBytes(1));
+                            $LENGTH = ($LENGTH << 8) + ord($this->readBytes(1));
+                            $LENGTH = ($LENGTH << 8) + ord($this->readBytes(1));
                         } else {
-                            $LENGTH = ord(fread($this->socket, 1));
-                            $LENGTH = ($LENGTH << 8) + ord(fread($this->socket, 1));
-                            $LENGTH = ($LENGTH << 8) + ord(fread($this->socket, 1));
-                            $LENGTH = ($LENGTH << 8) + ord(fread($this->socket, 1));
+                            $LENGTH = ord($this->readBytes(1));
+                            $LENGTH = ($LENGTH << 8) + ord($this->readBytes(1));
+                            $LENGTH = ($LENGTH << 8) + ord($this->readBytes(1));
+                            $LENGTH = ($LENGTH << 8) + ord($this->readBytes(1));
                         }
                     }
                 }
@@ -215,28 +294,27 @@ class RouterosAPI
 
             // If we have got more characters to read, read them in.
             if ($LENGTH > 0) {
-                $_ = "";
-                $retlen = 0;
-                while ($retlen < $LENGTH) {
-                    $toread = $LENGTH - $retlen;
-                    $_ .= fread($this->socket, $toread);
-                    $retlen = strlen($_);
-                }
+                if ($LENGTH > 16 * 1024 * 1024) throw new RuntimeException('RouterOS response word exceeds the limit');
+                $_ = $this->readBytes($LENGTH);
+                $retlen = strlen($_);
                 $RESPONSE[] = $_;
                 $this->debug('>>> [' . $retlen . '/' . $LENGTH . '] bytes read.');
             }
 
             // If we get a !done, make a note of it.
-            if ($_ == "!done") {
+            if ($_ == "!done" || $_ == '!fatal') {
                 $receiveddone = true;
             }
+            if ($_ === '!fatal') $this->connected = false;
 
             $STATUS = socket_get_status($this->socket);
             if ($LENGTH > 0) {
-                $this->debug('>>> [' . $LENGTH . ', ' . $STATUS['unread_bytes'] . ']' . $_);
+                $safe = $this->logging_in ? '[login reply word]'
+                    : (preg_match('/^=(password|response)=/i', $_) ? '=secret=[redacted]' : $_);
+                $this->debug('>>> [' . $LENGTH . ', ' . $STATUS['unread_bytes'] . ']' . $safe);
             }
 
-            if ((!$this->connected && !$STATUS['unread_bytes']) || ($this->connected && !$STATUS['unread_bytes'] && $receiveddone)) {
+            if ($LENGTH === 0 && $receiveddone) {
                 break;
             }
         }
@@ -270,11 +348,10 @@ class RouterosAPI
                     }
                 } elseif ($x != '!done') {
                     $MATCHES = array();
-                    if (preg_match_all('/[^=]+/i', $x, $MATCHES)) {
-                        if ($MATCHES[0][0] == 'ret') {
-                            $singlevalue = $MATCHES[0][1];
-                        }
-                        $CURRENT[$MATCHES[0][0]] = (isset($MATCHES[0][1]) ? $MATCHES[0][1] : '');
+                    if (isset($x[0]) && $x[0] === '=') {
+                        [$key, $value] = array_pad(explode('=', substr($x, 1), 2), 2, '');
+                        if ($key === 'ret') $singlevalue = $value;
+                        $CURRENT[$key] = $value;
                     }
                 }
             }
@@ -425,6 +502,7 @@ class RouterosAPI
             fclose($this->socket);
         }
         $this->connected = false;
+        $this->socket = null;
         $this->debug('Disconnected...');
     }
 }
