@@ -55,10 +55,14 @@ final class ApiPanelRecovery
         }
         $data = $request->data ?? new stdClass();
         if (!is_object($data)) throw new InvalidArgumentException('invalid_diagnostic_data');
+        if (property_exists($data, 'refresh') && !is_bool($data->refresh)) throw new InvalidArgumentException('invalid_diagnostic_refresh');
+        if (property_exists($data, 'refreshClients') && !is_bool($data->refreshClients)) throw new InvalidArgumentException('invalid_diagnostic_refresh_clients');
         $refresh = $list && ($data->refresh ?? false) === true;
+        $refreshClients = $list && ($data->refreshClients ?? false) === true;
+        if ($refresh && $refreshClients) throw new InvalidArgumentException('invalid_diagnostic_refresh_mode');
         $ids = $data->serviceIds ?? [];
         if (!is_array($ids)) throw new InvalidArgumentException('invalid_diagnostic_service_ids');
-        $details = (new ApiNetworkDiagnostics())->enrich($details, $refresh, $ids);
+        $details = (new ApiNetworkDiagnostics())->enrich($details, $refresh, $ids, $refreshClients);
         http_response_code(200);
         if ($download) header('Content-Disposition: attachment; filename="ros-plugin-ip-conflicts.json"');
         respond('network_diagnostics', false, $details, ['recovery' => ['readOnly' => $details['duplicate_groups'] > 0]]);

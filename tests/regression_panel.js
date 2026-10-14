@@ -793,14 +793,14 @@ async function checkNetworkRecoveryPanel() {
     assert.equal(identity.children[0].target, '_blank');
     assert.equal(identity.children[0].rel, 'noopener noreferrer');
     assert.equal(identity.children[1].children[0].href, 'https://fixture.invalid/crm/client/service/5347');
-    assert.deepEqual(identity.children[1].children.slice(1).map(node => node.textContent), ['Terminado (dato guardado)', 'Cliente archivado (dato guardado)']);
+    assert.deepEqual(identity.children[1].children.slice(1).map(node => node.textContent), ['Servicio: Terminado (dato guardado)', 'Cliente archivado (dato guardado)']);
     assert.equal(identity.children[2].textContent, 'Base del plugin', 'Saved service status must identify its source');
     assert.equal(owners[1].children[0].children[0].tagName, 'SPAN', 'Cross-origin client links must never be clickable');
     assert.equal(owners[1].children[0].children[1].children[0].tagName, 'SPAN', 'Executable service URLs must never be clickable');
-    assert.equal(owners[1].children[0].children[1].children[1].textContent, attack + ' (dato guardado)');
+    assert.equal(owners[1].children[0].children[1].children[1].textContent, 'Servicio: ' + attack + ' (dato guardado)');
     const missing = body.children[1].children[1].children[0].children[0];
     assert.equal(missing.children[0].textContent, 'Cliente sin identificar');
-    assert.equal(missing.children[1].children[1].textContent, 'Sin comprobar');
+    assert.equal(missing.children[1].children[1].textContent, 'Servicio: Sin comprobar');
     assert.equal(missing.children[2].textContent, 'Registro de IP sin ficha local de servicio');
     assert.equal(missing.children[3].textContent, 'Cliente verificado en UISP', 'Fresh client facts must not imply a fresh service status');
     assert.equal(owners[2].textContent, 'Se muestran las primeras 2 de 4 asignaciones guardadas.');
@@ -823,7 +823,7 @@ async function checkNetworkRecoveryPanel() {
     waiting.resolve({ status: 'ok', error: false, data: refreshed, recovery: { readOnly: true } });
     await verification;
     await fixture.navigate('network_conflicts');
-    assert.equal(body.children[0].children[1].children[0].children[0].children[1].children[1].textContent, 'Activo');
+    assert.equal(body.children[0].children[1].children[0].children[0].children[1].children[1].textContent, 'Servicio: Activo');
     assert.equal(body.children[0].children[1].children[0].children[0].children[2].textContent, 'Servicio verificado en UISP');
     function ownerItem(target, id) {
         for (const group of target.nodes.get('network-conflicts-body').children) {
@@ -844,18 +844,18 @@ async function checkNetworkRecoveryPanel() {
     Object.assign(verifiedSecond.conflicts[0].owners[1], { service_status: 'Suspendido', source: 'crm', client_source: 'crm', client_name: 'Segundo verificado' });
     await verifyOwner(fixture, 11506, verifiedSecond);
     assert.equal(ownerItem(fixture, 5347).children[0].children[0].textContent, 'Nombre verificado', 'Verifying another owner must preserve the first live client name');
-    assert.equal(ownerItem(fixture, 5347).children[0].children[1].children[1].textContent, 'Activo', 'Verifying another owner must preserve the first live service status');
+    assert.equal(ownerItem(fixture, 5347).children[0].children[1].children[1].textContent, 'Servicio: Activo', 'Verifying another owner must preserve the first live service status');
     assert.deepEqual(sourceTexts(ownerItem(fixture, 5347)), ['Servicio verificado en UISP', 'Cliente verificado en UISP']);
-    assert.equal(ownerItem(fixture, 11506).children[0].children[1].children[1].textContent, 'Suspendido');
+    assert.equal(ownerItem(fixture, 11506).children[0].children[1].children[1].textContent, 'Servicio: Suspendido');
     await fixture.navigate('system'); await fixture.navigate('network_conflicts');
-    assert.equal(ownerItem(fixture, 5347).children[0].children[1].children[1].textContent, 'Activo', 'Normal recovery list responses must preserve earlier CRM verification memory');
+    assert.equal(ownerItem(fixture, 5347).children[0].children[1].children[1].textContent, 'Servicio: Activo', 'Normal recovery list responses must preserve earlier CRM verification memory');
     const failedService = plain(details);
     Object.assign(failedService.conflicts[0].owners[0], { refresh_error: 'unavailable', client_source: 'cache' });
     await verifyOwner(fixture, 5347, failedService);
-    assert.deepEqual(sourceTexts(ownerItem(fixture, 5347)), ['Base del plugin'], 'A selected failed check must not reuse its prior successful verification');
-    assert.equal(ownerItem(fixture, 5347).children[0].children[1].children[1].textContent, 'Terminado (dato guardado)');
+    assert.deepEqual(sourceTexts(ownerItem(fixture, 5347)), ['Base del plugin', 'Cliente verificado en UISP'], 'A failed service check must replace its own result while keeping the independent client verification');
+    assert.equal(ownerItem(fixture, 5347).children[0].children[1].children[1].textContent, 'Servicio: Terminado (dato guardado)');
     assert.match(ownerItem(fixture, 5347).children[0].lastElementChild.textContent, /UISP no devolvió este servicio/);
-    assert.equal(ownerItem(fixture, 11506).children[0].children[1].children[1].textContent, 'Suspendido', 'Failure of a different selected service must preserve unrelated verified facts');
+    assert.equal(ownerItem(fixture, 11506).children[0].children[1].children[1].textContent, 'Servicio: Suspendido', 'Failure of a different selected service must preserve unrelated verified facts');
     const failedClient = plain(details);
     Object.assign(failedClient.conflicts[0].owners[0], { service_status: 'Activo', source: 'crm', client_source: 'cache', refresh_error: 'unavailable' });
     await verifyOwner(fixture, 5347, failedClient);
@@ -896,8 +896,8 @@ async function checkNetworkRecoveryPanel() {
     assert.deepEqual(plain(healthy.diagnostics()[0].data), {}, 'Reactive recovery reads must not request live CRM verification');
     const malformed = recoveryPanelFixture({ bootstrap: '{', details }); await flush();
     assert.equal(malformed.nodes.get('btn-cache').disabled, false, 'An invalid optional bootstrap must not break normal navigation');
-    assert.equal((markup.match(/(?:src|href)="(?:js|css)\/[^"?]+\?v=2\.0\.37"/g) || []).length, 5, 'Every panel asset must use the new revision to invalidate UISP browser caches');
-    assert(!markup.includes('v=2.0.36'));
+    assert.equal((markup.match(/(?:src|href)="(?:js|css)\/[^"?]+\?v=2\.0\.38"/g) || []).length, 5, 'Every panel asset must use the new revision to invalidate UISP browser caches');
+    assert(!markup.includes('v=2.0.37'));
     assert(apiSource.includes("'alert-triangle':"), 'The conflict warning must have its own local warning icon');
 }
 
@@ -912,7 +912,7 @@ async function checkNetworkCleanupPanel() {
     await fixture.navigate('network_conflicts');
     const owner = id => fixture.nodes.get('network-conflicts-body').children[0].children[1].children.find(item => item.children[0]?.children[1]?.children[0]?.textContent === 'Servicio #' + id);
     assert.match(fixture.nodes.get('network-conflicts-body').children[0].children[0].innerHTML, /2 asignaciones guardadas/);
-    assert.equal(owner(42).children[0].children[1].children[1].textContent, 'Activo (dato guardado)');
+    assert.equal(owner(42).children[0].children[1].children[1].textContent, 'Servicio: Activo (dato guardado)');
     assert.equal(owner(43).children[0].children[2].textContent, 'Registro de IP sin ficha local de servicio');
     const token = 'a'.repeat(64);
     const preview = { previewToken: token, expiresAt: '2099-10-14T13:00:00Z', candidates: [
@@ -981,6 +981,112 @@ async function checkNetworkCleanupPanel() {
     assert.equal(protectedFixture.nodes.get('network-cleanup-blocked').children.length, 2, 'A null preview token with no candidates must still render protected reasons');
     assert.equal(protectedFixture.nodes.get('network-cleanup-status').textContent, 'No hay asignaciones que puedan limpiarse con seguridad en esta revisión.');
     assert.equal(protectedFixture.nodes.get('apply-network-cleanup').disabled, true);
+}
+
+async function checkNetworkClientArchivePanel() {
+    const cached = (service, client, extra = {}) => ({ service_id: service, client_id: client, client_name: 'Cliente de ejemplo ' + (client ?? '?'), service_status: 'Activo',
+        client_archived: false, client_source: 'cache', source: 'cache', refresh_error: null, client_refresh_error: null, client_verified_at: null, ...extra });
+    const details = { duplicate_groups: 2, conflicts: [
+        { family: 'IPv4', address: '192.0.2.77', service_ids: [42, 43, 44, 45], service_count: 4, owners: [
+            cached(42, 17, { refresh_error: 'unavailable' }), cached(43, 17, { source: 'crm', service_status: 'Suspendido' }), cached(44, 18),
+            cached(45, null, { source: 'missing', client_source: 'missing', client_archived: null, service_status: 'Sin verificar' })
+        ] },
+        { family: 'IPv6', address: '2001:db8::/64', service_ids: [52, 53], service_count: 2, owners: [cached(52, 17), cached(53, 19, { client_archived: null })] }
+    ] };
+    function item(fixture, id) {
+        for (const row of fixture.nodes.get('network-conflicts-body').children) {
+            const owner = row.children[1].children.find(node => node.children[0]?.children[1]?.children[0]?.textContent === 'Servicio #' + id);
+            if (owner) return owner;
+        }
+        return null;
+    }
+    const archive = owner => owner.children[0].children[1].children.find(node => node.className.includes('client-lifecycle'));
+    const errors = owner => owner.children[0].children.filter(node => node.className.includes('conflict-refresh-error'));
+    function reply(fixture, data) { fixture.reply('list/network_conflicts', { status: 'ok', error: false, data, recovery: { readOnly: true } }); }
+    async function verifyClient(fixture, id, data) { reply(fixture, data); await item(fixture, id).children[3].fire('click'); await flush(); }
+    const fixture = recoveryPanelFixture({ bootstrap: { readOnly: true, details }, details }); await fixture.navigate('network_conflicts');
+    assert.equal(fixture.diagnostics().length, 0, 'Archive badges must use saved metadata without any automatic CRM query');
+    assert.equal(archive(item(fixture, 42)).textContent, 'Cliente no archivado (dato guardado)');
+    assert.equal(archive(item(fixture, 45)).textContent, 'Archivo del cliente sin comprobar');
+    assert.equal(archive(item(fixture, 53)).textContent, 'Archivo del cliente sin comprobar', 'A known client ID must not imply a known archive flag');
+    assert.equal(item(fixture, 45).children.length, 3, 'Unknown client identity must expose no Verify client button');
+    assert.equal(item(fixture, 42).children[3].textContent, 'Verificar cliente', 'A deleted service with a known cached client ID must still allow independent client verification');
+    const refreshed = plain(details);
+    for (const group of refreshed.conflicts) for (const owner of group.owners) if (owner.client_id === 17)
+        Object.assign(owner, { client_name: 'Cliente archivado de ejemplo', client_archived: true, client_source: 'crm', client_refresh_error: null, client_verified_at: '2026-10-14T13:00:00Z' });
+    const pending = deferred(); fixture.reply('list/network_conflicts', () => pending.promise);
+    const verification = item(fixture, 42).children[3].fire('click'); await flush();
+    assert.deepEqual(plain(fixture.diagnostics()[0].data), { refreshClients: true, serviceIds: [42] }, 'Verify client must request only the client mode and exactly one selected service ID');
+    assert.equal(item(fixture, 42).children[3].textContent, 'Verificando cliente...');
+    assert.equal(item(fixture, 43).children[3].textContent, 'Verificando cliente...', 'Shared-client rows must show the same in-flight state');
+    assert.equal(item(fixture, 44).children[3].disabled, true);
+    assert.equal(fixture.nodes.get('loader').style.display, 'none');
+    await item(fixture, 43).children[1].fire('click'); await item(fixture, 44).children[3].fire('click');
+    assert.equal(fixture.diagnostics().length, 1, 'Client checks must serialize with service verification and repeated client clicks');
+    await fixture.navigate('system'); await fixture.navigate('network_conflicts');
+    pending.resolve({ status: 'ok', error: false, data: refreshed, recovery: { readOnly: true } }); await verification;
+    for (const id of [42, 43, 52]) {
+        assert.equal(archive(item(fixture, id)).textContent, 'Cliente archivado');
+        assert(archive(item(fixture, id)).className.includes('badge-warning'), 'A confirmed archived client must be visually amber');
+        assert(item(fixture, id).children[0].children[0].className.includes('client-archived-name'), 'Confirmed archive state must visibly strike the client name');
+        assert(item(fixture, id).children[0].children.some(node => String(node.textContent).startsWith('Cliente verificado en UISP: ')), 'Successful client verification must show its timestamp');
+    }
+    assert.equal(item(fixture, 42).children[0].children[1].children[1].textContent, 'Servicio: Activo (dato guardado)', 'Archiving a client must never replace the independently cached active service status');
+    assert.match(errors(item(fixture, 42))[0].textContent, /UISP no devolvió este servicio/, 'Client-only success must preserve the existing service lookup failure');
+    assert.equal(item(fixture, 43).children[0].children[1].children[1].textContent, 'Servicio: Suspendido');
+    assert.equal(archive(item(fixture, 44)).textContent, 'Cliente no archivado (dato guardado)');
+    reply(fixture, details); await item(fixture, 42).children[1].fire('click'); await flush();
+    assert.equal(archive(item(fixture, 42)).textContent, 'Cliente archivado', 'A missing-service verification must not erase an earlier independent client result');
+    assert.equal(archive(item(fixture, 52)).textContent, 'Cliente archivado', 'Client results must remain shared across conflict groups');
+    await fixture.navigate('system'); await fixture.navigate('network_conflicts');
+    assert.equal(archive(item(fixture, 42)).textContent, 'Cliente archivado');
+    const checkedNotArchived = plain(details);
+    for (const group of checkedNotArchived.conflicts) for (const owner of group.owners) if (owner.client_id === 19)
+        Object.assign(owner, { client_archived: false, client_source: 'crm', client_verified_at: '2026-10-14T13:01:00Z' });
+    await verifyClient(fixture, 53, checkedNotArchived);
+    assert.equal(archive(item(fixture, 53)).textContent, 'Cliente no archivado');
+    assert(!archive(item(fixture, 53)).className.includes('badge-warning'));
+    assert(!item(fixture, 53).children[0].children[0].className.includes('client-archived-name'));
+    assert.equal(archive(item(fixture, 42)).textContent, 'Cliente archivado', 'Verifying another client must preserve previously checked archive flags');
+    const failed = plain(details);
+    for (const group of failed.conflicts) for (const owner of group.owners) if (owner.client_id === 17)
+        Object.assign(owner, { client_refresh_error: 'unavailable', client_source: 'cache', client_archived: false, client_name: 'Nombre guardado', client_verified_at: null });
+    failed.conflicts[0].owners[1].source = 'cache'; failed.conflicts[0].owners[1].service_status = 'Activo';
+    await verifyClient(fixture, 42, failed);
+    for (const id of [42, 43, 52]) {
+        assert.equal(archive(item(fixture, id)).textContent, 'Cliente no archivado (dato guardado)', 'A selected failed client check must replace the prior client result for every shared-client row');
+        assert(!item(fixture, id).children[0].children[0].className.includes('client-archived-name'));
+        assert(errors(item(fixture, id)).some(node => node.className.includes('conflict-client-error')));
+        assert(!item(fixture, id).children[0].children.some(node => String(node.textContent).startsWith('Cliente verificado en UISP: ')), 'A failed client check must not claim a successful verification timestamp');
+    }
+    assert.equal(item(fixture, 43).children[0].children[1].children[1].textContent, 'Servicio: Suspendido', 'Client-only failure must retain prior live service facts');
+    assert.match(errors(item(fixture, 42))[0].textContent, /UISP no devolvió este servicio/);
+    const otherService = plain(details);
+    Object.assign(otherService.conflicts[0].owners[2], { source: 'crm', client_source: 'crm', client_archived: false, client_verified_at: '2026-10-14T13:02:00Z' });
+    reply(fixture, otherService); await item(fixture, 44).children[1].fire('click'); await flush();
+    await fixture.navigate('system'); await fixture.navigate('network_conflicts');
+    assert(errors(item(fixture, 42)).some(node => node.className.includes('conflict-client-error')), 'Client errors must survive unrelated service checks and navigation');
+    assert.equal(fixture.writes().length, 0, 'Archive checks must never trigger writes or alter cleanup eligibility');
+    const clientTimeout = plain(details);
+    Object.assign(clientTimeout.conflicts[1].owners[1], { client_refresh_error: 'deadline', client_archived: null, client_verified_at: null });
+    await verifyClient(fixture, 53, clientTimeout);
+    assert.equal(archive(item(fixture, 53)).textContent, 'Archivo del cliente sin comprobar');
+    assert.match(errors(item(fixture, 53))[0].textContent, /consulta del cliente.*agotó el tiempo/, 'Client deadlines need their own explanation and must not infer archive state');
+    for (const legacy of [false, true]) {
+        const baseline = { duplicate_groups: 1, conflicts: [{ family: 'IPv4', address: '192.0.2.90', service_ids: [71, 72], service_count: 2, owners: [cached(71, 27), cached(72, 28)] }] };
+        const mixed = recoveryPanelFixture({ bootstrap: { readOnly: true, details: baseline }, details: baseline }); await mixed.navigate('network_conflicts');
+        const partial = plain(baseline);
+        Object.assign(partial.conflicts[0].owners[0], { source: 'crm', client_source: 'cache', refresh_error: legacy ? 'unavailable' : null, client_refresh_error: legacy ? undefined : 'unavailable' });
+        reply(mixed, partial); await item(mixed, 71).children[1].fire('click'); await flush();
+        assert.equal(errors(item(mixed, 71)).length, 1, 'Successful service plus failed client must show exactly one client-specific error');
+        assert.match(errors(item(mixed, 71))[0].textContent, /No se pudo verificar el cliente/);
+        const clientSuccess = plain(baseline);
+        Object.assign(clientSuccess.conflicts[0].owners[0], { client_source: 'crm', client_archived: true, client_name: 'Cliente restaurable', client_verified_at: '2026-10-14T13:03:00Z' });
+        await verifyClient(mixed, 71, clientSuccess);
+        assert.equal(item(mixed, 71).children[0].children[1].children[1].textContent, 'Servicio: Activo', 'Client-only success must keep the earlier successful service verification');
+        assert.equal(archive(item(mixed, 71)).textContent, 'Cliente archivado');
+        assert.equal(errors(item(mixed, 71)).length, 0, 'Successful client-only verification must clear the client error without falsely claiming that the verified service was unavailable');
+    }
 }
 
 async function checkNumericPlanEditors() {
@@ -2161,5 +2267,6 @@ async function checkLanguagePresentation() {
     await checkJobsRefresh();
     await checkNetworkRecoveryPanel();
     await checkNetworkCleanupPanel();
+    await checkNetworkClientArchivePanel();
     console.log('Panel regression checks passed: recovery navigation, escaped owner/status diagnostics, same-origin CRM links, explicit single-service verification without blocking navigation, update/upload guards and diagnostic downloads; partial provisioning counts/diagnostics/persistence and full totals, API contracts, old HTML/API manual editors, saved global contention flags and drafts, legacy zero ratios, configuration keyboard drafts during pending saves/reloads, language changes preserving open modal/custom values/scroll and asynchronous settings drafts, stale language response rejection, legacy global language preservation, inactive control omission, configuration failure recovery, stable local editor visibility, deferred plan saves and failure drafts, burst templates and math, custom plans, legacy sentinels, drafts, one-click saves, nonblocking notifications, safe text, numeric types, overrides, TLS, backup routes and failure cleanup.');
 })().catch(error => { console.error(error); process.exitCode = 1; });

@@ -2,9 +2,19 @@
 
 [Español](MEJORAS.md) · [PR description](PR_DESCRIPTION.md) · [Webhook setup and rationale](WEBHOOK_SETUP_EN.md)
 
-This revision combines [dhanielsnieto's changes in PR #89](https://github.com/MadaMzandu/uisp-ros-plugin/pull/89) with the subsequent fixes prepared in this repository. The comparison starts at `7ca8dc8`; the original PR ends at `056b89f`. The current candidate is **2.4.22**. The operator confirmed archived-plan speed recovery in their 2.4.19 installation. That confirmation covers this historical scenario; the remaining UISP and RouterOS integration scenarios still require their own checks before production readiness can be established.
+This revision combines [dhanielsnieto's changes in PR #89](https://github.com/MadaMzandu/uisp-ros-plugin/pull/89) with the subsequent fixes prepared in this repository. The comparison starts at `7ca8dc8`; the original PR ends at `056b89f`. The current candidate is **2.4.23**. The operator confirmed archived-plan speed recovery in their 2.4.19 installation. That confirmation covers this historical scenario; the remaining UISP and RouterOS integration scenarios still require their own checks before production readiness can be established.
 
 The plugin connects UISP CRM to MikroTik through the **native RouterOS API**, normally on port `8728`, or `8729` with TLS. The panel manages that integration; it does not switch the transport to SSH, WinBox, or REST.
+
+## Candidate 2.4.23: identify client archival independently
+
+The previous cache retained client names but omitted `isArchived`. Diagnostics could therefore show a service as “Active (saved data)” while failing to identify its archived client. The cache now retains a nullable archival flag, distinguishing archived, not archived, and unchecked. Migration adds the column while preserving existing rows; an absent flag never becomes false.
+
+IP conflicts shows client lifecycle separately from service status, with a highlighted archived indicator. **Verify client** reads the client record directly, including when an older service no longer exists. It only accepts clients associated with current diagnostic owners, deduplicates shared clients, and checks at most three clients per request with a soft 12-second budget for starting further reads. Source, verification time, and errors remain visible. These reads do not edit service records, cache, reservations, jobs, or routers. Opening the panel still uses saved data only.
+
+Normal cache refreshes and partial client events preserve the new field. A legacy cache remains read-only during a paused migration; Verify client explicitly checks its current state. Archival alone never makes a reservation eligible for cleanup: all 2.4.22 checks and ownership protections remain in place.
+
+**2.4.23 validation passed:** 32 isolated suites, syntax checks for 44 first-party PHP files, and installer verification covering 356 entries, 123 first-party files, and 13 locked dependencies. Report: `dist/verification-2.4.23.json`. SHA-256: `724ec7240531954968fbe4a516e473013e9b4b184cbb114fe4f6095e508b598f`. Browser checks also covered the independent archival indicator and direct client verification with synthetic data. Migration and diagnostic reads leave services intact and retain reservation protections. Real UISP integration retains its own verification scope.
 
 ## Candidate 2.4.22: reviewed cleanup of obsolete IP reservations
 
@@ -70,7 +80,7 @@ This revision's standalone warning is superseded by 2.4.21 view mode. Its report
 - Evidence of partially creating a suspension profile is preserved. Cleanup verifies an existing profile before changing accounts or sessions; mismatched frozen values remain an error. A missing profile is not recreated during cleanup, and an existing profile is not overwritten.
 - Connection handling is unchanged: each service batch opens and closes its own API connection; queries and cleanup can open additional connections. API login/logout messages alone do not mean PPP sessions were disconnected. No connection sharing between batches was introduced.
 
-The historical 2.4.17 validation passed 27 suites, checks for 39 first-party PHP files, and verification of a ZIP containing 351 entries, 118 first-party files, and 13 pinned dependencies. Its report and hash are retained later in this changelog; the validation status of current candidate 2.4.22 is recorded above.
+The historical 2.4.17 validation passed 27 suites, checks for 39 first-party PHP files, and verification of a ZIP containing 351 entries, 118 first-party files, and 13 pinned dependencies. Its report and hash are retained later in this changelog; the validation status of current candidate 2.4.23 is recorded above.
 
 ## Changes contributed in PR #89
 
@@ -297,7 +307,7 @@ Later production evidence identified missing tokens and a URL pasted as the secr
 
 ## Installation and validation readiness
 
-The current version is 2.4.22. Its validation status appears at the beginning of this changelog. Archived-plan recovery confirmation belongs to 2.4.19 and retains its historical scope. When duplicate IPs are reported, inspect all six views and review their owners. **Review cleanup** previews a selection of obsolete reservations and allows explicit confirmation of eligible entries with a private backup. Pending work, unresolved recovery, and an account's applied state block removal of its reservations. The generated backup remains downloadable from **System**, including after a reload. Resolve any remaining conflicts and reload to complete migration; other writes and provisioning stay paused until then. The [real-environment test guide](PRUEBAS_REALES.md) contains 81 scenarios for the remaining checks.
+The current version is 2.4.23. Its validation status appears at the beginning of this changelog. Archived-plan recovery confirmation belongs to 2.4.19 and retains its historical scope. When duplicate IPs are reported, inspect all six views and review their owners. **Review cleanup** previews a selection of obsolete reservations and allows explicit confirmation of eligible entries with a private backup. Pending work, unresolved recovery, and an account's applied state block removal of its reservations. The generated backup remains downloadable from **System**, including after a reload. Resolve any remaining conflicts and reload to complete migration; other writes and provisioning stay paused until then. The [real-environment test guide](PRUEBAS_REALES.md) contains 85 scenarios for the remaining checks.
 
 ### Historical 2.4.17 result
 

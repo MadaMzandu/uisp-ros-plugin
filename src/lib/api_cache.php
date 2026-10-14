@@ -1,5 +1,5 @@
 <?php
-const MyCacheVersion = '1.8.11';
+const MyCacheVersion = '1.8.12';
 
 include_once 'api_trim.php';
 include_once 'api_ucrm.php';
@@ -66,9 +66,16 @@ class ApiCache{
             $schema_file = 'includes/cache.sql';
             $schema = file_get_contents($schema_file);
             if($this->dbCache()->exec($schema)){//reset cache time
+                // CREATE TABLE IF NOT EXISTS cannot add fields to an existing
+                // cache. Preserve every old row and leave its archive status
+                // unknown until a real CRM value arrives.
+                $this->dbCache()->transaction(function () {
+                    if (!$this->has_archive_column()) $this->dbCache()->exec('ALTER TABLE "clients" ADD COLUMN "isArchived" INTEGER');
+                });
                 $state = ['cache_version' => MyCacheVersion,
                     'last_cache' => '2020-01-01','last_net' => '2020-01-01'];
                 $this->db()->saveConfig($state);
+                $this->_conf = null;
                 $timer->stop();
             }
         }
@@ -160,7 +167,10 @@ class ApiCache{
             $values[] = array_diff_key($item,['network' => 1,'unmsClientSiteId' => 1]);
         }
         if($values){
-            $this->dbCache()->insert($values,$table,INSERT_REPLACE);
+            // Client webhooks may omit lifecycle facts. Update supplied fields
+            // without clearing an archive flag learned from an earlier event.
+            if ($table === 'clients') $this->dbCache()->edit($values, $table);
+            else $this->dbCache()->insert($values,$table,INSERT_REPLACE);
         }
     }
 
@@ -264,8 +274,17 @@ class ApiCache{
         if(!is_file($file)) return true;
         if(!$this->dbCache()->has_tables(['clients','services','network','sites'])){
             return true ;}
+        if (!$this->has_archive_column()) return true;
         $version = $this->conf()->cache_version ?? '0.0.0';
         return $version != MyCacheVersion ;
+    }
+
+    private function has_archive_column(): bool
+    {
+        foreach ($this->dbCache()->selectCustom('PRAGMA table_info("clients")') ?? [] as $column) {
+            if (($column['name'] ?? null) === 'isArchived') return true;
+        }
+        return false;
     }
 
     private function attrs(): ApiAttributes { return myAttr(); }

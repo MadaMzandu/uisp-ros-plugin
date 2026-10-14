@@ -50,6 +50,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let recoveryDetails = null;
     let recoveryLoading = false;
     let verifyingService = null;
+    let verifyingClient = null;
     let cleanupBusy = false;
     let cleanupPreview = null;
     let cleanupBoxes = [];
@@ -90,7 +91,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function applyRecovery(state) {
         if (state?.readOnly !== true) return;
         recoveryReadOnly = true;
-        if (state.details && typeof state.details === 'object') recoveryDetails = retainVerifiedOwners(recoveryDetails, state.details, verifyingService);
+        if (state.details && typeof state.details === 'object') recoveryDetails = retainVerifiedOwners(recoveryDetails, state.details, verifyingService, verifyingClient);
         const total = Number(recoveryDetails?.duplicate_groups);
         const count = cleanupRemainingCount ?? (Number.isSafeInteger(total) && total >= 0 ? total : (Array.isArray(recoveryDetails?.conflicts) ? recoveryDetails.conflicts.length : 0));
         byId('network-warning').style.display = 'flex';
@@ -129,7 +130,7 @@ document.addEventListener('DOMContentLoaded', () => {
         return link;
     }
 
-    function retainVerifiedOwners(previous, incoming, selectedService) {
+    function retainVerifiedOwners(previous, incoming, selectedService, selectedClient = null) {
         if (!incoming || !Array.isArray(incoming.conflicts)) return incoming;
         const groups = new Map((Array.isArray(previous?.conflicts) ? previous.conflicts : []).map(group =>
             [JSON.stringify([group.family, group.address]), group]));
@@ -139,17 +140,22 @@ document.addEventListener('DOMContentLoaded', () => {
             const owners = new Map((Array.isArray(priorGroup.owners) ? priorGroup.owners : []).map(owner => [Number(owner.service_id), owner]));
             return { ...group, owners: group.owners.map(owner => {
                 const prior = owners.get(Number(owner.service_id));
-                // Only reuse facts for an unchanged assignment and client. A
-                // selected owner's latest outcome, including failure, wins.
-                if (!prior || Number(owner.service_id) === selectedService || owner.client_id !== prior.client_id) return owner;
+                // Service and client verifications have independent outcomes.
+                // Reuse facts only for the same assignment and client identity.
+                if (!prior || owner.client_id !== prior.client_id) return owner;
+                const serviceSelected = Number(owner.service_id) === selectedService;
+                const clientSelected = owner.client_id != null && owner.client_id === selectedClient;
                 const retained = { ...owner };
-                if (prior.source === 'crm' && owner.source !== 'crm') {
+                if (!serviceSelected && prior.source === 'crm' && owner.source !== 'crm') {
                     for (const field of ['service_status', 'service_status_code', 'source']) retained[field] = prior[field];
                 }
-                if (prior.client_source === 'crm' && owner.client_source !== 'crm') {
-                    for (const field of ['client_name', 'client_archived', 'client_deleted', 'client_source']) retained[field] = prior[field];
+                const freshClient = owner.client_source === 'crm' || owner.client_refresh_error
+                    || (serviceSelected && owner.source === 'crm' && owner.refresh_error);
+                const priorClientCheck = prior.client_source === 'crm' || prior.client_refresh_error || prior.client_verified_at;
+                if (!clientSelected && !freshClient && priorClientCheck) {
+                    for (const field of ['client_name', 'client_archived', 'client_deleted', 'client_source', 'client_refresh_error', 'client_verified_at']) retained[field] = prior[field];
                 }
-                if (prior.refresh_error && !owner.refresh_error && (owner.source !== 'crm' || owner.client_source !== 'crm')) retained.refresh_error = prior.refresh_error;
+                if (!serviceSelected && prior.refresh_error && !owner.refresh_error) retained.refresh_error = prior.refresh_error;
                 return retained;
             }) };
         }) };
@@ -182,14 +188,18 @@ document.addEventListener('DOMContentLoaded', () => {
                 const identity = document.createElement('div');
                 identity.className = 'conflict-identity';
                 const clientLabel = owner.client_name || (owner.client_id ? t('Cliente #{id}', { id: owner.client_id }) : t('Cliente sin identificar'));
-                identity.appendChild(conflictLink(clientLabel, owner.client_url, 'client'));
+                const clientLink = conflictLink(clientLabel, owner.client_url, 'client');
+                const archived = owner.client_archived === true || owner.client_archived === 1;
+                const notArchived = owner.client_archived === false || owner.client_archived === 0;
+                if (archived && owner.client_source === 'crm') clientLink.className += ' client-archived-name';
+                identity.appendChild(clientLink);
                 const meta = document.createElement('div');
                 meta.className = 'conflict-owner-meta';
                 meta.appendChild(conflictLink(t('Servicio #{id}', { id: owner.service_id }), owner.service_url, 'service'));
                 const knownState = owner.service_status && owner.service_status !== 'Sin verificar';
                 const state = knownState ? t(String(owner.service_status)) : t('Sin comprobar');
-                const states = [knownState && owner.source !== 'crm' ? t('{state} (dato guardado)', { state }) : state];
-                if (owner.client_archived === true || owner.client_archived === 1) states.push(t(owner.client_source === 'crm' ? 'Cliente archivado' : 'Cliente archivado (dato guardado)'));
+                const serviceState = knownState && owner.source !== 'crm' ? t('{state} (dato guardado)', { state }) : state;
+                const states = [t('Servicio: {state}', { state: serviceState })];
                 if (owner.client_deleted === true || owner.client_deleted === 1) states.push(t('Cliente eliminado'));
                 for (const label of states) {
                     const badge = document.createElement('span');
@@ -197,6 +207,11 @@ document.addEventListener('DOMContentLoaded', () => {
                     badge.textContent = t(String(label));
                     meta.appendChild(badge);
                 }
+                const archiveBadge = document.createElement('span');
+                archiveBadge.className = `badge badge-${archived ? 'warning' : 'neutral'} client-lifecycle`;
+                const clientState = t(archived ? 'Cliente archivado' : notArchived ? 'Cliente no archivado' : 'Archivo del cliente sin comprobar');
+                archiveBadge.textContent = (archived || notArchived) && owner.client_source !== 'crm' ? t('{state} (dato guardado)', { state: clientState }) : clientState;
+                meta.appendChild(archiveBadge);
                 identity.appendChild(meta);
                 const source = document.createElement('p');
                 source.className = 'conflict-source';
@@ -206,11 +221,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (owner.client_source === 'crm' || owner.source === 'crm') {
                     const clientSource = document.createElement('p');
                     clientSource.className = 'conflict-source';
-                    translatedText(clientSource, owner.client_source === 'crm' ? 'Cliente verificado en UISP'
-                        : owner.client_source === 'cache' ? 'Cliente: datos guardados' : 'Cliente: sin datos guardados');
+                    translatedText(clientSource, owner.client_source === 'crm' ? (owner.client_verified_at ? 'Cliente verificado en UISP: {time}' : 'Cliente verificado en UISP')
+                        : owner.client_source === 'cache' ? 'Cliente: datos guardados' : 'Cliente: sin datos guardados', { time: formatDate(owner.client_verified_at) });
                     identity.appendChild(clientSource);
                 }
-                if (owner.refresh_error) {
+                if (owner.refresh_error && (owner.source !== 'crm' || (owner.client_source !== 'crm' && !owner.client_refresh_error))) {
                     const error = document.createElement('p');
                     error.className = 'conflict-refresh-error';
                     translatedText(error, owner.refresh_error === 'deadline' ? 'La consulta a UISP agotó el tiempo disponible. Vuelve a verificar este servicio.'
@@ -218,15 +233,23 @@ document.addEventListener('DOMContentLoaded', () => {
                         : 'UISP no devolvió este servicio. Puede estar eliminado o no ser accesible; compruébalo en el CRM.');
                     identity.appendChild(error);
                 }
+                if (owner.client_refresh_error) {
+                    const clientError = document.createElement('p');
+                    clientError.className = 'conflict-refresh-error conflict-client-error';
+                    translatedText(clientError, owner.client_refresh_error === 'deadline'
+                        ? 'La consulta del cliente a UISP agotó el tiempo disponible. Vuelve a verificar el cliente.'
+                        : 'No se pudo verificar el cliente en UISP. Se conservan los datos guardados.');
+                    identity.appendChild(clientError);
+                }
                 item.appendChild(identity);
                 const id = Number(owner.service_id);
                 if (Number.isSafeInteger(id) && id > 0) {
                     const verify = document.createElement('button');
                     verify.type = 'button'; verify.className = 'btn btn-secondary conflict-verify';
                     translatedText(verify, verifyingService === id ? 'Verificando...' : 'Verificar en UISP');
-                    verify.disabled = verifyingService !== null || cleanupBusy || cleanupRequiresReload;
+                    verify.disabled = verifyingService !== null || verifyingClient !== null || cleanupBusy || cleanupRequiresReload;
                     verify.addEventListener('click', async () => {
-                        if (verifyingService !== null || cleanupBusy || cleanupRequiresReload) return;
+                        if (verifyingService !== null || verifyingClient !== null || cleanupBusy || cleanupRequiresReload) return;
                         const previous = recoveryDetails;
                         verifyingService = id;
                         renderNetworkConflictsTable();
@@ -245,9 +268,32 @@ document.addEventListener('DOMContentLoaded', () => {
                     const cleanup = document.createElement('button');
                     cleanup.type = 'button'; cleanup.className = 'btn btn-secondary conflict-cleanup';
                     translatedText(cleanup, 'Revisar limpieza');
-                    cleanup.disabled = verifyingService !== null || cleanupBusy || cleanupRequiresReload;
+                    cleanup.disabled = verifyingService !== null || verifyingClient !== null || cleanupBusy || cleanupRequiresReload;
                     cleanup.addEventListener('click', () => previewCleanup([id]));
                     item.appendChild(cleanup);
+                    const clientId = Number(owner.client_id);
+                    if (Number.isSafeInteger(clientId) && clientId > 0) {
+                        const verifyClient = document.createElement('button');
+                        verifyClient.type = 'button'; verifyClient.className = 'btn btn-secondary conflict-client-verify';
+                        translatedText(verifyClient, verifyingClient === clientId ? 'Verificando cliente...' : 'Verificar cliente');
+                        verifyClient.disabled = verifyingService !== null || verifyingClient !== null || cleanupBusy || cleanupRequiresReload;
+                        verifyClient.addEventListener('click', async () => {
+                            if (verifyingService !== null || verifyingClient !== null || cleanupBusy || cleanupRequiresReload) return;
+                            const previous = recoveryDetails;
+                            verifyingClient = clientId;
+                            renderNetworkConflictsTable();
+                            try {
+                                const response = checked(await api.getNetworkConflicts({ refreshClients: true, serviceIds: [id] }));
+                                recoveryDetails = retainVerifiedOwners(previous, response.data, null, clientId);
+                                applyRecovery({ readOnly: true, details: recoveryDetails });
+                            } catch (error) { notify(error.message, 'error'); }
+                            finally {
+                                verifyingClient = null;
+                                if (currentView === 'network_conflicts') renderNetworkConflictsTable();
+                            }
+                        });
+                        item.appendChild(verifyClient);
+                    }
                 }
                 ownersCell.appendChild(item);
             }
@@ -281,11 +327,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function updateCleanupButton() {
         const selected = cleanupBoxes.filter(box => box.checked).length;
-        byId('apply-network-cleanup').disabled = cleanupBusy || !cleanupPreview || selected === 0 || selected > 3;
+        byId('apply-network-cleanup').disabled = cleanupBusy || verifyingService !== null || verifyingClient !== null || !cleanupPreview || selected === 0 || selected > 3;
     }
 
     async function previewCleanup(serviceIds) {
-        if (cleanupBusy || verifyingService !== null || cleanupRequiresReload || !cleanupModal) return;
+        if (cleanupBusy || verifyingService !== null || verifyingClient !== null || cleanupRequiresReload || !cleanupModal) return;
         const ids = [...new Set(serviceIds.map(Number))].filter(id => Number.isSafeInteger(id) && id > 0).slice(0, 3);
         if (!ids.length) return;
         cleanupBusy = true; cleanupPreview = null; cleanupBoxes = [];
@@ -334,7 +380,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     byId('apply-network-cleanup')?.addEventListener('click', async () => {
-        if (cleanupBusy || !cleanupPreview) return;
+        if (cleanupBusy || verifyingService !== null || verifyingClient !== null || !cleanupPreview) return;
         const ids = cleanupBoxes.filter(box => box.checked).map(box => Number(box.value));
         if (!ids.length || ids.length > 3) return;
         cleanupBusy = true; updateCleanupButton();

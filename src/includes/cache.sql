@@ -4,6 +4,7 @@ CREATE TABLE IF NOT EXISTS "clients" (
      "company"	TEXT COLLATE NOCASE,
      "firstName"	TEXT COLLATE NOCASE,
      "lastName"	TEXT COLLATE NOCASE,
+     "isArchived"	INTEGER,
      PRIMARY KEY("id"));
 CREATE TABLE IF NOT EXISTS "network" (
      "id"	INTEGER NOT NULL,

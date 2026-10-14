@@ -397,11 +397,56 @@ PHP
             'Owner refresh read beyond selected conflict services or used unexpected CRM paths');
         checkMigrationConflict(recoveryDiskSnapshot()===$before, 'Explicit owner refresh published cache data or changed provisioning state');
 
+        // The client archive check must remain available even when a legacy
+        // service no longer has a CRM page. It consults only the saved owner,
+        // never the service endpoint, and does not turn the recovery screen
+        // into a general-purpose client lookup or initialize setup/cache.
+        $clientRequest = ['changeType'=>'list','target'=>'network_conflicts',
+            'data'=>['refreshClients'=>true,'serviceIds'=>[7,8,999]]];
+        foreach ([[], $reader + ['Origin'=>'https://untrusted-fixture.example']] as $headers) {
+            $rejected = $request($clientRequest,$headers);
+            checkMigrationConflict($rejected['http']===403 && ($rejected['response']['data'] ?? null)===[],
+                'Client-only archive lookup bypassed administrative authentication or origin protection');
+            $readsAfterRejection = array_map(static fn($line)=>json_decode($line,true),
+                file($directory . '/sdk-reads.jsonl',FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES));
+            checkMigrationConflict($readsAfterRejection===$sdkReads && recoveryDiskSnapshot()===$before,
+                'Rejected client-only lookup called CRM or changed recovery state');
+        }
+        $clientRefreshed = $request($clientRequest,$reader);
+        $clientGroup = conflictByAddress($clientRefreshed['response']['data'],'IPv4','203.0.113.7');
+        $archivedOwner = $clientGroup['owners'][0];
+        $currentOwner = $clientGroup['owners'][1];
+        checkMigrationConflict($clientRefreshed['http']===200 && ($clientRefreshed['response']['message'] ?? null)==='network_diagnostics'
+            && ($clientRefreshed['response']['recovery']['readOnly'] ?? null)===true
+            && $archivedOwner['service_id']===7 && $archivedOwner['client_id']===70
+            && $archivedOwner['client_archived']===true && $archivedOwner['client_source']==='crm'
+            && $archivedOwner['source']==='database' && $archivedOwner['service_status_code']===2
+            && $archivedOwner['refresh_error']===null && $archivedOwner['client_refresh_error']===null
+            && is_string($archivedOwner['client_verified_at'])
+            && $currentOwner['service_id']===8 && $currentOwner['client_id']===80
+            && $currentOwner['client_archived']===false && $currentOwner['client_source']==='crm'
+            && $currentOwner['source']==='database' && $currentOwner['service_status_code']===1
+            && $currentOwner['refresh_error']===null && $currentOwner['client_refresh_error']===null,
+            'Client-only lookup changed local service facts, failed on a missing service or lost confirmed archive state');
+        $clientReads = array_map(static fn($line)=>json_decode($line,true),
+            file($directory . '/sdk-reads.jsonl',FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES));
+        checkMigrationConflict(array_slice($clientReads,count($sdkReads))===['clients/70','clients/80']
+            && ($clientRefreshed['response']['data']['owner_refresh']['services_attempted'] ?? null)===0
+            && ($clientRefreshed['response']['data']['owner_refresh']['api_requests'] ?? null)===0
+            && ($clientRefreshed['response']['data']['client_refresh']['clients_attempted'] ?? null)===2
+            && ($clientRefreshed['response']['data']['client_refresh']['api_requests'] ?? null)===2,
+            'Client-only archive lookup called a service, unknown client, or broad collection endpoint');
+        checkMigrationConflict(recoveryDiskSnapshot()===$before,
+            'Client-only lookup initialized setup/cache/queue, rotated backups or wrote provisioning state');
+
         foreach ([['changeType'=>'list','target'=>'unknown'],['changeType'=>'list','target'=>'devices','action'=>'edit'],
             ['changeType'=>'list','target'=>'devices','data'=>[]],['changeType'=>'list','target'=>'devices','entity'=>''],
             ['changeType'=>'list','target'=>'services','data'=>['did'=>'1 OR 1=1']],
             ['changeType'=>'list','target'=>'network_conflicts','action'=>'edit'],
-            ['changeType'=>'list','target'=>'network_conflicts','data'=>['serviceIds'=>'7']],'{"malformed":'] as $invalid) {
+            ['changeType'=>'list','target'=>'network_conflicts','data'=>['serviceIds'=>'7']],
+            ['changeType'=>'list','target'=>'network_conflicts','data'=>['refresh'=>true,'refreshClients'=>true,'serviceIds'=>[7]]],
+            ['changeType'=>'list','target'=>'network_conflicts','data'=>['refreshClients'=>'true','serviceIds'=>[7]]],
+            '{"malformed":'] as $invalid) {
             $response = $request($invalid,$admin);
             checkMigrationConflict($response['http']===400 && ($response['response']['error'] ?? null)===true,
                 'Recovery accepted malformed, unallowed or write-like list request');
@@ -443,7 +488,9 @@ PHP
             file_put_contents('data/config.json',json_encode($settings));
             foreach (['service','client'] as $entity) {
                 $event = ['entity'=>$entity,'entityId'=>$entity==='service' ? 7 : 70,'changeType'=>'edit',
-                    'uuid'=>'MIGRATION-PRIVACY-FIXTURE-UUID-0001'];
+                    'uuid'=>'MIGRATION-PRIVACY-FIXTURE-UUID-0001','target'=>'network_conflicts',
+                    'action'=>'list','data'=>['refreshClients'=>true,'serviceIds'=>[7]]];
+                $readsBeforeWebhook = file_get_contents($directory . '/sdk-reads.jsonl');
                 $response = $request($event,$headers);
                 checkMigrationConflict($response['http']===400 && ($response['response']['error'] ?? null)===true
                     && ($response['response']['message'] ?? null)==='duplicate_network_addresses_resolve_before_upgrade'
@@ -455,6 +502,8 @@ PHP
                     'Compatibility/authenticated webhook disclosed private conflict diagnostics');
                 checkMigrationConflict(recoveryDiskSnapshot()===$before,
                     'Rejected webhook migration changed persistent recovery or operational state');
+                checkMigrationConflict(file_get_contents($directory . '/sdk-reads.jsonl')===$readsBeforeWebhook,
+                    'A webhook diagnostic hint called CRM without an administrative read grant');
             }
         }
         file_put_contents('data/config.json',json_encode(['webhookSecret'=>$secret]));
@@ -565,6 +614,7 @@ class UcrmApi {
         if ($path==='clients/services/7') return ['id'=>7,'clientId'=>70,'status'=>2];
         if ($path==='clients/services/8') throw new \GuzzleHttp\Exception\RequestException(404);
         if ($path==='clients/70') return ['id'=>70,'companyName'=>'Archived fixture client','isArchived'=>true];
+        if ($path==='clients/80') return ['id'=>80,'companyName'=>'Current fixture client','isArchived'=>false];
         throw new \RuntimeException('Unexpected CRM read in migration-conflict tests');
     }
 }
@@ -722,7 +772,6 @@ try {
     publicMigrationWebhookChecks($directory);
     $cacheFixture = $fixtures[] = new ApiSqlite('data/cache.db');
     $cacheFixture->exec(file_get_contents('includes/cache.sql'));
-    $cacheFixture->exec('ALTER TABLE clients ADD COLUMN isArchived INTEGER');
     $cacheFixture->insert([['id'=>70,'company'=>'Cached archived client','isArchived'=>1],
         ['id'=>80,'firstName'=>'Cached','lastName'=>'Active client','isArchived'=>0]],'clients');
     $cacheFixture->insert([['id'=>7,'clientId'=>70,'status'=>2],['id'=>8,'clientId'=>80,'status'=>1]],'services');

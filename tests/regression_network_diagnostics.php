@@ -116,6 +116,96 @@ try {
         && !class_exists('ApiJobQueue',false) && !class_exists('ApiSetup',false), 'Local diagnostic loaded operational dependencies');
     checkNetworkDiagnostic(diagnosticTreeSnapshot($directory)===$before, 'Default diagnostic changed persistent files');
 
+    // Archive verification is independent of the service endpoint. A stored
+    // client remains identifiable even after its old service is unavailable.
+    $responses = ['clients/10'=>['id'=>10,'firstName'=>'Current archive','lastName'=>'Fixture','isArchived'=>true]];
+    $clientOnly = $api->enrich($details,false,[2],true);
+    checkNetworkDiagnostic($calls===['clients/10'] && $clientOnly['client_refresh']['api_requests']===1
+        && $clientOnly['client_refresh']['clients_attempted']===1 && $clientOnly['owner_refresh']['requested']===false,
+        'Client-only verification looked up a service or repeated a shared client request');
+    foreach ([1,2] as $id) {
+        $owner = diagnosticOwner($clientOnly,$id);
+        $previous = diagnosticOwner($local,$id);
+        checkNetworkDiagnostic($owner['client_archived']===true && $owner['client_source']==='crm'
+            && $owner['client_name']==='Current archive Fixture' && $owner['client_refresh_error']===null
+            && is_string($owner['client_verified_at']) && strtotime($owner['client_verified_at'])!==false,
+            'Client-only archive verification did not update every owner of its known client');
+        foreach (['service_status_code','service_status','source','refresh_error'] as $field) {
+            checkNetworkDiagnostic($owner[$field]===$previous[$field], 'Client-only verification changed independent service facts');
+        }
+    }
+    $calls = [];
+    $responses['clients/10'] = new RuntimeException('Unavailable fixture archive client');
+    $clientFailure = diagnosticOwner($api->enrich($details,false,[2],true),2);
+    checkNetworkDiagnostic($calls===['clients/10'] && $clientFailure['client_name']==='Fixture Client'
+        && $clientFailure['client_archived']===null && $clientFailure['client_source']==='cache'
+        && $clientFailure['client_refresh_error']==='unavailable' && $clientFailure['client_verified_at']===null
+        && $clientFailure['refresh_error']===null, 'Client lookup failure erased local facts or reported a service failure');
+    foreach ([['id'=>10,'isArchived'=>false],['id'=>10,'isActive'=>false],['id'=>10,'isArchived'=>'invalid'],
+        ['id'=>999,'isArchived'=>true]] as $response) {
+        $calls = [];
+        $responses['clients/10'] = $response;
+        $owner = diagnosticOwner($api->enrich($details,false,[2],true),2);
+        $expectedArchive = array_key_exists('isArchived',$response) && $response['isArchived']===false ? false : null;
+        checkNetworkDiagnostic($calls===['clients/10'] && $owner['client_archived']===$expectedArchive,
+            'Client-only verification confused an invalid, missing or restored archive state');
+        checkNetworkDiagnostic($owner['client_refresh_error']===($response['id']===999 ? 'unavailable' : null),
+            'Client-only verification accepted a mismatched client identity');
+    }
+    $calls = [];
+    $responses = ['clients/10'=>['id'=>10,'isArchived'=>true], 'clients/30'=>['id'=>30,'isArchived'=>false],
+        'clients/40'=>['id'=>40,'isArchived'=>true]];
+    $boundedClients = $api->enrich(diagnosticDetails(range(1,9)),false,[1,2,3,4,5,6,7],true);
+    checkNetworkDiagnostic($calls===['clients/10','clients/30','clients/40']
+        && $boundedClients['client_refresh']['api_requests']===3 && $boundedClients['client_refresh']['clients_attempted']===3
+        && $boundedClients['client_refresh']['truncated']===true
+        && diagnosticOwner($boundedClients,5)['client_source']==='missing', 'Client-only verification exceeded three distinct clients');
+    $calls = [];
+    $outsideClients = $api->enrich($details,false,[999,11,true,false,0,'../1'],true);
+    checkNetworkDiagnostic($calls===[] && $outsideClients['client_refresh']['clients_attempted']===0,
+        'Unknown service/client IDs became arbitrary client-only CRM requests');
+    $clientNow = 100.0;
+    $timedClientRequest = static function (string $path) use (&$calls,&$clientNow) {
+        $calls[] = $path;
+        $clientNow += 13.0;
+        return ['id'=>10,'isArchived'=>true];
+    };
+    $clientClock = static function () use (&$clientNow): float { return $clientNow; };
+    $timedClients = (new ApiNetworkDiagnostics($timedClientRequest,$dataPath,$cachePath,$clientClock))
+        ->enrich($details,false,[1,3],true);
+    checkNetworkDiagnostic($calls===['clients/10'] && $timedClients['client_refresh']['timed_out']===true
+        && $timedClients['client_refresh']['api_requests']===1
+        && diagnosticOwner($timedClients,3)['client_refresh_error']==='deadline'
+        && diagnosticOwner($timedClients,3)['refresh_error']===null, 'Client-only launch deadline changed service errors or allowed further reads');
+    rejectNetworkDiagnostic(fn()=>$api->enrich($details,true,[1],true),'invalid_diagnostic_refresh_mode');
+    checkNetworkDiagnostic(diagnosticTreeSnapshot($directory)===$before, 'Client-only CRM verification changed cache, queue, databases or backups');
+
+    foreach ([true,false,null] as $archiveState) {
+        $calls = [];
+        $responses = ['clients/services/1'=>['id'=>1,'clientId'=>10,'status'=>1],
+            'clients/10'=>$archiveState===null ? new RuntimeException('Unavailable shared fixture client')
+                : ['id'=>10,'firstName'=>'Shared live fixture','isArchived'=>$archiveState]];
+        $shared = $api->enrich($details,true,[1]);
+        checkNetworkDiagnostic($calls===['clients/services/1','clients/10']
+            && $shared['owner_refresh']['services_attempted']===1 && $shared['owner_refresh']['api_requests']===2,
+            'Shared client propagation fetched an unselected service or repeated the client read');
+        $selectedOwner = diagnosticOwner($shared,1);
+        $unselectedOwner = diagnosticOwner($shared,2);
+        foreach (['client_source','client_name','client_archived','client_refresh_error','client_verified_at'] as $field) {
+            checkNetworkDiagnostic($selectedOwner[$field]===$unselectedOwner[$field],
+                'Combined service verification left another assignment with a different fact about the same client');
+        }
+        checkNetworkDiagnostic($unselectedOwner['client_archived']===$archiveState
+            && $unselectedOwner['client_refresh_error']===($archiveState===null ? 'unavailable' : null),
+            'Combined verification did not propagate a client restore, archive or failure');
+        foreach (['service_status_code','service_status','source','refresh_error'] as $field) {
+            checkNetworkDiagnostic($unselectedOwner[$field]===diagnosticOwner($local,2)[$field],
+                'Shared client propagation changed an unselected service state or error');
+        }
+    }
+    checkNetworkDiagnostic(diagnosticTreeSnapshot($directory)===$before, 'Shared client propagation changed persistent plugin state');
+
+    $calls = [];
     $responses = ['clients/services/1'=>['id'=>1,'clientId'=>10,'status'=>1,'privateFixture'=>'PRIVATE-LIVE-SERVICE'],
         'clients/services/2'=>new RuntimeException('HTTP 404 PRIVATE-TRANSPORT-DETAIL'),
         'clients/services/3'=>['id'=>3,'clientId'=>30,'status'=>8],
@@ -135,7 +225,8 @@ try {
         'An API 404 inferred deletion or erased usable local service facts');
     $owner = diagnosticOwner($live,3);
     checkNetworkDiagnostic($owner['client_name']==='Fixture Company' && $owner['client_archived']===null
-        && $owner['client_source']==='cache' && $owner['refresh_error']==='unavailable', 'A mismatched live client response was accepted');
+        && $owner['client_source']==='cache' && $owner['refresh_error']===null
+        && $owner['client_refresh_error']==='unavailable', 'A mismatched live client response was accepted or reported as a service failure');
 
     $calls = [];
     $responses['clients/10'] = ['id'=>10,'firstName'=>'Fixture','lastName'=>'Client','isActive'=>false];
@@ -196,7 +287,7 @@ try {
     $timed = (new ApiNetworkDiagnostics($timedRequest,$dataPath,$cachePath,$clock))->enrich($details,true,[1,2,3]);
     checkNetworkDiagnostic($calls===['clients/services/1'] && $timed['owner_refresh']['timed_out']===true
         && $timed['owner_refresh']['api_requests']===1 && $timed['owner_refresh']['services_attempted']===1
-        && diagnosticOwner($timed,1)['refresh_error']==='deadline'
+        && diagnosticOwner($timed,1)['refresh_error']===null && diagnosticOwner($timed,1)['client_refresh_error']==='deadline'
         && diagnosticOwner($timed,2)['refresh_error']==='deadline', 'The launch deadline allowed further CRM reads');
 
     $missing = $directory . '/never-created';
@@ -236,6 +327,23 @@ try {
     checkNetworkDiagnostic($ownerCount===1000 && diagnosticTreeSnapshot($directory)===$largeBefore,
         'The maximum diagnostic dropped owners or changed SQLite files');
 
+    $archiveCachePath = $directory . '/archive-cache.db';
+    $archiveCache = new SQLite3($archiveCachePath);
+    $archiveCache->exec('CREATE TABLE clients(id INTEGER PRIMARY KEY,firstName TEXT,isArchived INTEGER);
+        INSERT INTO clients VALUES(10,\'Cached archived fixture\',1),(30,\'Cached restored fixture\',0),
+            (40,\'Cached unknown fixture\',NULL)');
+    $archiveCache->close();
+    $archiveBefore = diagnosticTreeSnapshot($directory);
+    $cachedArchive = (new ApiNetworkDiagnostics(null,$dataPath,$archiveCachePath))->enrich(diagnosticDetails([1,2,3,4]));
+    checkNetworkDiagnostic(diagnosticOwner($cachedArchive,1)['client_archived']===true
+        && diagnosticOwner($cachedArchive,3)['client_archived']===false
+        && diagnosticOwner($cachedArchive,4)['client_archived']===null
+        && diagnosticOwner($cachedArchive,1)['client_source']==='cache'
+        && diagnosticOwner($cachedArchive,1)['client_verified_at']===null
+        && $cachedArchive['client_refresh']['api_requests']===0
+        && diagnosticTreeSnapshot($directory)===$archiveBefore,
+        'Stored archive facts lost true/false/unknown provenance or caused default CRM/cache writes');
+
     // Integration: the endpoint reports the fresh conflict count and consults
     // existing records before setup/cache initialization, including after repair.
     chdir($directory);
@@ -254,15 +362,22 @@ try {
     checkNetworkDiagnostic(ApiPanelRecovery::diagnosticRequest('GET',null,['download'=>'network-conflicts'])
         && $GLOBALS['diagnosticResponse']['data']['duplicate_groups']===1,
         'Diagnostic download did not use the read-only request path');
-    ApiPanelRecovery::diagnosticRequest('POST',(object) ['changeType'=>'list','target'=>'network_conflicts',
-        'data'=>(object) ['refresh'=>'true','serviceIds'=>[1]]],[]);
-    checkNetworkDiagnostic($GLOBALS['diagnosticResponse']['data']['owner_refresh']['requested']===false,
-        'A non-boolean refresh field triggered live CRM reads');
+    rejectNetworkDiagnostic(fn()=>ApiPanelRecovery::diagnosticRequest('POST',(object) ['changeType'=>'list','target'=>'network_conflicts',
+        'data'=>(object) ['refresh'=>'true','serviceIds'=>[1]]],[]),'invalid_diagnostic_refresh');
+    rejectNetworkDiagnostic(fn()=>ApiPanelRecovery::diagnosticRequest('POST',(object) ['changeType'=>'list','target'=>'network_conflicts',
+        'data'=>(object) ['refreshClients'=>'true','serviceIds'=>[1]]],[]),'invalid_diagnostic_refresh_clients');
+    rejectNetworkDiagnostic(fn()=>ApiPanelRecovery::diagnosticRequest('POST',(object) ['changeType'=>'list','target'=>'network_conflicts',
+        'data'=>(object) ['refresh'=>true,'refreshClients'=>true,'serviceIds'=>[1]]],[]),'invalid_diagnostic_refresh_mode');
     ApiPanelRecovery::diagnosticRequest('POST',(object) ['changeType'=>'list','target'=>'network_conflicts',
         'data'=>(object) ['refresh'=>true,'serviceIds'=>[9999]]],[]);
     checkNetworkDiagnostic($GLOBALS['diagnosticResponse']['data']['owner_refresh']['requested']===true
         && $GLOBALS['diagnosticResponse']['data']['owner_refresh']['api_requests']===0
         && !class_exists('ApiUcrm',false), 'Panel diagnostic fetched a requested owner outside current conflicts');
+    ApiPanelRecovery::diagnosticRequest('POST',(object) ['changeType'=>'list','target'=>'network_conflicts',
+        'data'=>(object) ['refreshClients'=>true,'serviceIds'=>[9999]]],[]);
+    checkNetworkDiagnostic($GLOBALS['diagnosticResponse']['data']['client_refresh']['requested']===true
+        && $GLOBALS['diagnosticResponse']['data']['client_refresh']['api_requests']===0
+        && !class_exists('ApiUcrm',false), 'Panel client-only verification looked up owners outside current conflicts');
     checkNetworkDiagnostic(diagnosticTreeSnapshot($directory)===$integrationBefore && !class_exists('ApiJobQueue',false),
         'Panel diagnostic initialized/mutated persistent state or workers');
     rejectNetworkDiagnostic(fn()=>ApiPanelRecovery::diagnosticRequest('POST',(object) ['changeType'=>'list',
@@ -283,7 +398,7 @@ try {
     checkNetworkDiagnostic($GLOBALS['diagnosticResponse']['data']['duplicate_groups']===0
         && $GLOBALS['diagnosticResponse']['metadata']['recovery']['readOnly']===false
         && diagnosticTreeSnapshot($directory)===$repairedBefore, 'Recheck reused a stale conflict count or changed repaired data');
-    echo "Network diagnostic checks passed: read-only files and queue isolation, local/client identity, verified status/routes, explicit archive facts, unknown lifecycle, bounded and deduplicated CRM reads, invalid response/request IDs, deadline, safe field projection, missing caches, 1000 owners and panel count/recovery integration.\n";
+    echo "Network diagnostic checks passed: read-only files and queue isolation, local/client identity, verified status/routes, stored and current archive facts, independent client-only reads/shared ownership, unknown lifecycle, bounded and deduplicated CRM reads, invalid response/request IDs/flags, deadline, safe field projection, missing caches, 1000 owners and panel count/recovery integration.\n";
 } finally {
     if ($apiSqlite !== null) $apiSqlite->close();
     chdir($original);

@@ -33,6 +33,13 @@ class ApiTrim
         $entity = array_fill_keys(['id','firstName','lastName'],null);
         $entity = array_intersect_key($array,$entity);
         if (property_exists($item, 'companyName')) { $entity['company'] = $item->companyName; }
+        // An omitted lifecycle property is a partial update. Client Zone access
+        // (isActive) is unrelated to archive status and must never fill it in.
+        if (property_exists($item, 'isArchived')) {
+            $value = $item->isArchived;
+            $entity['isArchived'] = in_array($value, [true, 1, '1'], true) ? 1
+                : (in_array($value, [false, 0, '0'], true) ? 0 : null);
+        }
         return ['entity' => $entity];
     }
 

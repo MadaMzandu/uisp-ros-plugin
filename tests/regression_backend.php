@@ -218,9 +218,48 @@ try {
     checkBackend(myJobQueue()->list()===$jobsBeforeVersions && isset(myJobQueue()->list()[$pendingVersionJob]), 'Compatible migration discarded pending work');
 
     $apiSqliteCache = new ApiSqlite('data/cache.db');
-    $apiSqliteCache->exec(file_get_contents('includes/cache.sql'));
+    // Upgrade a real old cache without recreating clients, services or secrets.
+    $oldCacheSchema = preg_replace('/^\s*"isArchived"[^\r\n]*\R/m', '', file_get_contents('includes/cache.sql'));
+    $apiSqliteCache->exec($oldCacheSchema);
     $apiSqliteCache->insert(['id'=>77,'status'=>3,'device'=>1,'clientId'=>77,'username'=>'preserved','password'=>'private'], 'services');
     $apiSqliteCache->insert(['id'=>77,'firstName'=>'Old'], 'clients');
+    $apiSqliteCache->insert(['id'=>77,'address'=>'192.0.2.77'], 'network');
+    $apiSqlite->saveConfig(['cache_version'=>'1.8.11']);
+    $cachedServicesBefore = $apiSqliteCache->selectAllFromTable('services');
+    $cachedNetworkBefore = $apiSqliteCache->selectAllFromTable('network');
+    $migrationCache = new ApiCache();
+    $migrationCache->setup();
+    checkBackend($apiSqliteCache->singleQuery('SELECT id,firstName,isArchived FROM clients WHERE id=77',true)
+        ===['id'=>77,'firstName'=>'Old','isArchived'=>null], 'Cache archive migration erased identity or invented an archive state');
+    checkBackend($apiSqliteCache->selectAllFromTable('services')===$cachedServicesBefore
+        && $apiSqliteCache->selectAllFromTable('network')===$cachedNetworkBefore,
+        'Cache archive migration changed service status, credentials or network reservations');
+    checkBackend($apiSqlite->readConfig()->cache_version===MyCacheVersion, 'Cache archive migration did not record its version');
+    $cacheMigrationHash = hash_file('sha256','data/cache.db');
+    $migrationCache->setup();
+    checkBackend(hash_file('sha256','data/cache.db')===$cacheMigrationHash, 'Repeated cache migration changed rows or schema');
+    foreach ([true,false,1,0,'1','0'] as $value) {
+        $trimmed = myTrimmer()->trim('client',(object)['id'=>78,'isArchived'=>$value])['entity'];
+        checkBackend($trimmed['isArchived']===(in_array($value,[true,1,'1'],true) ? 1 : 0), 'Client archive normalization lost an explicit boolean');
+    }
+    foreach ([null,'true','false','invalid',[],new stdClass()] as $value) {
+        $trimmed = myTrimmer()->trim('client',(object)['id'=>78,'isArchived'=>$value])['entity'];
+        checkBackend($trimmed['isArchived']===null, 'Invalid archive value became a definitive lifecycle state');
+    }
+    $archiveCache = new ApiCache();
+    $archiveCache->save(myTrimmer()->trim('client',(object)['id'=>78,'firstName'=>'Archive fixture','isArchived'=>true])['entity'],'client');
+    $partialClient = myTrimmer()->trim('client',(object)['id'=>78,'lastName'=>'Renamed','isActive'=>false])['entity'];
+    checkBackend(!array_key_exists('isArchived',$partialClient) && !array_key_exists('isActive',$partialClient),
+        'An omitted archive field or Client Zone state became a lifecycle fact');
+    $archiveCache->save($partialClient,'client');
+    checkBackend($apiSqliteCache->singleQuery('SELECT firstName,lastName,isArchived FROM clients WHERE id=78',true)
+        ===['firstName'=>'Archive fixture','lastName'=>'Renamed','isArchived'=>1], 'A partial client update erased known archive status or identity');
+    $archiveCache->save(myTrimmer()->trim('client',(object)['id'=>78,'isArchived'=>false])['entity'],'client');
+    checkBackend($apiSqliteCache->singleQuery('SELECT isArchived FROM clients WHERE id=78')===0,
+        'An explicit client restore did not clear the archive flag');
+    $archiveCache->save(myTrimmer()->trim('client',(object)['id'=>79,'isActive'=>false])['entity'],'client');
+    checkBackend($apiSqliteCache->singleQuery('SELECT isArchived FROM clients WHERE id=79')===null,
+        'A new client with no archive field was labelled not archived');
     $testApi = function ($method, $path, $params) {
         if ($path==='clients' && ($params['offset'] ?? 0)===0) return [['id'=>1,'firstName'=>'Downloaded']];
         if ($path==='clients' && ($params['offset'] ?? 0)>0) throw new RuntimeException('fixture page failure');
@@ -241,6 +280,19 @@ try {
     rejectedBackend(fn()=>(new ApiCache())->sync(true), 'Concurrent webhook update was overwritten by cache publication');
     checkBackend($apiSqliteCache->singleQuery('SELECT status FROM services WHERE id=77')===4, 'Cache refresh resurrected stale service status');
     checkBackend(($apiSqlite->readConfig()->next_cache ?? null)===$beforeNext, 'Failed cache scheduled a week-long retry delay');
+    $testApi = function ($method,$path,$params) {
+        if ($path==='clients' && ($params['offset'] ?? 0)===0) {
+            return [['id'=>81,'firstName'=>'Downloaded archived','isArchived'=>true],
+                ['id'=>82,'firstName'=>'Downloaded restored','isArchived'=>false],
+                ['id'=>83,'firstName'=>'Downloaded unknown','isActive'=>false]];
+        }
+        return [];
+    };
+    (new ApiCache())->sync(true);
+    checkBackend($apiSqliteCache->singleQuery('SELECT isArchived FROM clients WHERE id=81')===1
+        && $apiSqliteCache->singleQuery('SELECT isArchived FROM clients WHERE id=82')===0
+        && $apiSqliteCache->singleQuery('SELECT isArchived FROM clients WHERE id=83')===null,
+        'Staged cache publication dropped archive facts or confused Client Zone access with lifecycle');
     $testApi = fn() => [];
     (new ApiCache())->sync(true);
     checkBackend($apiSqliteCache->singleQuery('SELECT count(*) FROM services')===0, 'Valid empty cache did not publish');
@@ -587,7 +639,7 @@ try {
         fclose($pipes[1]);fclose($pipes[2]); $exit=proc_close($process);
         checkBackend($exit===0 && $stderr==='' && strpos($output,'HTTP=403')!==false, 'Public auth did not preserve HTTP 403 for proxy/client/read-only backup');
     }
-    echo "Backend regression checks passed: prepared SQL, typed configuration, literal credentials, real partial-event normalization/Batch snapshots and UISP hydration, migration, raw version diagnostics/preflight, safe rejected restores, cache failure/concurrency, permissions, partial burst edits and panel contracts.\n";
+    echo "Backend regression checks passed: prepared SQL, typed configuration, literal credentials, real partial-event normalization/Batch snapshots and UISP hydration, migration, raw version diagnostics/preflight, safe rejected restores, archive cache migration/partial updates/publication, cache failure/concurrency, permissions, partial burst edits and panel contracts.\n";
 } finally {
     if (isset($GLOBALS['backendQueueOverride'])) { $GLOBALS['backendQueueOverride']->close(); unset($GLOBALS['backendQueueOverride']); }
     foreach ([$apiSqlite ?? null,$apiSqliteCache ?? null,$previous ?? null,$futureBackup ?? null] as $database) if ($database) $database->close();

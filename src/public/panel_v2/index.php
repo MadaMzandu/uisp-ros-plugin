@@ -13,8 +13,8 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     
     <!-- Custom CSS -->
-    <script src="js/theme.js?v=2.0.37"></script>
-    <link rel="stylesheet" href="css/style.css?v=2.0.37">
+    <script src="js/theme.js?v=2.0.38"></script>
+    <link rel="stylesheet" href="css/style.css?v=2.0.38">
 </head>
 <body>
 
@@ -111,6 +111,7 @@
                         </div>
                     </div>
                     <p class="form-note" data-i18n="Los datos guardados pueden estar desactualizados. Verificar en UISP consulta el estado actual; no modifica clientes, servicios ni routers.">Los datos guardados pueden estar desactualizados. Verificar en UISP consulta el estado actual; no modifica clientes, servicios ni routers.</p>
+                    <p class="form-note" data-i18n="El archivo del cliente y el estado del servicio son independientes. Verificar cliente consulta sólo el cliente en UISP, incluso si su servicio ya no existe.">El archivo del cliente y el estado del servicio son independientes. Verificar cliente consulta sólo el cliente en UISP, incluso si su servicio ya no existe.</p>
                     <div class="table-container conflicts-table-container">
                         <table class="data-table conflicts-table" id="network-conflicts-table">
                             <thead><tr>
@@ -542,8 +543,8 @@
     </div>
 
     <!-- Scripts -->
-    <script src="js/i18n.js?v=2.0.37"></script>
-    <script src="js/api.js?v=2.0.37"></script>
-    <script src="js/app.js?v=2.0.37"></script>
+    <script src="js/i18n.js?v=2.0.38"></script>
+    <script src="js/api.js?v=2.0.38"></script>
+    <script src="js/app.js?v=2.0.38"></script>
 </body>
 </html>

@@ -10,6 +10,7 @@
 final class ApiNetworkDiagnostics
 {
     public const MAX_REFRESH_SERVICES = 3;
+    public const MAX_REFRESH_CLIENTS = 3;
     private const REFRESH_BUDGET_SECONDS = 12.0;
 
     private $request;
@@ -25,8 +26,9 @@ final class ApiNetworkDiagnostics
         $this->cachePath = $cachePath;
     }
 
-    public function enrich(array $details, bool $refresh = false, array $serviceIds = []): array
+    public function enrich(array $details, bool $refresh = false, array $serviceIds = [], bool $refreshClients = false): array
     {
+        if ($refresh && $refreshClients) throw new InvalidArgumentException('invalid_diagnostic_refresh_mode');
         $ids = [];
         foreach (array_slice($details['conflicts'] ?? [], 0, 20) as $conflict) {
             foreach (array_slice($conflict['service_ids'] ?? [], 0, 50) as $value) {
@@ -70,6 +72,8 @@ final class ApiNetworkDiagnostics
                     // service route alone is insufficient for archived records.
                     'client_url' => $clientId === null ? null : '/crm/client/' . $clientId,
                     'refresh_error' => null,
+                    'client_refresh_error' => null,
+                    'client_verified_at' => null,
                 ];
             }
 
@@ -90,6 +94,9 @@ final class ApiNetworkDiagnostics
         $summary = ['requested' => $refresh, 'service_limit' => self::MAX_REFRESH_SERVICES,
             'services_attempted' => 0, 'api_requests' => 0, 'truncated' => false, 'timed_out' => false];
         if ($refresh) $summary = $this->refresh($owners, $serviceIds, $summary);
+        $clientSummary = ['requested' => $refreshClients, 'client_limit' => self::MAX_REFRESH_CLIENTS,
+            'clients_attempted' => 0, 'api_requests' => 0, 'truncated' => false, 'timed_out' => false];
+        if ($refreshClients) $clientSummary = $this->refreshClients($owners, $serviceIds, $clientSummary);
         foreach ($details['conflicts'] ?? [] as $index => $conflict) {
             $details['conflicts'][$index]['owners'] = [];
             foreach (array_slice($conflict['service_ids'] ?? [], 0, 50) as $value) {
@@ -98,7 +105,55 @@ final class ApiNetworkDiagnostics
             }
         }
         $details['owner_refresh'] = $summary;
+        $details['client_refresh'] = $clientSummary;
         return $details;
+    }
+
+    private function refreshClients(array &$owners, array $selection, array $summary): array
+    {
+        $clientIds = [];
+        foreach ($selection ?: array_keys($owners) as $value) {
+            $id = self::positiveId($value);
+            // Only stored clients of services in this current conflict qualify.
+            // A caller cannot pass an arbitrary client ID through this endpoint.
+            if ($id === null || !isset($owners[$id])) continue;
+            $clientId = $owners[$id]['client_id'];
+            if ($clientId !== null) $clientIds[$clientId] = $clientId;
+        }
+        $summary['truncated'] = count($clientIds) > self::MAX_REFRESH_CLIENTS;
+        $clientIds = array_slice($clientIds, 0, self::MAX_REFRESH_CLIENTS);
+        $deadline = $this->now() + self::REFRESH_BUDGET_SECONDS;
+        foreach ($clientIds as $clientId) {
+            $client = null;
+            $error = null;
+            if ($this->now() >= $deadline) {
+                $error = 'deadline';
+                $summary['timed_out'] = true;
+            } else {
+                $summary['clients_attempted']++;
+                $summary['api_requests']++;
+                try { $client = $this->entity($this->get('clients/' . $clientId), $clientId); }
+                catch (Throwable $failure) {}
+                if ($client === null) $error = 'unavailable';
+            }
+            $this->applyClientResult($owners, $clientId, $client, $error, $client === null ? null : gmdate('c'));
+        }
+        return $summary;
+    }
+
+    private function applyClientResult(array &$owners, int $clientId, ?array $client, ?string $error, ?string $verifiedAt): void
+    {
+        foreach ($owners as &$owner) {
+            if ($owner['client_id'] !== $clientId) continue;
+            $owner['client_refresh_error'] = $error;
+            $owner['client_verified_at'] = $verifiedAt;
+            if ($client !== null) {
+                $owner['client_name'] = self::clientName($client);
+                $owner['client_archived'] = self::boolean($client['isArchived'] ?? null);
+                $owner['client_source'] = 'crm';
+            }
+        }
+        unset($owner);
     }
 
     private function refresh(array &$owners, array $selection, array $summary): array
@@ -117,6 +172,10 @@ final class ApiNetworkDiagnostics
         foreach ($selected as $id) {
             if ($this->now() >= $deadline) {
                 $owners[$id]['refresh_error'] = 'deadline';
+                $clientId = $owners[$id]['client_id'];
+                if ($clientId !== null && !array_key_exists($clientId, $clientResults)) {
+                    $this->applyClientResult($owners, $clientId, null, 'deadline', null);
+                }
                 $summary['timed_out'] = true;
                 continue;
             }
@@ -131,6 +190,7 @@ final class ApiNetworkDiagnostics
                     $owners[$id]['client_name'] = null;
                     $owners[$id]['client_archived'] = null;
                     $owners[$id]['client_source'] = 'missing';
+                    $owners[$id]['client_verified_at'] = null;
                 }
                 $owners[$id]['client_id'] = $liveClientId;
                 $owners[$id]['client_url'] = $liveClientId === null ? null : '/crm/client/' . $liveClientId;
@@ -147,22 +207,20 @@ final class ApiNetworkDiagnostics
             if ($clientId === null) continue;
             if (!array_key_exists($clientId, $clientResults)) {
                 if ($this->now() >= $deadline) {
-                    $owners[$id]['refresh_error'] = $owners[$id]['refresh_error'] ?? 'deadline';
+                    $this->applyClientResult($owners, $clientId, null, 'deadline', null);
                     $summary['timed_out'] = true;
                     continue;
                 }
                 $summary['api_requests']++;
-                try { $clientResults[$clientId] = $this->entity($this->get('clients/' . $clientId), $clientId); }
-                catch (Throwable $error) { $clientResults[$clientId] = null; }
+                try { $client = $this->entity($this->get('clients/' . $clientId), $clientId); }
+                catch (Throwable $error) { $client = null; }
+                $clientResults[$clientId] = ['client' => $client, 'error' => $client === null ? 'unavailable' : null,
+                    'verified_at' => $client === null ? null : gmdate('c')];
             }
-            $client = $clientResults[$clientId];
-            if ($client === null) {
-                $owners[$id]['refresh_error'] = $owners[$id]['refresh_error'] ?? 'unavailable';
-                continue;
-            }
-            $owners[$id]['client_name'] = self::clientName($client);
-            $owners[$id]['client_archived'] = self::boolean($client['isArchived'] ?? null);
-            $owners[$id]['client_source'] = 'crm';
+            $result = $clientResults[$clientId];
+            // Archive facts belong to the client, including other conflict rows
+            // whose service was not selected for this verification request.
+            $this->applyClientResult($owners, $clientId, $result['client'], $result['error'], $result['verified_at']);
         }
         return $summary;
     }

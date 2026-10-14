@@ -2,6 +2,16 @@
 
 [Complete English changelog](docs/CHANGELOG_EN.md) · [Texto completo para el PR](docs/PR_DESCRIPTION.md) · [Webhook setup and rationale](docs/WEBHOOK_SETUP_EN.md) · [Mejoras en español](docs/MEJORAS.md)
 
+## Candidato 2.4.23 — identificar el archivo del cliente por separado
+
+La caché anterior conservaba los nombres de clientes pero omitía `isArchived`. El diagnóstico podía mostrar «Activo (dato guardado)» del servicio sin informar que su cliente estaba archivado. Ahora se guarda ese campo con tres resultados: archivado, no archivado o sin comprobar. La actualización añade una columna nullable y conserva las filas existentes; no convierte la ausencia del dato en «no archivado».
+
+En Conflictos de IP, el estado del cliente aparece separado del servicio y los clientes archivados tienen un indicador destacado. **Verificar cliente** consulta directamente su ficha, incluso cuando el servicio anterior ya no existe. La consulta se limita a los clientes asociados a propietarios del diagnóstico, deduplica clientes compartidos y admite como máximo tres clientes por petición, con un presupuesto orientativo de 12 segundos para iniciar lecturas. Se indican origen, fecha de verificación y errores sin alterar servicios, caché, reservas, trabajos ni routers. Abrir el panel sigue usando únicamente los datos guardados.
+
+El nuevo campo también se conserva al refrescar la caché normal y al recibir cambios parciales de clientes. La caché heredada en modo consulta sigue sin modificarse; Verificar cliente permite contrastar su estado actual explícitamente. El archivo por sí solo no convierte una asignación en candidata de limpieza: se mantienen todas las comprobaciones y protecciones de 2.4.22.
+
+Validación 2.4.23 aprobada: **32 suites aisladas**, sintaxis de **44 archivos PHP propios** y verificación del instalador de 356 entradas, 123 archivos propios y 13 dependencias fijadas. Informe: `dist/verification-2.4.23.json`. SHA-256: `724ec7240531954968fbe4a516e473013e9b4b184cbb114fe4f6095e508b598f`. Se comprobó también en navegador el indicador de archivo independiente y la verificación directa de clientes con datos sintéticos. La migración y las consultas no alteran servicios ni relajan la protección de sus reservas. La integración en UISP real conserva su comprobación específica.
+
 ## Candidato 2.4.22 — limpiar asignaciones antiguas con revisión y respaldo
 
 El indicador cuenta **asignaciones guardadas**, no paquetes actuales del cliente. Un servicio eliminado del CRM puede conservar su reserva en la base del plugin. Los estados locales llevan «dato guardado» y una IP sin ficha local se identifica como un registro de IP; verificar otro propietario conserva el resultado anterior de cada consulta.
@@ -120,15 +130,15 @@ El [inventario completo de mejoras](docs/MEJORAS.md) reúne tus cambios del [PR 
 
 La comunicación con MikroTik utiliza la **API nativa de RouterOS**, con TLS opcional; los cambios de interfaz no alteran ese mecanismo. Los apartados siguientes conservan el detalle de las revisiones anteriores y la documentación original.
 
-La segunda revisión corrige además propiedad de cuentas/colas padre, hidratación de clientes fuera de caché, bajas con router desconectado y migración de trabajos terminales anteriores, reintentos de perfiles/padres compartidos, pools IPv6 por revisión, idiomas regionales y respuestas tardías al cambiar pestañas. El detalle de cada fallo y su resultado está en el inventario. La [guía de pruebas reales](docs/PRUEBAS_REALES.md) contiene 81 casos para comprobar en laboratorio.
+La segunda revisión corrige además propiedad de cuentas/colas padre, hidratación de clientes fuera de caché, bajas con router desconectado y migración de trabajos terminales anteriores, reintentos de perfiles/padres compartidos, pools IPv6 por revisión, idiomas regionales y respuestas tardías al cambiar pestañas. El detalle de cada fallo y su resultado está en el inventario. La [guía de pruebas reales](docs/PRUEBAS_REALES.md) contiene 85 casos para comprobar en laboratorio.
 
 Para verificar el candidato después de instalar dependencias y construir el ZIP:
 
 ```text
-python tools/verify_plugin.py --php RUTA_PHP --node RUTA_NODE --archive dist/ros-plugin-2.4.22-candidate.zip --output dist/verification-2.4.22.json
+python tools/verify_plugin.py --php RUTA_PHP --node RUTA_NODE --archive dist/ros-plugin-2.4.23-candidate.zip --output dist/verification-2.4.23.json
 ```
 
-En Windows sin configuración PHP, añadir `--extension-dir RUTA_EXT`. El verificador ejecuta las suites y comprueba sintaxis PHP, correspondencia del código/dependencias y exclusión de datos/fixtures del instalador. El estado de validación de 2.4.22 se indica al principio. Para construirlo: `python tools/build_plugin.py --vendor-dir src/vendor --output dist/ros-plugin-2.4.22-candidate.zip`.
+En Windows sin configuración PHP, añadir `--extension-dir RUTA_EXT`. El verificador ejecuta las suites y comprueba sintaxis PHP, correspondencia del código/dependencias y exclusión de datos/fixtures del instalador. El estado de validación de 2.4.23 se indica al principio. Para construirlo: `python tools/build_plugin.py --vendor-dir src/vendor --output dist/ros-plugin-2.4.23-candidate.zip`.
 
 Si una migración queda pendiente por IP duplicadas, usar **Conflictos de IP → Revisar limpieza** para comprobar las reservas obsoletas elegibles, revisar los motivos y confirmar únicamente la selección aprobada. Los trabajos pendientes, la recuperación pendiente y el estado aplicado de una cuenta protegen sus reservas; limpiar IP no retira recursos del router. Conservar el respaldo privado generado, que permanece descargable desde **Sistema** después de recargar. Tras resolver el último conflicto, recargar el panel para completar la migración antes de reanudar las demás escrituras.
 
