@@ -2,6 +2,22 @@
 
 [Complete English changelog](docs/CHANGELOG_EN.md) · [Texto completo para el PR](docs/PR_DESCRIPTION.md) · [Webhook setup and rationale](docs/WEBHOOK_SETUP_EN.md) · [Mejoras en español](docs/MEJORAS.md)
 
+## Candidato 2.4.26 — resolver conflictos del CRM y sincronizar equipos sin bloquear el panel
+
+La sincronización muestra su progreso en la fila del equipo elegido. El panel sigue disponible y permite iniciar la sincronización de otros equipos. Evita enviar dos veces el mismo equipo mientras su petición está activa, incluso al filtrar o regresar a la sección. Los resultados identifican el equipo y conservan los errores parciales o trabajos pendientes. Se mantienen los bloqueos de servicio y router físico; un destino físico compartido puede dejar trabajo para reintento. La sincronización manual sigue reconectando las sesiones PPP/Hotspot administradas del equipo elegido.
+
+Los propietarios del monitor automático ofrecen verificación explícita, corrección y revisión de limpieza local. La verificación consulta las IP actuales y la identidad/archivo del cliente, con fecha y alcance separados de la última revisión automática completa. Una comprobación seleccionada no confirma que todo el CRM esté libre de conflictos. También se pueden corregir los atributos inválidos señalados por el monitor.
+
+**Editar IP en CRM** permite revisar un cambio o una retirada explícita del atributo IPv4/IPv6 elegido. Aplicar exige permiso administrativo de edición, solicitud del mismo origen, vista previa privada con vencimiento, comprobación fresca del servicio/catálogo y confirmación del servicio, familia y valor previsto. Si cambió la evidencia, exige otra revisión. Sólo se envía el atributo IP configurado y se vuelve a consultar el resultado; una respuesta incierta queda sin confirmar y no se reintenta silenciosamente. Quitar la IP conserva el servicio. Esta acción no aprovisiona directamente routers; los webhooks normales de edición de UISP pueden activar el flujo existente.
+
+Un registro privado de corrección evita que la exportación diaria restaure una reserva anterior sobre el cambio deliberado del CRM. La limpieza local mantiene su revisión y confirmación independientes, con respaldo, evidencia fresca y protecciones de trabajos pendientes, recuperación y propiedad aplicada. Desde el monitor admite reservas locales antiguas sin exigir un duplicado en la base local y conserva las operaciones habilitadas en un panel sano. El cliente archivado o servicio terminado por sí solos no autorizan limpieza.
+
+Para un servicio terminado que UISP no permita editar, **Resolver asignación histórica** exige estado `2` comprobado y una revisión explícita de la dirección elegida. Guarda una decisión privada ligada al servicio, cliente, familia, atributo y valor exactos; no envía PATCH a CRM, reactiva el servicio, borra su historial ni ejecuta comandos en routers. La revisión completa conserva la IP original en un apartado de históricos revisados y separa únicamente esa familia terminada del contador de duplicados operativos. Los demás propietarios actuales siguen vigilados. La excepción deja de aplicarse si la evidencia actual cambia o queda sin comprobar; un servicio activo no la hereda porque su cliente esté archivado. La verificación seleccionada muestra el resultado al terminar, mientras el aviso general espera una revisión completa. Esta clasificación del CRM no confirma que ya se hayan retirado los recursos antiguos de RouterOS.
+
+La limpieza local histórica se revisa por separado, incluso cuando CRM conserva la misma IP: exige que la prueba histórica coincida con una consulta fresca del servicio terminado, y conserva respaldo, exclusión de mantenimiento y protecciones de trabajos y propiedad aplicada. Un trabajo pendiente o cuenta registrada como aplicada impide retirar esa reserva. El mapeo o atributo sin comprobar no autoriza exclusión ni limpieza. El panel lee la estructura anterior v3 del monitor sin escribir; únicamente el proceso programado la actualiza a v4, conservando direcciones y evidencia por familia.
+
+Validación 2.4.26 aprobada: **35 suites aisladas**, sintaxis de **48 archivos PHP propios** y verificación del instalador de 360 entradas, 127 archivos propios y 13 dependencias fijadas. Informe: `dist/verification-2.4.26.json`. SHA-256: `b290f01d7ca0f5a2f38ec4cc827096844f49763df92285a8b51d94f27ff90a3b`. La revisión en navegador utilizó datos ficticios para progreso simultáneo, corrección de CRM con revisión/confirmación, resolución histórica de un servicio terminado y limpieza local con el panel disponible. No se modificaron CRM ni RouterOS de producción.
+
 ## Candidato 2.4.25 — aviso automático de IP duplicadas en CRM
 
 El proceso programado revisa los servicios de CRM en un monitor independiente, después de procesar los trabajos y fuera de sus bloqueos. Inicia revisiones cada cinco minutos, lee como máximo un catálogo y dos páginas de 500 servicios por ejecución y continúa las colecciones mayores en ejecuciones posteriores. Los cinco minutos indican la frecuencia de inicio; completar un catálogo grande depende de la frecuencia del proceso programado. El presupuesto de 12 segundos impide iniciar lecturas adicionales; una petición iniciada utiliza el límite de 15 segundos del transporte existente.
@@ -161,10 +177,10 @@ La segunda revisión corrige además propiedad de cuentas/colas padre, hidrataci
 Para verificar el candidato después de instalar dependencias y construir el ZIP:
 
 ```text
-python tools/verify_plugin.py --php RUTA_PHP --node RUTA_NODE --archive dist/ros-plugin-2.4.25-candidate.zip --output dist/verification-2.4.25.json
+python tools/verify_plugin.py --php RUTA_PHP --node RUTA_NODE --archive dist/ros-plugin-2.4.26-candidate.zip --output dist/verification-2.4.26.json
 ```
 
-En Windows sin configuración PHP, añadir `--extension-dir RUTA_EXT`. El verificador ejecuta las suites y comprueba sintaxis PHP, correspondencia del código/dependencias y exclusión de datos/fixtures del instalador. El estado de validación de 2.4.25 se indica al principio. Para construirlo: `python tools/build_plugin.py --vendor-dir src/vendor --output dist/ros-plugin-2.4.25-candidate.zip`.
+En Windows sin configuración PHP, añadir `--extension-dir RUTA_EXT`. El verificador ejecuta las suites y comprueba sintaxis PHP, correspondencia del código/dependencias y exclusión de datos/fixtures del instalador. El estado de validación de 2.4.25 se indica al principio. Para construirlo: `python tools/build_plugin.py --vendor-dir src/vendor --output dist/ros-plugin-2.4.26-candidate.zip`.
 
 Si una migración queda pendiente por IP duplicadas, usar **Conflictos de IP → Revisar limpieza** para comprobar las reservas obsoletas elegibles, revisar los motivos y confirmar únicamente la selección aprobada. Los trabajos pendientes, la recuperación pendiente y el estado aplicado de una cuenta protegen sus reservas; limpiar IP no retira recursos del router. Conservar el respaldo privado generado, que permanece descargable desde **Sistema** después de recargar. Tras resolver el último conflicto, recargar el panel para completar la migración antes de reanudar las demás escrituras.
 
@@ -439,7 +455,3 @@ Ubiquiti - UISP/UCRM/UNMS
 Mikrotik - RouterOS
 
 <https://mikrotik.com>
-
-
-
-

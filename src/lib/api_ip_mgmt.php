@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/api_ucrm.php';
 require_once __DIR__ . '/api_sqlite.php';
+require_once __DIR__ . '/api_crm_network_resolution.php';
 
 function sync_ip_attributes(): void
 {
@@ -27,9 +28,10 @@ function sync_ip_attributes(): void
             if (($item['key'] ?? null) === $key && ($item['attributeType'] ?? 'service') === 'service') $attribute = $item['id'];
         }
         if (!$attribute) throw new RuntimeException('ip_attribute_missing');
-        $rows = $db->selectCustom('SELECT network.id,network.address FROM network JOIN services ON network.id=services.id WHERE services.status NOT IN (0,2,5,6,8)');
+        $rows = $db->selectCustom('SELECT network.id,network.address,services.clientId FROM network JOIN services ON network.id=services.id WHERE services.status NOT IN (0,2,5,6,8)');
         foreach ($rows as $row) {
             if (!$row['address']) continue;
+            if (ApiCrmNetworkResolution::skipAttributeExport((int) $row['id'], 'address', (string) $row['address'], 'data', ['key' => $key, 'id' => (int) $attribute], (int) $row['clientId'])) continue;
             $result = $api->patch('clients/services/' . (int) $row['id'], ['attributes' => [['customAttributeId' => $attribute, 'value' => $row['address']]]]);
             if (!is_array($result) || !isset($result['id'])) throw new RuntimeException('ip_attribute_patch_failed');
         }

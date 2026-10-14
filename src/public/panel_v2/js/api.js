@@ -196,7 +196,8 @@ class ApiService {
     }
     send(changeType, target, action = 'list', data = {}) {
         const cleanup = changeType === 'cleanup' && target === 'network_conflicts' && ['preview', 'apply'].includes(action);
-        if (changeType !== 'list' && !cleanup && this.recovery?.readOnly === true) return this.blockedWrite();
+        const crmRepair = ['cleanup', 'resolve'].includes(changeType) && target === 'crm_network_conflicts' && ['preview', 'apply'].includes(action);
+        if (changeType !== 'list' && !cleanup && !crmRepair && this.recovery?.readOnly === true) return this.blockedWrite();
         if (target === 'orphans' && this.recovery?.readOnly === true) return this.blockedRouterRead();
         return this.request({ method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ changeType, target, action, data }) }).then(response => {
@@ -230,8 +231,11 @@ class ApiService {
     getJobs() { return this.send('list', 'jobs'); }
     getNetworkConflicts(data = {}) { return this.send('list', 'network_conflicts', 'list', data); }
     getCrmNetworkConflicts() { return this.send('list', 'crm_network_conflicts', 'list', {}); }
-    previewNetworkCleanup(serviceIds) { return this.send('cleanup', 'network_conflicts', 'preview', { serviceIds }); }
-    applyNetworkCleanup(previewToken, serviceIds) { return this.send('cleanup', 'network_conflicts', 'apply', { previewToken, serviceIds }); }
+    verifyCrmNetworkServices(serviceIds) { return this.send('list', 'crm_network_resolution', 'verify', { serviceIds }); }
+    previewCrmNetworkChange(data) { return this.send('resolve', 'crm_network_conflicts', 'preview', data); }
+    applyCrmNetworkChange(previewToken) { return this.send('resolve', 'crm_network_conflicts', 'apply', { previewToken }); }
+    previewNetworkCleanup(serviceIds, source = 'stored') { return this.send('cleanup', source === 'crm_snapshot' ? 'crm_network_conflicts' : 'network_conflicts', 'preview', { serviceIds }); }
+    applyNetworkCleanup(previewToken, serviceIds, source = 'stored') { return this.send('cleanup', source === 'crm_snapshot' ? 'crm_network_conflicts' : 'network_conflicts', 'apply', { previewToken, serviceIds }); }
     getBackups() { return this.send('list', 'backups'); }
     createBackup() { return this.send('update', 'system', 'backup'); }
     restoreBackup(name) { return this.send('update', 'system', 'restore', { name }); }

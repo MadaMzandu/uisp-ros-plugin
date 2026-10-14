@@ -17,7 +17,8 @@ final class ApiPanelRecovery
             ApiNetworkCleanup::download($query['download']);
             return true;
         }
-        if (($request->target ?? '') !== 'network_conflicts' || !empty($request->entity)) {
+        $crmSource = ($request->target ?? '') === 'crm_network_conflicts';
+        if (!in_array($request->target ?? '', ['network_conflicts', 'crm_network_conflicts'], true) || !empty($request->entity)) {
             throw new InvalidArgumentException('invalid_cleanup_target');
         }
         $action = $request->action ?? null;
@@ -25,16 +26,24 @@ final class ApiPanelRecovery
         $data = $request->data ?? null;
         if (!is_object($data) || !is_array($data->serviceIds ?? null)) throw new InvalidArgumentException('invalid_cleanup_service_ids');
         if (is_file('data/data.db')) (new ApiSetup())->assertCompatible();
+        if ($crmSource && $action === 'preview') {
+            require_once __DIR__ . '/api_crm_network_resolution.php';
+            if (!(new ApiCrmNetworkResolution())->canReviewCleanup($data->serviceIds)) throw new InvalidArgumentException('crm_resolution_service_not_found');
+        }
         $api = new ApiNetworkCleanup();
-        if ($action === 'preview') $result = $api->preview($data->serviceIds);
+        if ($action === 'preview') $result = $api->preview($data->serviceIds, $crmSource);
         else {
             if (!is_string($data->previewToken ?? null)) throw new InvalidArgumentException('invalid_cleanup_token');
-            $result = $api->apply($data->previewToken, $data->serviceIds);
+            $result = $api->apply($data->previewToken, $data->serviceIds, $crmSource);
         }
         http_response_code(200);
         // The current recovery page stays in consultation until a deliberate
         // reload lets normal setup validate the repaired database from scratch.
-        respond($action === 'preview' ? 'network_cleanup_preview' : 'network_cleanup_applied', false, $result,
+        if ($crmSource) {
+            // A CRM warning never puts an otherwise healthy panel into recovery.
+            // Existing setup duplicates still keep their original recovery state.
+            respond($action === 'preview' ? 'network_cleanup_preview' : 'network_cleanup_applied', false, $result);
+        } else respond($action === 'preview' ? 'network_cleanup_preview' : 'network_cleanup_applied', false, $result,
             ['recovery' => ['readOnly' => true]]);
         return true;
     }

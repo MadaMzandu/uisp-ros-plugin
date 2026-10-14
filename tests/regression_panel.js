@@ -772,7 +772,7 @@ function recoveryPanelFixture({ bootstrap, details, storage, storageBlocked = fa
             return { ok: true, status: 200, json: async () => plain(response) };
         }
     });
-    const fixtureApp = exposeRenderers ? appSource.replace('    api.onRecovery?.(applyRecovery);', '    globalThis.__fixtureRefresh = { plans: renderPlans, system: renderSystem };\n    api.onRecovery?.(applyRecovery);') : appSource;
+    const fixtureApp = exposeRenderers ? appSource.replace('    api.onRecovery?.(applyRecovery);', '    globalThis.__fixtureRefresh = { devices: renderDevices, plans: renderPlans, system: renderSystem };\n    api.onRecovery?.(applyRecovery);') : appSource;
     vm.runInContext(apiSource, localContext); vm.runInContext(fixtureApp, localContext); onReady();
     return { nodes, calls, document: localDocument, tables: localTables, deviceControls, api: vm.runInContext('api', localContext),
         async navigate(view) { await nav[views.indexOf(view)].fire('click'); await flush(); },
@@ -797,6 +797,98 @@ function recoveryPanelFixture({ bootstrap, details, storage, storageBlocked = fa
         surface() { return mobile ? localDocument.scrollingElement : nodes.get('content-area'); },
         refresh(view) { return localContext.__fixtureRefresh[view](); }
     };
+}
+
+async function checkNonblockingDeviceSync() {
+    const devices = [{ id: 1, name: 'Router A', ip: '192.0.2.1', status: 1, users: 1 },
+        { id: 2, name: 'Router B', ip: '192.0.2.2', status: 1, users: 2 }];
+    const fixture = recoveryPanelFixture({ exposeRenderers: true,
+        initialReplies: new Map([['list/devices', { status: 'ok', error: false, data: devices }]]) });
+    await flush();
+    const rows = () => fixture.tables.get('#devices-table tbody').children;
+    const row = id => rows().find(item => Number(item.dataset.deviceId) === id);
+    const buttons = id => row(id).querySelector('.row-actions').children;
+    const syncCalls = () => fixture.calls.filter(call => call.target === 'system' && call.action === 'insert');
+    const confirm = async accept => {
+        const dialog = fixture.document.body.children.find(node => node.className === 'confirm-overlay');
+        assert(dialog, 'Synchronization must preserve its reconnection confirmation');
+        await dialog.children[0].children[1].children[accept ? 1 : 0].fire('click');
+        await flush();
+    };
+    const pending = new Map([[1, deferred()], [2, deferred()]]);
+    fixture.reply('update/system', payload => pending.get(payload.data.id).promise);
+    const loaderWrites = fixture.nodes.get('loader').styleWrites.length;
+    const oldFirst = buttons(1)[2];
+    const first = oldFirst.fire('click');
+    await flush();
+    assert.equal(syncCalls().length, 0);
+    await oldFirst.fire('click');
+    await buttons(1)[2].fire('click');
+    assert.equal(fixture.document.body.children.filter(node => node.className === 'confirm-overlay').length, 1,
+        'A table rebuild must not allow another confirmation for the same device');
+    await confirm(true);
+    assert.equal(syncCalls().length, 1);
+    assert(row(1).innerHTML.includes('device-sync-spinner'));
+    assert(row(1).innerHTML.includes('Sincronizando…'));
+    assert.equal(row(1)['aria-busy'], 'true');
+    assert(buttons(1).every(button => button.disabled), 'Only the active router controls are disabled');
+    assert(buttons(2).every(button => !button.disabled), 'Another router must remain available');
+    const second = buttons(2)[2].fire('click');
+    await flush(); await confirm(true);
+    assert.deepEqual(syncCalls().map(call => call.data.id), [1, 2], 'Different router requests may overlap');
+    assert(row(2).innerHTML.includes('device-sync-spinner'));
+    assert.deepEqual(displayWrites(fixture.nodes.get('loader'), loaderWrites), [], 'Synchronization never opens the global loading overlay');
+    fixture.nodes.get('search-devices').value = 'Router A';
+    await fixture.nodes.get('search-devices').fire('input');
+    assert.equal(rows().length, 1);
+    assert(row(1).innerHTML.includes('device-sync-spinner'), 'Filtering must retain active progress');
+    fixture.nodes.get('search-devices').value = '';
+    await fixture.nodes.get('search-devices').fire('input');
+    await buttons(1)[2].fire('click');
+    assert.equal(syncCalls().length, 2, 'A replacement button cannot submit the same active router again');
+    await fixture.navigate('jobs');
+    assert.equal(fixture.nodes.get('view-jobs').style.display, 'block');
+    assert.equal(fixture.nodes.get('loader').style.display, 'none', 'Navigation completes while routers remain active');
+    await fixture.navigate('devices');
+    assert(row(1).innerHTML.includes('device-sync-spinner'));
+    assert(row(2).innerHTML.includes('device-sync-spinner'), 'Busy state survives navigation back to Devices');
+    pending.get(2).resolve({ status: 'failed', error: true, message: 'provisioning_incomplete',
+        data: { requested: 2, completed: 1, failed: 1, failures: [{ serviceId: 42 }] } });
+    await second; await flush();
+    assert(!row(2).innerHTML.includes('device-sync-spinner'));
+    assert(buttons(2).every(button => !button.disabled));
+    assert(row(1).innerHTML.includes('device-sync-spinner'), 'One completion must retain another active router');
+    const partial = fixture.nodes.get('notifications').lastElementChild;
+    assert.equal(partial.role, 'alert');
+    assert.match(partial.children[0].textContent, /Router B \(#2\).*1 de 2/);
+    await fixture.navigate('jobs');
+    pending.get(1).resolve({ status: 'ok', error: false, data: { requested: 1, completed: 1, failed: 0 } });
+    await first; await flush();
+    assert.equal(fixture.nodes.get('view-jobs').style.display, 'block', 'A background completion cannot force navigation');
+    assert.equal(fixture.nodes.get('view-devices').style.display, 'none');
+    assert.match(fixture.nodes.get('notifications').lastElementChild.children[0].textContent, /Router A \(#1\).*completadas/);
+    await fixture.navigate('devices');
+    assert(rows().every(item => !item.innerHTML.includes('device-sync-spinner')));
+    const beforeCancel = syncCalls().length;
+    const canceled = buttons(1)[2].fire('click');
+    await flush(); await confirm(false); await canceled;
+    assert.equal(syncCalls().length, beforeCancel);
+    assert(buttons(1).every(button => !button.disabled));
+
+    // Independent completion refreshes can return out of order. Preserve the
+    // latest requested inventory rather than letting a slow earlier read win.
+    const slow = deferred(), newer = deferred();
+    const lists = [slow, newer];
+    fixture.reply('list/devices', () => lists.shift().promise);
+    const olderRead = fixture.refresh('devices');
+    const newerRead = fixture.refresh('devices');
+    newer.resolve({ status: 'ok', error: false, data: [{ ...devices[0], users: 20 }] });
+    await newerRead;
+    const latestRow = row(1);
+    slow.resolve({ status: 'ok', error: false, data: devices });
+    await olderRead;
+    assert.equal(row(1), latestRow, 'A late inventory response cannot overwrite the newer device refresh');
+    assert.equal(rows().length, 1);
 }
 
 async function checkCrmNetworkMonitorPanel() {
@@ -833,7 +925,8 @@ async function checkCrmNetworkMonitorPanel() {
     assert.equal(fixture.nodes.get('stored-network-conflicts-pane').style.display, undefined);
     const crmOwners = target => target.nodes.get('crm-network-conflicts-body').children.flatMap(row => row.children[1]?.children || []).filter(owner => owner.dataset.serviceId);
     assert.equal(crmOwners(fixture).length, 2);
-    assert(crmOwners(fixture).every(owner => owner.children.length === 1), 'Live CRM duplicates offer only client/service links, never local cleanup actions');
+    assert(crmOwners(fixture).every(owner => owner.children.slice(1).map(button => button.textContent).join('|') === 'Verificar en UISP|Editar IP en CRM|Revisar limpieza'),
+        'CRM conflicts offer explicit verification, reviewed IP edits and protected local cleanup');
     assert.equal(crmOwners(fixture)[0].children[0].children[0].href, 'https://fixture.invalid/crm/client/17');
     assert.equal(crmOwners(fixture)[0].children[0].children[1].children[0].href, 'https://fixture.invalid/crm/client/service/42');
     const notices = fixture.nodes.get('notifications').children.length;
@@ -954,6 +1047,185 @@ async function checkCrmNetworkMonitorPanel() {
         assert(!jobHtml.includes('href='), 'Invalid or unrelated diagnostic metadata must never create an owner link');
         assert(!jobHtml.includes('<img') && !jobHtml.includes('<script'));
     }
+}
+
+async function checkCrmNetworkResolutionPanel() {
+    const envelope = data => ({ status: 'ok', error: false, data });
+    const monitor = { available: true, duplicate_groups: 1, checked_at: '2026-10-14T13:00:00Z', stale: false, families: ['IPv4'], conflicts: [
+        { family: 'IPv4', address: '192.0.2.77', service_ids: [42, 43], service_count: 2, owners: [
+            { service_id: 42, client_id: 17, client_url: '/crm/client/17', service_url: '/crm/client/service/42', service_status: 'Terminado' },
+            { service_id: 43, client_id: 18, client_url: '/crm/client/18', service_url: '/crm/client/service/43', service_status: 'Activo' }
+        ] }
+    ] };
+    const checkedOwner = (id, value) => ({ service_id: id, client_id: id === 42 ? 17 : 18, service_exists: true,
+        client_name: id === 42 ? '<img src=x onerror=alert(1)> Cliente de prueba' : 'Cliente actual', client_archived: id === 42,
+        client_url: '/crm/client/' + (id === 42 ? 17 : 18), service_url: '/crm/client/service/' + id, service_status: id === 42 ? 'Terminado' : 'Activo',
+        address_evidence: { address: { known: true, value }, address6: { known: true, value: null } } });
+    const proof = value => ({ owners: [checkedOwner(42, value), checkedOwner(43, '192.0.2.77')], checked_at: '2026-10-14T13:01:00Z',
+        selection_complete: true, awaiting_full_scan: true, groups: [{ family: 'IPv4', address: '192.0.2.77', state: value === '192.0.2.77' ? 'duplicate' : 'resolved' }] });
+    const storage = new Map();
+    const fixture = recoveryPanelFixture({ storage, initialReplies: new Map([['list/crm_network_conflicts', envelope(monitor)],
+        ['list/crm_network_resolution', envelope(proof('192.0.2.77'))]]) }); await fixture.navigate('network_conflicts');
+    const row = () => fixture.nodes.get('crm-network-conflicts-body').children[0];
+    const owner = id => row().children[1].children.find(item => Number(item.dataset.serviceId) === id);
+    const action = (id, className) => owner(id).children.find(button => button.className.split(' ').includes(className));
+    assert.equal(fixture.calls.filter(call => call.target === 'crm_network_resolution' || call.changeType === 'resolve').length, 0,
+        'Loading automatic warnings must not trigger live reads or edits');
+    await action(42, 'conflict-verify').fire('click');
+    assert.deepEqual(fixture.calls.at(-1), { changeType: 'list', target: 'crm_network_resolution', action: 'verify', data: { serviceIds: [42, 43] } });
+    assert.equal(owner(42).children[0].children[0].textContent, '<img src=x onerror=alert(1)> Cliente de prueba');
+    assert(owner(42).children[0].children[0].className.includes('client-archived-name'));
+    assert(!renderedMarkup(owner(42)).includes('<img'), 'Client identities from live verification remain literal text');
+    assert.match(row().children[0].children[0].textContent, /todavía comparten una IP/);
+    assert.equal(fixture.nodes.get('save-device-btn').disabled, false);
+    await action(42, 'conflict-edit-ip').fire('click');
+    assert.equal(fixture.nodes.get('crm-ip-edit-modal').style.display, 'flex');
+    assert.equal(fixture.nodes.get('crm-ip-current').textContent, '192.0.2.77');
+    assert.equal(fixture.nodes.get('crm-ip-address').value, '192.0.2.77');
+    assert.equal(fixture.nodes.get('apply-crm-ip-change').disabled, true);
+    const token = 'c'.repeat(64);
+    let previewResponse = { previewToken: token, expiresAt: '2099-10-14T13:00:00Z', service_id: 42, family: 'IPv4', operation: 'remove',
+        current_address: '192.0.2.77', current_address_known: true, new_address: null, uniqueness_checked: false };
+    fixture.reply('resolve/crm_network_conflicts', payload => envelope(payload.action === 'preview' ? previewResponse : {
+        service_id: 42, family: 'IPv4', operation: 'remove', applied: true, uncertain: false, current_address: null,
+        current_address_known: true, local_cleanup_required: false, requires_sync: true, awaiting_full_scan: true
+    }));
+    fixture.nodes.get('crm-ip-operation').value = 'remove'; await fixture.nodes.get('crm-ip-operation').fire('change');
+    assert.equal(fixture.nodes.get('crm-ip-address').disabled, true, 'Removal must be an explicit choice, not an empty replace field');
+    await fixture.nodes.get('review-crm-ip-change').fire('click');
+    assert.deepEqual(fixture.calls.at(-1), { changeType: 'resolve', target: 'crm_network_conflicts', action: 'preview', data: { serviceId: 42, family: 'IPv4', operation: 'remove' } });
+    assert.equal(fixture.calls.filter(call => call.changeType === 'resolve' && call.action === 'apply').length, 0, 'Review alone never writes CRM');
+    assert.match(fixture.nodes.get('crm-ip-review').innerHTML, /192.0.2.77/);
+    assert.match(fixture.nodes.get('crm-ip-review').innerHTML, /Sin IP asignada/);
+    const confirmation = () => fixture.document.body.children.find(node => node.className === 'confirm-overlay');
+    const cancelled = fixture.nodes.get('apply-crm-ip-change').fire('click'); await flush();
+    assert.match(confirmation().children[0].children[0].textContent, /IPv4.*servicio #42.*Sin IP asignada/);
+    await confirmation().children[0].children[1].children[0].fire('click'); await cancelled;
+    assert.equal(fixture.calls.filter(call => call.changeType === 'resolve' && call.action === 'apply').length, 0);
+    fixture.nodes.get('crm-ip-operation').value = 'replace'; await fixture.nodes.get('crm-ip-operation').fire('change');
+    assert.equal(fixture.nodes.get('apply-crm-ip-change').disabled, true, 'Changing the draft invalidates the reviewed token');
+    fixture.nodes.get('crm-ip-address').value = ''; await fixture.nodes.get('review-crm-ip-change').fire('click');
+    assert.match(fixture.nodes.get('crm-ip-edit-status').textContent, /IP válida/);
+    fixture.nodes.get('crm-ip-operation').value = 'remove'; await fixture.nodes.get('crm-ip-operation').fire('change');
+    await fixture.nodes.get('review-crm-ip-change').fire('click');
+    fixture.reply('list/crm_network_resolution', envelope(proof(null)));
+    const applying = fixture.nodes.get('apply-crm-ip-change').fire('click'); await flush();
+    await confirmation().children[0].children[1].children[1].fire('click'); await applying;
+    assert.equal(fixture.calls.filter(call => call.changeType === 'resolve' && call.action === 'apply').length, 1);
+    assert.deepEqual(fixture.calls.filter(call => call.changeType === 'resolve' && call.action === 'apply')[0].data, { previewToken: token });
+    assert.equal(fixture.nodes.get('crm-ip-current').textContent, 'Sin IP asignada', 'After apply, the modal current IP must reflect the verified new state');
+    assert.equal(fixture.nodes.get('crm-ip-address').value, '', 'Removing an IP must not keep the old duplicate as the next replacement draft');
+    assert.match(row().children[0].children[0].textContent, /seleccionado resuelto.*próxima revisión automática/);
+    assert.equal(fixture.nodes.get('crm-network-warning').style.display, 'flex', 'A selected recheck must not clear a warning for the whole CRM');
+    assert.equal(fixture.nodes.get('network-conflicts-count').textContent, '1');
+    assert.equal(fixture.api.recovery, null); assert.equal(fixture.nodes.get('btn-run-jobs').disabled, false);
+    await fixture.event('pagehide');
+    assert([...storage.values()].every(value => !value.includes('192.0.2.77') && !value.includes(token) && !value.includes('Cliente de prueba')),
+        'IP drafts, tokens and client details must not enter navigation storage');
+    fixture.reply('list/crm_network_conflicts', envelope({ ...monitor, checked_at: '2026-10-14T13:02:00Z' }));
+    await fixture.event('pageshow');
+    assert.equal(row().children[0].children.length, 0, 'A later full snapshot must remove old resolved badges when a duplicate recurs');
+    assert.equal(owner(42).children[0].children[0].textContent, 'Cliente #17', 'A later snapshot must not retain previous client/address verification as current');
+    fixture.reply('list/crm_network_conflicts', { status: 'failed', error: true, message: 'offline' }); await fixture.tick(30000);
+    assert.equal(owner(42).children[0].children[0].textContent, 'Cliente #17');
+    assert.match(fixture.nodes.get('crm-network-warning-freshness').textContent, /desactualizado/);
+    const cleanupToken = 'd'.repeat(64), backup = 'network-cleanup-20261014T130200Z-' + 'd'.repeat(32) + '.sqlite';
+    fixture.reply('cleanup/crm_network_conflicts', payload => envelope(payload.action === 'preview' ? {
+        previewToken: cleanupToken, expiresAt: '2099-10-14T13:00:00Z', candidates: [{ service_id: 42, reason: 'stale_address', fields: ['address'],
+            evidence: [{ field: 'address', saved_address: '192.0.2.77', current_address: null, state: 'removed' }], witness_service_ids: [43] }], blocked: []
+    } : { removed_service_ids: [42], backup_name: backup, duplicate_groups: 0, requires_reload: false }));
+    await action(42, 'conflict-cleanup').fire('click');
+    assert.equal(fixture.calls.at(-1).target, 'crm_network_conflicts');
+    const candidate = fixture.nodes.get('network-cleanup-candidates').children[0].children[0]; candidate.checked = true; await candidate.fire('change');
+    const cleaning = fixture.nodes.get('apply-network-cleanup').fire('click'); await flush();
+    await confirmation().children[0].children[1].children[1].fire('click'); await cleaning;
+    assert.equal(fixture.api.recovery, null, 'Healthy CRM cleanup must never manufacture legacy read-only recovery');
+    assert.equal(fixture.nodes.get('save-device-btn').disabled, false); assert.equal(fixture.nodes.get('btn-run-jobs').disabled, false);
+    assert.equal(fixture.nodes.get('reload-after-cleanup').style.display, 'none');
+    assert.match(fixture.nodes.get('network-cleanup-result').children[0].textContent, /próxima revisión automática/);
+    assert.equal(fixture.nodes.get('network-conflicts-count').textContent, '1');
+    const mismatch = recoveryPanelFixture({ initialReplies: new Map([['list/crm_network_conflicts', envelope(monitor)],
+        ['list/crm_network_resolution', envelope(proof('192.0.2.77'))],
+        ['resolve/crm_network_conflicts', envelope({ ...previewResponse, service_id: 99 })]]) }); await mismatch.navigate('network_conflicts');
+    await mismatch.nodes.get('crm-network-conflicts-body').children[0].children[1].children[0].children[2].fire('click');
+    mismatch.nodes.get('crm-ip-operation').value = 'remove'; await mismatch.nodes.get('crm-ip-operation').fire('change');
+    await mismatch.nodes.get('review-crm-ip-change').fire('click');
+    assert.equal(mismatch.nodes.get('apply-crm-ip-change').disabled, true, 'A preview for another service cannot authorize an edit');
+    assert.match(mismatch.nodes.get('crm-ip-edit-status').textContent, /Respuesta inválida/);
+}
+
+async function checkCrmHistoricalResolutionPanel() {
+    const envelope = data => ({ status: 'ok', error: false, data });
+    const monitor = { available: true, duplicate_groups: 1, checked_at: '2026-10-14T14:00:00Z', stale: false, families: ['IPv4'], conflicts: [
+        { family: 'IPv4', address: '192.0.2.80', service_ids: [42, 43], service_count: 2, owners: [
+            { service_id: 42, client_id: 17, service_status_code: 2, service_status: 'Terminado', service_url: '/crm/client/service/42', client_url: '/crm/client/17' },
+            { service_id: 43, client_id: 18, service_status_code: 1, service_status: 'Activo', service_url: '/crm/client/service/43', client_url: '/crm/client/18', client_archived: true }
+        ] }
+    ] };
+    const current = (historical = false, status = 2) => ({ service_id: 42, client_id: 17, service_exists: true, service_status_code: status,
+        service_status: status === 2 ? 'Terminado' : 'Activo', service_url: '/crm/client/service/42', client_url: '/crm/client/17', client_name: 'Cliente histórico',
+        historical_families: historical ? ['IPv4'] : [], address_evidence: { address: { known: true, value: '192.0.2.80' }, address6: { known: true, value: null } } });
+    const verification = (historical = false, status = 2) => ({ owners: [current(historical, status)], groups: [{ family: 'IPv4', address: '192.0.2.80',
+        state: historical ? 'resolved' : 'unknown' }], checked_at: '2026-10-14T14:01:00Z', awaiting_full_scan: true });
+    const preview = { service_id: 42, client_id: 17, family: 'IPv4', operation: 'history', historical: true, preserves_crm_history: true,
+        requires_sync: false, current_address: '192.0.2.80', current_address_known: true, new_address: '192.0.2.80',
+        previewToken: 'e'.repeat(64), expiresAt: '2099-10-14T14:00:00Z' };
+    const fixture = recoveryPanelFixture({ initialReplies: new Map([['list/crm_network_conflicts', envelope(monitor)],
+        ['list/crm_network_resolution', envelope(verification())], ['resolve/crm_network_conflicts', envelope(preview)]]) });
+    await fixture.navigate('network_conflicts');
+    const owners = () => fixture.nodes.get('crm-network-conflicts-body').children[0].children[1].children;
+    assert(owners()[0].children.find(button => button.className.includes('conflict-history')));
+    assert(!owners()[1].children.find(button => button.className.includes('conflict-history')), 'An archived client with an active service does not authorize historical resolution');
+    await owners()[0].children.find(button => button.className.includes('conflict-history')).fire('click');
+    assert.equal(fixture.nodes.get('crm-ip-edit-title').textContent, 'Resolver asignación histórica');
+    assert.equal(fixture.nodes.get('crm-ip-operation-group').style.display, 'none');
+    assert.equal(fixture.nodes.get('crm-ip-address-group').style.display, 'none');
+    assert.match(fixture.nodes.get('crm-ip-edit-note').textContent, /historial del CRM.*routers.*reactiva el servicio/);
+    await fixture.nodes.get('review-crm-ip-change').fire('click');
+    assert.deepEqual(fixture.calls.at(-1), { changeType: 'resolve', target: 'crm_network_conflicts', action: 'preview',
+        data: { serviceId: 42, family: 'IPv4', operation: 'history' } });
+    assert.match(fixture.nodes.get('crm-ip-review').innerHTML, /IP histórica que se excluirá/);
+    assert(!fixture.nodes.get('crm-ip-review').innerHTML.includes('IP propuesta'));
+    fixture.reply('list/crm_network_resolution', envelope(verification(true)));
+    fixture.reply('resolve/crm_network_conflicts', envelope({ service_id: 42, family: 'IPv4', operation: 'history', historical: true,
+        preserves_crm_history: true, requires_sync: false, applied: true, uncertain: false, current_address: '192.0.2.80',
+        current_address_known: true, local_cleanup_required: false, awaiting_full_scan: true }));
+    const applying = fixture.nodes.get('apply-crm-ip-change').fire('click'); await flush();
+    const confirm = fixture.document.body.children.find(node => node.className === 'confirm-overlay');
+    assert.match(confirm.children[0].children[0].textContent, /Excluir.*histórica.*192.0.2.80.*IPv4.*terminado #42.*historial del CRM y los routers/);
+    await confirm.children[0].children[1].children[1].fire('click'); await applying;
+    assert.match(fixture.nodes.get('crm-ip-edit-status').textContent, /histórica resuelta.*conserva su historial.*aviso general/);
+    assert(!fixture.nodes.get('crm-ip-edit-status').textContent.includes('sincroniza'), 'History resolution must not suggest a router synchronization');
+    assert.equal(fixture.nodes.get('crm-ip-current').textContent, '192.0.2.80', 'Exclusion must visibly preserve the CRM history address');
+    assert.equal(fixture.nodes.get('crm-network-warning').style.display, 'flex', 'Explicit history resolution does not clear a whole snapshot prematurely');
+    assert(!owners()[0].children.find(button => button.className.includes('conflict-history')),
+        'A freshly reviewed family must not offer repeated exclusion while awaiting the full scan');
+    const historicalEntry = { service_id: 42, client_id: 17, service_status_code: 2, service_status: 'Terminado', family: 'IPv4', address: '192.0.2.80',
+        client_url: '/crm/client/17', service_url: '/crm/client/service/42', historical_reviewed: true };
+    fixture.reply('list/crm_network_conflicts', envelope({ ...monitor, checked_at: '2026-10-14T14:02:00Z', duplicate_groups: 0, conflicts: [],
+        historical_assignments_count: 1, historical_assignments: [historicalEntry] })); await fixture.tick(30000);
+    assert.equal(fixture.nodes.get('crm-network-warning').style.display, 'none');
+    assert.equal(fixture.nodes.get('crm-network-history').style.display, 'block');
+    const historyOwner = fixture.nodes.get('crm-network-history-list').children[0];
+    assert(historyOwner.children.find(button => button.className.includes('conflict-cleanup')), 'Reviewed assignments keep safe local cleanup reachable after the warning disappears');
+    assert(historyOwner.children.find(button => button.className.includes('conflict-verify')));
+    assert(!historyOwner.children.find(button => button.className.includes('conflict-history')), 'A reviewed historical record must not offer repeated exclusion');
+    assert.equal(fixture.api.recovery, null); assert.equal(fixture.nodes.get('save-device-btn').disabled, false);
+    fixture.reply('cleanup/crm_network_conflicts', envelope({ previewToken: 'f'.repeat(64), expiresAt: '2099-10-14T14:00:00Z', candidates: [{
+        service_id: 42, reason: 'stale_address', historical_reviewed: true, fields: ['address'],
+        evidence: [{ field: 'address', saved_address: '192.0.2.80', current_address: '192.0.2.80', state: 'historical' }]
+    }], blocked: [] }));
+    await historyOwner.children.find(button => button.className.includes('conflict-cleanup')).fire('click');
+    const historicCandidate = fixture.nodes.get('network-cleanup-candidates').children[0];
+    assert(historicCandidate, 'A proven historical reservation can be reviewed without deleting its CRM IP');
+    assert.match(historicCandidate.children[1].children[0].textContent, /histórica revisada.*reserva local.*historial del CRM/);
+    assert.equal(fixture.nodes.get('apply-network-cleanup').disabled, true, 'History cleanup still requires explicit checkbox selection');
+    const stale = recoveryPanelFixture({ initialReplies: new Map([['list/crm_network_conflicts', envelope(monitor)],
+        ['list/crm_network_resolution', envelope(verification(false, 1))]]) }); await stale.navigate('network_conflicts');
+    await stale.nodes.get('crm-network-conflicts-body').children[0].children[1].children[0].children.find(button => button.className.includes('conflict-history')).fire('click');
+    assert.equal(stale.nodes.get('review-crm-ip-change').disabled, true, 'A service reactivated after the snapshot cannot be reviewed as history');
+    assert.match(stale.nodes.get('crm-ip-edit-status').textContent, /sólo.*terminado/);
+    assert.equal(stale.calls.filter(call => call.changeType === 'resolve').length, 0);
 }
 
 async function checkNetworkRecoveryPanel() {
@@ -1114,8 +1386,8 @@ async function checkNetworkRecoveryPanel() {
     assert.deepEqual(plain(healthy.diagnostics()[0].data), {}, 'Reactive recovery reads must not request live CRM verification');
     const malformed = recoveryPanelFixture({ bootstrap: '{', details }); await flush();
     assert.equal(malformed.nodes.get('btn-cache').disabled, false, 'An invalid optional bootstrap must not break normal navigation');
-    assert.equal((markup.match(/(?:src|href)="(?:js|css)\/[^"?]+\?v=2\.0\.40"/g) || []).length, 5, 'Every panel asset must use the new revision to invalidate UISP browser caches');
-    assert(!markup.includes('v=2.0.39'));
+    assert.equal((markup.match(/(?:src|href)="(?:js|css)\/[^"?]+\?v=2\.0\.41"/g) || []).length, 5, 'Every panel asset must use the new revision to invalidate UISP browser caches');
+    assert(!markup.includes('v=2.0.40'));
     assert(apiSource.includes("'alert-triangle':"), 'The conflict warning must have its own local warning icon');
 }
 
@@ -2652,7 +2924,10 @@ async function checkLanguagePresentation() {
     await checkLanguagePresentation();
     await checkNumericPlanEditors();
     await checkJobsRefresh();
+    await checkNonblockingDeviceSync();
     await checkCrmNetworkMonitorPanel();
+    await checkCrmNetworkResolutionPanel();
+    await checkCrmHistoricalResolutionPanel();
     await checkNetworkRecoveryPanel();
     await checkNetworkCleanupPanel();
     await checkNetworkClientArchivePanel();

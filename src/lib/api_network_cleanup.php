@@ -26,13 +26,13 @@ final class ApiNetworkCleanup
         $this->backup = $backup;
     }
 
-    public function preview(array $serviceIds): array
+    public function preview(array $serviceIds, bool $crmSource = false): array
     {
         $ids = self::selection($serviceIds);
         $database = $this->openDatabase(false);
         try {
             $this->assertSafeSchema($database);
-            $verified = $this->verify($database, $ids);
+            $verified = $this->verify($database, $ids, null, $crmSource);
             $candidates = [];
             $blocked = $verified['blocked'];
             $records = [];
@@ -52,7 +52,7 @@ final class ApiNetworkCleanup
             $this->pruneTokens();
             $token = bin2hex(random_bytes(32));
             $path = $this->tokenPath($token);
-            $state = ['expires' => $expires, 'database' => $this->databaseIdentity(), 'records' => $records];
+            $state = ['expires' => $expires, 'database' => $this->databaseIdentity(), 'records' => $records, 'crm_source' => $crmSource];
             $stream = @fopen($path, 'x');
             if (!$stream) throw new InvalidArgumentException('cleanup_preview_write_failed');
             try {
@@ -72,7 +72,7 @@ final class ApiNetworkCleanup
             'candidates' => $candidates, 'blocked' => $blocked, 'api_requests' => $verified['api_requests']];
     }
 
-    public function apply(string $token, array $serviceIds): array
+    public function apply(string $token, array $serviceIds, ?bool $crmSource = null): array
     {
         $ids = self::selection($serviceIds);
         $tokenPath = $this->tokenPath($token);
@@ -85,6 +85,7 @@ final class ApiNetworkCleanup
             throw new InvalidArgumentException('invalid_cleanup_token');
         }
         if ($state['expires'] <= $this->now()) throw new InvalidArgumentException('cleanup_preview_expired');
+        if ($crmSource !== null && (($state['crm_source'] ?? false) === true) !== $crmSource) throw new InvalidArgumentException('invalid_cleanup_token');
         foreach ($ids as $id) {
             if (!isset($state['records'][$id])) throw new InvalidArgumentException('cleanup_selection_invalid');
         }
@@ -104,7 +105,7 @@ final class ApiNetworkCleanup
             $this->assertQueueSafe($ids, array_values($witnesses));
             // A preview is never evidence sufficient to delete. Recheck the service
             // and independently confirm each recorded peer with fresh CRM GETs.
-            $verified = $this->verify($database, $ids, $state['records']);
+            $verified = $this->verify($database, $ids, $state['records'], ($state['crm_source'] ?? false) === true);
             if ($verified['blocked'] || count($verified['records']) !== count($ids)) {
                 throw new InvalidArgumentException('cleanup_verification_failed');
             }
@@ -200,7 +201,7 @@ final class ApiNetworkCleanup
         return $rows;
     }
 
-    private function verify(SQLite3 $database, array $ids, ?array $expected = null): array
+    private function verify(SQLite3 $database, array $ids, ?array $expected = null, bool $crmSource = false): array
     {
         $deadline = $this->now() + self::REQUEST_BUDGET;
         $apiRequests = 0;
@@ -224,6 +225,17 @@ final class ApiNetworkCleanup
         foreach ($ids as $id) {
             $snapshot = $this->snapshot($database, $id);
             $groups = $this->groups($database, $snapshot);
+            if ($crmSource) {
+                // CRM findings and local reservation duplicates are independent.
+                // A fresh explicit absence/change proves this selected local
+                // family is obsolete even when it has no duplicate local peer.
+                $groups = [];
+                foreach (['address', 'address6'] as $field) {
+                    if ($snapshot[$field] !== null && $snapshot[$field] !== '') {
+                        $groups[] = ['field' => $field, 'address' => (string) $snapshot[$field], 'peer_ids' => []];
+                    }
+                }
+            }
             if (!$groups) { $blocked[] = ['service_id' => $id, 'reason' => 'not_in_conflict']; continue; }
             $live = $lookup($id);
             if (!in_array($live['kind'], ['absent', 'present'], true)) {
@@ -256,8 +268,12 @@ final class ApiNetworkCleanup
                 $unknown = false;
                 foreach ($groups as $group) {
                     $comparison = ApiNetworkAddressEvidence::compare($group['address'], $addresses[$group['field']], $group['field']);
+                    if ($crmSource && $comparison === 'same' && $mapping[$group['field']] !== null) {
+                        require_once __DIR__ . '/api_crm_network_history.php';
+                        if (ApiCrmNetworkHistory::reviewed($live['service'], $mapping[$group['field']], $group['field'], dirname($this->dataPath))) $comparison = 'historical';
+                    }
                     if ($comparison === 'unknown') $unknown = true;
-                    if (!in_array($comparison, ['removed', 'changed'], true)) continue;
+                    if (!in_array($comparison, ['removed', 'changed', 'historical'], true)) continue;
                     $selectedGroups[] = $group;
                     $evidence[] = ['field' => $group['field'], 'saved_address' => $group['address'],
                         'current_address' => $addresses[$group['field']]['value'], 'state' => $comparison];
@@ -269,7 +285,8 @@ final class ApiNetworkCleanup
                 $groups = $selectedGroups;
                 $liveFingerprint = hash('sha256', json_encode(['client_id' => $clientId,
                     'config' => ApiNetworkAddressEvidence::mappingFingerprint($rawMapping),
-                    'mapping' => ApiNetworkAddressEvidence::mappingFingerprint($mapping), 'addresses' => $addresses], JSON_THROW_ON_ERROR));
+                    'mapping' => ApiNetworkAddressEvidence::mappingFingerprint($mapping), 'addresses' => $addresses,
+                    'evidence' => $evidence, 'status' => $live['service']['status'] ?? null], JSON_THROW_ON_ERROR));
             }
             // Applying cannot change from deletion to reconciliation, or adopt
             // a different CRM value/mapping after the operator reviewed it.
@@ -282,7 +299,10 @@ final class ApiNetworkCleanup
             $witnesses = [];
             $verifiedGroups = [];
             $reason = null;
-            foreach ($groups as $group) {
+            if ($crmSource) {
+                foreach ($groups as $group) $verifiedGroups[] = ['field' => $group['field'], 'address' => $group['address']];
+            }
+            foreach ($crmSource ? [] : $groups as $group) {
                 $peerIds = array_values(array_filter($group['peer_ids'], static function (int $peer) use ($id): bool { return $peer !== $id; }));
                 if ($expected !== null) {
                     $match = null;
@@ -321,6 +341,7 @@ final class ApiNetworkCleanup
             if ($stale) {
                 $candidate['fields'] = array_column($evidence, 'field');
                 $candidate['evidence'] = $evidence;
+                $candidate['historical_reviewed'] = in_array('historical', array_column($evidence, 'state'), true);
             }
             $records[$id] = ['candidate' => $candidate, 'fingerprint' => $snapshot['fingerprint'], 'groups' => $verifiedGroups];
             if ($stale) {
@@ -389,6 +410,7 @@ final class ApiNetworkCleanup
             }
         }
         foreach ($record['groups'] as $group) {
+            if (!isset($group['witness_id'])) continue;
             if (!hash_equals($group['witness_snapshot'], $this->snapshot($database, $group['witness_id'])['fingerprint'])) {
                 throw new InvalidArgumentException('cleanup_local_changed');
             }

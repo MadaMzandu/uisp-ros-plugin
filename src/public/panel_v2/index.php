@@ -13,8 +13,8 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     
     <!-- Custom CSS -->
-    <script src="js/theme.js?v=2.0.40"></script>
-    <link rel="stylesheet" href="css/style.css?v=2.0.40">
+    <script src="js/theme.js?v=2.0.41"></script>
+    <link rel="stylesheet" href="css/style.css?v=2.0.41">
 </head>
 <body>
 
@@ -125,6 +125,12 @@
                             <p class="form-note" data-i18n="La revisión incluye direcciones sin comprobar; pueden existir otros conflictos.">La revisión incluye direcciones sin comprobar; pueden existir otros conflictos.</p>
                             <div id="crm-network-address-issues-list"></div>
                             <p class="form-note conflicts-limit" id="crm-network-address-issues-limit" style="display: none;"></p>
+                        </div>
+                        <div id="crm-network-history" class="crm-network-history" style="display: none;">
+                            <h3 data-i18n="Asignaciones históricas revisadas">Asignaciones históricas revisadas</h3>
+                            <p class="form-note" data-i18n="Estas asignaciones pertenecen a servicios terminados y conservan su historial en el CRM. La resolución se revisa automáticamente si cambia la IP o se reactiva el servicio.">Estas asignaciones pertenecen a servicios terminados y conservan su historial en el CRM. La resolución se revisa automáticamente si cambia la IP o se reactiva el servicio.</p>
+                            <div id="crm-network-history-list"></div>
+                            <p id="crm-network-history-limit" class="form-note" style="display: none;"></p>
                         </div>
                         <div class="table-container conflicts-table-container">
                             <table class="data-table conflicts-table" id="crm-network-conflicts-table">
@@ -337,6 +343,37 @@
     </div>
 
     <!-- Modals -->
+    <div id="crm-ip-edit-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="crm-ip-edit-title" style="display: none;">
+        <div class="modal crm-ip-edit-dialog">
+            <div class="modal-header">
+                <h3 id="crm-ip-edit-title" data-i18n="Editar IP en CRM">Editar IP en CRM</h3>
+                <button type="button" class="close-modal" aria-label="Cerrar" data-i18n-aria-label="Cerrar"><i data-feather="x"></i></button>
+            </div>
+            <div class="modal-body">
+                <div id="crm-ip-target" class="conflict-owner-meta crm-ip-target"></div>
+                <p id="crm-ip-edit-note" class="form-note" data-i18n="Sólo se modificará este atributo de IP en el CRM. Las demás IP y los demás datos del servicio se conservarán.">Sólo se modificará este atributo de IP en el CRM. Las demás IP y los demás datos del servicio se conservarán.</p>
+                <div class="crm-ip-current"><span data-i18n="IP actual en UISP">IP actual en UISP</span><strong id="crm-ip-current"></strong></div>
+                <div id="crm-ip-operation-group" class="form-group">
+                    <label for="crm-ip-operation" data-i18n="Acción">Acción</label>
+                    <select id="crm-ip-operation" class="form-control">
+                        <option value="replace" data-i18n="Cambiar IP">Cambiar IP</option>
+                        <option value="remove" data-i18n="Quitar IP de este servicio">Quitar IP de este servicio</option>
+                    </select>
+                </div>
+                <div id="crm-ip-address-group" class="form-group">
+                    <label for="crm-ip-address" data-i18n="Nueva IP">Nueva IP</label>
+                    <input type="text" id="crm-ip-address" maxlength="128" class="form-control" autocomplete="off" spellcheck="false">
+                </div>
+                <p id="crm-ip-edit-status" class="form-note" role="status" aria-live="polite"></p>
+                <div id="crm-ip-review" class="crm-ip-review" style="display: none;"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary close-modal" data-i18n="Cerrar">Cerrar</button>
+                <button type="button" class="btn btn-secondary" id="review-crm-ip-change" disabled data-i18n="Revisar cambio">Revisar cambio</button>
+                <button type="button" class="btn btn-primary" id="apply-crm-ip-change" disabled data-i18n="Aplicar cambio en CRM">Aplicar cambio en CRM</button>
+            </div>
+        </div>
+    </div>
     <div id="network-cleanup-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="network-cleanup-title" style="display: none;">
         <div class="modal network-cleanup-dialog">
             <div class="modal-header">
@@ -582,8 +619,8 @@
     </div>
 
     <!-- Scripts -->
-    <script src="js/i18n.js?v=2.0.40"></script>
-    <script src="js/api.js?v=2.0.40"></script>
-    <script src="js/app.js?v=2.0.40"></script>
+    <script src="js/i18n.js?v=2.0.41"></script>
+    <script src="js/api.js?v=2.0.41"></script>
+    <script src="js/app.js?v=2.0.41"></script>
 </body>
 </html>

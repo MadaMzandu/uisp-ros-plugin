@@ -396,6 +396,48 @@ PHP
             && ($invalidMonitor['response']['message'] ?? null)==='invalid_crm_monitor_request'
             && recoveryDiskSnapshot()===$before, 'A monitor poll accepted a request to trigger CRM reads');
 
+        // Correction endpoints keep their edit/origin boundary before recovery
+        // setup. Invalid selections and reviews must not initialize state or
+        // call CRM merely because a local migration is currently blocked.
+        $crmVerify = ['changeType'=>'list','target'=>'crm_network_resolution','action'=>'verify','data'=>['serviceIds'=>[999]]];
+        $crmPreview = ['changeType'=>'resolve','target'=>'crm_network_conflicts','action'=>'preview',
+            'data'=>['serviceId'=>999,'family'=>'IPv4','operation'=>'remove']];
+        $crmApply = ['changeType'=>'resolve','target'=>'crm_network_conflicts','action'=>'apply',
+            'data'=>['previewToken'=>str_repeat('a',64)]];
+        foreach ([$crmVerify,$crmPreview,$crmApply] as $correction) {
+            foreach ([[],['Origin'=>'https://other-fixture.invalid','X-Fixture-Admin'=>'edit']] as $headers) {
+                $rejected = $request($correction,$headers);
+                checkMigrationConflict($rejected['http']===403 && ($rejected['response']['error'] ?? null)===true
+                    && ($rejected['response']['data'] ?? null)===[], 'CRM correction bypassed administrative authentication or origin');
+            }
+        }
+        foreach ([$crmPreview,$crmApply] as $correction) {
+            $rejected = $request($correction,$reader);
+            checkMigrationConflict($rejected['http']===403 && ($rejected['response']['message'] ?? null)==='unauthorized'
+                && ($rejected['response']['data'] ?? null)===[], 'A read-only administrator obtained a CRM mutation review or applied one');
+        }
+        foreach ([$admin,$reader] as $headers) {
+            $unselected = $request($crmVerify,$headers);
+            checkMigrationConflict($unselected['http']===400
+                && ($unselected['response']['message'] ?? null)==='crm_resolution_service_not_found'
+                && !isset($unselected['response']['recovery']), 'Explicit CRM verification used migration setup or allowed an arbitrary service');
+        }
+        foreach ([[$crmPreview,'crm_resolution_service_not_found'],[$crmApply,'invalid_crm_resolution_token'],
+            [['changeType'=>'resolve','target'=>'devices','action'=>'preview','data'=>new stdClass()],'invalid_crm_resolution_target'],
+            [['changeType'=>'list','target'=>'crm_network_resolution','action'=>'apply','data'=>['serviceIds'=>[7]]],'invalid_crm_resolution_request'],
+            [['changeType'=>'resolve','target'=>'crm_network_conflicts','action'=>'preview',
+                'data'=>['serviceId'=>7,'family'=>'IPv4','operation'=>'remove','address'=>'203.0.113.7']],'invalid_crm_resolution_request'],
+            [['changeType'=>'resolve','target'=>'crm_network_conflicts','action'=>'preview',
+                'data'=>['serviceId'=>7,'family'=>'IPv4','operation'=>'history','address'=>'203.0.113.7']],'invalid_crm_resolution_request'],
+            [['changeType'=>'resolve','target'=>'crm_network_conflicts','action'=>'apply',
+                'data'=>['previewToken'=>str_repeat('a',64),'serviceId'=>7]],'invalid_crm_resolution_request']] as [$invalid,$message]) {
+            $rejected = $request($invalid,$admin);
+            checkMigrationConflict($rejected['http']===400 && ($rejected['response']['message'] ?? null)===$message
+                && !isset($rejected['response']['recovery']), 'CRM correction accepted malformed or cross-target mutation data');
+        }
+        checkMigrationConflict(!is_file($directory . '/sdk-reads.jsonl') && recoveryDiskSnapshot()===$before,
+            'Rejected CRM correction called UISP, created a review/hold/queue, or changed recovery data');
+
         // An explicit bounded refresh may consult CRM, retaining all local databases and queue files.
         $refreshed = $request(['changeType'=>'list','target'=>'network_conflicts','data'=>['refresh'=>true,'serviceIds'=>[7,999]]],$reader);
         $ownerGroup = conflictByAddress($refreshed['response']['data'],'IPv4','203.0.113.7');

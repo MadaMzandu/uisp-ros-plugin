@@ -10,9 +10,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const planModal = byId('plan-modal');
     const orphanModal = byId('orphan-modal');
     const cleanupModal = byId('network-cleanup-modal');
+    const crmEditModal = byId('crm-ip-edit-modal');
     let notificationRegion = byId('notifications');
     let currentView = 'devices';
     let devicesCache = [];
+    const deviceSyncs = new Map();
+    let devicesRequestSequence = 0;
     let plansCache = [];
     let jobsCache = {};
     const jobsRefreshPreference = 'ros-panel-jobs-refresh-v1';
@@ -56,11 +59,19 @@ document.addEventListener('DOMContentLoaded', () => {
     let cleanupBoxes = [];
     let cleanupRequiresReload = false;
     let cleanupRemainingCount = null;
+    let cleanupSource = 'stored';
     let crmMonitorReport = null;
     let crmMonitorFailure = false;
     let crmMonitorInFlight = null;
     let crmMonitorTimer;
     let crmMonitorStopped = false;
+    const crmVerifiedOwners = new Map();
+    const crmVerifiedGroups = new Map();
+    let crmVerifyBusy = false;
+    let crmEditTarget = null;
+    let crmEditPreview = null;
+    let crmEditBusy = false;
+    let crmEditGeneration = 0;
     const navigationViews = new Set(['devices', 'plans', 'config', 'jobs', 'system', 'network_conflicts']);
     const navigationVersion = 1;
     const navigationScopeUrl = new URL(api.endpoint || window.location.href, window.location.href);
@@ -87,8 +98,12 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         if (position.focus) {
             const focus = position.focus;
-            if (!Number.isSafeInteger(focus.serviceId) || focus.serviceId < 1 || !['service', 'client', 'cleanup'].includes(focus.action)) return null;
+            if (!Number.isSafeInteger(focus.serviceId) || focus.serviceId < 1 || !['service', 'client', 'cleanup', 'edit', 'history'].includes(focus.action)) return null;
             safe.focus = { serviceId: focus.serviceId, action: focus.action };
+            if (focus.source !== undefined) {
+                if (focus.source !== 'crm_snapshot') return null;
+                safe.focus.source = focus.source;
+            }
         }
         return safe;
     }
@@ -139,13 +154,16 @@ document.addEventListener('DOMContentLoaded', () => {
             const actions = Array.from(node.children).slice(1);
             const action = actions.find(button => button === active);
             if (!action) continue;
-            const kind = action.className.includes('conflict-client-verify') ? 'client' : action.className.includes('conflict-cleanup') ? 'cleanup' : 'service';
-            return { serviceId: Number(node.dataset.serviceId), action: kind };
+            const kind = action.className.includes('conflict-client-verify') ? 'client' : action.className.includes('conflict-cleanup') ? 'cleanup'
+                : action.className.includes('conflict-edit-ip') ? 'edit' : action.className.includes('conflict-history') ? 'history' : 'service';
+            return { serviceId: Number(node.dataset.serviceId), action: kind,
+                ...(node.dataset.anchorSource === 'crm_snapshot' ? { source: 'crm_snapshot' } : {}) };
         }
         // Removing a focused button during a table refresh moves focus to body.
         // Retain its safe target until the replacement button can receive focus.
         const previous = viewPositions.get(currentView)?.focus;
-        return active === document.body && previous && nodes.some(node => Number(node.dataset.serviceId) === previous.serviceId) ? previous : undefined;
+        return active === document.body && previous && nodes.some(node => Number(node.dataset.serviceId) === previous.serviceId
+            && node.dataset.anchorSource === previous.source) ? previous : undefined;
     }
 
     function capturePosition() {
@@ -187,8 +205,8 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         surface.scrollTop = Math.max(0, Math.min(max, top));
         if (position.focus) {
-            const target = nodes.find(node => Number(node.dataset.serviceId) === position.focus.serviceId && node.dataset.anchorSource !== 'crm_snapshot');
-            const className = { service: 'conflict-verify', client: 'conflict-client-verify', cleanup: 'conflict-cleanup' }[position.focus.action];
+            const target = nodes.find(node => Number(node.dataset.serviceId) === position.focus.serviceId && node.dataset.anchorSource === position.focus.source);
+            const className = { service: 'conflict-verify', client: 'conflict-client-verify', cleanup: 'conflict-cleanup', edit: 'conflict-edit-ip', history: 'conflict-history' }[position.focus.action];
             const button = Array.from(target?.children || []).find(node => node.className?.split(' ').includes(className));
             if (button && !button.disabled) button.focus?.({ preventScroll: true });
         }
@@ -371,11 +389,39 @@ document.addEventListener('DOMContentLoaded', () => {
                 meta.appendChild(conflictLink(t('Cliente #{id}', { id: issue.client_id }), issue.client_url, 'client'));
             const badge = document.createElement('span'); badge.className = 'badge badge-warning'; badge.textContent = issue.family; meta.appendChild(badge);
             const note = document.createElement('p'); translatedText(note, 'Revisa el atributo {family} de este servicio en el CRM.', { family: issue.family });
-            item.append(meta, note); issueList.appendChild(item);
+            item.append(meta, note);
+            appendCrmOwnerActions(item, issue, { family: issue.family, address: null, service_ids: [issue.service_id] });
+            issueList.appendChild(item);
         }
         const issueLimit = byId('crm-network-address-issues-limit');
         issueLimit.style.display = issueCount > issues.length || report?.address_issues_truncated === true ? 'block' : 'none';
         translatedText(issueLimit, 'Se muestran {shown} de {total} direcciones sin comprobar.', { shown: issues.length, total: issueCount });
+        const historyList = byId('crm-network-history-list'); historyList.replaceChildren();
+        const historyCount = available && Number.isSafeInteger(report.historical_assignments_count) && report.historical_assignments_count >= 0
+            ? report.historical_assignments_count : 0;
+        const historical = available && Array.isArray(report.historical_assignments) ? report.historical_assignments.slice(0, 20).filter(entry => entry
+            && entry.historical_reviewed === true && Number.isSafeInteger(entry.service_id) && entry.service_id > 0
+            && ['IPv4', 'IPv6'].includes(entry.family) && typeof entry.address === 'string' && entry.address.length <= 128) : [];
+        byId('crm-network-history').style.display = historyCount > 0 ? 'block' : 'none';
+        for (const entry of historical) {
+            const verified = crmVerifiedOwners.get(entry.service_id);
+            const owner = verified && verified.owner.client_id === entry.client_id ? { ...entry, ...verified.owner } : entry;
+            const item = document.createElement('div'); item.className = 'conflict-owner crm-history-owner';
+            const identity = document.createElement('div'); identity.className = 'conflict-identity';
+            identity.appendChild(conflictLink(owner.client_name || t('Cliente #{id}', { id: owner.client_id }), owner.client_url, 'client'));
+            const meta = document.createElement('div'); meta.className = 'conflict-owner-meta';
+            meta.appendChild(conflictLink(t('Servicio #{id}', { id: owner.service_id }), owner.service_url, 'service'));
+            const address = document.createElement('span'); address.className = 'badge badge-neutral'; address.textContent = entry.family + ' · ' + entry.address;
+            const status = document.createElement('span'); status.className = 'badge badge-neutral';
+            translatedText(status, 'Servicio: {state}', { state: t(owner.service_status || 'Sin comprobar') });
+            meta.append(address, status); identity.appendChild(meta);
+            const note = document.createElement('p'); note.className = 'conflict-source';
+            translatedText(note, verified ? 'Servicio consultado en UISP: {time}' : 'Asignación histórica revisada (dato guardado)', { time: formatDate(verified?.checked_at) }); identity.appendChild(note);
+            item.appendChild(identity); appendCrmOwnerActions(item, { ...owner, historical_reviewed: true }, { family: entry.family, address: entry.address, service_ids: [entry.service_id] });
+            historyList.appendChild(item);
+        }
+        const historyLimit = byId('crm-network-history-limit'); historyLimit.style.display = historyCount > historical.length ? 'block' : 'none';
+        translatedText(historyLimit, 'Se muestran {shown} de {total} asignaciones históricas revisadas.', { shown: historical.length, total: historyCount });
         const tbody = byId('crm-network-conflicts-body');
         tbody.replaceChildren();
         const groups = available ? report.conflicts : [];
@@ -396,25 +442,64 @@ document.addEventListener('DOMContentLoaded', () => {
                 const prior = document.createElement('p'); prior.className = 'conflict-source';
                 translatedText(prior, 'IP observada en una revisión anterior.'); address.appendChild(prior);
             }
+            const verification = crmVerifiedGroups.get(JSON.stringify([group.family, group.address]));
+            if (verification) {
+                const note = document.createElement('p'); note.className = 'crm-selection-status';
+                translatedText(note, verification.state === 'resolved' ? 'Conflicto seleccionado resuelto. El aviso general se actualizará en la próxima revisión automática.'
+                    : verification.state === 'duplicate' ? 'Los servicios comprobados todavía comparten una IP.'
+                    : 'La verificación seleccionada está incompleta. El aviso general conserva la revisión automática.');
+                address.appendChild(note);
+                const when = document.createElement('small'); when.className = 'conflict-source';
+                translatedText(when, 'Selección verificada en UISP: {time}', { time: formatDate(verification.checked_at) }); address.appendChild(when);
+            }
             const ownersCell = document.createElement('td'); ownersCell.className = 'conflict-owners';
-            for (const owner of owners) {
+            for (const snapshotOwner of owners) {
+                const verification = crmVerifiedOwners.get(snapshotOwner.service_id);
+                const owner = verification && verification.owner.client_id === snapshotOwner.client_id
+                    ? { ...snapshotOwner, ...verification.owner } : snapshotOwner;
                 const item = document.createElement('div'); item.className = 'conflict-owner crm-conflict-owner';
                 item.dataset.serviceId = String(owner.service_id); item.dataset.anchorSource = 'crm_snapshot';
                 const identity = document.createElement('div'); identity.className = 'conflict-identity';
                 const clientId = Number.isSafeInteger(owner.client_id) && owner.client_id > 0 ? owner.client_id : null;
-                identity.appendChild(conflictLink(clientId ? t('Cliente #{id}', { id: clientId }) : t('Cliente sin identificar'), clientId ? owner.client_url : null, 'client'));
+                const clientLink = conflictLink(typeof owner.client_name === 'string' && owner.client_name.length <= 500 && owner.client_name
+                    ? owner.client_name : clientId ? t('Cliente #{id}', { id: clientId }) : t('Cliente sin identificar'), clientId ? owner.client_url : null, 'client');
+                if (owner.client_archived === true) clientLink.className += ' client-archived-name';
+                identity.appendChild(clientLink);
                 const meta = document.createElement('div'); meta.className = 'conflict-owner-meta';
                 meta.appendChild(conflictLink(t('Servicio #{id}', { id: owner.service_id }), owner.service_url, 'service'));
                 const badge = document.createElement('span'); badge.className = 'badge badge-neutral';
                 const state = typeof owner.service_status === 'string' && owner.service_status.length <= 80 ? t(owner.service_status) : t('Sin comprobar');
                 badge.textContent = t('Servicio: {state}', { state }); meta.appendChild(badge); identity.appendChild(meta);
-                if (owner.current_address_known === false) {
+                if (typeof owner.client_archived === 'boolean') {
+                    const archive = document.createElement('span'); archive.className = 'badge badge-neutral client-lifecycle';
+                    translatedText(archive, owner.client_archived ? 'Cliente archivado' : 'Cliente no archivado'); meta.appendChild(archive);
+                }
+                if (Array.isArray(owner.historical_families) && owner.historical_families.includes(group.family)) {
+                    const history = document.createElement('span'); history.className = 'badge badge-neutral';
+                    translatedText(history, 'Asignación histórica excluida'); meta.appendChild(history);
+                }
+                const evidence = owner.address_evidence?.[group.family === 'IPv6' ? 'address6' : 'address'];
+                const known = evidence ? evidence.known === true : owner.current_address_known !== false;
+                if (!known) {
                     const unknown = document.createElement('span'); unknown.className = 'badge badge-warning';
                     translatedText(unknown, 'IP actual sin comprobar'); meta.appendChild(unknown);
                 }
                 const source = document.createElement('p'); source.className = 'conflict-source';
-                translatedText(source, 'Servicios consultados por el monitoreo del CRM'); identity.appendChild(source);
-                item.appendChild(identity); ownersCell.appendChild(item);
+                translatedText(source, verification ? 'Servicio consultado en UISP: {time}' : 'Servicios consultados por el monitoreo del CRM', { time: formatDate(verification?.checked_at) }); identity.appendChild(source);
+                if (verification) {
+                    const current = evidence?.known === true ? evidence.value : null;
+                    const comparison = evidence?.known === true ? current === null ? 'removed' : current === group.address ? 'same' : 'changed' : 'unknown';
+                    const detail = document.createElement('div'); detail.className = 'conflict-address-evidence';
+                    detail.innerHTML = `<dl class="conflict-address-grid"><div><dt>${html(t('IP observada por el monitor'))}</dt><dd>${html(group.address)}</dd></div><div><dt>${html(t('IP actual en UISP'))}</dt><dd>${html(evidence?.known === true ? current ?? t('Sin IP asignada') : t('Sin comprobar'))}</dd></div></dl>`;
+                    const state = document.createElement('span'); state.className = 'badge badge-neutral';
+                    translatedText(state, { same: 'Coincide con la IP guardada', removed: 'IP retirada en UISP', changed: 'IP cambiada en UISP', unknown: 'IP actual sin comprobar' }[comparison]); detail.appendChild(state);
+                    identity.appendChild(detail);
+                    if (owner.refresh_error || owner.client_refresh_error) {
+                        const error = document.createElement('p'); error.className = 'conflict-refresh-error';
+                        translatedText(error, 'No se pudo completar la verificación en UISP. Se conserva el resultado automático.'); identity.appendChild(error);
+                    }
+                }
+                item.appendChild(identity); appendCrmOwnerActions(item, owner, group); ownersCell.appendChild(item);
             }
             if (group.services_truncated || total > owners.length) {
                 const more = document.createElement('p'); more.className = 'form-note';
@@ -429,7 +514,230 @@ document.addEventListener('DOMContentLoaded', () => {
         afterTableUpdate('network_conflicts', savedPosition);
     }
 
+    function crmGroupServiceIds(group, selectedId) {
+        return [...new Set([selectedId, ...(Array.isArray(group?.service_ids) ? group.service_ids : []),
+            ...(Array.isArray(group?.owners) ? group.owners.map(owner => owner.service_id) : [])])]
+            .filter(id => Number.isSafeInteger(id) && id > 0).slice(0, 3);
+    }
+
+    async function verifyCrmOwners(group, selectedId) {
+        const ids = crmGroupServiceIds(group, selectedId);
+        const data = checked(await api.verifyCrmNetworkServices(ids)).data;
+        if (!data || !Array.isArray(data.owners) || !Array.isArray(data.groups) || !monitorDate(data.checked_at)
+            || data.owners.length > ids.length || new Set(data.owners.map(owner => owner?.service_id)).size !== data.owners.length
+            || data.owners.some(owner => !owner || !ids.includes(owner.service_id)
+                || (owner.client_id !== null && owner.client_id !== undefined && (!Number.isSafeInteger(owner.client_id) || owner.client_id < 1))
+                || Object.values(owner.address_evidence || {}).some(evidence => !evidence || typeof evidence.known !== 'boolean'
+                    || (evidence.known && evidence.value !== null && (typeof evidence.value !== 'string' || evidence.value.length > 128)))))
+            throw new Error(t('Respuesta inválida del servidor.'));
+        for (const owner of data.owners) crmVerifiedOwners.set(owner.service_id, { owner, checked_at: data.checked_at });
+        for (const result of data.groups) if (result && ['IPv4', 'IPv6'].includes(result.family) && typeof result.address === 'string'
+            && result.address.length <= 128 && ['resolved', 'duplicate', 'unknown'].includes(result.state))
+            crmVerifiedGroups.set(JSON.stringify([result.family, result.address]), { ...result, checked_at: data.checked_at });
+        return data;
+    }
+
+    function appendCrmOwnerActions(item, owner, group) {
+        const id = owner.service_id;
+        const disabled = crmVerifyBusy || crmEditBusy || cleanupBusy;
+        const verify = document.createElement('button'); verify.type = 'button'; verify.className = 'btn btn-secondary conflict-verify';
+        translatedText(verify, crmVerifyBusy ? 'Verificando...' : 'Verificar en UISP'); verify.disabled = disabled;
+        verify.addEventListener('click', async () => {
+            if (crmVerifyBusy || crmEditBusy || cleanupBusy) return;
+            crmVerifyBusy = true; renderCrmMonitor();
+            try { await verifyCrmOwners(group, id); }
+            catch (error) { notify(t(error.message), 'error'); }
+            finally { crmVerifyBusy = false; renderCrmMonitor(); }
+        });
+        const edit = document.createElement('button'); edit.type = 'button'; edit.className = 'btn btn-secondary conflict-edit-ip';
+        translatedText(edit, 'Editar IP en CRM'); edit.disabled = disabled;
+        edit.addEventListener('click', () => openCrmEditor(owner, group));
+        item.appendChild(verify);
+        if (owner.service_status_code === 2 && owner.historical_reviewed !== true
+            && !(Array.isArray(owner.historical_families) && owner.historical_families.includes(group.family))) {
+            const history = document.createElement('button'); history.type = 'button'; history.className = 'btn btn-secondary conflict-history';
+            translatedText(history, 'Resolver asignación histórica'); history.disabled = disabled;
+            history.addEventListener('click', () => openCrmEditor(owner, group, 'history')); item.appendChild(history);
+        }
+        item.appendChild(edit);
+        if (group.address !== null) {
+            const cleanup = document.createElement('button'); cleanup.type = 'button'; cleanup.className = 'btn btn-secondary conflict-cleanup';
+            translatedText(cleanup, 'Revisar limpieza'); cleanup.disabled = disabled || cleanupRequiresReload;
+            cleanup.addEventListener('click', () => previewCleanup([id], 'crm_snapshot')); item.appendChild(cleanup);
+        }
+    }
+
+    function resetCrmEditPreview() {
+        crmEditPreview = null;
+        byId('crm-ip-review').replaceChildren(); byId('crm-ip-review').style.display = 'none';
+        byId('apply-crm-ip-change').disabled = true;
+    }
+
+    function crmEditorIdentity(owner, family) {
+        const target = byId('crm-ip-target'); target.replaceChildren();
+        target.appendChild(conflictLink(t('Servicio #{id}', { id: owner.service_id }), owner.service_url, 'service'));
+        if (Number.isSafeInteger(owner.client_id) && owner.client_id > 0)
+            target.appendChild(conflictLink(typeof owner.client_name === 'string' && owner.client_name.length <= 500 && owner.client_name
+                ? owner.client_name : t('Cliente #{id}', { id: owner.client_id }), owner.client_url, 'client'));
+        const badge = document.createElement('span'); badge.className = 'badge badge-neutral'; badge.textContent = family; target.appendChild(badge);
+    }
+
+    function updateCrmEditorControls() {
+        const history = crmEditTarget?.mode === 'history';
+        const remove = byId('crm-ip-operation').value === 'remove' || history;
+        byId('crm-ip-address').disabled = crmEditBusy || remove;
+        byId('crm-ip-operation').disabled = crmEditBusy;
+        byId('review-crm-ip-change').disabled = crmEditBusy || !crmEditTarget?.verified;
+        byId('apply-crm-ip-change').disabled = crmEditBusy || !crmEditPreview;
+    }
+
+    async function openCrmEditor(owner, group, mode = 'edit') {
+        if (crmVerifyBusy || crmEditBusy || cleanupBusy || !crmEditModal) return;
+        const generation = ++crmEditGeneration;
+        crmEditTarget = { owner, group, mode, verified: false }; crmEditBusy = true;
+        crmEditModal.style.display = 'flex'; crmEditorIdentity(owner, group.family);
+        translatedText(byId('crm-ip-edit-title'), mode === 'history' ? 'Resolver asignación histórica' : 'Editar IP en CRM');
+        translatedText(byId('crm-ip-edit-note'), mode === 'history'
+            ? 'Esta IP de un servicio terminado se excluirá del monitoreo. El historial del CRM, el servicio actual y los routers se conservarán. La exclusión dejará de aplicarse si cambia la IP o se reactiva el servicio.'
+            : 'Sólo se modificará este atributo de IP en el CRM. Las demás IP y los demás datos del servicio se conservarán.');
+        translatedText(byId('apply-crm-ip-change'), mode === 'history' ? 'Excluir asignación histórica' : 'Aplicar cambio en CRM');
+        byId('crm-ip-operation-group').style.display = mode === 'history' ? 'none' : 'block';
+        byId('crm-ip-address-group').style.display = mode === 'history' ? 'none' : 'block';
+        byId('crm-ip-operation').value = 'replace'; byId('crm-ip-address').value = '';
+        byId('crm-ip-current').textContent = t('Sin comprobar');
+        resetCrmEditPreview(); updateCrmEditorControls();
+        translatedText(byId('crm-ip-edit-status'), 'Consultando la IP actual en UISP...');
+        try {
+            const data = await verifyCrmOwners(group, owner.service_id);
+            if (generation !== crmEditGeneration) return;
+            const current = data.owners.find(item => item.service_id === owner.service_id);
+            if (!current || current.service_exists !== true) throw new Error(t('UISP no confirmó que este servicio exista. Vuelve a verificarlo.'));
+            if (mode === 'history' && current.service_status_code !== 2) throw new Error(t('La asignación histórica sólo puede resolverse si UISP confirma que el servicio está terminado.'));
+            const evidence = current.address_evidence?.[group.family === 'IPv6' ? 'address6' : 'address'];
+            crmEditTarget = { owner: current, group, mode, verified: true };
+            crmEditorIdentity(current, group.family);
+            byId('crm-ip-current').textContent = evidence?.known === true ? evidence.value ?? t('Sin IP asignada') : t('Sin comprobar');
+            byId('crm-ip-address').value = evidence?.known === true && typeof evidence.value === 'string' ? evidence.value : '';
+            translatedText(byId('crm-ip-edit-status'), mode === 'history' ? 'Revisa la asignación histórica antes de excluirla del monitoreo.'
+                : 'Elige cambiar la IP o quitarla de este servicio, y revisa el cambio antes de guardarlo.');
+        } catch (error) {
+            if (generation === crmEditGeneration) translatedText(byId('crm-ip-edit-status'), 'Error: {message}', { message: t(error.message) });
+        } finally {
+            if (generation === crmEditGeneration) { crmEditBusy = false; updateCrmEditorControls(); renderCrmMonitor(); }
+        }
+    }
+
+    for (const [id, event] of [['crm-ip-operation', 'change'], ['crm-ip-address', 'input']]) byId(id)?.addEventListener(event, () => {
+        if (crmEditBusy) return;
+        resetCrmEditPreview(); updateCrmEditorControls();
+    });
+
+    byId('review-crm-ip-change')?.addEventListener('click', async () => {
+        if (crmEditBusy || !crmEditTarget?.verified) return;
+        const target = crmEditTarget, generation = crmEditGeneration;
+        const operation = target.mode === 'history' ? 'history' : byId('crm-ip-operation').value;
+        const address = byId('crm-ip-address').value.trim();
+        if (!['replace', 'remove', 'history'].includes(operation) || (operation === 'replace' && (!address || address.length > 128))) {
+            translatedText(byId('crm-ip-edit-status'), 'Introduce una IP válida o elige quitar la IP.'); return;
+        }
+        crmEditBusy = true; resetCrmEditPreview(); updateCrmEditorControls();
+        translatedText(byId('crm-ip-edit-status'), 'Comprobando el cambio en UISP...');
+        try {
+            const preview = checked(await api.previewCrmNetworkChange({ serviceId: target.owner.service_id, family: target.group.family,
+                operation, ...(operation === 'replace' ? { address } : {}) })).data;
+            if (generation !== crmEditGeneration) return;
+            if (!preview || preview.service_id !== target.owner.service_id || preview.family !== target.group.family || preview.operation !== operation
+                || typeof preview.previewToken !== 'string' || !/^[a-f0-9]{64}$/.test(preview.previewToken)
+                || !monitorDate(preview.expiresAt) || (operation === 'remove' ? preview.new_address !== null
+                    : typeof preview.new_address !== 'string' || !preview.new_address || preview.new_address.length > 128)) throw new Error(t('Respuesta inválida del servidor.'));
+            if (operation === 'history' && (preview.historical !== true || preview.preserves_crm_history !== true || preview.requires_sync !== false
+                || preview.current_address_known !== true || preview.new_address !== preview.current_address)) throw new Error(t('Respuesta inválida del servidor.'));
+            if (preview.client_id !== undefined && preview.client_id !== target.owner.client_id) throw new Error(t('La identidad del servicio cambió. Vuelve a verificarlo.'));
+            crmEditPreview = preview;
+            const review = byId('crm-ip-review'); review.style.display = 'block';
+            review.innerHTML = `<dl class="conflict-address-grid"><div><dt>${html(t('IP actual en UISP'))}</dt><dd>${html(typeof preview.current_address === 'string' && preview.current_address.length <= 128
+                ? preview.current_address : preview.current_address_known === true ? t('Sin IP asignada') : t('Sin comprobar'))}</dd></div><div><dt>${html(t(operation === 'history' ? 'IP histórica que se excluirá' : 'IP propuesta'))}</dt><dd>${html(preview.new_address ?? t('Sin IP asignada'))}</dd></div></dl>`;
+            const note = document.createElement('p'); translatedText(note, operation === 'history'
+                ? 'Esta IP de un servicio terminado se excluirá del monitoreo. El historial del CRM, el servicio actual y los routers se conservarán. La exclusión dejará de aplicarse si cambia la IP o se reactiva el servicio.'
+                : 'Sólo se modificará este atributo de IP en el CRM. Las demás IP y los demás datos del servicio se conservarán.'); review.appendChild(note);
+            if (operation === 'replace') {
+                const pending = document.createElement('p'); translatedText(pending, 'La nueva IP no ha sido comprobada contra todos los servicios. La revisión automática actualizará los conflictos.'); review.appendChild(pending);
+            }
+            translatedText(byId('crm-ip-edit-status'), 'Cambio revisado. Vence: {time}.', { time: formatDate(preview.expiresAt) });
+        } catch (error) { if (generation === crmEditGeneration) translatedText(byId('crm-ip-edit-status'), 'Error: {message}', { message: t(error.message) }); }
+        finally { if (generation === crmEditGeneration) { crmEditBusy = false; updateCrmEditorControls(); } }
+    });
+
+    byId('apply-crm-ip-change')?.addEventListener('click', async () => {
+        if (crmEditBusy || !crmEditPreview || !crmEditTarget) return;
+        const preview = crmEditPreview, target = crmEditTarget, generation = crmEditGeneration;
+        crmEditBusy = true; updateCrmEditorControls();
+        try {
+            if (!await confirmAction(t(preview.operation === 'history'
+                ? '¿Excluir del monitoreo la IP histórica {address} ({family}) del servicio terminado #{id}? Se conservarán el historial del CRM y los routers.'
+                : '¿Aplicar el cambio de {family} del servicio #{id} en UISP? IP propuesta: {address}.', {
+                family: preview.family, id: preview.service_id, address: preview.new_address ?? t('Sin IP asignada') }))) return;
+            if (generation !== crmEditGeneration) return;
+            translatedText(byId('crm-ip-edit-status'), preview.operation === 'history' ? 'Guardando la resolución histórica...' : 'Guardando el cambio en UISP...');
+            const result = checked(await api.applyCrmNetworkChange(preview.previewToken)).data;
+            if (generation !== crmEditGeneration) return;
+            if (!result || result.service_id !== preview.service_id || result.family !== preview.family || result.operation !== preview.operation
+                || typeof result.applied !== 'boolean' || typeof result.uncertain !== 'boolean' || typeof result.current_address_known !== 'boolean'
+                || (result.current_address_known && result.current_address !== null && (typeof result.current_address !== 'string' || result.current_address.length > 128)))
+                throw new Error(t('Respuesta inválida del servidor.'));
+            if (preview.operation === 'history' && (result.historical !== true || result.preserves_crm_history !== true || result.requires_sync !== false))
+                throw new Error(t('Respuesta inválida del servidor.'));
+            resetCrmEditPreview();
+            byId('crm-ip-current').textContent = result.current_address_known === true
+                ? result.current_address ?? t('Sin IP asignada') : t('Sin comprobar');
+            byId('crm-ip-address').value = result.applied === true && result.uncertain === false && result.current_address_known === true
+                && typeof result.current_address === 'string' ? result.current_address : '';
+            translatedText(byId('crm-ip-edit-status'), result.applied === true && result.uncertain === false
+                ? preview.operation === 'history' ? 'Asignación histórica resuelta. El CRM conserva su historial; la revisión automática actualizará el aviso general.'
+                    : 'Cambio guardado en el CRM. Comprueba el servicio y sincroniza su equipo para reconciliar el router.'
+                : 'UISP no confirmó el resultado del cambio. Verifica el servicio antes de intentar otro cambio.');
+            if (result.applied && !result.uncertain) {
+                try {
+                    const checked = await verifyCrmOwners(target.group, target.owner.service_id);
+                    const current = checked.owners.find(owner => owner.service_id === target.owner.service_id);
+                    const evidence = current?.address_evidence?.[target.group.family === 'IPv6' ? 'address6' : 'address'];
+                    if (evidence?.known === true) {
+                        byId('crm-ip-current').textContent = evidence.value ?? t('Sin IP asignada');
+                        byId('crm-ip-address').value = typeof evidence.value === 'string' ? evidence.value : '';
+                    }
+                }
+                catch (_) { notify(t('El cambio se guardó, pero no se pudo completar la verificación. Vuelve a verificar el servicio.'), 'error'); }
+                if (result.local_cleanup_required === true) {
+                    const cleanup = document.createElement('button'); cleanup.type = 'button'; cleanup.className = 'btn btn-secondary';
+                    translatedText(cleanup, 'Revisar limpieza'); cleanup.addEventListener('click', () => {
+                        if (crmEditBusy) return;
+                        crmEditModal.style.display = 'none'; previewCleanup([target.owner.service_id], 'crm_snapshot');
+                    }); byId('crm-ip-review').appendChild(cleanup); byId('crm-ip-review').style.display = 'block';
+                }
+            } else { crmEditTarget = { ...target, verified: false }; }
+        } catch (error) {
+            if (generation === crmEditGeneration) { resetCrmEditPreview(); crmEditTarget = { ...target, verified: false };
+                translatedText(byId('crm-ip-edit-status'), 'Error: {message}', { message: t(error.message) }); }
+        } finally {
+            if (generation === crmEditGeneration) { crmEditBusy = false; updateCrmEditorControls(); renderCrmMonitor(); }
+        }
+    });
+
     function clearCrmMonitorTimer() { clearTimeout(crmMonitorTimer); crmMonitorTimer = undefined; }
+    function expireCrmVerifications(incoming) {
+        if (!incoming.available || incoming.last_error || !monitorDate(incoming.checked_at)) return;
+        const timestamp = new Date(incoming.checked_at).getTime();
+        const incomingOwners = new Map(incoming.conflicts.flatMap(group => group.owners).map(owner => [owner.service_id, owner]));
+        const incomingGroups = new Map(incoming.conflicts.map(group => [JSON.stringify([group.family, group.address]), group]));
+        for (const [id, verification] of crmVerifiedOwners) {
+            const owner = incomingOwners.get(id);
+            if (timestamp > new Date(verification.checked_at).getTime() || (owner && owner.client_id !== verification.owner.client_id)) crmVerifiedOwners.delete(id);
+        }
+        for (const [key, verification] of crmVerifiedGroups) {
+            const group = incomingGroups.get(key);
+            if (!group || timestamp > new Date(verification.checked_at).getTime()) crmVerifiedGroups.delete(key);
+        }
+    }
     function scheduleCrmMonitor() {
         clearCrmMonitorTimer();
         if (document.hidden === true || crmMonitorStopped || crmMonitorInFlight) return;
@@ -445,6 +753,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 const incoming = normalizeCrmMonitor(checked(await api.getCrmNetworkConflicts()).data);
                 if (incoming.available && crmMonitorReport?.available
                     && new Date(incoming.checked_at).getTime() < new Date(crmMonitorReport.checked_at).getTime()) throw new Error('old_crm_monitor_report');
+                if (['mapping_changed', 'mapping_unavailable'].includes(incoming.last_error)) {
+                    crmVerifiedOwners.clear(); crmVerifiedGroups.clear();
+                }
                 // An incomplete scan cannot replace a completed report with a false zero.
                 if (crmMonitorReport?.available && (!incoming.available || incoming.last_error)) {
                     crmMonitorReport = { ...crmMonitorReport, ...incoming, available: true, duplicate_groups: crmMonitorReport.duplicate_groups,
@@ -452,8 +763,9 @@ document.addEventListener('DOMContentLoaded', () => {
                         checked_at: crmMonitorReport.checked_at, families: crmMonitorReport.families,
                         unavailable_families: crmMonitorReport.unavailable_families, coverage_complete: crmMonitorReport.coverage_complete,
                         unknown_address_count: crmMonitorReport.unknown_address_count, address_issues: crmMonitorReport.address_issues,
-                        address_issues_truncated: crmMonitorReport.address_issues_truncated, stale: true };
-                } else crmMonitorReport = incoming;
+                        address_issues_truncated: crmMonitorReport.address_issues_truncated,
+                        historical_assignments_count: crmMonitorReport.historical_assignments_count, historical_assignments: crmMonitorReport.historical_assignments, stale: true };
+                } else { expireCrmVerifications(incoming); crmMonitorReport = incoming; }
                 crmMonitorFailure = false;
             } catch (_) { crmMonitorFailure = true; }
             finally {
@@ -698,11 +1010,11 @@ document.addEventListener('DOMContentLoaded', () => {
         byId('apply-network-cleanup').disabled = cleanupBusy || verifyingService !== null || verifyingClient !== null || !cleanupPreview || selected === 0 || selected > 3;
     }
 
-    async function previewCleanup(serviceIds) {
-        if (cleanupBusy || verifyingService !== null || verifyingClient !== null || cleanupRequiresReload || !cleanupModal) return;
+    async function previewCleanup(serviceIds, source = 'stored') {
+        if (cleanupBusy || verifyingService !== null || verifyingClient !== null || crmVerifyBusy || crmEditBusy || cleanupRequiresReload || !cleanupModal) return;
         const ids = [...new Set(serviceIds.map(Number))].filter(id => Number.isSafeInteger(id) && id > 0).slice(0, 3);
         if (!ids.length) return;
-        cleanupBusy = true; cleanupPreview = null; cleanupBoxes = [];
+        cleanupBusy = true; cleanupPreview = null; cleanupBoxes = []; cleanupSource = source === 'crm_snapshot' ? source : 'stored';
         cleanupModal.style.display = 'flex';
         byId('network-cleanup-candidates').replaceChildren();
         byId('network-cleanup-blocked').replaceChildren();
@@ -713,8 +1025,9 @@ document.addEventListener('DOMContentLoaded', () => {
         translatedText(byId('network-cleanup-status'), 'Comprobando qué asignaciones pueden limpiarse...');
         updateCleanupButton();
         renderNetworkConflictsTable();
+        renderCrmMonitor();
         try {
-            const data = checked(await api.previewNetworkCleanup(ids)).data;
+            const data = checked(await api.previewNetworkCleanup(ids, cleanupSource)).data;
             if (!data || !Array.isArray(data.candidates) || !Array.isArray(data.blocked)
                 || (data.candidates.length && (typeof data.previewToken !== 'string' || !/^[a-f0-9]{64}$/.test(data.previewToken)))) throw new Error(t('Respuesta inválida del servidor.'));
             cleanupPreview = data;
@@ -724,7 +1037,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 const fields = [...new Set(Array.isArray(candidate.fields) ? candidate.fields : [])].filter(field => ['address', 'address6'].includes(field));
                 const evidence = Array.isArray(candidate.evidence) ? candidate.evidence : [];
                 const reviewedEvidence = fields.map(field => evidence.find(entry => entry?.field === field && typeof entry.saved_address === 'string'
-                    && ((entry.state === 'removed' && entry.current_address === null) || (entry.state === 'changed' && typeof entry.current_address === 'string' && entry.current_address !== entry.saved_address))));
+                    && ((entry.state === 'removed' && entry.current_address === null)
+                        || (entry.state === 'changed' && typeof entry.current_address === 'string' && entry.current_address !== entry.saved_address)
+                        || (entry.state === 'historical' && candidate.historical_reviewed === true && entry.current_address === entry.saved_address))));
                 if (!ids.includes(id) || (!stale && candidate.reason !== 'crm_not_found') || (stale && (!fields.length || reviewedEvidence.some(entry => !entry)))) continue;
                 const row = document.createElement('label'); row.className = 'cleanup-candidate';
                 const checkbox = document.createElement('input'); checkbox.type = 'checkbox'; checkbox.value = String(id);
@@ -733,7 +1048,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 const addresses = stale ? reviewedEvidence.map(entry => entry.saved_address) : [candidate.address, candidate.address6].filter(Boolean);
                 copy.innerHTML = `<strong>${html(t('Asignaciones del servicio #{id}', { id }))}</strong><span class="cleanup-address">${html(addresses.join(' · '))}</span>`;
                 const explanation = document.createElement('small');
-                translatedText(explanation, stale ? 'UISP confirmó que las IP guardadas indicadas fueron retiradas o cambiadas. Sólo se retirarán esas asignaciones locales; la ficha del servicio y las demás familias se conservarán.'
+                translatedText(explanation, stale ? reviewedEvidence.some(entry => entry.state === 'historical')
+                    ? 'La reserva corresponde a una asignación histórica revisada de un servicio terminado. Sólo se retirará la reserva local; el historial del CRM y el servicio actual se conservarán.'
+                    : 'UISP confirmó que las IP guardadas indicadas fueron retiradas o cambiadas. Sólo se retirarán esas asignaciones locales; la ficha del servicio y las demás familias se conservarán.'
                     : 'UISP confirmó que el servicio no existe. Otro servicio del conflicto está verificado en UISP y se conservará.');
                 copy.appendChild(explanation);
                 if (stale) for (const entry of reviewedEvidence) {
@@ -756,7 +1073,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             translatedText(byId('network-cleanup-status'), cleanupBoxes.length ? 'Selecciona las asignaciones que deseas limpiar. La revisión vence: {time}.' : 'No hay asignaciones que puedan limpiarse con seguridad en esta revisión.', { time: formatDate(data.expiresAt) });
         } catch (error) { translatedText(byId('network-cleanup-status'), 'Error: {message}', { message: t(error.message) }); }
-        finally { cleanupBusy = false; updateCleanupButton(); if (currentView === 'network_conflicts') renderNetworkConflictsTable(); }
+        finally { cleanupBusy = false; updateCleanupButton(); if (currentView === 'network_conflicts') { renderNetworkConflictsTable(); renderCrmMonitor(); } }
     }
 
     byId('apply-network-cleanup')?.addEventListener('click', async () => {
@@ -767,21 +1084,28 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             if (!await confirmAction(t('¿Limpiar las asignaciones locales de {count} servicios seleccionados? Se creará un respaldo. UISP y los routers no se modificarán.', { count: ids.length }))) return;
             translatedText(byId('network-cleanup-status'), 'Creando respaldo y limpiando asignaciones locales...');
-            const result = checked(await api.applyNetworkCleanup(cleanupPreview.previewToken, ids)).data;
-            if (!result || !Array.isArray(result.removed_service_ids) || !Number.isSafeInteger(result.duplicate_groups) || result.duplicate_groups < 0 || result.requires_reload !== true) throw new Error(t('Respuesta inválida del servidor.'));
+            const result = checked(await api.applyNetworkCleanup(cleanupPreview.previewToken, ids, cleanupSource)).data;
+            if (!result || !Array.isArray(result.removed_service_ids) || !Number.isSafeInteger(result.duplicate_groups) || result.duplicate_groups < 0
+                || typeof result.requires_reload !== 'boolean') throw new Error(t('Respuesta inválida del servidor.'));
             const backupUrl = api.downloadUrl(result.backup_name);
-            cleanupRequiresReload = true; cleanupRemainingCount = result.duplicate_groups; cleanupPreview = null;
+            cleanupRequiresReload = result.requires_reload; cleanupPreview = null;
+            if (cleanupSource === 'stored' || recoveryReadOnly) cleanupRemainingCount = result.duplicate_groups;
             cleanupBoxes.forEach(box => { box.disabled = true; });
             const summary = document.createElement('p');
-            translatedText(summary, 'Se retiraron las asignaciones de {count} servicios. Quedan {remaining} conflictos de IP.', { count: result.removed_service_ids.length, remaining: result.duplicate_groups });
+            translatedText(summary, cleanupSource === 'crm_snapshot' && !recoveryReadOnly
+                ? result.removed_service_ids.length === 1 ? 'Se limpiaron las reservas locales de {count} servicio. El aviso del CRM se actualizará en la próxima revisión automática.'
+                    : 'Se limpiaron las reservas locales de {count} servicios. El aviso del CRM se actualizará en la próxima revisión automática.'
+                : 'Se retiraron las asignaciones de {count} servicios. Quedan {remaining} conflictos de IP.', { count: result.removed_service_ids.length, remaining: result.duplicate_groups });
             const backup = document.createElement('a'); backup.className = 'btn btn-secondary'; backup.href = backupUrl; backup.download = result.backup_name;
             translatedText(backup, 'Descargar respaldo de la limpieza');
             byId('network-cleanup-result').append(summary, backup); byId('network-cleanup-result').style.display = 'block';
-            translatedText(byId('network-cleanup-status'), 'La limpieza terminó. Recarga el panel para comprobar las asignaciones y completar la actualización.');
-            byId('apply-network-cleanup').style.display = 'none'; byId('reload-after-cleanup').style.display = 'inline-flex';
-            applyRecovery({ readOnly: true });
+            translatedText(byId('network-cleanup-status'), result.requires_reload
+                ? 'La limpieza terminó. Recarga el panel para comprobar las asignaciones y completar la actualización.'
+                : 'La limpieza local terminó. Puedes seguir usando el panel.');
+            byId('apply-network-cleanup').style.display = 'none'; byId('reload-after-cleanup').style.display = result.requires_reload ? 'inline-flex' : 'none';
+            if (recoveryReadOnly) applyRecovery({ readOnly: true });
         } catch (error) { translatedText(byId('network-cleanup-status'), 'Error: {message}', { message: t(error.message) }); }
-        finally { cleanupBusy = false; updateCleanupButton(); if (currentView === 'network_conflicts') renderNetworkConflictsTable(); }
+        finally { cleanupBusy = false; updateCleanupButton(); if (currentView === 'network_conflicts') { renderNetworkConflictsTable(); renderCrmMonitor(); } }
     });
     byId('reload-after-cleanup')?.addEventListener('click', reloadPanel);
 
@@ -872,7 +1196,9 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    function completed(response, message) {
+    function completed(response, message, deviceName) {
+        const report = (text, kind) => notify(deviceName
+            ? t('Equipo {name}: {message}', { name: deviceName, message: text }) : text, kind);
         const result = response?.data;
         const counts = result && ['requested', 'completed', 'failed'].every(key => Number.isSafeInteger(result[key]) && result[key] >= 0)
             && result.completed <= result.requested && result.failed <= result.requested
@@ -893,13 +1219,13 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             if (failures.length > 6) parts.push(t('Otros {count} servicios con error.', { count: failures.length - 6 }));
             parts.push(t('Revisa Trabajos y el registro del plugin.'));
-            notify(parts.join(' '), 'error');
+            report(parts.join(' '), 'error');
             return;
         }
         checked(response);
         const accepted = api.isAccepted(response);
         const totals = counts ? t('Servicios completados: {completed} de {requested}.', result) : '';
-        notify(accepted ? t('Solicitud aceptada. El trabajo seguirá ejecutándose; comprueba su resultado en Trabajos.') : [message, totals].filter(Boolean).join(' '),
+        report(accepted ? t('Solicitud aceptada. El trabajo seguirá ejecutándose; comprueba su resultado en Trabajos.') : [message, totals].filter(Boolean).join(' '),
             accepted ? 'info' : 'success');
     }
 
@@ -988,6 +1314,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function closeModals() {
         for (const modal of [deviceModal, planModal, orphanModal, cleanupModal]) if (modal) modal.style.display = 'none';
+        if (crmEditModal && !crmEditBusy) {
+            crmEditModal.style.display = 'none'; crmEditGeneration++; crmEditTarget = null; resetCrmEditPreview();
+        }
         byId('dev-password').value = '';
     }
 
@@ -1043,9 +1372,37 @@ document.addEventListener('DOMContentLoaded', () => {
     byId('btn-recheck-conflicts')?.addEventListener('click', reloadPanel);
 
     async function renderDevices() {
+        const sequence = ++devicesRequestSequence;
         const response = checked(await api.getDevices());
+        if (sequence !== devicesRequestSequence) return;
         devicesCache = Array.isArray(response.data) ? response.data : [];
         renderDevicesTable();
+    }
+
+    async function syncDevice(device) {
+        const id = Number(device.id);
+        if (!Number.isSafeInteger(id) || id < 1 || recoveryReadOnly || deviceSyncs.has(id)) return;
+        const name = `${String(device.name || id).slice(0, 200)} (#${id})`;
+        deviceSyncs.set(id, 'confirming');
+        renderDevicesTable();
+        try {
+            if (!await confirmAction(t('¿Sincronizar las cuentas administradas de este MikroTik y reconectar todas sus sesiones PPP/Hotspot?'))) return;
+            if (recoveryReadOnly) return;
+            deviceSyncs.set(id, 'running');
+            if (currentView === 'devices') renderDevicesTable();
+            completed(await api.send('update', 'system', 'insert', { type: 'device', id }),
+                t('Sincronización y reconexión completadas.'), name);
+            try { await renderDevices(); }
+            catch (_) {
+                notify(t('Equipo {name}: {message}', { name, message: t('No se pudo actualizar el estado del equipo.') }), 'error');
+            }
+        } catch (error) {
+            notify(t('Equipo {name}: {message}', { name,
+                message: t('Error: {message}', { message: t(error?.message || 'No se pudo completar la operación.') }) }), 'error');
+        } finally {
+            deviceSyncs.delete(id);
+            if (currentView === 'devices') renderDevicesTable();
+        }
     }
 
     function renderDevicesTable() {
@@ -1067,30 +1424,36 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!devices.length) tbody.innerHTML = `<tr><td colspan="6" class="empty-state" data-i18n="No se encontraron dispositivos.">${html(t('No se encontraron dispositivos.'))}</td></tr>`;
         devices.forEach(device => {
             const row = document.createElement('tr');
+            const id = Number(device.id);
+            const busy = deviceSyncs.has(id);
+            const syncing = deviceSyncs.get(id) === 'running';
+            row.dataset.deviceId = String(id);
+            row.classList.toggle('device-sync-active', syncing);
+            row.setAttribute('aria-busy', syncing ? 'true' : 'false');
             const online = PanelUtils.flag(device.status);
             const deviceStatus = device.status == null ? 'Sin comprobar' : online ? 'Puerto accesible' : 'Desconectado';
             row.innerHTML = `<td>${html(device.id)}</td><td>${html(device.name)}</td><td>${html(device.ip)}</td>
-                <td>${html(device.users ?? 0)}</td><td><span class="badge badge-${device.status == null ? 'neutral' : online ? 'success' : 'danger'}" data-i18n="${deviceStatus}">${html(t(deviceStatus))}</span></td><td class="row-actions"></td>`;
+                <td>${html(device.users ?? 0)}</td><td><span class="badge badge-${device.status == null ? 'neutral' : online ? 'success' : 'danger'}" data-i18n="${deviceStatus}">${html(t(deviceStatus))}</span>
+                ${syncing ? `<span class="device-sync-progress" role="status"><span class="device-sync-spinner" aria-hidden="true"></span><span data-i18n="Sincronizando…">${html(t('Sincronizando…'))}</span></span>` : ''}</td><td class="row-actions"></td>`;
             const actions = row.querySelector('.row-actions');
             actions.append(
-                actionButton('Ver cuentas huérfanas', 'users', () => viewOrphans(device.id), 'secondary', { routerRead: true }),
-                actionButton(recoveryReadOnly ? 'Ver dispositivo' : 'Editar dispositivo', 'edit-2', () => openDeviceModal(device), 'secondary', { loading: false }),
-                actionButton('Sincronizar y reconectar cuentas', 'refresh-cw', async () => {
-                    if (!await confirmAction(t('¿Sincronizar las cuentas administradas de este MikroTik y reconectar todas sus sesiones PPP/Hotspot?'))) return;
-                    completed(await api.send('update', 'system', 'insert', { type: 'device', id: Number(device.id) }), t('Sincronización y reconexión completadas.'));
-                    await renderDevices();
-                }, 'secondary', { write: true }),
+                actionButton('Ver cuentas huérfanas', 'users', () => { if (!deviceSyncs.has(id)) return viewOrphans(device.id); }, 'secondary', { routerRead: true }),
+                actionButton(recoveryReadOnly ? 'Ver dispositivo' : 'Editar dispositivo', 'edit-2', () => { if (!deviceSyncs.has(id)) openDeviceModal(device); }, 'secondary', { loading: false }),
+                actionButton('Sincronizar y reconectar cuentas', 'refresh-cw', () => syncDevice(device), 'secondary', { loading: false, write: true }),
                 actionButton('Vaciar cuentas administradas', 'x-circle', async () => {
+                    if (deviceSyncs.has(id)) return;
                     if (!await confirmAction(t('¿Eliminar todas las cuentas administradas por el plugin de este MikroTik?'))) return;
                     completed(await api.send('update', 'system', 'delete', { type: 'device', id: Number(device.id) }), t('Cuentas eliminadas.'));
                     await renderDevices();
                 }, 'secondary', { write: true }),
                 actionButton('Eliminar dispositivo', 'trash-2', async () => {
+                    if (deviceSyncs.has(id)) return;
                     if (!await confirmAction(t('¿Eliminar este dispositivo del plugin?'))) return;
                     checked(await api.send('update', 'devices', 'delete', { id: Number(device.id) }));
                     await renderDevices();
                 }, 'danger', { write: true })
             );
+            if (busy) for (const button of actions.children) button.disabled = true;
             tbody.appendChild(row);
         });
         PanelUtils.replaceIcons();

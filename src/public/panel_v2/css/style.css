@@ -141,6 +141,9 @@ input[type="checkbox"] { accent-color: var(--primary); }
 .btn:disabled { opacity: 0.55; cursor: wait; }
 .row-actions { display: flex; gap: 4px; align-items: center; flex-wrap: wrap; }
 .row-action { min-height: 30px; padding: 6px 7px; }
+.device-sync-active { background: color-mix(in srgb, var(--primary) 6%, transparent); }
+.device-sync-progress { display: inline-flex; gap: 6px; align-items: center; margin: 5px 0 0 8px; color: var(--primary); font-size: 0.75rem; white-space: nowrap; }
+.device-sync-spinner { flex: 0 0 auto; width: 14px; height: 14px; border: 2px solid var(--spinner-track); border-top-color: var(--primary); border-radius: 50%; animation: spin 1s linear infinite; }
 .data-table td.row-actions { display: table-cell; white-space: nowrap; }
 .data-table td.row-actions > .btn { margin-right: 4px; }
 
@@ -350,6 +353,17 @@ details.config-section[open] > summary.config-section-header::after { content: '
 .confirm-overlay { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; padding: 20px; background: var(--confirm-overlay); z-index: 1000; }
 .confirm-dialog { max-width: 440px; padding: 22px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-card); }
 .confirm-controls { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+.crm-selection-status { font-size: 0.72rem; line-height: 1.5; color: var(--text-muted); margin-top: 10px; }
+.crm-ip-edit-dialog { max-width: 600px; }
+.crm-ip-target { margin-bottom: 12px; }
+.crm-ip-current { display: flex; flex-direction: column; gap: 5px; padding: 12px; margin-bottom: 14px; border: 1px solid var(--border); border-radius: 7px; background: var(--surface-subtle); font-size: 0.8rem; overflow-wrap: anywhere; }
+.crm-ip-current span { color: var(--text-muted); }
+.crm-ip-review { margin: 14px 0; padding: 12px; border: 1px solid var(--control-border); border-radius: 7px; background: var(--surface-subtle); }
+.crm-ip-review p { font-size: 0.77rem; line-height: 1.5; color: var(--text-muted); margin-top: 10px; }
+.crm-ip-edit-dialog .modal-footer { flex-wrap: wrap; }
+.crm-network-history { margin: 18px 0; padding: 14px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-subtle); }
+.crm-network-history h3 { font-size: 0.9rem; margin-bottom: 7px; }
+.crm-history-owner { margin-top: 10px; padding: 10px 0; border-top: 1px solid var(--border); }
 .toast-region { position: fixed; top: 16px; right: 16px; z-index: 1100; width: min(400px, calc(100vw - 24px)); display: flex; flex-direction: column; gap: 8px; pointer-events: none; }
 .toast { display: flex; align-items: flex-start; gap: 12px; padding: 13px 14px; border: 1px solid var(--border); border-left: 3px solid var(--primary); border-radius: var(--radius); background: var(--toast-bg); color: var(--text-main); box-shadow: var(--toast-shadow); }
 .toast-message { flex: 1; min-width: 0; font-size: 0.82rem; line-height: 1.5; overflow-wrap: anywhere; }
@@ -413,4 +427,5 @@ details.config-section[open] > summary.config-section-header::after { content: '
 @media (prefers-reduced-motion: reduce) {
     * { transition: none !important; }
     .spinner { animation-duration: 2s; }
+    .device-sync-spinner { animation-duration: 2s; }
 }

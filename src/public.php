@@ -77,6 +77,8 @@ try {
             exit;
         }
         require_once 'lib/api_panel_recovery.php';
+        require_once 'lib/api_crm_network_resolution.php';
+        if (ApiCrmNetworkResolution::panelRequest($method, is_object($data) ? $data : null)) exit;
         if (ApiPanelRecovery::cleanupRequest($method, is_object($data) ? $data : null, $_GET)) exit;
         if (ApiPanelRecovery::diagnosticRequest($method, is_object($data) ? $data : null, $_GET)) exit;
     }

@@ -1,6 +1,7 @@
 <?php
 
 require_once __DIR__ . '/api_network_address_evidence.php';
+require_once __DIR__ . '/api_crm_network_history.php';
 
 /** Independent, read-only CRM scans. This state never participates in allocation or jobs. */
 final class ApiCrmNetworkMonitor
@@ -11,7 +12,8 @@ final class ApiCrmNetworkMonitor
     private const BUDGET_SECONDS = 12.0;
     private const MAX_SERVICES = 100000;
     private const APPLICATION_ID = 1129467214;
-    private const SCHEMA_VERSION = 3;
+    private const SCHEMA_VERSION = 4;
+    private bool $historyColumns = false;
     private $request;
     private $clock;
     private string $dataPath;
@@ -134,6 +136,7 @@ final class ApiCrmNetworkMonitor
                 $reason = $field . '_reason';
                 $known = $field . '_known';
                 if ((int) $database->querySingle('SELECT COUNT(*) FROM snapshot_services WHERE (' . $known . '=1 AND ' . $reason . ' IS NOT NULL) OR (' . $known . '=0 AND (' . $reason . " IS NULL OR " . $reason . " NOT IN ('mapping_unknown','attributes_unknown','attribute_ambiguous','value_unknown','value_invalid')))") !== 0) throw new RuntimeException('state_unavailable');
+                if ($this->historyColumns && (int) $database->querySingle('SELECT COUNT(*) FROM snapshot_services WHERE typeof(' . $field . '_historical)<>\'integer\' OR ' . $field . '_historical NOT IN (0,1) OR (' . $field . '_historical=1 AND (status<>2 OR ' . $known . '=0 OR ' . $field . ' IS NULL))') !== 0) throw new RuntimeException('state_unavailable');
             }
             foreach (['address', 'address6'] as $field) {
                 // An unsupported optional family without historical ownership
@@ -144,10 +147,14 @@ final class ApiCrmNetworkMonitor
             $report['address_issues_truncated'] = $report['unknown_address_count'] > count($report['address_issues']);
             if ($report['unknown_address_count'] > 0) $report['coverage_complete'] = false;
             $report['available'] = true;
+            if ($this->historyColumns) {
+                $report['historical_assignments_count'] = (int) $database->querySingle('SELECT COALESCE(SUM(address_historical+address6_historical),0) FROM snapshot_services');
+                $report['historical_assignments'] = $this->historicalAssignments($database);
+            }
             $report['stale'] = $report['unknown_address_count'] > 0 || $meta['last_error'] !== null || $this->now() - $meta['published_at'] >= self::INTERVAL_SECONDS * 2;
             if (!$report['scan_in_progress']) $report['services_scanned'] = $meta['published_count'];
             foreach (['address' => 'IPv4', 'address6' => 'IPv6'] as $field => $family) {
-                $result = $database->query('SELECT ' . $field . ' AS address,COUNT(*) AS owners FROM snapshot_services WHERE ' . $field . ' IS NOT NULL GROUP BY ' . $field . ' HAVING COUNT(*)>1 ORDER BY ' . $field);
+                $result = $database->query('SELECT ' . $field . ' AS address,COUNT(*) AS owners FROM snapshot_services WHERE ' . $field . ' IS NOT NULL' . $this->historyFilter($field) . ' GROUP BY ' . $field . ' HAVING COUNT(*)>1 ORDER BY ' . $field);
                 try {
                     while ($group = $result->fetchArray(SQLITE3_ASSOC)) {
                         $report['duplicate_groups']++;
@@ -170,12 +177,43 @@ final class ApiCrmNetworkMonitor
         } finally { if ($database !== null) $database->close(); }
     }
 
+    /** Bounded canonical ownership lookup for an explicit correction preview. */
+    public function addressOwners(string $field, string $address): array
+    {
+        if (!in_array($field, ['address', 'address6'], true)) throw new InvalidArgumentException('invalid_crm_resolution_family');
+        $address = ApiNetworkAddressEvidence::normalize($address, $field);
+        if ($address === null) throw new InvalidArgumentException('invalid_crm_resolution_address');
+        $database = null;
+        try {
+            $this->assertPaths();
+            if (!is_file($this->statePath)) return [];
+            $database = $this->openState(false);
+            $database->exec('BEGIN');
+            $meta = $this->metadata($database);
+            $mapping = $this->configuredMapping();
+            if ($meta['published_at'] === null || $mapping === null
+                || $meta['published_config_fingerprint'] !== ApiNetworkAddressEvidence::mappingFingerprint($mapping)) return [];
+            $statement = $database->prepare('SELECT id FROM snapshot_services WHERE ' . $field . '=:address' . $this->historyFilter($field) . ' ORDER BY id LIMIT 51');
+            $statement->bindValue(':address', $address, SQLITE3_TEXT);
+            $result = $statement->execute();
+            try {
+                $ids = [];
+                while ($row = $result->fetchArray(SQLITE3_ASSOC)) {
+                    if (!is_int($row['id']) || $row['id'] < 1) throw new RuntimeException('state_unavailable');
+                    $ids[] = $row['id'];
+                }
+                return $ids;
+            } finally { $result->finalize(); $statement->close(); }
+        } finally { if ($database !== null) $database->close(); }
+    }
+
     private function emptyReport(): array
     {
         return ['available' => false, 'duplicate_groups' => 0, 'conflicts' => [], 'conflicts_truncated' => false,
             'checked_at' => null, 'scan_started_at' => null, 'scan_in_progress' => false, 'last_error' => null,
             'stale' => true, 'services_scanned' => 0, 'snapshot_services_count' => 0, 'families' => [], 'unavailable_families' => [],
             'coverage_complete' => false, 'unknown_address_count' => 0, 'address_issues' => [], 'address_issues_truncated' => false,
+            'historical_assignments_count' => 0, 'historical_assignments' => [],
             'interval_seconds' => self::INTERVAL_SECONDS,
             'source' => 'crm_snapshot', 'warning_only' => true];
     }
@@ -211,23 +249,38 @@ final class ApiCrmNetworkMonitor
                 $database->exec('BEGIN IMMEDIATE');
                 $database->exec('CREATE TABLE monitor_meta(id INTEGER PRIMARY KEY CHECK(id=1),published_at REAL,published_count INTEGER NOT NULL DEFAULT 0,published_config_fingerprint TEXT,published_mapping TEXT,cycle_started_at REAL,last_attempt_at REAL,scan_offset INTEGER NOT NULL DEFAULT 0,config_fingerprint TEXT,mapping_fingerprint TEXT,mapping TEXT,last_error TEXT,published_keys TEXT,cycle_keys TEXT);
                     INSERT INTO monitor_meta(id) VALUES(1);
-                    CREATE TABLE snapshot_services(id INTEGER PRIMARY KEY CHECK(id>0),client_id INTEGER NOT NULL CHECK(client_id>0),status INTEGER NOT NULL CHECK(status BETWEEN 0 AND 8),address TEXT,address6 TEXT,address_known INTEGER NOT NULL CHECK(address_known IN (0,1)),address6_known INTEGER NOT NULL CHECK(address6_known IN (0,1)),address_reason TEXT,address6_reason TEXT);
-                    CREATE TABLE staging_services(id INTEGER PRIMARY KEY CHECK(id>0),client_id INTEGER NOT NULL CHECK(client_id>0),status INTEGER NOT NULL CHECK(status BETWEEN 0 AND 8),address TEXT,address6 TEXT,address_known INTEGER NOT NULL CHECK(address_known IN (0,1)),address6_known INTEGER NOT NULL CHECK(address6_known IN (0,1)),address_reason TEXT,address6_reason TEXT);
+                    CREATE TABLE snapshot_services(id INTEGER PRIMARY KEY CHECK(id>0),client_id INTEGER NOT NULL CHECK(client_id>0),status INTEGER NOT NULL CHECK(status BETWEEN 0 AND 8),address TEXT,address6 TEXT,address_known INTEGER NOT NULL CHECK(address_known IN (0,1)),address6_known INTEGER NOT NULL CHECK(address6_known IN (0,1)),address_reason TEXT,address6_reason TEXT,address_historical INTEGER NOT NULL DEFAULT 0 CHECK(address_historical IN (0,1)),address6_historical INTEGER NOT NULL DEFAULT 0 CHECK(address6_historical IN (0,1)));
+                    CREATE TABLE staging_services(id INTEGER PRIMARY KEY CHECK(id>0),client_id INTEGER NOT NULL CHECK(client_id>0),status INTEGER NOT NULL CHECK(status BETWEEN 0 AND 8),address TEXT,address6 TEXT,address_known INTEGER NOT NULL CHECK(address_known IN (0,1)),address6_known INTEGER NOT NULL CHECK(address6_known IN (0,1)),address_reason TEXT,address6_reason TEXT,address_historical INTEGER NOT NULL DEFAULT 0 CHECK(address_historical IN (0,1)),address6_historical INTEGER NOT NULL DEFAULT 0 CHECK(address6_historical IN (0,1)));
                     CREATE INDEX snapshot_address ON snapshot_services(address);
                     CREATE INDEX snapshot_address6 ON snapshot_services(address6)');
                 $database->exec('COMMIT');
             }
+            $schema = (int) $database->querySingle('PRAGMA user_version');
             if ((int) $database->querySingle('PRAGMA application_id') !== self::APPLICATION_ID
-                || (int) $database->querySingle('PRAGMA user_version') !== self::SCHEMA_VERSION
+                || !in_array($schema, [3, self::SCHEMA_VERSION], true)
                 || strtolower((string) $database->querySingle('PRAGMA journal_mode')) !== 'delete'
                 || (int) $database->querySingle("SELECT COUNT(*) FROM sqlite_master WHERE type IN ('trigger','view')") !== 0
                 || (int) $database->querySingle("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'") !== 3) throw new RuntimeException('state_unavailable');
             foreach (['snapshot_services', 'staging_services'] as $table) {
                 $expected = ['id', 'client_id', 'status', 'address', 'address6', 'address_known', 'address6_known', 'address_reason', 'address6_reason'];
+                if ($schema === self::SCHEMA_VERSION) $expected = array_merge($expected, ['address_historical', 'address6_historical']);
                 if ($this->columns($database, $table) !== $expected) throw new RuntimeException('state_unavailable');
             }
             if ($this->columns($database, 'monitor_meta') !== ['id', 'published_at', 'published_count', 'published_config_fingerprint', 'published_mapping', 'cycle_started_at', 'last_attempt_at', 'scan_offset', 'config_fingerprint', 'mapping_fingerprint', 'mapping', 'last_error', 'published_keys', 'cycle_keys']) throw new RuntimeException('state_unavailable');
             $this->metadata($database);
+            // Only the scheduler upgrades our exact known schema. Panel polls
+            // continue reading v3 without creating files or changing its rows.
+            if ($schema === 3 && $write) {
+                $database->exec('BEGIN IMMEDIATE');
+                try {
+                    foreach (['snapshot_services', 'staging_services'] as $table) {
+                        foreach (['address', 'address6'] as $field) $database->exec('ALTER TABLE ' . $table . ' ADD COLUMN ' . $field . '_historical INTEGER NOT NULL DEFAULT 0 CHECK(' . $field . '_historical IN (0,1))');
+                    }
+                    $database->exec('PRAGMA user_version=' . self::SCHEMA_VERSION . '; COMMIT');
+                    $schema = self::SCHEMA_VERSION;
+                } catch (Throwable $failure) { $database->exec('ROLLBACK'); throw $failure; }
+            }
+            $this->historyColumns = $schema === self::SCHEMA_VERSION;
             return $database;
         } catch (Throwable $failure) { $database->close(); throw $failure; }
     }
@@ -316,6 +369,8 @@ final class ApiCrmNetworkMonitor
                 $row[$field] = $known ? $evidence[$field]['value'] : null;
                 $row[$field . '_known'] = $known ? 1 : 0;
                 $row[$field . '_reason'] = $reason;
+                $row[$field . '_historical'] = $known && $mapping[$field] !== null
+                    && ApiCrmNetworkHistory::reviewed($item, $mapping[$field], $field, dirname($this->dataPath)) ? 1 : 0;
             }
             $rows[] = $row;
         }
@@ -326,7 +381,7 @@ final class ApiCrmNetworkMonitor
     {
         $database->exec('BEGIN IMMEDIATE');
         try {
-            $statement = $database->prepare('INSERT INTO staging_services(id,client_id,status,address,address6,address_known,address6_known,address_reason,address6_reason) VALUES(:id,:client_id,:status,:address,:address6,:address_known,:address6_known,:address_reason,:address6_reason)');
+            $statement = $database->prepare('INSERT INTO staging_services(id,client_id,status,address,address6,address_known,address6_known,address_reason,address6_reason,address_historical,address6_historical) VALUES(:id,:client_id,:status,:address,:address6,:address_known,:address6_known,:address_reason,:address6_reason,:address_historical,:address6_historical)');
             foreach ($rows as $row) {
                 foreach ($row as $key => $value) $statement->bindValue(':' . $key, $value, $value === null ? SQLITE3_NULL : (is_int($value) ? SQLITE3_INTEGER : SQLITE3_TEXT));
                 try { $statement->execute()->finalize(); }
@@ -360,11 +415,11 @@ final class ApiCrmNetworkMonitor
             // address under the same attribute provenance. Missing catalog
             // evidence may retain the same key across repeated unknown cycles;
             // a renamed key or replacement attribute ID cannot inherit it.
-            $statement = $database->prepare('INSERT OR REPLACE INTO snapshot_services(id,client_id,status,address,address6,address_known,address6_known,address_reason,address6_reason)
+            $statement = $database->prepare('INSERT OR REPLACE INTO snapshot_services(id,client_id,status,address,address6,address_known,address6_known,address_reason,address6_reason,address_historical,address6_historical)
                 SELECT fresh.id,fresh.client_id,fresh.status,
                     CASE WHEN fresh.address_known=1 THEN fresh.address WHEN :carry4=1 THEN old.address ELSE NULL END,
                     CASE WHEN fresh.address6_known=1 THEN fresh.address6 WHEN :carry6=1 THEN old.address6 ELSE NULL END,
-                    fresh.address_known,fresh.address6_known,fresh.address_reason,fresh.address6_reason
+                    fresh.address_known,fresh.address6_known,fresh.address_reason,fresh.address6_reason,fresh.address_historical,fresh.address6_historical
                 FROM staging_services fresh LEFT JOIN snapshot_services old ON old.id=fresh.id');
             $statement->bindValue(':carry4', $carry['address'] ? 1 : 0, SQLITE3_INTEGER);
             $statement->bindValue(':carry6', $carry['address6'] ? 1 : 0, SQLITE3_INTEGER);
@@ -392,7 +447,7 @@ final class ApiCrmNetworkMonitor
 
     private function owners(SQLite3 $database, string $field, string $address): array
     {
-        $statement = $database->prepare('SELECT * FROM snapshot_services WHERE ' . $field . '=:address ORDER BY id LIMIT 50');
+        $statement = $database->prepare('SELECT * FROM snapshot_services WHERE ' . $field . '=:address' . $this->historyFilter($field) . ' ORDER BY id LIMIT 50');
         $statement->bindValue(':address', $address, SQLITE3_TEXT);
         $result = $statement->execute();
         $owners = [];
@@ -413,11 +468,33 @@ final class ApiCrmNetworkMonitor
 
     private function unknownGroupOwners(SQLite3 $database, string $field, string $address): int
     {
-        $statement = $database->prepare('SELECT COUNT(*) FROM snapshot_services WHERE ' . $field . '=:address AND ' . $field . '_known=0');
+        $statement = $database->prepare('SELECT COUNT(*) FROM snapshot_services WHERE ' . $field . '=:address AND ' . $field . '_known=0' . $this->historyFilter($field));
         $statement->bindValue(':address', $address, SQLITE3_TEXT);
         $result = $statement->execute();
         try { return (int) $result->fetchArray(SQLITE3_NUM)[0]; }
         finally { $result->finalize(); $statement->close(); }
+    }
+
+    private function historyFilter(string $field): string
+    {
+        return $this->historyColumns ? ' AND ' . $field . '_historical=0' : '';
+    }
+
+    private function historicalAssignments(SQLite3 $database): array
+    {
+        $result = $database->query("SELECT id,client_id,'IPv4' AS family,address FROM snapshot_services WHERE address_historical=1
+            UNION ALL SELECT id,client_id,'IPv6' AS family,address6 AS address FROM snapshot_services WHERE address6_historical=1 ORDER BY id,family LIMIT 20");
+        $rows = [];
+        try {
+            while ($row = $result->fetchArray(SQLITE3_ASSOC)) {
+                $field = $row['family'] === 'IPv6' ? 'address6' : 'address';
+                if (ApiNetworkAddressEvidence::normalize($row['address'], $field) !== $row['address']) throw new RuntimeException('state_unavailable');
+                $rows[] = ['service_id' => $row['id'], 'client_id' => $row['client_id'], 'family' => $row['family'], 'address' => $row['address'],
+                    'service_status_code' => 2, 'service_status' => 'Terminado', 'historical_reviewed' => true, 'source' => 'crm_snapshot',
+                    'service_url' => '/crm/client/service/' . $row['id'], 'client_url' => '/crm/client/' . $row['client_id']];
+            }
+        } finally { $result->finalize(); }
+        return $rows;
     }
 
     private function issues(SQLite3 $database): array

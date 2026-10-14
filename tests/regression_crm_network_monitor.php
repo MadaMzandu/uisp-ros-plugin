@@ -247,6 +247,60 @@ try {
     checkCrmMonitor($replacedId['duplicate_groups'] === 1 && $replacedId['conflicts'][0]['family'] === 'IPv6'
         && !$replacedId['conflicts'][0]['current_confirmed'] && $replacedId['unknown_address_count'] === 4,
         'Same-name replacement catalog ID inherited the former attribute address');
+    // A reviewed ended service retains its raw address and history. Only the
+    // reviewed family is excluded from actionable conflicts, and fresh changed
+    // or unknown evidence never inherits that exclusion.
+    $db = new SQLite3($dataPath); $db->exec("UPDATE config SET value='fixture-ip' WHERE key='ip_addr_attr'; UPDATE config SET value='fixture-ipv6' WHERE key='ip_addr6_attr'"); $db->close();
+    $historyBefore=monitorFileHashes($directory);
+    $catalog = [['id'=>1,'key'=>'fixture-ip','attributeType'=>'service'], ['id'=>2,'key'=>'fixture-ipv6','attributeType'=>'service']];
+    $services = [monitorFixtureService(101,'192.0.2.88','2001:db8:88::/64'), monitorFixtureService(102,'192.0.2.88','2001:db8:88::/64')];
+    $services[0]['status']=2; $services[1]['status']=1; $mode='normal';
+    $historical = new ApiCrmNetworkMonitor($request, $dataPath, $directory.'/history-monitor.db', static function () use (&$now): float { return $now; });
+    checkCrmMonitor($historical->tick()['duplicate_groups']===2,'Unreviewed ended service was silently excluded');
+    $descriptor=['key'=>'fixture-ip','id'=>1];
+    $markerPath=ApiCrmNetworkHistory::markerPath(101,'address',$directory);
+    $marker=['service_id'=>101,'client_id'=>1101,'status'=>2,'field'=>'address','attribute'=>$descriptor,
+        'value'=>'192.0.2.88','fingerprint'=>ApiCrmNetworkHistory::fingerprint($services[0],$descriptor,'address'),'created_at'=>(int)$now];
+    file_put_contents($markerPath,json_encode($marker));
+    $now+=301; $reviewed=$historical->tick();
+    checkCrmMonitor($reviewed['duplicate_groups']===1 && $reviewed['conflicts'][0]['family']==='IPv6'
+        && $reviewed['historical_assignments_count']===1 && $reviewed['historical_assignments'][0]['service_id']===101
+        && $reviewed['historical_assignments'][0]['address']==='192.0.2.88'
+        && $historical->addressOwners('address','192.0.2.88')===[102], 'Historical review removed another owner/family or hid retained historical evidence');
+    $hash=hash_file('sha256',$directory.'/history-monitor.db'); $calls=[];
+    checkCrmMonitor($historical->read()===$reviewed && $calls===[] && hash_file('sha256',$directory.'/history-monitor.db')===$hash,
+        'Reading historical review edited private state or contacted CRM');
+    $services[0]['status']=1; $now+=301;
+    checkCrmMonitor($historical->tick()['duplicate_groups']===2,'Reactivated service inherited an ended review');
+    $services[0]['status']=2; $services[0]['clientId']=9999; $now+=301;
+    checkCrmMonitor($historical->tick()['duplicate_groups']===2,'New client inherited the historical review');
+    $services[0]['clientId']=1101; $services[0]['attributes'][1]['value']='192.0.2.88/32'; $now+=301;
+    checkCrmMonitor($historical->tick()['duplicate_groups']===2,'Changed raw attribute inherited historical review');
+    $services[0]['attributes'][1]['value']='192.0.2.88'; $now+=301;
+    checkCrmMonitor($historical->tick()['historical_assignments_count']===1,'Exact reviewed ended state was no longer recognized');
+    $completeAttributes=$services[0]['attributes']; unset($services[0]['attributes']); $now+=301;
+    $unknown=$historical->tick();
+    checkCrmMonitor($unknown['duplicate_groups']===2 && $unknown['historical_assignments_count']===0
+        && !$unknown['conflicts'][0]['current_confirmed'], 'Missing live attributes kept an exclusion or lost pending duplicate evidence');
+    $services[0]['attributes']=$completeAttributes; unlink($markerPath); $now+=301;
+    checkCrmMonitor($historical->tick()['duplicate_groups']===2,'Removed review remained hidden after complete scan');
+
+    // Polls may read the precise preceding schema without mutating it. Only
+    // the scheduler upgrades our independently owned monitor database.
+    $legacyPath=$directory.'/legacy-v3-monitor.db'; $db=new SQLite3($legacyPath);
+    $db->exec('PRAGMA application_id=1129467214; PRAGMA user_version=3;
+        CREATE TABLE monitor_meta(id INTEGER PRIMARY KEY,published_at REAL,published_count INTEGER NOT NULL DEFAULT 0,published_config_fingerprint TEXT,published_mapping TEXT,cycle_started_at REAL,last_attempt_at REAL,scan_offset INTEGER NOT NULL DEFAULT 0,config_fingerprint TEXT,mapping_fingerprint TEXT,mapping TEXT,last_error TEXT,published_keys TEXT,cycle_keys TEXT); INSERT INTO monitor_meta(id) VALUES(1);
+        CREATE TABLE snapshot_services(id INTEGER PRIMARY KEY,client_id INTEGER,status INTEGER,address TEXT,address6 TEXT,address_known INTEGER,address6_known INTEGER,address_reason TEXT,address6_reason TEXT);
+        CREATE TABLE staging_services(id INTEGER PRIMARY KEY,client_id INTEGER,status INTEGER,address TEXT,address6 TEXT,address_known INTEGER,address6_known INTEGER,address_reason TEXT,address6_reason TEXT);
+        CREATE INDEX snapshot_address ON snapshot_services(address); CREATE INDEX snapshot_address6 ON snapshot_services(address6)'); $db->close();
+    $legacy=new ApiCrmNetworkMonitor($request,$dataPath,$legacyPath,static function () use (&$now):float{return $now;});
+    $legacyHash=hash_file('sha256',$legacyPath); $calls=[];
+    checkCrmMonitor(!$legacy->read()['available'] && $calls===[] && hash_file('sha256',$legacyPath)===$legacyHash,
+        'Polling migrated v3 state or contacted CRM');
+    checkCrmMonitor($legacy->tick()['duplicate_groups']===2,'Scheduler did not safely upgrade/review v3 state');
+    $db=new SQLite3($legacyPath,SQLITE3_OPEN_READONLY); checkCrmMonitor($db->querySingle('PRAGMA user_version')===4,'Monitor schema upgrade was not committed'); $db->close();
+    checkCrmMonitor(monitorFileHashes($directory)===$historyBefore,'Historical monitoring changed operational databases');
+
     $db = new SQLite3($dataPath); $db->exec("UPDATE config SET value='' WHERE key IN ('ip_addr_attr','ip_addr6_attr')"); $db->close();
     $calls = []; $unmapped = $monitor->tick();
     checkCrmMonitor(!$unmapped['available'] && $calls === [], 'Unconfigured address families produced a clean report or called CRM');
