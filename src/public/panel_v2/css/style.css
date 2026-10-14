@@ -366,6 +366,15 @@ details.config-section[open] > summary.config-section-header::after { content: '
 .crm-ip-review { margin: 14px 0; padding: 12px; border: 1px solid var(--control-border); border-radius: 7px; background: var(--surface-subtle); }
 .crm-ip-review p { font-size: 0.77rem; line-height: 1.5; color: var(--text-muted); margin-top: 10px; }
 .crm-ip-edit-dialog .modal-footer { flex-wrap: wrap; }
+.crm-ip-result { margin: 0 0 14px; padding: 14px; border: 1px solid var(--warning-border); border-radius: 8px; background: var(--surface-subtle); border-left-width: 4px; }
+.crm-ip-result.is-confirmed { border-color: var(--success); }
+.crm-ip-result h4 { font-size: 0.95rem; margin-bottom: 8px; }
+.crm-ip-result:not(.is-confirmed) h4 { color: var(--warning-text); }
+.crm-ip-result.is-confirmed h4 { color: var(--success); }
+.crm-ip-result p { font-size: 0.8rem; line-height: 1.5; margin: 8px 0; overflow-wrap: anywhere; }
+.crm-ip-result .conflict-address-grid { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border); grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
+.crm-ip-result .form-note { font-size: 0.77rem; }
+.crm-ip-result .form-note span { display: block; margin-top: 6px; }
 .crm-network-history { margin: 18px 0; padding: 14px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-subtle); }
 .crm-network-history h3 { font-size: 0.9rem; margin-bottom: 7px; }
 .crm-history-owner { margin-top: 10px; padding: 10px 0; border-top: 1px solid var(--border); }

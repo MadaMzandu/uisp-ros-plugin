@@ -2,6 +2,18 @@
 
 [Complete English changelog](docs/CHANGELOG_EN.md) · [Texto completo para el PR](docs/PR_DESCRIPTION.md) · [Webhook setup and rationale](docs/WEBHOOK_SETUP_EN.md) · [Mejoras en español](docs/MEJORAS.md)
 
+## Candidato 2.4.28 — mostrar el resultado del cambio de IP y volver a verificar
+
+Después de aplicar una corrección de IP o una exclusión histórica revisada, el editor muestra un resultado propio. Conserva la IP anterior, el cambio solicitado y el valor actual comunicado por UISP. Distingue el cambio confirmado, la IP anterior que sigue presente, un valor actual diferente, el servicio inexistente y la evidencia sin comprobar. Un resultado confirmado conserva esa identificación si falla la consulta posterior o si después se observa otro estado.
+
+El panel refresca el conflicto seleccionado y su contador mediante una verificación acotada, y consulta de nuevo el informe local del monitor. No inicia una revisión completa del CRM. **Verificar nuevamente** sólo hace consultas frescas: no repite la escritura ni reutiliza el token consumido. Si una consulta posterior coincide con una solicitud incierta, indica que UISP ahora muestra el estado solicitado, sin afirmar que la escritura original se confirmó. La evidencia desconocida o una identidad de cliente diferente no autorizan un resultado exitoso. Un nuevo cambio exige otra revisión y confirmación.
+
+Un servicio existente cuyo estado terminado se compruebe de nuevo permite pasar explícitamente de un cambio sin confirmar a **Resolver asignación histórica**. Esa alternativa exige su propia revisión y confirmación, y conserva el historial del CRM y los routers. El resultado histórico se contrasta con el mismo cliente, estado terminado, familia, IP exacta y marca revisada vigente. No se ofrece con servicio inexistente, reactivado, reasignado o sin comprobar. La limpieza local sigue siendo una acción revisada independiente, con respaldo y protecciones de propiedad.
+
+Las direcciones de los archivos del panel llevan una revisión nueva para solicitar el JavaScript y los estilos actualizados al cargar el panel nuevo.
+
+Validación 2.4.28 aprobada: **35 suites aisladas**, sintaxis de **48 archivos PHP propios** y verificación del instalador de 360 entradas, 127 archivos propios y 13 dependencias fijadas. Informe: `dist/verification-2.4.28.json`. SHA-256: `ab16abdbc2b2e63f5a2c6418d920766e723e8c313aa80a285ec211f4ea0f4956`. Se comprobó con datos ficticios en navegador el resultado explícito, la nueva verificación de sólo lectura y la alternativa histórica revisada para un servicio terminado. No se modificaron CRM ni RouterOS de producción.
+
 ## Candidato 2.4.27 — distinguir conflictos resueltos y reservas limpiadas
 
 Un grupo comprobado por completo pasa inmediatamente al apartado verde **Conflictos resueltos** y deja de sumar al aviso y al contador de pendientes. Exige IDs de todos los servicios e identidades coincidentes, evidencia conocida de la familia y ausencia de duplicado operativo. Los grupos sin comprobar, truncados, reasignados o fuera de la muestra siguen pendientes. Al resolver todos los grupos revisados, la lista lo indica y conserva el alcance y la fecha de la revisión automática completa.
@@ -189,10 +201,10 @@ La segunda revisión corrige además propiedad de cuentas/colas padre, hidrataci
 Para verificar el candidato después de instalar dependencias y construir el ZIP:
 
 ```text
-python tools/verify_plugin.py --php RUTA_PHP --node RUTA_NODE --archive dist/ros-plugin-2.4.27-candidate.zip --output dist/verification-2.4.27.json
+python tools/verify_plugin.py --php RUTA_PHP --node RUTA_NODE --archive dist/ros-plugin-2.4.28-candidate.zip --output dist/verification-2.4.28.json
 ```
 
-En Windows sin configuración PHP, añadir `--extension-dir RUTA_EXT`. El verificador ejecuta las suites y comprueba sintaxis PHP, correspondencia del código/dependencias y exclusión de datos/fixtures del instalador. El estado de validación de 2.4.25 se indica al principio. Para construirlo: `python tools/build_plugin.py --vendor-dir src/vendor --output dist/ros-plugin-2.4.27-candidate.zip`.
+En Windows sin configuración PHP, añadir `--extension-dir RUTA_EXT`. El verificador ejecuta las suites y comprueba sintaxis PHP, correspondencia del código/dependencias y exclusión de datos/fixtures del instalador. El estado de validación de 2.4.28 se indica al principio. Para construirlo: `python tools/build_plugin.py --vendor-dir src/vendor --output dist/ros-plugin-2.4.28-candidate.zip`.
 
 Si una migración queda pendiente por IP duplicadas, usar **Conflictos de IP → Revisar limpieza** para comprobar las reservas obsoletas elegibles, revisar los motivos y confirmar únicamente la selección aprobada. Los trabajos pendientes, la recuperación pendiente y el estado aplicado de una cuenta protegen sus reservas; limpiar IP no retira recursos del router. Conservar el respaldo privado generado, que permanece descargable desde **Sistema** después de recargar. Tras resolver el último conflicto, recargar el panel para completar la migración antes de reanudar las demás escrituras.
 

@@ -6,6 +6,18 @@ Esta revisión reúne las modificaciones de [dhanielsnieto en el PR #89](https:/
 
 El plugin comunica UISP CRM con los MikroTik mediante la **API nativa de RouterOS**. Los puertos habituales son `8728` para API y `8729` para API con TLS. El panel permite administrar esa integración; no cambia el transporte a SSH, WinBox o REST.
 
+## Candidato 2.4.28 — mostrar el resultado del cambio de IP y volver a verificar
+
+Después de aplicar una corrección de IP o una exclusión histórica revisada, el editor muestra un resultado propio. Conserva la IP anterior, el cambio solicitado y el valor actual comunicado por UISP. Distingue el cambio confirmado, la IP anterior que sigue presente, un valor actual diferente, el servicio inexistente y la evidencia sin comprobar. Un resultado confirmado conserva esa identificación si falla la consulta posterior o si después se observa otro estado.
+
+El panel refresca el conflicto seleccionado y su contador mediante una verificación acotada, y consulta de nuevo el informe local del monitor. No inicia una revisión completa del CRM. **Verificar nuevamente** sólo hace consultas frescas: no repite la escritura ni reutiliza el token consumido. Si una consulta posterior coincide con una solicitud incierta, indica que UISP ahora muestra el estado solicitado, sin afirmar que la escritura original se confirmó. La evidencia desconocida o una identidad de cliente diferente no autorizan un resultado exitoso. Un nuevo cambio exige otra revisión y confirmación.
+
+Un servicio existente cuyo estado terminado se compruebe de nuevo permite pasar explícitamente de un cambio sin confirmar a **Resolver asignación histórica**. Esa alternativa exige su propia revisión y confirmación, y conserva el historial del CRM y los routers. El resultado histórico se contrasta con el mismo cliente, estado terminado, familia, IP exacta y marca revisada vigente. No se ofrece con servicio inexistente, reactivado, reasignado o sin comprobar. La limpieza local sigue siendo una acción revisada independiente, con respaldo y protecciones de propiedad.
+
+Las direcciones de los archivos del panel llevan una revisión nueva para solicitar el JavaScript y los estilos actualizados al cargar el panel nuevo.
+
+Validación 2.4.28 aprobada: **35 suites aisladas**, sintaxis de **48 archivos PHP propios** y verificación del instalador de 360 entradas, 127 archivos propios y 13 dependencias fijadas. Informe: `dist/verification-2.4.28.json`. SHA-256: `ab16abdbc2b2e63f5a2c6418d920766e723e8c313aa80a285ec211f4ea0f4956`. Se comprobó con datos ficticios en navegador el resultado explícito, la nueva verificación de sólo lectura y la alternativa histórica revisada para un servicio terminado. No se modificaron CRM ni RouterOS de producción.
+
 ## Candidato 2.4.27 — distinguir conflictos resueltos y reservas limpiadas
 
 Un grupo comprobado por completo pasa inmediatamente al apartado verde **Conflictos resueltos** y deja de sumar al aviso y al contador de pendientes. Exige IDs de todos los servicios e identidades coincidentes, evidencia conocida de la familia y ausencia de duplicado operativo. Los grupos sin comprobar, truncados, reasignados o fuera de la muestra siguen pendientes. Al resolver todos los grupos revisados, la lista lo indica y conserva el alcance y la fecha de la revisión automática completa.

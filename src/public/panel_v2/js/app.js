@@ -73,6 +73,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let crmVerifyBusy = false;
     let crmEditTarget = null;
     let crmEditPreview = null;
+    let crmEditOutcome = null;
     let crmEditBusy = false;
     let crmEditGeneration = 0;
     const navigationViews = new Set(['devices', 'plans', 'config', 'jobs', 'system', 'network_conflicts']);
@@ -666,17 +667,107 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function updateCrmEditorControls() {
+        const terminal = crmEditOutcome !== null;
         const history = crmEditTarget?.mode === 'history';
         const remove = byId('crm-ip-operation').value === 'remove' || history;
-        byId('crm-ip-address').disabled = crmEditBusy || remove;
-        byId('crm-ip-operation').disabled = crmEditBusy;
-        byId('review-crm-ip-change').disabled = crmEditBusy || !crmEditTarget?.verified;
-        byId('apply-crm-ip-change').disabled = crmEditBusy || !crmEditPreview;
+        byId('crm-ip-form').style.display = terminal ? 'none' : 'block';
+        byId('crm-ip-result').style.display = terminal ? 'block' : 'none';
+        byId('crm-ip-address').disabled = terminal || crmEditBusy || remove;
+        byId('crm-ip-operation').disabled = terminal || crmEditBusy;
+        byId('review-crm-ip-change').disabled = terminal || crmEditBusy || !crmEditTarget?.verified;
+        byId('apply-crm-ip-change').disabled = terminal || crmEditBusy || !crmEditPreview;
+        for (const id of ['review-crm-ip-change', 'apply-crm-ip-change']) byId(id).style.display = terminal ? 'none' : 'inline-flex';
+        byId('verify-crm-ip-result').style.display = terminal ? 'inline-flex' : 'none';
+        byId('verify-crm-ip-result').disabled = crmEditBusy || !terminal;
+        translatedText(byId('verify-crm-ip-result'), crmEditBusy ? 'Verificando...' : 'Verificar nuevamente');
+        const fallback = terminal && crmEditOutcome.historyAvailable === true;
+        byId('resolve-crm-ip-history').style.display = fallback ? 'inline-flex' : 'none';
+        byId('resolve-crm-ip-history').disabled = crmEditBusy || !fallback;
+        byId('crm-ip-result-history-note').style.display = fallback ? 'block' : 'none';
+        const cleanup = terminal && crmEditOutcome.cleanupAvailable === true;
+        byId('cleanup-crm-ip-result').style.display = cleanup ? 'inline-flex' : 'none';
+        byId('cleanup-crm-ip-result').disabled = crmEditBusy || cleanupRequiresReload || !cleanup;
+    }
+
+    function renderCrmEditResult() {
+        const outcome = crmEditOutcome;
+        if (!outcome) return;
+        const { preview, owner, checkedAt } = outcome;
+        const evidence = owner?.address_evidence?.[preview.family === 'IPv6' ? 'address6' : 'address'];
+        const sameClient = owner && Number.isSafeInteger(outcome.target.owner.client_id) && outcome.target.owner.client_id > 0
+            && owner.client_id === outcome.target.owner.client_id;
+        const known = sameClient && owner.service_exists === true && evidence?.known === true;
+        const history = preview.operation === 'history';
+        const reviewed = known && owner.service_status_code === 2 && Array.isArray(owner.historical_families)
+            && owner.historical_families.includes(preview.family) && evidence.value === preview.new_address;
+        const desired = known && !history && evidence.value === preview.new_address;
+        const receipt = outcome.receiptConfirmed === true;
+        let state = 'unknown', title = 'Resultado pendiente de verificación', message = 'No se pudo confirmar el resultado. Verificar nuevamente sólo consulta UISP; no repite el cambio.';
+        if (outcome.checking) { state = 'checking'; title = 'Comprobando el resultado'; message = 'El intento terminó. Se está consultando el estado actual del servicio en UISP.'; }
+        else if (owner?.service_exists === true && Number.isSafeInteger(owner.client_id) && owner.client_id > 0 && !sameClient) { state = 'identity_changed'; title = 'La identidad del servicio cambió'; message = 'El cliente actual no coincide con el intento. Revisa el servicio en UISP antes de hacer otro cambio.'; }
+        else if (owner?.service_exists === false) { state = 'absent'; title = 'El servicio ya no existe en UISP'; message = 'La ausencia del servicio no confirma que este cambio se haya aplicado. Revisa el registro del CRM.'; }
+        else if (reviewed) { state = 'confirmed'; title = 'Asignación histórica resuelta'; message = 'La exclusión histórica está verificada. El CRM conserva la IP y su historial; los routers no se modificaron.'; }
+        else if (desired) { state = receipt ? 'confirmed' : 'observed'; title = receipt ? preview.operation === 'remove' ? 'IP retirada correctamente' : 'IP cambiada correctamente' : 'UISP muestra el cambio solicitado';
+            message = receipt ? 'UISP confirmó el cambio y la verificación actual coincide con lo solicitado.' : 'La consulta actual coincide con lo solicitado. La respuesta del intento original no confirmó si el cambio se aplicó.'; }
+        else if (known) { state = history ? 'history_unconfirmed' : evidence.value === preview.current_address ? 'unchanged' : 'changed';
+            title = history ? 'La exclusión histórica no está confirmada' : state === 'unchanged' ? 'UISP sigue mostrando la IP anterior' : 'La IP actual no coincide con lo solicitado';
+            message = history ? 'UISP no confirmó la exclusión de esta asignación. Puedes volver a verificar su estado.' : 'Este intento no coincide con el estado actual. Verifica nuevamente antes de intentar otro cambio.'; }
+        else if (receipt) { state = 'confirmed_pending'; title = history ? 'Asignación histórica guardada' : 'Cambio aplicado en CRM';
+            message = history ? 'El plugin confirmó que guardó la exclusión histórica. La consulta posterior no pudo comprobar su estado actual.' : 'UISP confirmó el cambio al guardar. La consulta posterior no pudo comprobar el estado actual.'; }
+        const panel = byId('crm-ip-result'); panel.dataset.state = state;
+        panel.classList.toggle('is-confirmed', ['confirmed', 'observed', 'confirmed_pending'].includes(state));
+        translatedText(byId('crm-ip-edit-title'), history ? 'Resultado de la resolución histórica' : 'Resultado del cambio');
+        translatedText(byId('crm-ip-result-title'), title); translatedText(byId('crm-ip-result-message'), message);
+        const previous = preview.current_address_known === true ? preview.current_address ?? t('Sin IP asignada') : t('Sin comprobar');
+        const current = known ? evidence.value ?? t('Sin IP asignada') : t('Sin comprobar');
+        byId('crm-ip-result-summary').innerHTML = `<dl class="conflict-address-grid"><div><dt>${html(t('IP antes del intento'))}</dt><dd>${html(previous)}</dd></div><div><dt>${html(t(history ? 'IP histórica conservada' : 'IP solicitada'))}</dt><dd>${html(preview.new_address ?? t('Sin IP asignada'))}</dd></div><div><dt>${html(t('IP actual en UISP'))}</dt><dd>${html(current)}</dd></div></dl>`;
+        byId('crm-ip-current').textContent = current;
+        byId('crm-ip-address').value = known && typeof evidence.value === 'string' ? evidence.value : '';
+        byId('crm-ip-result-checked').textContent = checkedAt ? t('Última verificación del intento: {time}.', { time: formatDate(checkedAt) }) : t('Aún no se pudo consultar el resultado de este intento.');
+        const detail = byId('crm-ip-result-detail'); detail.replaceChildren();
+        if (receipt && !['confirmed', 'confirmed_pending'].includes(state)) {
+            const note = document.createElement('span'); translatedText(note, history ? 'El intento recibió una confirmación de guardado histórico; el estado actual se muestra arriba.' : 'El intento recibió una confirmación de UISP; el estado actual se muestra arriba.'); detail.appendChild(note);
+        }
+        if (outcome.error || outcome.verificationError) {
+            const error = document.createElement('span'); translatedText(error, 'Detalle: {message}', { message: t(outcome.verificationError || outcome.error) }); detail.appendChild(error);
+        }
+        if (desired && owner.service_status_code !== 2) {
+            const note = document.createElement('span'); translatedText(note, 'El panel se actualizó. Revisa la sincronización del equipo para reconciliar el router.'); detail.appendChild(note);
+        }
+        outcome.historyAvailable = !history && sameClient && owner.service_exists === true && owner.service_status_code === 2
+            && known && typeof evidence.value === 'string' && evidence.value.length > 0
+            && !(Array.isArray(owner.historical_families) && owner.historical_families.includes(preview.family));
+        const local = owner?.local_assignment_state?.[preview.family === 'IPv6' ? 'address6' : 'address'];
+        outcome.cleanupAvailable = (desired || reviewed) && !crmAssignmentCleaned(preview.service_id, preview.family)
+            && (local?.known === true ? local.present === true : outcome.result?.local_cleanup_required === true)
+            && (history || outcome.result?.local_cleanup_required === true || preview.local_cleanup_required === true);
+        updateCrmEditorControls();
+    }
+
+    async function verifyCrmEditResult(outcome, generation) {
+        outcome.checking = true; outcome.owner = null; outcome.checkedAt = null; outcome.verificationError = null;
+        renderCrmEditResult();
+        try {
+            const data = await verifyCrmOwners(outcome.target.group, outcome.preview.service_id);
+            if (generation !== crmEditGeneration || crmEditOutcome !== outcome) return;
+            outcome.owner = data.owners.find(owner => owner.service_id === outcome.preview.service_id) || null;
+            outcome.checkedAt = data.checked_at;
+        } catch (error) {
+            if (generation !== crmEditGeneration || crmEditOutcome !== outcome) return;
+            outcome.verificationError = error.message;
+        } finally {
+            if (generation === crmEditGeneration && crmEditOutcome === outcome) {
+                outcome.checking = false; renderCrmEditResult(); renderCrmMonitor();
+            }
+        }
+        // Refresh only the saved local report; this does not start a CRM scan.
+        if (generation === crmEditGeneration && crmEditOutcome === outcome) await refreshCrmMonitor();
     }
 
     async function openCrmEditor(owner, group, mode = 'edit') {
         if (crmVerifyBusy || crmEditBusy || cleanupBusy || !crmEditModal) return;
         const generation = ++crmEditGeneration;
+        crmEditOutcome = null;
         crmEditTarget = { owner, group, mode, verified: false }; crmEditBusy = true;
         crmEditModal.style.display = 'flex'; crmEditorIdentity(owner, group.family);
         translatedText(byId('crm-ip-edit-title'), mode === 'history' ? 'Resolver asignación histórica' : 'Editar IP en CRM');
@@ -695,6 +786,8 @@ document.addEventListener('DOMContentLoaded', () => {
             if (generation !== crmEditGeneration) return;
             const current = data.owners.find(item => item.service_id === owner.service_id);
             if (!current || current.service_exists !== true) throw new Error(t('UISP no confirmó que este servicio exista. Vuelve a verificarlo.'));
+            if (!Number.isSafeInteger(owner.client_id) || owner.client_id < 1 || current.client_id !== owner.client_id)
+                throw new Error(t('La identidad del servicio cambió. Vuelve a verificarlo.'));
             if (mode === 'history' && current.service_status_code !== 2) throw new Error(t('La asignación histórica sólo puede resolverse si UISP confirma que el servicio está terminado.'));
             const evidence = current.address_evidence?.[group.family === 'IPv6' ? 'address6' : 'address'];
             crmEditTarget = { owner: current, group, mode, verified: true };
@@ -711,12 +804,12 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     for (const [id, event] of [['crm-ip-operation', 'change'], ['crm-ip-address', 'input']]) byId(id)?.addEventListener(event, () => {
-        if (crmEditBusy) return;
+        if (crmEditBusy || crmEditOutcome) return;
         resetCrmEditPreview(); updateCrmEditorControls();
     });
 
     byId('review-crm-ip-change')?.addEventListener('click', async () => {
-        if (crmEditBusy || !crmEditTarget?.verified) return;
+        if (crmEditBusy || crmEditOutcome || !crmEditTarget?.verified) return;
         const target = crmEditTarget, generation = crmEditGeneration;
         const operation = target.mode === 'history' ? 'history' : byId('crm-ip-operation').value;
         const address = byId('crm-ip-address').value.trim();
@@ -752,7 +845,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     byId('apply-crm-ip-change')?.addEventListener('click', async () => {
-        if (crmEditBusy || !crmEditPreview || !crmEditTarget) return;
+        if (crmEditBusy || crmEditOutcome || !crmEditPreview || !crmEditTarget) return;
         const preview = crmEditPreview, target = crmEditTarget, generation = crmEditGeneration;
         crmEditBusy = true; updateCrmEditorControls();
         try {
@@ -761,49 +854,61 @@ document.addEventListener('DOMContentLoaded', () => {
                 : '¿Aplicar el cambio de {family} del servicio #{id} en UISP? IP propuesta: {address}.', {
                 family: preview.family, id: preview.service_id, address: preview.new_address ?? t('Sin IP asignada') }))) return;
             if (generation !== crmEditGeneration) return;
-            translatedText(byId('crm-ip-edit-status'), preview.operation === 'history' ? 'Guardando la resolución histórica...' : 'Guardando el cambio en UISP...');
-            const result = checked(await api.applyCrmNetworkChange(preview.previewToken)).data;
-            if (generation !== crmEditGeneration) return;
-            if (!result || result.service_id !== preview.service_id || result.family !== preview.family || result.operation !== preview.operation
-                || typeof result.applied !== 'boolean' || typeof result.uncertain !== 'boolean' || typeof result.current_address_known !== 'boolean'
-                || (result.current_address_known && result.current_address !== null && (typeof result.current_address !== 'string' || result.current_address.length > 128)))
-                throw new Error(t('Respuesta inválida del servidor.'));
-            if (preview.operation === 'history' && (result.historical !== true || result.preserves_crm_history !== true || result.requires_sync !== false))
-                throw new Error(t('Respuesta inválida del servidor.'));
+            // A confirmed attempt leaves the form permanently. Never replay a
+            // consumed token, including an ambiguous HTTP or invalid reply.
             resetCrmEditPreview();
-            byId('crm-ip-current').textContent = result.current_address_known === true
-                ? result.current_address ?? t('Sin IP asignada') : t('Sin comprobar');
-            byId('crm-ip-address').value = result.applied === true && result.uncertain === false && result.current_address_known === true
-                && typeof result.current_address === 'string' ? result.current_address : '';
-            translatedText(byId('crm-ip-edit-status'), result.applied === true && result.uncertain === false
-                ? preview.operation === 'history' ? 'Asignación histórica resuelta. El CRM conserva su historial.'
-                    : 'Cambio guardado en el CRM. Comprueba el servicio y sincroniza su equipo para reconciliar el router.'
-                : 'UISP no confirmó el resultado del cambio. Verifica el servicio antes de intentar otro cambio.');
-            if (result.applied && !result.uncertain) {
-                try {
-                    const checked = await verifyCrmOwners(target.group, target.owner.service_id);
-                    const current = checked.owners.find(owner => owner.service_id === target.owner.service_id);
-                    const evidence = current?.address_evidence?.[target.group.family === 'IPv6' ? 'address6' : 'address'];
-                    if (evidence?.known === true) {
-                        byId('crm-ip-current').textContent = evidence.value ?? t('Sin IP asignada');
-                        byId('crm-ip-address').value = typeof evidence.value === 'string' ? evidence.value : '';
-                    }
-                }
-                catch (_) { notify(t('El cambio se guardó, pero no se pudo completar la verificación. Vuelve a verificar el servicio.'), 'error'); }
-                if (result.local_cleanup_required === true) {
-                    const cleanup = document.createElement('button'); cleanup.type = 'button'; cleanup.className = 'btn btn-secondary';
-                    translatedText(cleanup, 'Revisar limpieza'); cleanup.addEventListener('click', () => {
-                        if (crmEditBusy) return;
-                        crmEditModal.style.display = 'none'; previewCleanup([target.owner.service_id], 'crm_snapshot', target.group.family);
-                    }); byId('crm-ip-review').appendChild(cleanup); byId('crm-ip-review').style.display = 'block';
-                }
-            } else { crmEditTarget = { ...target, verified: false }; }
+            const outcome = crmEditOutcome = { preview: { ...preview, previewToken: undefined }, target, result: null,
+                receiptConfirmed: false, owner: null, checkedAt: null, error: null, checking: true };
+            renderCrmEditResult();
+            translatedText(byId('crm-ip-result-message'), preview.operation === 'history' ? 'Guardando la resolución histórica...' : 'Guardando el cambio en UISP...');
+            try {
+                const result = checked(await api.applyCrmNetworkChange(preview.previewToken)).data;
+                if (generation !== crmEditGeneration || crmEditOutcome !== outcome) return;
+                if (!result || result.service_id !== preview.service_id || result.family !== preview.family || result.operation !== preview.operation
+                    || typeof result.applied !== 'boolean' || typeof result.uncertain !== 'boolean' || typeof result.current_address_known !== 'boolean'
+                    || (result.current_address_known && result.current_address !== null && (typeof result.current_address !== 'string' || result.current_address.length > 128))
+                    || (result.applied === true && result.uncertain === false && (!result.current_address_known || result.current_address !== preview.new_address)))
+                    throw new Error(t('Respuesta inválida del servidor.'));
+                if (preview.operation === 'history' && (result.historical !== true || result.preserves_crm_history !== true || result.requires_sync !== false))
+                    throw new Error(t('Respuesta inválida del servidor.'));
+                outcome.result = result; outcome.receiptConfirmed = result.applied === true && result.uncertain === false;
+            } catch (error) {
+                if (generation !== crmEditGeneration || crmEditOutcome !== outcome) return;
+                outcome.error = error.message;
+            }
+            if (generation === crmEditGeneration && crmEditOutcome === outcome) await verifyCrmEditResult(outcome, generation);
         } catch (error) {
-            if (generation === crmEditGeneration) { resetCrmEditPreview(); crmEditTarget = { ...target, verified: false };
-                translatedText(byId('crm-ip-edit-status'), 'Error: {message}', { message: t(error.message) }); }
+            if (generation === crmEditGeneration) notify(t('Error: {message}', { message: t(error.message) }), 'error');
         } finally {
-            if (generation === crmEditGeneration) { crmEditBusy = false; updateCrmEditorControls(); renderCrmMonitor(); }
+            if (generation === crmEditGeneration) {
+                crmEditBusy = false; updateCrmEditorControls(); renderCrmMonitor();
+                if (crmEditOutcome) { renderCrmEditResult(); byId('crm-ip-result').focus({ preventScroll: true }); }
+            }
         }
+    });
+
+    byId('verify-crm-ip-result')?.addEventListener('click', async () => {
+        if (crmEditBusy || !crmEditOutcome) return;
+        const outcome = crmEditOutcome, generation = crmEditGeneration;
+        crmEditBusy = true; updateCrmEditorControls();
+        try { await verifyCrmEditResult(outcome, generation); }
+        finally {
+            if (generation === crmEditGeneration && crmEditOutcome === outcome) {
+                crmEditBusy = false; renderCrmEditResult(); renderCrmMonitor();
+            }
+        }
+    });
+
+    byId('resolve-crm-ip-history')?.addEventListener('click', () => {
+        if (crmEditBusy || !crmEditOutcome?.historyAvailable) return;
+        const { owner, target } = crmEditOutcome;
+        openCrmEditor(owner, target.group, 'history');
+    });
+
+    byId('cleanup-crm-ip-result')?.addEventListener('click', () => {
+        if (crmEditBusy || cleanupRequiresReload || !crmEditOutcome?.cleanupAvailable) return;
+        const { preview } = crmEditOutcome;
+        closeModals(); previewCleanup([preview.service_id], 'crm_snapshot', preview.family);
     });
 
     function clearCrmMonitorTimer() { clearTimeout(crmMonitorTimer); crmMonitorTimer = undefined; }
@@ -1449,7 +1554,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function closeModals() {
         for (const modal of [deviceModal, planModal, orphanModal, cleanupModal]) if (modal) modal.style.display = 'none';
         if (crmEditModal && !crmEditBusy) {
-            crmEditModal.style.display = 'none'; crmEditGeneration++; crmEditTarget = null; resetCrmEditPreview();
+            crmEditModal.style.display = 'none'; crmEditGeneration++; crmEditTarget = null; crmEditOutcome = null; resetCrmEditPreview(); updateCrmEditorControls();
         }
         byId('dev-password').value = '';
     }
@@ -2518,6 +2623,7 @@ document.addEventListener('DOMContentLoaded', () => {
         updateJobsRefreshStatus();
         if (recoveryReadOnly) applyRecovery({ readOnly: true });
         renderCrmMonitor();
+        renderCrmEditResult();
         for (const direction of ['upload', 'download']) if (planNumericDraft.has(direction + 'Speed'))
             byId('plan-' + direction + 'Override').placeholder = t('UISP: valor inválido');
         byId('dev-port').placeholder = t('Predeterminado: {port}', { port: byId('dev-ssl').checked ? 8729 : 8728 });

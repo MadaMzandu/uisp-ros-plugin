@@ -671,6 +671,7 @@ function contentionFixture(disableContention, translated = false) {
 function recoveryPanelFixture({ bootstrap, details, storage, storageBlocked = false, mobile = false,
     initialReplies = new Map(), url = 'https://fixture.invalid/crm/_plugins/ros-plugin/public.php?page=panel', raf = false, exposeRenderers = false } = {}) {
     const nodes = new Map(Array.from(markup.matchAll(/\bid="([^"]+)"/g), match => [match[1], new Element(match[1])]));
+    const closeButtons = Array.from(markup.matchAll(/<button\b[^>]*class="[^"]*\bclose-modal\b[^"]*"/g), () => new Element());
     const views = ['devices', 'plans', 'config', 'jobs', 'system', 'network_conflicts'];
     const nav = views.map(view => {
         const element = new Element(); element.dataset.view = view; element.querySelector('span').textContent = view; return element;
@@ -698,7 +699,7 @@ function recoveryPanelFixture({ bootstrap, details, storage, storageBlocked = fa
             if (type === 'DOMContentLoaded') onReady = listener;
             else { if (!documentEvents.has(type)) documentEvents.set(type, []); documentEvents.get(type).push(listener); }
         },
-        removeEventListener() {},
+        removeEventListener(type, listener) { documentEvents.set(type, (documentEvents.get(type) || []).filter(item => item !== listener)); },
         createElement(tag) {
             const element = new Element(); element.tagName = tag.toUpperCase();
             element.focus = options => { element.focusOptions = options; localDocument.activeElement = element; };
@@ -718,6 +719,7 @@ function recoveryPanelFixture({ bootstrap, details, storage, storageBlocked = fa
             if (selector === '#network-recovery-state') return bootstrap === undefined ? [] : [script];
             if (selector === '.nav-item') return nav;
             if (selector === '.view-section') return views.map(view => nodes.get('view-' + view));
+            if (selector === '.close-modal') return closeButtons;
             if (selector === '[data-recovery-write]') return allNodes().filter(node => node.dataset.recoveryWrite === 'true');
             if (selector === '[data-recovery-router-read]') return allNodes().filter(node => node.dataset.recoveryRouterRead === 'true');
             if (selector === '#device-form input, #device-form select, #plan-form input, #plan-form select, #config-form input, #config-form select, .burst-preset-btn')
@@ -774,13 +776,14 @@ function recoveryPanelFixture({ bootstrap, details, storage, storageBlocked = fa
     });
     const fixtureApp = exposeRenderers ? appSource.replace('    api.onRecovery?.(applyRecovery);', '    globalThis.__fixtureRefresh = { devices: renderDevices, plans: renderPlans, system: renderSystem };\n    api.onRecovery?.(applyRecovery);') : appSource;
     vm.runInContext(apiSource, localContext); vm.runInContext(fixtureApp, localContext); onReady();
-    return { nodes, calls, document: localDocument, tables: localTables, deviceControls, api: vm.runInContext('api', localContext),
+    return { nodes, calls, document: localDocument, tables: localTables, deviceControls, closeButtons, api: vm.runInContext('api', localContext),
         async navigate(view) { await nav[views.indexOf(view)].fire('click'); await flush(); },
         reply(key, response) { replies.set(key, typeof response === 'function' ? response : () => response); },
         reloads() { return reloads; },
         writes() { return calls.filter(call => call.changeType === 'update' || call.changeType === 'upload'); },
         diagnostics() { return calls.filter(call => call.target === 'network_conflicts'); },
         async event(type) { for (const listener of events.get(type) || []) listener(); await flush(); },
+        async documentEvent(type, event = {}) { for (const listener of [...(documentEvents.get(type) || [])]) listener(event); await flush(); },
         async hidden(value) { localDocument.hidden = value; for (const listener of documentEvents.get('visibilitychange') || []) listener(); await flush(); },
         async tick(milliseconds) {
             const end = now + milliseconds;
@@ -1053,12 +1056,13 @@ async function checkCrmNetworkResolutionPanel() {
     const envelope = data => ({ status: 'ok', error: false, data });
     const monitor = { available: true, duplicate_groups: 1, checked_at: '2026-10-14T13:00:00Z', stale: false, families: ['IPv4'], conflicts: [
         { family: 'IPv4', address: '192.0.2.77', service_ids: [42, 43], service_count: 2, owners: [
-            { service_id: 42, client_id: 17, client_url: '/crm/client/17', service_url: '/crm/client/service/42', service_status: 'Terminado' },
-            { service_id: 43, client_id: 18, client_url: '/crm/client/18', service_url: '/crm/client/service/43', service_status: 'Activo' }
+            { service_id: 42, client_id: 17, service_status_code: 2, client_url: '/crm/client/17', service_url: '/crm/client/service/42', service_status: 'Terminado' },
+            { service_id: 43, client_id: 18, service_status_code: 1, client_url: '/crm/client/18', service_url: '/crm/client/service/43', service_status: 'Activo' }
         ] }
     ] };
     const checkedOwner = (id, value) => ({ service_id: id, client_id: id === 42 ? 17 : 18, service_exists: true,
         client_name: id === 42 ? '<img src=x onerror=alert(1)> Cliente de prueba' : 'Cliente actual', client_archived: id === 42,
+        service_status_code: id === 42 ? 2 : 1,
         client_url: '/crm/client/' + (id === 42 ? 17 : 18), service_url: '/crm/client/service/' + id, service_status: id === 42 ? 'Terminado' : 'Activo',
         address_evidence: { address: { known: true, value }, address6: { known: true, value: null } } });
     const proof = value => ({ owners: [checkedOwner(42, value), checkedOwner(43, '192.0.2.77')], checked_at: '2026-10-14T13:01:00Z',
@@ -1085,7 +1089,7 @@ async function checkCrmNetworkResolutionPanel() {
     assert.equal(fixture.nodes.get('crm-ip-address').value, '192.0.2.77');
     assert.equal(fixture.nodes.get('apply-crm-ip-change').disabled, true);
     const token = 'c'.repeat(64);
-    let previewResponse = { previewToken: token, expiresAt: '2099-10-14T13:00:00Z', service_id: 42, family: 'IPv4', operation: 'remove',
+    let previewResponse = { previewToken: token, expiresAt: '2099-10-14T13:00:00Z', service_id: 42, client_id: 17, family: 'IPv4', operation: 'remove',
         current_address: '192.0.2.77', current_address_known: true, new_address: null, uniqueness_checked: false };
     fixture.reply('resolve/crm_network_conflicts', payload => envelope(payload.action === 'preview' ? previewResponse : {
         service_id: 42, family: 'IPv4', operation: 'remove', applied: true, uncertain: false, current_address: null,
@@ -1200,8 +1204,11 @@ async function checkCrmHistoricalResolutionPanel() {
     const confirm = fixture.document.body.children.find(node => node.className === 'confirm-overlay');
     assert.match(confirm.children[0].children[0].textContent, /Excluir.*histórica.*192.0.2.80.*IPv4.*terminado #42.*historial del CRM y los routers/);
     await confirm.children[0].children[1].children[1].fire('click'); await applying;
-    assert.equal(fixture.nodes.get('crm-ip-edit-status').textContent, 'Asignación histórica resuelta. El CRM conserva su historial.');
-    assert(!fixture.nodes.get('crm-ip-edit-status').textContent.includes('sincroniza'), 'History resolution must not suggest a router synchronization');
+    assert.equal(fixture.nodes.get('crm-ip-result').dataset.state, 'confirmed');
+    assert.equal(fixture.nodes.get('crm-ip-result-title').textContent, 'Asignación histórica resuelta');
+    assert.match(fixture.nodes.get('crm-ip-result-message').textContent, /CRM conserva la IP y su historial/);
+    assert(!fixture.nodes.get('crm-ip-result-message').textContent.includes('sincroniza'), 'History resolution must not suggest a router synchronization');
+    assert.equal(fixture.nodes.get('crm-ip-form').style.display, 'none', 'Historical apply ends in a result rather than reopening the reviewed form');
     assert.equal(fixture.nodes.get('crm-ip-current').textContent, '192.0.2.80', 'Exclusion must visibly preserve the CRM history address');
     assert.equal(fixture.nodes.get('crm-network-warning').style.display, 'none', 'A verified complete historical resolution immediately leaves the pending list');
     assert.equal(fixture.nodes.get('crm-network-resolved').style.display, 'block');
@@ -1233,6 +1240,262 @@ async function checkCrmHistoricalResolutionPanel() {
     assert.equal(stale.nodes.get('review-crm-ip-change').disabled, true, 'A service reactivated after the snapshot cannot be reviewed as history');
     assert.match(stale.nodes.get('crm-ip-edit-status').textContent, /sólo.*terminado/);
     assert.equal(stale.calls.filter(call => call.changeType === 'resolve').length, 0);
+}
+
+async function checkCrmEditResultFeedback() {
+    const envelope = data => ({ status: 'ok', error: false, data });
+    const oldAddress = '192.0.2.77', newAddress = '192.0.2.78';
+    const snapshot = status => ({ available: true, duplicate_groups: 1, checked_at: '2026-10-14T13:00:00Z',
+        completed_scan_started_at: '2026-10-14T12:59:00Z', stale: false, families: ['IPv4'], conflicts: [{ family: 'IPv4', address: oldAddress,
+            service_ids: [42, 43], service_count: 2, owners: [42, 43].map(id => ({ service_id: id, client_id: id === 42 ? 17 : 18,
+                service_status_code: id === 42 ? status : 1, service_status: id === 42 && status === 2 ? 'Terminado' : 'Activo',
+                service_url: '/crm/client/service/' + id, client_url: '/crm/client/' + (id === 42 ? 17 : 18) })) }] });
+    const owner = (value, status = 1, extra = {}) => ({ service_id: 42, client_id: 17, service_exists: true, service_status_code: status,
+        service_status: status === 2 ? 'Terminado' : 'Activo', client_name: 'Cliente de ejemplo', client_url: '/crm/client/17',
+        service_url: '/crm/client/service/42', address_verified_at: '2026-10-14T13:01:00Z', historical_families: [],
+        address_evidence: { address: { known: true, value }, address6: { known: true, value: null } }, ...extra });
+    const textTree = node => String(node.textContent || '') + node.innerHTML + node.children.map(textTree).join('');
+    const fixtureFor = async ({ status = 1, operation = 'remove', apply = {}, fresh = owner(null), localCleanup = false } = {}) => {
+        const report = snapshot(status);
+        let nextOwner = owner(oldAddress, status);
+        const verification = () => ({ owners: [nextOwner, { ...report.conflicts[0].owners[1], service_exists: true,
+            address_verified_at: '2026-10-14T13:01:00Z', address_evidence: { address: { known: true, value: oldAddress }, address6: { known: true, value: null } } }],
+            checked_at: '2026-10-14T13:01:00Z', snapshot_checked_at: report.checked_at, selection_complete: true, awaiting_full_scan: true,
+            groups: [{ ...report.conflicts[0], state: nextOwner.service_exists === true && nextOwner.client_id === 17
+                && nextOwner.address_evidence?.address?.known === true
+                && (nextOwner.address_evidence.address.value !== oldAddress || (nextOwner.service_status_code === 2 && nextOwner.historical_families?.includes('IPv4')))
+                ? 'resolved' : 'duplicate' }] });
+        const intended = operation === 'remove' ? null : operation === 'history' ? oldAddress : newAddress;
+        const applyResult = { service_id: 42, client_id: 17, family: 'IPv4', operation, applied: true, uncertain: false,
+            current_address_known: true, current_address: intended, local_cleanup_required: localCleanup,
+            requires_sync: operation !== 'history', awaiting_full_scan: true,
+            ...(operation === 'history' ? { historical: true, preserves_crm_history: true } : {}), ...apply };
+        const token = 'a'.repeat(64);
+        const fixture = recoveryPanelFixture({ initialReplies: new Map([['list/crm_network_conflicts', envelope(report)],
+            ['list/crm_network_resolution', () => envelope(verification())], ['resolve/crm_network_conflicts', payload => envelope(payload.action === 'preview'
+                ? { previewToken: token, expiresAt: '2099-10-14T13:00:00Z', service_id: 42, client_id: 17, family: 'IPv4',
+                    operation: payload.data.operation, current_address: nextOwner.address_evidence.address.value, current_address_known: true,
+                    new_address: payload.data.operation === 'remove' ? null : payload.data.operation === 'history' ? nextOwner.address_evidence.address.value : payload.data.address,
+                    ...(payload.data.operation === 'history' ? { historical: true, preserves_crm_history: true, requires_sync: false } : {}) }
+                : applyResult)]]) });
+        await fixture.navigate('network_conflicts');
+        const target = fixture.nodes.get('crm-network-conflicts-body').children[0].children[1].children[0];
+        await target.children.find(button => button.className.includes(operation === 'history' ? 'conflict-history' : 'conflict-edit-ip')).fire('click');
+        if (operation !== 'history') {
+            fixture.nodes.get('crm-ip-operation').value = operation; await fixture.nodes.get('crm-ip-operation').fire('change');
+            if (operation === 'replace') fixture.nodes.get('crm-ip-address').value = newAddress;
+        }
+        await fixture.nodes.get('review-crm-ip-change').fire('click');
+        assert.equal(fixture.nodes.get('apply-crm-ip-change').disabled, false);
+        nextOwner = fresh;
+        return { fixture, report, token, setOwner(value) { nextOwner = value; }, verification,
+            async apply(accept = true) {
+                const applying = fixture.nodes.get('apply-crm-ip-change').fire('click'); await flush();
+                const confirmation = fixture.document.body.children.find(node => node.className === 'confirm-overlay');
+                assert(confirmation); await confirmation.children[0].children[1].children[accept ? 1 : 0].fire('click');
+                await applying; return fixture;
+            } };
+    };
+    const terminal = fixture => {
+        assert.equal(fixture.nodes.get('crm-ip-form').style.display, 'none', 'A consumed edit attempt must not return to the editable form');
+        assert.equal(fixture.nodes.get('crm-ip-result').style.display, 'block');
+        assert.equal(fixture.nodes.get('apply-crm-ip-change').disabled, true, 'A result cannot replay its consumed preview token');
+        assert.equal(fixture.nodes.get('review-crm-ip-change').disabled, true);
+    };
+    const assertReadOnlyRetry = (fixture, before) => {
+        const followup = fixture.calls.slice(before);
+        assert(followup.length > 0);
+        assert(followup.every(call => call.changeType === 'list'), 'Verify again only reads; it cannot preview, apply, clean, or provision');
+        const live = followup.filter(call => call.target === 'crm_network_resolution');
+        assert.equal(live.length, 1, 'One retry performs one bounded live owner verification');
+        assert.deepEqual(live[0].data, { serviceIds: [42, 43] });
+    };
+
+    for (const operation of ['remove', 'replace']) {
+        const flow = await fixtureFor({ operation, fresh: owner(operation === 'remove' ? null : newAddress) });
+        const before = flow.fixture.calls.length;
+        await flow.apply(); terminal(flow.fixture);
+        assert.equal(flow.fixture.nodes.get('crm-ip-result').dataset.state, 'confirmed');
+        assert.match(textTree(flow.fixture.nodes.get('crm-ip-result-title')), operation === 'remove' ? /IP retirada|IP quitada/ : /IP cambiada|IP actualizada|Cambio confirmado/);
+        const summary = textTree(flow.fixture.nodes.get('crm-ip-result-summary'));
+        assert(summary.includes(oldAddress)); assert(summary.includes(operation === 'remove' ? 'Sin IP asignada' : newAddress));
+        assert.equal(flow.fixture.calls.slice(before).filter(call => call.target === 'crm_network_resolution').length, 1);
+        assert(flow.fixture.calls.slice(before).some(call => call.changeType === 'list' && call.target === 'crm_network_conflicts'),
+            'Completing a write refreshes the local monitor report as well as the selected live owner group');
+        assert.equal(flow.fixture.nodes.get('crm-network-warning').style.display, 'none');
+        assert.equal(flow.fixture.nodes.get('crm-network-resolved').style.display, 'block');
+        assert.equal(flow.fixture.nodes.get('verify-crm-ip-result').disabled, false);
+        assert.equal(flow.fixture.nodes.get('cleanup-crm-ip-result').style.display, 'none', 'No obsolete local reservation means no cleanup prompt');
+    }
+
+    const uncertain = await fixtureFor({ apply: { applied: false, uncertain: true, current_address: oldAddress }, fresh: owner(oldAddress) });
+    await uncertain.apply(); terminal(uncertain.fixture);
+    assert.equal(uncertain.fixture.nodes.get('crm-ip-result').dataset.state, 'unchanged');
+    assert.match(textTree(uncertain.fixture.nodes.get('crm-ip-result-title')), /IP anterior/);
+    assert.equal(uncertain.fixture.nodes.get('resolve-crm-ip-history').style.display, 'none', 'Active services do not receive an ended-service fallback');
+    const beforeRetry = uncertain.fixture.calls.length;
+    uncertain.setOwner(owner(null));
+    await uncertain.fixture.nodes.get('verify-crm-ip-result').fire('click'); terminal(uncertain.fixture);
+    assertReadOnlyRetry(uncertain.fixture, beforeRetry);
+    assert.equal(uncertain.fixture.nodes.get('crm-ip-result').dataset.state, 'observed');
+    assert.match(textTree(uncertain.fixture.nodes.get('crm-ip-result-title')), /muestra el cambio solicitado/);
+    assert.equal(uncertain.fixture.calls.filter(call => call.changeType === 'resolve' && call.action === 'apply').length, 1,
+        'Observing the requested state never resubmits the original PATCH');
+
+    const unknownOwner = owner(null, 1, { address_evidence: { address: { known: false, value: null }, address6: { known: true, value: null } } });
+    const unknown = await fixtureFor({ apply: { applied: false, uncertain: true, current_address_known: false, current_address: null }, fresh: unknownOwner });
+    await unknown.apply(); terminal(unknown.fixture);
+    assert.equal(unknown.fixture.nodes.get('crm-ip-result').dataset.state, 'unknown');
+    assert.match(textTree(unknown.fixture.nodes.get('crm-ip-result-summary')), /Sin comprobar/);
+    assert.equal(unknown.fixture.nodes.get('cleanup-crm-ip-result').style.display, 'none');
+    assert.equal(unknown.fixture.nodes.get('resolve-crm-ip-history').style.display, 'none');
+    const queryFailure = unknown.fixture.calls.length;
+    unknown.fixture.reply('list/crm_network_resolution', { status: 'failed', error: true, message: 'offline' });
+    await unknown.fixture.nodes.get('verify-crm-ip-result').fire('click'); terminal(unknown.fixture);
+    assert.equal(unknown.fixture.nodes.get('crm-ip-result').dataset.state, 'unknown');
+    assert.equal(unknown.fixture.nodes.get('verify-crm-ip-result').disabled, false, 'An unavailable CRM leaves an explicit retry button');
+    assertReadOnlyRetry(unknown.fixture, queryFailure);
+
+    const receipt = await fixtureFor();
+    receipt.fixture.reply('list/crm_network_resolution', { status: 'failed', error: true, message: 'fixture read unavailable' });
+    await receipt.apply(); terminal(receipt.fixture);
+    assert.equal(receipt.fixture.nodes.get('crm-ip-result').dataset.state, 'confirmed_pending',
+        'A confirmed write receipt remains visible when its later query fails');
+    assert.match(textTree(receipt.fixture.nodes.get('crm-ip-result-message')), /confirmó.*guardar.*consulta posterior no pudo/);
+    assert.match(textTree(receipt.fixture.nodes.get('crm-ip-result-detail')), /fixture read unavailable/);
+    assert.equal(receipt.fixture.nodes.get('cleanup-crm-ip-result').style.display, 'none', 'An unavailable query cannot prove obsolete local ownership');
+    receipt.fixture.reply('list/crm_network_resolution', () => envelope(receipt.verification()));
+    await receipt.fixture.nodes.get('verify-crm-ip-result').fire('click');
+    assert.equal(receipt.fixture.nodes.get('crm-ip-result').dataset.state, 'confirmed');
+    assert.equal(receipt.fixture.calls.filter(call => call.changeType === 'resolve' && call.action === 'apply').length, 1);
+
+    for (const applyReply of [
+        { status: 'failed', error: true, message: 'fixture PATCH failed' },
+        envelope({ service_id: 99, family: 'IPv4', operation: 'remove', applied: true, uncertain: false, current_address_known: true, current_address: null }),
+        envelope({ service_id: 42, family: 'IPv4', operation: 'remove', applied: true, uncertain: false, current_address_known: true, current_address: oldAddress })
+    ]) {
+        const failed = await fixtureFor({ fresh: owner(oldAddress) });
+        failed.fixture.reply('resolve/crm_network_conflicts', applyReply);
+        const callsBefore = failed.fixture.calls.length;
+        await failed.apply(); terminal(failed.fixture);
+        assert.equal(failed.fixture.nodes.get('crm-ip-result').dataset.state, 'unchanged', 'An error or incompatible receipt cannot become a successful edit');
+        assert.match(textTree(failed.fixture.nodes.get('crm-ip-result-detail')), /Detalle:/);
+        assert.equal(failed.fixture.calls.slice(callsBefore).filter(call => call.target === 'crm_network_resolution').length, 1,
+            'Ambiguous failed attempts also read back the service without replaying their token');
+        await failed.fixture.nodes.get('apply-crm-ip-change').fire('click');
+        assert.equal(failed.fixture.calls.filter(call => call.changeType === 'resolve' && call.action === 'apply').length, 1);
+    }
+
+    for (const [state, fresh] of [
+        ['identity_changed', owner(null, 2, { client_id: 99 })],
+        ['absent', owner(null, 2, { service_exists: false })],
+        ['absent', owner(null, 2, { service_exists: false, client_id: null })],
+        ['unknown', owner(null, 2, { service_exists: null, client_id: null })],
+        ['unknown', owner(null, 2, { service_exists: true, client_id: null })],
+        ['unknown', owner(null, 2, { address_evidence: { address: { known: false, value: null } } })],
+        ['changed', owner('192.0.2.90', 2)]
+    ]) {
+        const flow = await fixtureFor({ status: 2, apply: { applied: false, uncertain: true, current_address: oldAddress }, fresh });
+        await flow.apply(); terminal(flow.fixture);
+        assert.equal(flow.fixture.nodes.get('crm-ip-result').dataset.state, state);
+        assert.equal(flow.fixture.nodes.get('resolve-crm-ip-history').style.display, state === 'changed' ? 'inline-flex' : 'none',
+            'Historical fallback needs a fresh known address of the same existing ended service, independent of the previous edit attempt');
+        assert.equal(flow.fixture.nodes.get('cleanup-crm-ip-result').style.display, 'none');
+    }
+
+    const unknownIdentityReceipt = await fixtureFor({ fresh: owner(null, 2, { service_exists: null, client_id: null }) });
+    await unknownIdentityReceipt.apply();
+    assert.equal(unknownIdentityReceipt.fixture.nodes.get('crm-ip-result').dataset.state, 'confirmed_pending',
+        'A null client from an unavailable read is uncertainty, not evidence of reassignment');
+
+    const changedHistory = await fixtureFor({ status: 2, apply: { applied: false, uncertain: true, current_address: oldAddress }, fresh: owner('192.0.2.90', 2) });
+    await changedHistory.apply();
+    await changedHistory.fixture.nodes.get('resolve-crm-ip-history').fire('click'); await flush();
+    assert.equal(changedHistory.fixture.nodes.get('crm-ip-current').textContent, '192.0.2.90');
+    await changedHistory.fixture.nodes.get('review-crm-ip-change').fire('click');
+    assert.match(changedHistory.fixture.nodes.get('crm-ip-review').innerHTML, /192\.0\.2\.90/,
+        'A fresh ended-service fallback binds its own review to the current IP, not the prior edit IP');
+    assert(!changedHistory.fixture.nodes.get('crm-ip-review').innerHTML.includes(oldAddress));
+    assert.equal(changedHistory.fixture.calls.filter(call => call.changeType === 'resolve' && call.action === 'apply').length, 1,
+        'Opening the fallback and reviewing it does not repeat the original edit or apply history automatically');
+
+    const ended = await fixtureFor({ status: 2, apply: { applied: false, uncertain: true, current_address: oldAddress }, fresh: owner(oldAddress, 2) });
+    await ended.apply(); terminal(ended.fixture);
+    assert.equal(ended.fixture.nodes.get('crm-ip-result').dataset.state, 'unchanged');
+    assert.equal(ended.fixture.nodes.get('resolve-crm-ip-history').style.display, 'inline-flex');
+    await ended.fixture.nodes.get('resolve-crm-ip-history').fire('click'); await flush();
+    assert.equal(ended.fixture.nodes.get('crm-ip-form').style.display, 'block');
+    assert.equal(ended.fixture.nodes.get('crm-ip-result').style.display, 'none');
+    assert.equal(ended.fixture.nodes.get('crm-ip-edit-title').textContent, 'Resolver asignación histórica');
+    const priorMutations = ended.fixture.calls.filter(call => call.changeType === 'resolve').length;
+    await ended.fixture.nodes.get('review-crm-ip-change').fire('click');
+    assert.equal(ended.fixture.calls.filter(call => call.changeType === 'resolve').length, priorMutations + 1, 'Historical fallback still requires a separate reviewed preview');
+    assert.equal(ended.fixture.calls.at(-1).data.operation, 'history');
+    ended.fixture.reply('resolve/crm_network_conflicts', envelope({ service_id: 42, client_id: 17, family: 'IPv4', operation: 'history',
+        historical: true, preserves_crm_history: true, requires_sync: false, applied: true, uncertain: false,
+        current_address: oldAddress, current_address_known: true, local_cleanup_required: true, awaiting_full_scan: true }));
+    ended.setOwner(owner(oldAddress, 2, { historical_families: ['IPv4'] }));
+    await ended.apply(); terminal(ended.fixture);
+    assert.equal(ended.fixture.nodes.get('crm-ip-result').dataset.state, 'confirmed');
+    assert.match(textTree(ended.fixture.nodes.get('crm-ip-result-message')), /CRM conserva.*historial|historial.*CRM.*conserv/);
+    assert.equal(ended.fixture.nodes.get('crm-ip-current').textContent, oldAddress, 'Historical resolution never pretends that UISP IP was removed');
+    assert.equal(ended.fixture.nodes.get('resolve-crm-ip-history').style.display, 'none', 'A confirmed historical family cannot be excluded twice');
+    assert.equal(ended.fixture.nodes.get('cleanup-crm-ip-result').style.display, 'inline-flex');
+    assert.equal(ended.fixture.calls.filter(call => call.changeType === 'cleanup').length, 0, 'Historical confirmation does not silently clear local reservations');
+    ended.fixture.reply('cleanup/crm_network_conflicts', envelope({ candidates: [], blocked: [{ service_id: 42, reason: 'ownership_active' }] }));
+    await ended.fixture.nodes.get('cleanup-crm-ip-result').fire('click');
+    assert.equal(ended.fixture.calls.at(-1).changeType, 'cleanup'); assert.equal(ended.fixture.calls.at(-1).action, 'preview');
+    assert.equal(ended.fixture.calls.filter(call => call.changeType === 'cleanup' && call.action === 'apply').length, 0);
+
+    const reactivated = await fixtureFor({ operation: 'history', status: 2, apply: { applied: false, uncertain: true },
+        fresh: owner(oldAddress, 1, { historical_families: ['IPv4'] }) });
+    await reactivated.apply(); terminal(reactivated.fixture);
+    assert.notEqual(reactivated.fixture.nodes.get('crm-ip-result').dataset.state, 'confirmed');
+    assert.notEqual(reactivated.fixture.nodes.get('crm-ip-result').dataset.state, 'observed');
+    assert.equal(reactivated.fixture.nodes.get('resolve-crm-ip-history').style.display, 'none');
+    assert.equal(reactivated.fixture.nodes.get('cleanup-crm-ip-result').style.display, 'none', 'A malformed historical flag on a reactivated service cannot permit cleanup');
+
+    const cancelled = await fixtureFor(); await cancelled.apply(false);
+    assert.notEqual(cancelled.fixture.nodes.get('crm-ip-form').style.display, 'none', 'Cancelling confirmation leaves the reviewed form intact');
+    assert.equal(cancelled.fixture.nodes.get('crm-ip-result').style.display, 'none');
+    assert.equal(cancelled.fixture.nodes.get('apply-crm-ip-change').disabled, false);
+    assert.equal(cancelled.fixture.calls.filter(call => call.changeType === 'resolve' && call.action === 'apply').length, 0);
+
+    const navigating = await fixtureFor({ apply: { applied: false, uncertain: true, current_address: oldAddress }, fresh: owner(oldAddress) });
+    await navigating.apply();
+    const pendingRead = deferred();
+    navigating.fixture.reply('list/crm_network_resolution', () => pendingRead.promise);
+    const readsBefore = navigating.fixture.calls.length;
+    const firstRetry = navigating.fixture.nodes.get('verify-crm-ip-result').fire('click'); await flush();
+    assert.equal(navigating.fixture.nodes.get('crm-ip-result').dataset.state, 'checking');
+    assert.equal(navigating.fixture.nodes.get('verify-crm-ip-result').disabled, true);
+    await navigating.fixture.nodes.get('verify-crm-ip-result').fire('click');
+    assert.equal(navigating.fixture.calls.slice(readsBefore).filter(call => call.target === 'crm_network_resolution').length, 1,
+        'Double clicking retry cannot overlap bounded owner reads');
+    await navigating.fixture.closeButtons[0].fire('click');
+    assert.equal(navigating.fixture.nodes.get('crm-ip-edit-modal').style.display, 'flex', 'An in-flight read preserves the current result generation until it settles');
+    await navigating.fixture.navigate('plans');
+    assert.equal(navigating.fixture.nodes.get('view-plans').style.display, 'block', 'Read-only result verification leaves navigation usable');
+    navigating.setOwner(owner(null)); pendingRead.resolve(envelope(navigating.verification())); await firstRetry;
+    assert.equal(navigating.fixture.nodes.get('view-plans').style.display, 'block', 'A late verification must not jump back to conflicts');
+    assert.equal(navigating.fixture.nodes.get('crm-ip-result').dataset.state, 'observed');
+    await navigating.fixture.closeButtons[0].fire('click');
+    assert.equal(navigating.fixture.nodes.get('crm-ip-edit-modal').style.display, 'none');
+    const afterClose = navigating.fixture.calls.length;
+    await navigating.fixture.nodes.get('verify-crm-ip-result').fire('click');
+    await navigating.fixture.nodes.get('resolve-crm-ip-history').fire('click');
+    assert.equal(navigating.fixture.calls.length, afterClose, 'Detached terminal actions cannot reopen or reverify an already closed generation');
+    assert.equal(navigating.fixture.nodes.get('crm-ip-edit-modal').style.display, 'none');
+
+    const staleSnapshot = snapshot(2), reassignedOwner = owner(oldAddress, 2, { client_id: 99 });
+    const staleOpen = recoveryPanelFixture({ initialReplies: new Map([['list/crm_network_conflicts', envelope(staleSnapshot)],
+        ['list/crm_network_resolution', envelope({ owners: [reassignedOwner], groups: [], checked_at: '2026-10-14T13:01:00Z' })]]) });
+    await staleOpen.navigate('network_conflicts');
+    await staleOpen.nodes.get('crm-network-conflicts-body').children[0].children[1].children[0].children
+        .find(button => button.className.includes('conflict-history')).fire('click');
+    assert.equal(staleOpen.nodes.get('review-crm-ip-change').disabled, true, 'An ended snapshot cannot authorize a historical edit for a reassigned client');
+    assert.match(staleOpen.nodes.get('crm-ip-edit-status').textContent, /identidad.*cambió/);
+    assert.equal(staleOpen.calls.filter(call => call.changeType === 'resolve').length, 0);
 }
 
 async function checkResolvedCrmConflictFeedback() {
@@ -1548,8 +1811,8 @@ async function checkNetworkRecoveryPanel() {
     assert.deepEqual(plain(healthy.diagnostics()[0].data), {}, 'Reactive recovery reads must not request live CRM verification');
     const malformed = recoveryPanelFixture({ bootstrap: '{', details }); await flush();
     assert.equal(malformed.nodes.get('btn-cache').disabled, false, 'An invalid optional bootstrap must not break normal navigation');
-    assert.equal((markup.match(/(?:src|href)="(?:js|css)\/[^"?]+\?v=2\.0\.42"/g) || []).length, 5, 'Every panel asset must use the new revision to invalidate UISP browser caches');
-    assert(!markup.includes('v=2.0.41'));
+    assert.equal((markup.match(/(?:src|href)="(?:js|css)\/[^"?]+\?v=2\.0\.43"/g) || []).length, 5, 'Every panel asset must use the new revision to invalidate UISP browser caches');
+    assert(!markup.includes('v=2.0.42'));
     assert(apiSource.includes("'alert-triangle':"), 'The conflict warning must have its own local warning icon');
 }
 
@@ -3090,11 +3353,12 @@ async function checkLanguagePresentation() {
     await checkCrmNetworkMonitorPanel();
     await checkCrmNetworkResolutionPanel();
     await checkCrmHistoricalResolutionPanel();
+    await checkCrmEditResultFeedback();
     await checkResolvedCrmConflictFeedback();
     await checkNetworkRecoveryPanel();
     await checkNetworkCleanupPanel();
     await checkNetworkClientArchivePanel();
     await checkNavigationContinuity();
     await checkCurrentAddressEvidence();
-    console.log('Panel regression checks passed: recovery navigation, escaped owner/status diagnostics, same-origin CRM links, explicit single-service verification without blocking navigation, update/upload guards and diagnostic downloads; partial provisioning counts/diagnostics/persistence and full totals, API contracts, old HTML/API manual editors, saved global contention flags and drafts, legacy zero ratios, configuration keyboard drafts during pending saves/reloads, language changes preserving open modal/custom values/scroll and asynchronous settings drafts, stale language response rejection, legacy global language preservation, inactive control omission, configuration failure recovery, stable local editor visibility, deferred plan saves and failure drafts, burst templates and math, custom plans, legacy sentinels, drafts, one-click saves, nonblocking notifications, safe text, numeric types, overrides, TLS, backup routes and failure cleanup.');
+    console.log('Panel regression checks passed: terminal CRM edit outcomes, confirmed receipts and uncertain readback, bounded read-only retries without token replay, ended-service historical fallback and separate cleanup review, identity/absence/reactivation safeguards and cancellation; recovery navigation, escaped owner/status diagnostics, same-origin CRM links, explicit single-service verification without blocking navigation, update/upload guards and diagnostic downloads; partial provisioning counts/diagnostics/persistence and full totals, API contracts, old HTML/API manual editors, saved global contention flags and drafts, legacy zero ratios, configuration keyboard drafts during pending saves/reloads, language changes preserving open modal/custom values/scroll and asynchronous settings drafts, stale language response rejection, legacy global language preservation, inactive control omission, configuration failure recovery, stable local editor visibility, deferred plan saves and failure drafts, burst templates and math, custom plans, legacy sentinels, drafts, one-click saves, nonblocking notifications, safe text, numeric types, overrides, TLS, backup routes and failure cleanup.');
 })().catch(error => { console.error(error); process.exitCode = 1; });

@@ -1,4 +1,4 @@
-# Pruebas reales del candidato 2.4.27
+# Pruebas reales del candidato 2.4.28
 
 Las pruebas automatizadas usan bases temporales, transportes simulados y sockets locales. Esta lista comprueba la integración **UISP → plugin → API nativa de RouterOS** en una copia de UISP y un CHR/router con clientes de prueba. Registrar versiones de UISP, PHP y RouterOS, así como ID del servicio, plan, trabajo, estado e IP/prefijo en cada caso.
 
@@ -6,7 +6,9 @@ Para un servicio terminado que UISP no permita editar, **Resolver asignación hi
 
 La limpieza local histórica se revisa por separado, incluso cuando CRM conserva la misma IP: exige que la prueba histórica coincida con una consulta fresca del servicio terminado, y conserva respaldo, exclusión de mantenimiento y protecciones de trabajos y propiedad aplicada. Un trabajo pendiente o cuenta registrada como aplicada impide retirar esa reserva. El mapeo o atributo sin comprobar no autoriza exclusión ni limpieza. El panel lee la estructura anterior v3 del monitor sin escribir; únicamente el proceso programado la actualiza a v4, conservando direcciones y evidencia por familia.
 
-Validación 2.4.27 aprobada: **35 suites aisladas**, sintaxis de **48 archivos PHP propios** y verificación del instalador de 360 entradas, 127 archivos propios y 13 dependencias fijadas. Informe: `dist/verification-2.4.27.json`. SHA-256: `fcabbdb8b67dc77d2cbefa97e339bad4270eabb5a885199f3bc01d3f32aa8b88`. Se comprobó con datos ficticios en navegador el apartado verde de resueltos, el contador pendiente y el indicador de reserva limpiada. No se modificaron CRM ni RouterOS de producción.
+Validación 2.4.28 aprobada: **35 suites aisladas**, sintaxis de **48 archivos PHP propios** y verificación del instalador de 360 entradas, 127 archivos propios y 13 dependencias fijadas. Informe: `dist/verification-2.4.28.json`. SHA-256: `ab16abdbc2b2e63f5a2c6418d920766e723e8c313aa80a285ec211f4ea0f4956`. Se comprobó con datos ficticios en navegador el resultado explícito, la nueva verificación de sólo lectura y la alternativa histórica revisada para un servicio terminado. No se modificaron CRM ni RouterOS de producción.
+
+Validación histórica 2.4.27 aprobada: **35 suites aisladas**, sintaxis de **48 archivos PHP propios** y verificación del instalador de 360 entradas, 127 archivos propios y 13 dependencias fijadas. Informe: `dist/verification-2.4.27.json`. SHA-256: `fcabbdb8b67dc77d2cbefa97e339bad4270eabb5a885199f3bc01d3f32aa8b88`. Se comprobó con datos ficticios en navegador el apartado verde de resueltos, el contador pendiente y el indicador de reserva limpiada. No se modificaron CRM ni RouterOS de producción.
 
 Validación histórica 2.4.26 aprobada: **35 suites aisladas**, sintaxis de **48 archivos PHP propios** y verificación del instalador de 360 entradas, 127 archivos propios y 13 dependencias fijadas. Informe: `dist/verification-2.4.26.json`. SHA-256: `b290f01d7ca0f5a2f38ec4cc827096844f49763df92285a8b51d94f27ff90a3b`. La revisión en navegador utilizó datos ficticios para progreso simultáneo, corrección de CRM con revisión/confirmación, resolución histórica de un servicio terminado y limpieza local con el panel disponible. No se modificaron CRM ni RouterOS de producción.
 
@@ -31,7 +33,7 @@ La validación automatizada histórica de 2.4.19 pasó las 28 suites, la sintaxi
 1. Conservar el ZIP anterior y copias privadas de `data.db`, `jobs.db` y configuración. El respaldo descargado desde el panel cubre únicamente `data.db`.
 2. Exportar y respaldar el router de laboratorio y registrar sus perfiles, cuentas, colas y direcciones antes del piloto.
 3. Pausar el worker y las entregas anteriores mientras se sustituye el paquete; esperar a que terminen las peticiones activas.
-4. Instalar 2.4.25 y recargar el panel. Si aparece el aviso de IP duplicadas, consultar sus seis vistas, revisar los propietarios y verificar explícitamente en UISP los servicios necesarios. Conservar los datos y respaldos actuales; resolver las asignaciones antes de volver a comprobar. Las escrituras siguen pausadas mientras la base no pueda migrar. Si PHP web conserva código anterior, renovar su OPcache/reiniciar ese servicio.
+4. Instalar 2.4.28 y recargar el panel. Si aparece el aviso de IP duplicadas, consultar sus seis vistas, revisar los propietarios y verificar explícitamente en UISP los servicios necesarios. Conservar los datos y respaldos actuales; resolver las asignaciones antes de volver a comprobar. Las escrituras siguen pausadas mientras la base no pueda migrar. Si PHP web conserva código anterior, renovar su OPcache/reiniciar ese servicio.
 5. Comprobar el modo de autenticación del webhook; por defecto requiere el mismo secreto en ambos extremos. Verificar permisos administrativos, perfil externo de suspensión y reglas de firewall IPv4/IPv6.
 6. Después de completar la migración sin conflictos, verificar versión, configuración, planes y trabajos; reanudar las entregas/worker y probar primero un servicio. Ampliar después a un router cuando los estados y medidas coincidan.
 
@@ -51,6 +53,18 @@ En Conflictos de IP, revisar el nombre, ID del servicio, estado y origen de los 
 Una reserva anterior puede explicar una colisión. Resolverla exige comparar la asignación guardada con el CRM y el router y tomar una decisión explícita, conservando respaldos. Consultar, descargar o verificar no reasigna direcciones ni elimina reservas. Usar clientes y datos sintéticos para reproducir estos escenarios.
 
 El archivo del cliente se muestra por separado del estado de su servicio. **Verificar cliente** consulta directamente la ficha asociada al ID conocido, aunque el servicio ya no esté disponible. Los indicadores «archivado», «no archivado» y «sin comprobar» distinguen valores verificados de datos guardados. Esa consulta no habilita la limpieza ni modifica la caché durante recuperación.
+
+## Candidato 2.4.28 — mostrar el resultado del cambio de IP y volver a verificar
+
+Después de aplicar una corrección de IP o una exclusión histórica revisada, el editor muestra un resultado propio. Conserva la IP anterior, el cambio solicitado y el valor actual comunicado por UISP. Distingue el cambio confirmado, la IP anterior que sigue presente, un valor actual diferente, el servicio inexistente y la evidencia sin comprobar. Un resultado confirmado conserva esa identificación si falla la consulta posterior o si después se observa otro estado.
+
+El panel refresca el conflicto seleccionado y su contador mediante una verificación acotada, y consulta de nuevo el informe local del monitor. No inicia una revisión completa del CRM. **Verificar nuevamente** sólo hace consultas frescas: no repite la escritura ni reutiliza el token consumido. Si una consulta posterior coincide con una solicitud incierta, indica que UISP ahora muestra el estado solicitado, sin afirmar que la escritura original se confirmó. La evidencia desconocida o una identidad de cliente diferente no autorizan un resultado exitoso. Un nuevo cambio exige otra revisión y confirmación.
+
+Un servicio existente cuyo estado terminado se compruebe de nuevo permite pasar explícitamente de un cambio sin confirmar a **Resolver asignación histórica**. Esa alternativa exige su propia revisión y confirmación, y conserva el historial del CRM y los routers. El resultado histórico se contrasta con el mismo cliente, estado terminado, familia, IP exacta y marca revisada vigente. No se ofrece con servicio inexistente, reactivado, reasignado o sin comprobar. La limpieza local sigue siendo una acción revisada independiente, con respaldo y protecciones de propiedad.
+
+Las direcciones de los archivos del panel llevan una revisión nueva para solicitar el JavaScript y los estilos actualizados al cargar el panel nuevo.
+
+Validación 2.4.28 aprobada: **35 suites aisladas**, sintaxis de **48 archivos PHP propios** y verificación del instalador de 360 entradas, 127 archivos propios y 13 dependencias fijadas. Informe: `dist/verification-2.4.28.json`. SHA-256: `ab16abdbc2b2e63f5a2c6418d920766e723e8c313aa80a285ec211f4ea0f4956`. Se comprobó con datos ficticios en navegador el resultado explícito, la nueva verificación de sólo lectura y la alternativa histórica revisada para un servicio terminado. No se modificaron CRM ni RouterOS de producción.
 
 ## Candidato 2.4.27 — distinguir conflictos resueltos y reservas limpiadas
 
@@ -296,6 +310,15 @@ Desde 2.4.13, **Sincronizar y reconectar cuentas** en Dispositivos reconecta sie
 | 122 | Reaprovisionar, reactivar o cambiar la IP/identidad después de indicar una reserva ausente. | Revoca el indicador anterior y permite volver a revisar; el servidor comprueba siempre la evidencia actual. |
 | 123 | Leer estructuras conocidas v3 y v4 del monitor antes del cron; migrar y publicar en varias ejecuciones. | La consulta no escribe. La migración programada conserva las filas y publica por separado el inicio y el final de la revisión completada. |
 | 124 | Resolver un conflicto CRM cuando una migración está pausada por reservas locales duplicadas, y recargar el panel. | El aviso CRM no levanta la restricción independiente. La recarga utiliza el resultado automático y la verificación seleccionada fresca, sin guardar evidencia de clientes en el navegador. |
+
+| 125 | Aplicar una retirada o sustitución confirmada y volver a consultar el grupo. | Muestra el resultado, el antes/solicitado/actual y el conflicto actualizado. No vuelve al formulario inicial ni declara todo el CRM libre de conflictos. |
+| 126 | UISP conserva la IP anterior, devuelve otra distinta o no permite comprobar el resultado. | Distingue cada resultado y ofrece Verificar nuevamente sin repetir la escritura. |
+| 127 | Verificar otra vez una retirada o cambio incierto y obtener el valor solicitado. | Hace sólo consultas frescas; muestra el estado actual coincidente sin afirmar que se confirmó la escritura original. |
+| 128 | Cambiar el cliente propietario, omitir atributos o devolver servicio inexistente durante la verificación. | Conserva el intento como sin confirmar y no fabrica una retirada exitosa ni ofrece resolver un histórico no comprobado. |
+| 129 | Intentar editar un servicio terminado que UISP conserve sin cambios y elegir la alternativa histórica. | Ofrece Resolver asignación histórica sólo con evidencia fresca y exige revisión/confirmación independientes. No repite el PATCH ni reactiva el servicio. |
+| 130 | Resolver un histórico y después reactivarlo, cambiar su IP o retirar su marca revisada. | Distingue el resultado guardado del estado observado y no presenta la exclusión como vigente si perdió sus condiciones. |
+| 131 | Cancelar la confirmación, cerrar el resultado o cambiar de selección mientras termina una consulta anterior. | Cancelar no escribe; una respuesta tardía no modifica otro editor ni reabre un modal cerrado. |
+| 132 | Completar un cambio confirmado con una consulta posterior fallida y probar idioma/tema/tamaño de panel. | Conserva el resultado confirmado, permite volver a comprobar y mantiene legibles los datos y las acciones en español e inglés. |
 
 ## Diagnosticar una conexión pendiente
 

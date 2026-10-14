@@ -1,1 +1,1 @@
-Modernize the panel, resolve CRM IP conflicts, and distinguish pending and resolved work
+Modernize the panel and resolve CRM IP conflicts with clear, verifiable outcomes
