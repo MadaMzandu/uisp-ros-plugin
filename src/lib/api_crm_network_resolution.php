@@ -218,27 +218,34 @@ final class ApiCrmNetworkResolution
                         'fingerprint' => $current['fingerprint'], 'created_at' => (int) $this->now()], false);
                 return ['service_id' => $id, 'family' => $field === 'address' ? 'IPv4' : 'IPv6', 'operation' => 'history',
                     'applied' => true, 'uncertain' => false, 'current_address' => $value, 'current_address_known' => true,
+                    'write_outcome' => 'not_requested', 'write_http_status' => null, 'write_reason' => null,
                     'historical' => true, 'preserves_crm_history' => true, 'requires_sync' => false,
                     'local_cleanup_required' => $this->localObsolete($id, $field, null), 'awaiting_full_scan' => true,
                     'crm_webhook_possible' => false];
             }
+            $write = ['write_outcome' => 'accepted', 'write_http_status' => null, 'write_reason' => null];
             try { $this->call('clients/services/' . $id, 'patch', ['attributes' => [
                 ['customAttributeId' => $current['mapping'][$field]['id'], 'value' => $value]]]); }
-            catch (Throwable $ignored) {}
+            catch (Throwable $failure) { $write = self::writeFailure($failure); }
             $applied = false;
+            $sameTarget = false;
             $evidence = ['known' => false, 'value' => null, 'reason' => 'unavailable'];
             try {
                 $after = $this->target($id, $field);
                 $evidence = $after['evidence'];
-                $applied = $after['client_id'] === $current['client_id']
+                $sameTarget = $after['client_id'] === $current['client_id']
                     && $after['config_fingerprint'] === $current['config_fingerprint']
-                    && $after['mapping'][$field] === $current['mapping'][$field]
-                    && $evidence['known'] && $evidence['value'] === $value;
+                    && $after['mapping'][$field] === $current['mapping'][$field];
+                $applied = $sameTarget && $evidence['known'] && $evidence['value'] === $value;
             } catch (Throwable $ignored) {}
-            return ['service_id' => $id, 'family' => $field === 'address' ? 'IPv4' : 'IPv6', 'operation' => $state['operation'],
-                'applied' => $applied, 'uncertain' => !$applied, 'current_address' => $evidence['value'],
+            // A rejected write and a known current state are a definite result,
+            // even when the requested address was not applied. A later GET can
+            // observe somebody else's change; it never changes the PATCH receipt.
+            $uncertain = !$applied && !($write['write_outcome'] === 'rejected' && $sameTarget && $evidence['known']);
+            return array_replace(['service_id' => $id, 'family' => $field === 'address' ? 'IPv4' : 'IPv6', 'operation' => $state['operation'],
+                'applied' => $applied, 'uncertain' => $uncertain, 'current_address' => $evidence['value'],
                 'current_address_known' => $evidence['known'], 'local_cleanup_required' => $this->localObsolete($id, $field, $value),
-                'requires_sync' => true, 'awaiting_full_scan' => true, 'crm_webhook_possible' => true];
+                'requires_sync' => true, 'awaiting_full_scan' => true, 'crm_webhook_possible' => true], $write);
         } finally {
             if (is_resource($tokenLock)) { flock($tokenLock, LOCK_UN); fclose($tokenLock); }
             if (is_resource($lock)) { flock($lock, LOCK_UN); fclose($lock); }
@@ -513,5 +520,24 @@ final class ApiCrmNetworkResolution
             if ($error instanceof \GuzzleHttp\Exception\RequestException) return $error->hasResponse() && $error->getResponse()->getStatusCode() === 404;
         }
         return false;
+    }
+
+    /** Return bounded diagnostics, never response bodies, URLs or exception messages. */
+    private static function writeFailure(Throwable $failure): array
+    {
+        $status = null;
+        for ($error = $failure; $error !== null; $error = $error->getPrevious()) {
+            if ($error instanceof \GuzzleHttp\Exception\RequestException && $error->hasResponse()) {
+                $code = $error->getResponse()->getStatusCode();
+                if ($code >= 400 && $code <= 599) $status = $code;
+                break;
+            }
+        }
+        $rejected = $status !== null && $status < 500 && $status !== 408;
+        $reasons = [400 => 'validation_failed', 401 => 'permission_denied', 403 => 'permission_denied',
+            404 => 'not_found', 405 => 'method_not_allowed', 409 => 'conflict', 422 => 'validation_failed', 429 => 'rate_limited'];
+        $reason = ($status === null ? null : ($reasons[$status] ?? null)) ?? ($status === null ? 'transport_unconfirmed'
+            : ($rejected ? 'http_rejected' : 'server_unconfirmed'));
+        return ['write_outcome' => $rejected ? 'rejected' : 'unconfirmed', 'write_http_status' => $status, 'write_reason' => $reason];
     }
 }

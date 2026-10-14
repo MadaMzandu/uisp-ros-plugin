@@ -179,6 +179,10 @@ th.sortable:hover, th.sortable.asc, th.sortable.desc { color: var(--link); }
 .jobs-warning small { display: block; margin-top: 5px; font-size: 0.7rem; line-height: 1.5; }
 .invalid-reservations-pane { margin-bottom: 28px; }
 .repair-list { display: grid; gap: 10px; }
+.job-recovery-section { margin-bottom: 22px; padding: 16px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-subtle); }
+.job-recovery-section .conflicts-heading h3 { font-size: 0.95rem; }
+.job-recovery-section .repair-list-item { background: var(--bg-card); }
+.job-recovery-meta { display: flex; gap: 8px; flex-wrap: wrap; margin: 10px 0; font-size: 0.78rem; color: var(--text-muted); }
 .repair-list-item { padding: 13px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-subtle); }
 .repair-family { display: flex; align-items: start; justify-content: space-between; gap: 12px; margin-top: 10px; }
 .repair-family .btn { flex-shrink: 0; }

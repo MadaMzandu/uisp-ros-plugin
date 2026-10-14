@@ -75,6 +75,33 @@ try {
             respond('jobs_status', false, (new ApiJobsStatus())->read());
             exit;
         }
+        if ($method === 'POST' && is_object($data) && ($data->target ?? '') === 'job_recovery') {
+            $values = $data->data ?? null;
+            if (!empty($data->entity) || !is_object($values)) throw new InvalidArgumentException('invalid_job_recovery_request');
+            require_once 'lib/api_job_recovery.php';
+            $recovery = new ApiJobRecovery();
+            if (($data->changeType ?? '') === 'list' && ($data->action ?? 'list') === 'list'
+                && count(get_object_vars($values)) === 0) {
+                $result = $recovery->listing();
+            } elseif (($data->changeType ?? '') === 'recover' && ($data->action ?? '') === 'preview'
+                && array_keys(get_object_vars($values)) === ['sourceJobId'] && is_int($values->sourceJobId) && $values->sourceJobId > 0) {
+                if (is_file('data/data.db')) (new ApiSetup())->assertCompatible();
+                $result = $recovery->preview($values->sourceJobId);
+            } elseif (($data->changeType ?? '') === 'recover' && ($data->action ?? '') === 'apply'
+                && array_keys(get_object_vars($values)) === ['previewToken'] && is_string($values->previewToken)) {
+                if (is_file('data/data.db')) (new ApiSetup())->assertCompatible();
+                $result = $recovery->apply($values->previewToken);
+            } else throw new InvalidArgumentException('invalid_job_recovery_request');
+            respond('job_recovery', false, $result);
+            exit;
+        }
+        if ($method === 'GET' && isset($_GET['download'])) {
+            require_once 'lib/api_job_recovery.php';
+            if (ApiJobRecovery::backupName($_GET['download'])) {
+                ApiJobRecovery::download($_GET['download']);
+                exit;
+            }
+        }
         if ($method === 'POST' && is_object($data) && ($data->target ?? '') === 'network_repair') {
             $values = $data->data ?? null;
             if (!empty($data->entity) || !is_object($values)) throw new InvalidArgumentException('invalid_network_repair_request');

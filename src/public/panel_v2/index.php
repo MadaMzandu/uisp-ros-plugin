@@ -13,8 +13,8 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     
     <!-- Custom CSS -->
-    <script src="js/theme.js?v=2.0.44"></script>
-    <link rel="stylesheet" href="css/style.css?v=2.0.44">
+    <script src="js/theme.js?v=2.0.45"></script>
+    <link rel="stylesheet" href="css/style.css?v=2.0.45">
 </head>
 <body>
 
@@ -147,6 +147,7 @@
                         <div id="crm-network-history" class="crm-network-history" style="display: none;">
                             <h3 data-i18n="Asignaciones históricas revisadas">Asignaciones históricas revisadas</h3>
                             <p class="form-note" data-i18n="Estas asignaciones pertenecen a servicios terminados y conservan su historial en el CRM. La resolución se revisa automáticamente si cambia la IP o se reactiva el servicio.">Estas asignaciones pertenecen a servicios terminados y conservan su historial en el CRM. La resolución se revisa automáticamente si cambia la IP o se reactiva el servicio.</p>
+                            <p class="form-note" data-i18n="Revisada significa excluida de los conflictos actuales mientras coincida la comprobación; la IP permanece en UISP. Esta resolución no limpia recursos del router ni recuperaciones de trabajos.">Revisada significa excluida de los conflictos actuales mientras coincida la comprobación; la IP permanece en UISP. Esta resolución no limpia recursos del router ni recuperaciones de trabajos.</p>
                             <div id="crm-network-history-list"></div>
                             <p id="crm-network-history-limit" class="form-note" style="display: none;"></p>
                         </div>
@@ -271,6 +272,14 @@
 
                 <!-- View Jobs -->
         <section id="view-jobs" class="view-section" style="display: none;">
+            <section class="job-recovery-section" id="job-recovery-section" aria-labelledby="job-recovery-heading" tabindex="-1">
+                <div class="conflicts-heading">
+                    <div><h3 id="job-recovery-heading" data-i18n="Servicios en recuperación">Servicios en recuperación</h3><p data-i18n="Son registros conservados de trabajos cancelados. No se ejecutan automáticamente. Revisa cada servicio antes de resolver su recuperación.">Son registros conservados de trabajos cancelados. No se ejecutan automáticamente. Revisa cada servicio antes de resolver su recuperación.</p></div>
+                    <button type="button" class="btn btn-secondary" id="refresh-job-recoveries" data-i18n="Refrescar recuperaciones">Refrescar recuperaciones</button>
+                </div>
+                <p class="form-note" id="job-recovery-list-status" role="status" aria-live="polite" data-i18n="Sin actualizar.">Sin actualizar.</p>
+                <div class="repair-list" id="job-recovery-list"></div>
+            </section>
             <div class="panel">
                 <div class="jobs-toolbar">
                     <div class="toolbar-summary">
@@ -372,6 +381,23 @@
     </div>
 
     <!-- Modals -->
+    <div id="job-recovery-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="job-recovery-title" style="display: none;">
+        <div class="modal crm-ip-edit-dialog">
+            <div class="modal-header"><h3 id="job-recovery-title" data-i18n="Revisar recuperación">Revisar recuperación</h3><button type="button" class="close-modal" aria-label="Cerrar" data-i18n-aria-label="Cerrar"><i data-feather="x"></i></button></div>
+            <div class="modal-body">
+                <p class="form-note" data-i18n="Se compararán los registros conservados con el estado aplicado guardado y se comprobarán la identidad y el estado en UISP. Sólo se resolverán copias redundantes; los servicios, las IP, las velocidades y los routers se conservarán.">Se compararán los registros conservados con el estado aplicado guardado y se comprobarán la identidad y el estado en UISP. Sólo se resolverán copias redundantes; los servicios, las IP, las velocidades y los routers se conservarán.</p>
+                <p id="job-recovery-status" class="form-note" role="status" aria-live="polite"></p>
+                <div id="job-recovery-comparison" class="repair-list"></div>
+                <section id="job-recovery-result" class="crm-ip-result" role="status" aria-live="polite" tabindex="-1" style="display: none;"></section>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary close-modal" data-i18n="Cerrar">Cerrar</button>
+                <button type="button" class="btn btn-secondary" id="recheck-job-recovery" data-i18n="Verificar de nuevo">Verificar de nuevo</button>
+                <button type="button" class="btn btn-primary" id="apply-job-recovery" disabled data-i18n="Resolver recuperación">Resolver recuperación</button>
+            </div>
+        </div>
+    </div>
+
     <div id="network-repair-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="network-repair-title" style="display: none;">
         <div class="modal network-cleanup-dialog">
             <div class="modal-header"><h3 id="network-repair-title" data-i18n="Corregir reserva inválida">Corregir reserva inválida</h3><button type="button" class="close-modal" aria-label="Cerrar" data-i18n-aria-label="Cerrar"><i data-feather="x"></i></button></div>
@@ -678,8 +704,8 @@
     </div>
 
     <!-- Scripts -->
-    <script src="js/i18n.js?v=2.0.44"></script>
-    <script src="js/api.js?v=2.0.44"></script>
-    <script src="js/app.js?v=2.0.44"></script>
+    <script src="js/i18n.js?v=2.0.45"></script>
+    <script src="js/api.js?v=2.0.45"></script>
+    <script src="js/app.js?v=2.0.45"></script>
 </body>
 </html>

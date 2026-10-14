@@ -19,7 +19,8 @@ function resolutionService(int $id, ?string $address, int $status = 1): array {
 }
 function resolutionHttp(int $status): Throwable {
     return new GuzzleHttp\Exception\RequestException('PRIVATE-HTTP-ERROR',
-        new GuzzleHttp\Psr7\Request('GET', 'https://resolution-fixture.invalid/api'), new GuzzleHttp\Psr7\Response($status));
+        new GuzzleHttp\Psr7\Request('GET', 'https://resolution-fixture.invalid/api'),
+        new GuzzleHttp\Psr7\Response($status, [], '{"message":"PRIVATE-RESPONSE-PASSWORD","attribute":"PRIVATE-IP"}'));
 }
 $source = realpath(__DIR__ . '/../src');
 $directory = sys_get_temp_dir() . '/uisp-crm-network-resolution-' . bin2hex(random_bytes(8));
@@ -65,12 +66,18 @@ try {
             checkResolution(is_file($directory . '/crm-network-correction-' . $id . '-' . $field . '.json'), 'PATCH ran before daily-export correction hold was installed');
             $patches[] = [$path, $data];
             if ($mode === 'patch_timeout') throw new RuntimeException('PRIVATE-PATCH-TIMEOUT');
+            if (preg_match('/^patch_http_([1-5][0-9]{2})$/D', $mode, $http))
+                throw new RuntimeException('PRIVATE-OUTER-ERROR', 0, resolutionHttp((int) $http[1]));
+            if ($mode === 'patch_rejected_followup_unavailable') {
+                $mode = 'service_unavailable'; throw resolutionHttp(422);
+            }
             $attributes = [];
             foreach ($services[$id]['attributes'] as $attribute) if ($attribute['customAttributeId'] !== $data['attributes'][0]['customAttributeId']) $attributes[] = $attribute;
             if ($data['attributes'][0]['value'] !== null) $attributes[] = ['key' => $field === 'address' ? 'fixture-ip' : 'fixture-ipv6',
                 'customAttributeId' => $data['attributes'][0]['customAttributeId'], 'value' => $data['attributes'][0]['value']];
             $services[$id]['attributes'] = $attributes;
             if ($mode === 'patch_applied_reply_timeout') throw new RuntimeException('PRIVATE-REPLY-TIMEOUT');
+            if ($mode === 'patch_rejected_external_change') throw resolutionHttp(403);
             if ($mode === 'followup_unavailable') $mode = 'service_unavailable';
             return $services[$id];
         }
@@ -115,6 +122,7 @@ try {
         && strpos($tokenState, 'PRIVATE-') === false && strpos($tokenState, 'attributes') === false, 'Preview wrote CRM or retained raw private service fields');
     $removed = $api->apply($preview['previewToken']);
     checkResolution($removed['applied'] && !$removed['uncertain'] && $removed['current_address_known'] && $removed['current_address'] === null
+        && $removed['write_outcome'] === 'accepted' && $removed['write_http_status'] === null && $removed['write_reason'] === null
         && $removed['local_cleanup_required'] && $removed['requires_sync'] && count($patches) === 1
         && $patches[0][1]['attributes'] === [['customAttributeId' => 1, 'value' => null]], 'Explicit removal was not a confirmed targeted-attribute-only PATCH');
     rejectResolution(fn() => $api->apply($preview['previewToken']), 'invalid_crm_resolution_token');
@@ -160,17 +168,47 @@ try {
     rejectResolution(fn() => $api->apply($fixed['previewToken']), 'crm_resolution_changed');
     $mode = 'normal'; $db = new SQLite3($dataPath); $db->exec("UPDATE config SET value='fixture-ip' WHERE key='ip_addr_attr'"); $db->close();
     $mode = 'patch_timeout'; $uncertain = $api->apply($fixed['previewToken']);
-    checkResolution(!$uncertain['applied'] && $uncertain['uncertain'] && ApiCrmNetworkResolution::skipAttributeExport(3, 'address', '192.0.2.97', $directory, $descriptor, 103), 'Ambiguous PATCH incorrectly reported success or lost exporter hold');
+    checkResolution(!$uncertain['applied'] && $uncertain['uncertain'] && $uncertain['write_outcome'] === 'unconfirmed'
+        && $uncertain['write_reason'] === 'transport_unconfirmed' && $uncertain['write_http_status'] === null
+        && ApiCrmNetworkResolution::skipAttributeExport(3, 'address', '192.0.2.97', $directory, $descriptor, 103), 'Ambiguous PATCH incorrectly reported success or lost exporter hold');
     rejectResolution(fn() => $api->apply($fixed['previewToken']), 'invalid_crm_resolution_token');
     $mode = 'normal'; $fixed = $api->preview(3, 'IPv4', 'replace', '192.0.2.61');
     $mode = 'patch_applied_reply_timeout'; $confirmed = $api->apply($fixed['previewToken']);
-    checkResolution($confirmed['applied'] && !$confirmed['uncertain'], 'Post-PATCH GET did not confirm applied correction after ambiguous reply');
+    checkResolution($confirmed['applied'] && !$confirmed['uncertain'] && $confirmed['write_outcome'] === 'unconfirmed'
+        && $confirmed['write_reason'] === 'transport_unconfirmed', 'Post-PATCH GET did not distinguish observed desired address from ambiguous original receipt');
     $mode = 'normal';
     checkResolution(!ApiCrmNetworkResolution::skipAttributeExport(3, 'address', '192.0.2.61', $directory, $descriptor, 103)
         && !is_file($directory . '/crm-network-correction-3-address.json'), 'Aligned local reservation did not release daily-export hold');
     $changed = $api->preview(3, 'IPv4', 'replace', '192.0.2.62'); $mode = 'followup_unavailable';
     $result = $api->apply($changed['previewToken']);
     checkResolution($result['uncertain'] && !$result['current_address_known'] && !$result['applied'], 'Failed follow-up GET fabricated confirmation');
+    $mode = 'normal';
+    $writeDiagnostics = [];
+    foreach ([400 => 'validation_failed', 401 => 'permission_denied', 403 => 'permission_denied', 404 => 'not_found',
+        405 => 'method_not_allowed', 409 => 'conflict', 422 => 'validation_failed', 429 => 'rate_limited',
+        418 => 'http_rejected', 408 => 'server_unconfirmed', 503 => 'server_unconfirmed'] as $status => $reason) {
+        $services[1] = resolutionService(1, '192.0.2.9', 2);
+        $mode = 'normal'; $reviewRejected = $api->preview(1, 'IPv4', 'remove');
+        $beforeRejected = count($patches); $mode = 'patch_http_' . $status;
+        $diagnostic = $api->apply($reviewRejected['previewToken']); $writeDiagnostics[] = $diagnostic;
+        $rejected = $status < 500 && $status !== 408;
+        checkResolution($diagnostic['write_outcome'] === ($rejected ? 'rejected' : 'unconfirmed')
+            && $diagnostic['write_http_status'] === $status && $diagnostic['write_reason'] === $reason
+            && !$diagnostic['applied'] && $diagnostic['uncertain'] === !$rejected
+            && $diagnostic['current_address'] === '192.0.2.9' && $services[1]['status'] === 2
+            && count($patches) === $beforeRejected + 1, 'HTTP diagnostics retried a rejected ended write, hid rejection or activated the service');
+        rejectResolution(fn() => $api->apply($reviewRejected['previewToken']), 'invalid_crm_resolution_token');
+    }
+    $mode = 'normal'; $unknownRejected = $api->preview(1, 'IPv4', 'remove'); $mode = 'patch_rejected_followup_unavailable';
+    $diagnostic = $api->apply($unknownRejected['previewToken']); $writeDiagnostics[] = $diagnostic;
+    checkResolution($diagnostic['write_outcome'] === 'rejected' && $diagnostic['write_http_status'] === 422
+        && $diagnostic['uncertain'] && !$diagnostic['current_address_known'], 'Definite rejection fabricated current-state confirmation after failed GET');
+    $mode = 'normal'; $externalChange = $api->preview(1, 'IPv4', 'remove'); $mode = 'patch_rejected_external_change';
+    $diagnostic = $api->apply($externalChange['previewToken']); $writeDiagnostics[] = $diagnostic;
+    checkResolution($diagnostic['write_outcome'] === 'rejected' && $diagnostic['write_http_status'] === 403
+        && $diagnostic['applied'] && !$diagnostic['uncertain'] && $diagnostic['current_address'] === null,
+        'Later matching readback erased the rejection receipt or hid the currently observed address');
+    checkResolution(strpos(json_encode($writeDiagnostics), 'PRIVATE-') === false, 'Write diagnostics exposed response bodies, attributes, URLs or exception messages');
     $mode = 'normal';
     $services[1] = resolutionHttp(404);
     $missing = $api->verify([1, 2]);
@@ -191,6 +229,7 @@ try {
     $services[1]['status'] = 2;
     $resolvedHistory = $api->apply($historical['previewToken']);
     checkResolution($resolvedHistory['applied'] && $resolvedHistory['historical'] && !$resolvedHistory['requires_sync']
+        && $resolvedHistory['write_outcome'] === 'not_requested' && $resolvedHistory['write_http_status'] === null
         && !$resolvedHistory['crm_webhook_possible'] && count($patches) === $patchBefore
         && ApiCrmNetworkHistory::reviewed($services[1], $descriptor, 'address', $directory), 'Reviewed ended history changed CRM or did not bind the exact reviewed service');
     rejectResolution(fn() => $api->apply($historical['previewToken']), 'invalid_crm_resolution_token');

@@ -128,6 +128,85 @@ try {
         'Ended-service malformed repair reactivated/deleted service or lost IPv6 identity');
     repairBlocked($api,$choose11,'no_invalid_reservation');
 
+    // Failed initial provisioning may persist the reservation before saving
+    // the service row. Fresh exact UISP identity can repair only that malformed
+    // field; it must never create a service or alter a conflicting owner.
+    foreach (['missing-service','null-local-client','cached-client'] as $identityCase) {
+        $reset(); $case = repairFixture($root,$identityCase); $caseApi = $factory($case);
+        if ($identityCase === 'missing-service') repairSql($case['data'],'DELETE FROM services WHERE id=11');
+        else repairSql($case['data'],'UPDATE services SET clientId=NULL WHERE id=11');
+        if ($identityCase === 'cached-client') repairSql($case['cache'],'INSERT INTO services VALUES(11,111)');
+        $beforeIdentity = repairRows($case['data']);
+        $identityPreview = $caseApi->preview($choose11);
+        repairCheck(count($identityPreview['candidates']) === 1 && $identityPreview['candidates'][0]['client_id'] === 111
+            && $identityPreview['candidates'][0]['identity_source'] === ($identityCase === 'cached-client' ? 'cache' : 'uisp'),
+            'Missing local identity stranded a freshly verified exact UISP service');
+        $caseApi->apply($identityPreview['previewToken']);
+        $identityAfter = repairRows($case['data']);
+        repairCheck($identityAfter['network'][0]['address'] === '192.0.2.11'
+            && count($identityAfter['services']) === count($beforeIdentity['services']), 'Identity recovery created/deleted a service');
+        if ($identityCase !== 'missing-service') repairCheck($identityAfter['services'][0]['clientId'] === null,
+            'Reservation repair rewrote the service identity');
+    }
+    $reset(); $case = repairFixture($root,'identity-cache-mismatch');
+    repairSql($case['data'],'DELETE FROM services WHERE id=11');
+    repairSql($case['cache'],'INSERT INTO services VALUES(11,999)');
+    $caseApi=$factory($case); $blockedIdentity=$caseApi->preview($choose11);
+    repairCheck(($blockedIdentity['blocked'][0]['reason'] ?? '') === 'cached_identity_changed'
+        && $blockedIdentity['blocked'][0]['diagnostics']['local_service_present'] === false
+        && $blockedIdentity['blocked'][0]['diagnostics']['cached_client_id'] === 999
+        && $blockedIdentity['blocked'][0]['diagnostics']['crm_client_id'] === 111,
+        'Identity mismatch was hidden or allowed');
+    $reset(); $case = repairFixture($root,'identity-missing-client-get');
+    repairSql($case['data'],'DELETE FROM services WHERE id=11'); $responses['clients/111']=['id'=>999];
+    repairBlocked($factory($case),$choose11,'identity_unknown');
+    $reset(); $case = repairFixture($root,'identity-null-pending-mismatch');
+    repairSql($case['data'],'UPDATE services SET clientId=NULL WHERE id=11');
+    repairJob($case,11,['id'=>11,'clientId'=>999,'address'=>'192.0.2.11']);
+    repairBlocked($factory($case),$choose11,'pending_identity_changed');
+    $reset(); $case = repairFixture($root,'identity-local-invalid');
+    repairSql($case['data'],"UPDATE services SET clientId='unknown' WHERE id=11");
+    repairBlocked($factory($case),$choose11,'local_identity_invalid');
+    $reset(); $case = repairFixture($root,'identity-cache-drift');
+    repairSql($case['data'],'DELETE FROM services WHERE id=11'); $caseApi=$factory($case);
+    $identityPreview=$caseApi->preview($choose11);
+    repairSql($case['cache'],'INSERT INTO services VALUES(11,999)');
+    repairReject(fn()=>$caseApi->apply($identityPreview['previewToken']),'repair_local_changed');
+
+    // Cancelling a failed, unprepared update must not strand the malformed
+    // reservation. Cancelled/superseded rows stay immutable and are not counted
+    // as executable jobs; frozen resources or any cancellation debt still block.
+    foreach (['cancelled','superseded'] as $terminalState) {
+        $reset(); $case=repairFixture($root,'unprepared-' . $terminalState); $caseApi=$factory($case);
+        repairJob($case,11,['id'=>11,'clientId'=>111,'address'=>'192.0.2.11',
+            '_prior_network'=>['address'=>'PRIVATE-INVALID-ONE']]);
+        repairSql($case['jobs'],"UPDATE jobs SET status='" . $terminalState . "'");
+        $queueBefore=hash_file('sha256',$case['jobs']); $terminalPreview=$caseApi->preview($choose11);
+        repairCheck(count($terminalPreview['candidates'])===1 && $terminalPreview['candidates'][0]['pending_jobs']===0,
+            'Safe unprepared ' . $terminalState . ' update was blocked or counted as pending');
+        $caseApi->apply($terminalPreview['previewToken']);
+        repairCheck(hash_file('sha256',$case['jobs'])===$queueBefore && repairRows($case['data'])['network'][0]['address']==='192.0.2.11',
+            'Repair changed canceled history or failed to repair its malformed local reservation');
+        foreach (['_commands','_cleanup','_delete_frozen'] as $preparedFlag) {
+            $reset(); $blockedCase=repairFixture($root,$terminalState . '-' . $preparedFlag);
+            repairJob($blockedCase,11,['id'=>11,'clientId'=>111,'address'=>'192.0.2.11',$preparedFlag=>[]]);
+            repairSql($blockedCase['jobs'],"UPDATE jobs SET status='" . $terminalState . "'");
+            repairBlocked($factory($blockedCase),$choose11,'queue_recovery');
+        }
+        $reset(); $blockedCase=repairFixture($root,$terminalState . '-debt');
+        repairJob($blockedCase,11,['id'=>11,'clientId'=>111,'address'=>'192.0.2.11']);
+        repairSql($blockedCase['jobs'],"UPDATE jobs SET status='" . $terminalState . "'; INSERT INTO cancellation_cleanups VALUES(1,11,'{}')");
+        repairBlocked($factory($blockedCase),$choose11,'queue_recovery');
+        $reset(); $blockedCase=repairFixture($root,$terminalState . '-identity');
+        repairJob($blockedCase,11,['id'=>11,'clientId'=>999,'address'=>'192.0.2.11']);
+        repairSql($blockedCase['jobs'],"UPDATE jobs SET status='" . $terminalState . "'");
+        repairBlocked($factory($blockedCase),$choose11,'pending_identity_changed');
+        $reset(); $blockedCase=repairFixture($root,$terminalState . '-desired');
+        repairJob($blockedCase,11,['id'=>11,'clientId'=>111,'address'=>'192.0.2.99']);
+        repairSql($blockedCase['jobs'],"UPDATE jobs SET status='" . $terminalState . "'");
+        repairBlocked($factory($blockedCase),$choose11,'pending_address_changed');
+    }
+
     foreach (['address_in_use','valid_local_reservation','pending_address_changed','pending_identity_changed','queue_recovery','applied_ownership',
         'queue_busy','queue_unknown','crm_address_unknown','identity_changed','crm_ownership_unknown'] as $reason) {
         $reset(); $case = repairFixture($root,$reason); $caseApi = $factory($case); $baseline = repairRows($case['data']);

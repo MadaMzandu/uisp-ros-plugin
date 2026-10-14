@@ -205,9 +205,10 @@ class ApiService {
         const cleanup = changeType === 'cleanup' && target === 'network_conflicts' && ['preview', 'apply'].includes(action);
         const crmRepair = ['cleanup', 'resolve'].includes(changeType) && target === 'crm_network_conflicts' && ['preview', 'apply'].includes(action);
         const localRepair = changeType === 'repair' && target === 'network_repair' && ['preview', 'apply'].includes(action);
-        if (changeType !== 'list' && !cleanup && !crmRepair && !localRepair && this.recovery?.readOnly === true) return this.blockedWrite();
+        const jobRecovery = changeType === 'recover' && target === 'job_recovery' && ['preview', 'apply'].includes(action);
+        if (changeType !== 'list' && !cleanup && !crmRepair && !localRepair && !jobRecovery && this.recovery?.readOnly === true) return this.blockedWrite();
         if (target === 'orphans' && this.recovery?.readOnly === true) return this.blockedRouterRead();
-        const mutate = changeType === 'update' || action === 'apply' && ['cleanup', 'resolve', 'repair'].includes(changeType);
+        const mutate = changeType === 'update' || action === 'apply' && ['cleanup', 'resolve', 'repair', 'recover'].includes(changeType);
         return (mutate ? this.mutatingRequest.bind(this) : this.request.bind(this))({ method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ changeType, target, action, data }) }).then(response => {
                 if (changeType === 'list' && target === 'network_conflicts' && !response.error && response.recovery?.readOnly === true)
@@ -223,7 +224,7 @@ class ApiService {
     }
     downloadUrl(name) {
         if (name !== 'network-conflicts' && !/^backup-[0-6]$/.test(name)
-            && !/^network-cleanup-\d{8}T\d{6}Z-[a-f0-9]{32}\.sqlite$/.test(name)) throw new Error(PanelUtils.t('Nombre de respaldo inválido.'));
+            && !/^(?:network-cleanup|jobs-recovery)-\d{8}T\d{6}Z-[a-f0-9]{32}\.sqlite$/.test(name)) throw new Error(PanelUtils.t('Nombre de respaldo inválido.'));
         const url = new URL(this.endpoint, window.location.href);
         url.search = '';
         url.searchParams.set('download', name);
@@ -239,6 +240,9 @@ class ApiService {
     getFields(language) { return this.send('list', 'messages', 'list', language ? { language } : {}); }
     getJobs() { return this.send('list', 'jobs'); }
     getJobsStatus() { return this.send('list', 'jobs_status'); }
+    getJobRecoveries() { return this.send('list', 'job_recovery'); }
+    previewJobRecovery(sourceJobId) { return this.send('recover', 'job_recovery', 'preview', { sourceJobId }); }
+    applyJobRecovery(previewToken) { return this.send('recover', 'job_recovery', 'apply', { previewToken }); }
     getInvalidNetworkReservations() { return this.send('list', 'network_repair'); }
     previewNetworkRepair(selection) { return this.send('repair', 'network_repair', 'preview', { selection }); }
     applyNetworkRepair(previewToken) { return this.send('repair', 'network_repair', 'apply', { previewToken }); }

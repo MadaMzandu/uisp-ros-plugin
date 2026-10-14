@@ -164,10 +164,21 @@ final class ApiNetworkRepair
         $rawMapping = ApiNetworkAddressEvidence::mapping($database);
         foreach ($selection as $selected) {
             $id = $selected['serviceId'];
+            $diagnostics = ['stage' => 'local_identity', 'local_service_present' => false, 'local_client_id' => null,
+                'cached_client_id' => null, 'crm_client_id' => null, 'identity_source' => null, 'checked_at' => $this->timestamp()];
             try {
                 $snapshot = $this->snapshot($database, $id);
                 $clientId = self::id($snapshot['service']['clientId'] ?? null);
-                if ($clientId === null) throw new InvalidArgumentException('identity_unknown');
+                $diagnostics['local_service_present'] = $snapshot['service'] !== null;
+                $diagnostics['local_client_id'] = $clientId;
+                if ($snapshot['service'] !== null && ($snapshot['service']['clientId'] ?? null) !== null && $clientId === null) {
+                    throw new InvalidArgumentException('local_identity_invalid');
+                }
+                $cachedIdentity = $this->cachedIdentity($id);
+                $diagnostics['cached_client_id'] = $cachedIdentity['client_id'];
+                if ($clientId !== null && $cachedIdentity['client_id'] !== null && $cachedIdentity['client_id'] !== $clientId) {
+                    throw new InvalidArgumentException('cached_identity_changed');
+                }
                 $fields = [];
                 foreach ($selected['fields'] as $field) {
                     $saved = [];
@@ -175,16 +186,31 @@ final class ApiNetworkRepair
                     if (!$saved) throw new InvalidArgumentException('no_invalid_reservation');
                     $fields[$field] = ['field' => $field, 'family' => self::family($field), 'saved' => $saved];
                 }
+                $diagnostics['stage'] = 'crm_service';
                 $live = $this->service($id);
                 $status = null;
                 if ($live !== null) {
-                    if (self::id($live['clientId']) !== $clientId) throw new InvalidArgumentException('identity_changed');
+                    $liveClientId = self::id($live['clientId']);
+                    $diagnostics['crm_client_id'] = $liveClientId;
+                    if ($clientId !== null && $liveClientId !== $clientId) throw new InvalidArgumentException('identity_changed');
+                    if ($cachedIdentity['client_id'] !== null && $cachedIdentity['client_id'] !== $liveClientId) {
+                        throw new InvalidArgumentException('cached_identity_changed');
+                    }
+                    // A failed initial provisioning can leave only a network row,
+                    // with no persisted service/client. Repair that malformed field
+                    // only after fresh exact service + client reads. Never invent or
+                    // overwrite a local service, and retain all durable owner checks.
+                    $diagnostics['identity_source'] = $clientId !== null ? 'local'
+                        : ($cachedIdentity['client_id'] !== null ? 'cache' : 'uisp');
+                    $clientId = $liveClientId;
                     $status = self::status($live['status']);
                     // Independent fresh client identity; archival alone never authorizes clearing an IP.
+                    $diagnostics['stage'] = 'crm_client';
                     $client = $this->call('clients/' . $clientId);
                     if ((!is_array($client) && !is_object($client)) || self::id(((array) $client)['id'] ?? null) !== $clientId) {
                         throw new InvalidArgumentException('identity_unknown');
                     }
+                    $diagnostics['stage'] = 'crm_attributes';
                     if ($mapping === null) $mapping = ApiNetworkAddressEvidence::validateMapping($rawMapping, $this->call('custom-attributes'));
                     $evidence = ApiNetworkAddressEvidence::parse($live, $mapping);
                     foreach ($fields as $field => &$entry) {
@@ -194,26 +220,35 @@ final class ApiNetworkRepair
                         $entry['reason'] = $entry['current_address'] === null ? 'crm_no_address' : 'crm_address';
                     }
                     unset($entry);
-                } else foreach ($fields as &$entry) {
-                    $entry['current_address'] = null; $entry['action'] = 'clear'; $entry['reason'] = 'crm_not_found';
+                } else {
+                    if ($clientId === null) throw new InvalidArgumentException('identity_unknown');
+                    $diagnostics['identity_source'] = 'local';
+                    foreach ($fields as &$entry) {
+                        $entry['current_address'] = null; $entry['action'] = 'clear'; $entry['reason'] = 'crm_not_found';
+                    }
                 }
                 unset($entry);
                 $fields = array_values($fields);
                 // Selected service may have a valid legacy copy. It must agree
                 // exactly with the fresh CRM intent and is never overwritten.
+                $diagnostics['stage'] = 'local_ownership';
                 $this->ownership($database, $id, $fields);
+                $diagnostics['stage'] = 'queue_ownership';
                 $pending = $this->queue($id, $clientId, $fields);
+                $diagnostics['stage'] = 'crm_ownership';
                 foreach ($fields as $entry) if ($entry['current_address'] !== null) {
                     if ($collection === null) $collection = $this->collection();
                     $this->crmOwnership($id, $clientId, $status, $entry, $mapping, $collection);
                 }
                 $candidate = ['service_id' => $id, 'client_id' => $clientId, 'status' => $status,
-                    'fields' => $fields, 'pending_jobs' => $pending];
+                    'fields' => $fields, 'pending_jobs' => $pending, 'identity_source' => $diagnostics['identity_source']];
                 $record = ['candidate' => $candidate, 'fingerprint' => $snapshot['fingerprint'],
+                    'cache_identity_fingerprint' => $cachedIdentity['fingerprint'],
                     'config_fingerprint' => ApiNetworkAddressEvidence::mappingFingerprint($rawMapping),
                     'live_fingerprint' => hash('sha256', json_encode(['client_id' => $clientId, 'status' => $status,
                         'mapping' => $mapping, 'fields' => $fields], JSON_THROW_ON_ERROR))];
                 if ($expected !== null && (!isset($expected[$id]) || !hash_equals($expected[$id]['fingerprint'], $record['fingerprint'])
+                    || !hash_equals($expected[$id]['cache_identity_fingerprint'], $record['cache_identity_fingerprint'])
                     || !hash_equals($expected[$id]['config_fingerprint'], $record['config_fingerprint'])
                     || !hash_equals($expected[$id]['live_fingerprint'], $record['live_fingerprint']))) {
                     throw new InvalidArgumentException('repair_local_changed');
@@ -221,7 +256,7 @@ final class ApiNetworkRepair
                 $records[$id] = $record;
             } catch (Throwable $error) {
                 $reason = $error instanceof InvalidArgumentException ? $error->getMessage() : 'crm_unavailable';
-                $blocked[] = ['service_id' => $id, 'reason' => $reason];
+                $blocked[] = ['service_id' => $id, 'reason' => $reason, 'diagnostics' => $diagnostics];
             }
         }
         return ['records' => $records, 'blocked' => $blocked];
@@ -319,7 +354,7 @@ final class ApiNetworkRepair
         }
     }
 
-    /** Pending update is safe only before command preparation and without prior ownership debt. */
+    /** Unprepared update evidence is safe only without resource preparation or ownership debt. */
     private function queue(int $id, int $clientId, array $fields): int
     {
         if (is_link($this->jobsPath) || is_link($this->legacyPath)) throw new InvalidArgumentException('queue_unknown');
@@ -361,8 +396,15 @@ final class ApiNetworkRepair
                     if ($job['status'] === 'running') throw new InvalidArgumentException('queue_busy');
                     $payload = $this->payload($job['payload']);
                     if ($owner === $id && $job['status'] !== 'cleaned') {
-                        if ($job['status'] !== 'pending' || $job['operation'] !== 'update') throw new InvalidArgumentException('queue_recovery');
-                        $this->pending($payload, $id, $clientId, $fields); $pending++;
+                        if (!in_array($job['status'], ['pending','cancelled','superseded'], true)
+                            || $job['operation'] !== 'update') throw new InvalidArgumentException('queue_recovery');
+                        // Cancellation after preparation failed can leave an
+                        // immutable unprepared row. It never wrote resources;
+                        // require the same fresh identity/address proof as an
+                        // unprepared pending update, and preserve its bytes.
+                        // Actual cancellation debt remains a barrier below.
+                        $this->pending($payload, $id, $clientId, $fields);
+                        if ($job['status'] === 'pending') $pending++;
                     } elseif (in_array($job['status'], ['pending','cancelled','superseded'], true)) {
                         // Prepared commands and uncleared snapshots retain their ownership.
                         if (array_key_exists('_commands', $payload)) $this->payloadOwnership($owner, $payload, $id, $fields);
@@ -584,9 +626,30 @@ final class ApiNetworkRepair
             'service_columns' => $this->columns($database, 'services')], JSON_THROW_ON_ERROR))];
     }
 
+    /** An optional cached identity may corroborate, but never contradict, fresh UISP evidence. */
+    private function cachedIdentity(int $id): array
+    {
+        if (is_link($this->cachePath)) throw new InvalidArgumentException('local_ownership_unknown');
+        $service = null;
+        if (is_file($this->cachePath)) {
+            $cache = new SQLite3($this->cachePath, SQLITE3_OPEN_READONLY);
+            $cache->enableExceptions(true); $cache->busyTimeout(500);
+            try {
+                if (isset($this->columns($cache, 'services')['clientId'])) $service = $this->row($cache, 'services', $id);
+            } finally { $cache->close(); }
+        }
+        $client = self::id($service['clientId'] ?? null);
+        if ($service !== null && ($service['clientId'] ?? null) !== null && $client === null) {
+            throw new InvalidArgumentException('local_identity_invalid');
+        }
+        return ['client_id' => $client, 'fingerprint' => hash('sha256', json_encode(
+            ['present' => $service !== null, 'client_id' => $service['clientId'] ?? null], JSON_THROW_ON_ERROR))];
+    }
+
     private function assertSnapshot(SQLite3 $database, int $id, array $record): void
     {
         if (!hash_equals($record['fingerprint'], $this->snapshot($database, $id)['fingerprint'])
+            || !hash_equals($record['cache_identity_fingerprint'], $this->cachedIdentity($id)['fingerprint'])
             || !hash_equals($record['config_fingerprint'], ApiNetworkAddressEvidence::mappingFingerprint(ApiNetworkAddressEvidence::mapping($database)))) {
             throw new InvalidArgumentException('repair_local_changed');
         }

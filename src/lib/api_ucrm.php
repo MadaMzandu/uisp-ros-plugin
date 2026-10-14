@@ -36,7 +36,15 @@ class ApiUcrm
             return json_decode(json_encode($response), $this->assoc);
         }
         catch (\Throwable $e){
-            MyLog()->Append(['uisp_request_failed', 'path' => $this->url, 'method' => $action, 'type' => get_class($e)], LOG_ERR);
+            $diagnostic = ['uisp_request_failed', 'path' => $this->url, 'method' => $action, 'type' => get_class($e)];
+            for ($failure = $e; $failure !== null; $failure = $failure->getPrevious()) {
+                if ($failure instanceof \GuzzleHttp\Exception\RequestException && $failure->hasResponse()) {
+                    $status = $failure->getResponse()->getStatusCode();
+                    if ($status >= 100 && $status <= 599) $diagnostic['http_status'] = $status;
+                    break;
+                }
+            }
+            MyLog()->Append($diagnostic, LOG_ERR);
             throw new RuntimeException('UISP request failed: ' . $action . ' ' . $this->url, 0, $e);
         }
     }

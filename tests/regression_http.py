@@ -85,6 +85,18 @@ if ($mode === 'configuration') {
         $blocked[]=$name;
     }
     echo json_encode(['blocked'=>$blocked]), PHP_EOL;
+} elseif ($mode === 'rejected') {
+    $exception=null;
+    try { (new ApiUcrm())->patch('rejected', ['attributes'=>[['customAttributeId'=>1,'value'=>'PRIVATE-REQUEST-IP']]]); }
+    catch (Throwable $error) { $exception=$error; }
+    checkHttp($exception instanceof RuntimeException && $exception->getPrevious() instanceof GuzzleHttp\Exception\ClientException,
+        'A real UISP HTTP rejection did not preserve its exception chain');
+    $log=(string)file_get_contents('data/plugin.log');
+    checkHttp(strpos($log,'"http_status":422')!==false && strpos($log,'GuzzleHttp\\\\Exception\\\\ClientException')!==false,
+        'The safe request log did not identify the actual HTTP rejection');
+    foreach (['PRIVATE-REQUEST-IP','PRIVATE-REJECTED-BODY','REGRESSION_DUMMY_APP_KEY'] as $private)
+        checkHttp(strpos($log,$private)===false,'The HTTP diagnostic leaked a request, response or credential');
+    echo json_encode(['http_status'=>422,'private_data_logged'=>false]), PHP_EOL;
 } elseif ($mode === 'timeout') {
     $started=microtime(true); $exception=null;
     $api=new ApiUcrm();
@@ -145,6 +157,16 @@ def main() -> None:
     sink = ThreadingHTTPServer(("127.0.0.1", 0), Sink)
 
     class Source(BaseHTTPRequestHandler):
+        def do_PATCH(self) -> None:
+            check(self.path.endswith('/rejected'), 'Unexpected write in isolated HTTP diagnostic test')
+            self.rfile.read(int(self.headers.get('Content-Length', '0')))
+            encoded = json.dumps({'message': 'PRIVATE-REJECTED-BODY'}).encode()
+            self.send_response(422)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Content-Length', str(len(encoded)))
+            self.end_headers()
+            self.wfile.write(encoded)
+
         def do_GET(self) -> None:
             source_requests.append({"path": self.path, **{key.lower(): value for key, value in self.headers.items()
                                                         if key.lower() in {"x-auth-app-key", "x-auth-token", "cookie"}}})
@@ -225,6 +247,9 @@ def main() -> None:
             check(len(auth_requests) >= 2 and all(SESSION in request.get("cookie", "") for request in auth_requests),
                   "The security/public redirect tests did not exercise the dummy session cookies")
             source.redirect_auth = False
+            rejected = json.loads(run('probe.php', 'rejected'))
+            check(rejected == {'http_status': 422, 'private_data_logged': False},
+                  'The real SDK rejection log lost the HTTP status or retained sensitive content')
             started = time.monotonic()
             deadline = json.loads(run("probe.php", "timeout", timeout=19))
             total = time.monotonic() - started
@@ -233,6 +258,7 @@ def main() -> None:
             check(received == [], "A protected request later reached the credential sink")
             print("HTTP regression checks passed: real locked SDK versions; CRM/NMS/security timeout=15s, connect=5s; "
                   "cross-origin API/session redirects blocked; public authentication rejects redirected sessions; "
+                  "safe HTTP rejection status without request/response bodies; "
                   f"cURL timeout 28 after {deadline['elapsed']:.3f}s; subsequent CRM/NMS/authentication requests recover.")
     finally:
         hang_release.set()

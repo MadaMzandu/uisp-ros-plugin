@@ -307,7 +307,8 @@ final class ApiRecoveryReads
             $backups[] = ['id'=>$match[1],'name'=>$name,'date'=>$date === false ? null : date('c', $date)];
         }
         require_once __DIR__ . '/api_network_cleanup.php';
-        return array_merge($backups, ApiNetworkCleanup::listBackups($directory));
+        require_once __DIR__ . '/api_job_recovery.php';
+        return array_merge($backups, ApiNetworkCleanup::listBackups($directory), ApiJobRecovery::listBackups($directory));
     }
 
     private function jobs(): array

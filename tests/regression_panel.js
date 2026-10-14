@@ -764,6 +764,7 @@ function recoveryPanelFixture({ bootstrap, details, storage, storageBlocked = fa
                     devices: [{ id: 1, name: 'Router de prueba', ip: '192.0.2.1', status: null }],
                     plans: [{ id: 1, name: 'Plan de prueba', ratio: 1, uploadSpeed: 5, downloadSpeed: 20 }],
                     config: { disable_contention: false }, jobs: {},
+                    job_recovery: { available: true, groups: [], total: 0, has_more: false, checked_at: '2026-10-14T13:00:00Z', reason: null },
                     messages: [{}, { config_disable_contention: { name: 'disable_contention', label: 'Desactivar contención', type: 1 } }],
                     sys: { app_version: '2.4.21', php_version: '8.5' }, backups: [{ name: 'backup-0', date: '2026-10-14' }],
                     network_conflicts: details,
@@ -904,7 +905,7 @@ async function checkPendingJobsIndicator() {
     assert.deepEqual(plain(calls()[0]), { changeType: 'list', target: 'jobs_status', action: 'list', data: {} });
     assert.equal(fixture.nodes.get('jobs-pending-warning').style.display, 'flex');
     assert.equal(fixture.nodes.get('jobs-pending-count').textContent, '4');
-    assert.equal(fixture.nodes.get('jobs-pending-title').textContent, 'Trabajos pendientes: 3');
+    assert.equal(fixture.nodes.get('jobs-pending-title').textContent, 'Trabajos y recuperaciones: 4');
     assert.match(fixture.nodes.get('jobs-pending-note').textContent, /2 pendientes.*1 con error.*1 en ejecución.*1 en recuperación/);
     assert.equal(fixture.calls.filter(call => call.target === 'jobs').length, 0, 'A global queue indicator must use the local status route without initializing the queue list');
     assert.equal(fixture.nodes.get('save-device-btn').disabled, false);
@@ -949,6 +950,83 @@ async function checkPendingJobsIndicator() {
     assert.equal(unavailable.nodes.get('jobs-pending-count').textContent, '?');
     assert.equal(unavailable.nodes.get('jobs-pending-title').textContent, 'No se pudo comprobar el estado de los trabajos.');
     assert.equal(unavailable.calls.filter(call => call.target === 'jobs_status').length, 1, 'Recovery mode must keep the read-only status route available');
+
+    const recoveryOnly = recoveryPanelFixture({ initialReplies: new Map([['list/jobs_status', envelope(summary({ pending: 0, failed: 0, running: 0, recovery: 2, total: 2 }))]]) }); await flush();
+    assert.equal(recoveryOnly.nodes.get('jobs-pending-title').textContent, 'Recuperaciones pendientes: 2', 'Stored recoveries must never be labelled executable pending jobs');
+    assert.equal(recoveryOnly.calls.filter(call => call.target === 'job_recovery').length, 0, 'Global summary must not initialize recovery inventory');
+}
+
+async function checkJobRecoveryResolutionPanel() {
+    const envelope = data => ({ status: 'ok', error: false, data });
+    const row = { source_job_id: 8, job_id: 'Q8', service_id: 42, client_id: 17, client_name: attack,
+        device_ids: [2], snapshot_count: 1, reason: 'cancelled_resources', created_at: null };
+    const listing = { available: true, groups: [row], total: 1, has_more: false, checked_at: '2026-10-14T13:00:00Z', reason: null };
+    const summary = recovery => ({ available: true, pending: 0, failed: 0, running: 0, recovery, total: recovery,
+        checked_at: '2026-10-14T13:00:00Z', source: 'sqlite', reason: null });
+    const token = 'a'.repeat(64), preview = { previewToken: token, expiresAt: '2099-10-14T13:00:00Z',
+        candidate: { ...row, crm_status: 1, client_archived: false, checked_at: '2026-10-14T13:00:00Z', resolution: 'redundant_current_resources' }, blocked: [], checked_at: '2026-10-14T13:00:00Z' };
+    const fixture = recoveryPanelFixture({ initialReplies: new Map([['list/jobs_status', envelope(summary(1))], ['list/job_recovery', envelope(listing)], ['recover/job_recovery', envelope(preview)]]) }); await flush();
+    assert.equal(fixture.calls.filter(call => call.target === 'job_recovery').length, 0);
+    await fixture.nodes.get('btn-view-pending-jobs').fire('click'); await flush();
+    assert.equal(fixture.nodes.get('view-jobs').style.display, 'block');
+    assert.equal(fixture.nodes.get('job-recovery-list-status').textContent, 'Recuperaciones pendientes: 1');
+    assert(fixture.tables.get('#jobs-table tbody').innerHTML.includes('No hay trabajos en cola.'));
+    const item = fixture.nodes.get('job-recovery-list').children[0];
+    assert.equal(item.children[0].children[0].href, 'https://fixture.invalid/crm/client/service/42');
+    assert.equal(item.children[0].children[1].textContent, attack, 'Client names must remain literal text');
+    assert(!renderedMarkup(item).includes('<img'));
+    assert.match(item.children[2].textContent, /no son trabajos ejecutables/);
+    await item.children[3].fire('click');
+    assert.deepEqual(plain(fixture.calls.filter(call => call.target === 'job_recovery').at(-1)), { changeType: 'recover', target: 'job_recovery', action: 'preview', data: { sourceJobId: 8 } });
+    assert.equal(fixture.nodes.get('apply-job-recovery').disabled, false);
+    const confirm = async accepted => {
+        const overlay = fixture.document.body.children.find(node => node.className === 'confirm-overlay'); assert(overlay);
+        await overlay.children[0].children[1].children[accepted ? 1 : 0].fire('click');
+    };
+    const canceled = fixture.nodes.get('apply-job-recovery').fire('click'); await flush(); await confirm(false); await canceled;
+    assert.equal(fixture.calls.filter(call => call.target === 'job_recovery' && call.action === 'apply').length, 0);
+    const backup = 'jobs-recovery-20261014T130000Z-' + 'a'.repeat(32) + '.sqlite';
+    fixture.reply('recover/job_recovery', payload => payload.action === 'preview' ? envelope(preview) : envelope({ resolved: [{ source_job_id: 8, service_id: 42, snapshot_count: 1 }], backup_name: backup, checked_at: '2026-10-14T13:00:00Z', router_changes: false, crm_changes: false }));
+    fixture.reply('list/job_recovery', envelope({ ...listing, groups: [], total: 0 })); fixture.reply('list/jobs_status', envelope(summary(0)));
+    const applied = fixture.nodes.get('apply-job-recovery').fire('click'); await flush(); await confirm(true); await applied; await flush();
+    const result = fixture.nodes.get('job-recovery-result');
+    assert.equal(result.children[0].textContent, 'Recuperación resuelta');
+    assert.match(result.children[2].textContent, /IP, las velocidades y los routers se conservaron/);
+    assert.equal(result.children[4].href, 'https://fixture.invalid/crm/_plugins/ros-plugin/public.php?download=' + backup);
+    assert.equal(fixture.nodes.get('job-recovery-list').children.length, 0);
+    assert.equal(fixture.nodes.get('job-recovery-list-status').textContent, 'No hay servicios en recuperación.');
+    assert.equal(fixture.nodes.get('jobs-pending-warning').style.display, 'none');
+    assert.equal(fixture.nodes.get('job-recovery-comparison').children.length, 0);
+    assert.equal(fixture.nodes.get('apply-job-recovery').style.display, 'none');
+    await fixture.nodes.get('apply-job-recovery').fire('click');
+    assert.equal(fixture.calls.filter(call => call.target === 'job_recovery' && call.action === 'apply').length, 1, 'A successful recovery token must not be replayed');
+
+    const blocked = recoveryPanelFixture({ initialReplies: new Map([['list/job_recovery', envelope(listing)], ['recover/job_recovery', envelope({ previewToken: null, expiresAt: null, candidate: null, blocked: [{ source_job_id: 8, service_id: 42, reason: 'different_resources' }], checked_at: '2026-10-14T13:00:00Z' })]]) }); await flush(); await blocked.navigate('jobs');
+    await blocked.nodes.get('job-recovery-list').children[0].children[3].fire('click');
+    assert.equal(blocked.nodes.get('apply-job-recovery').disabled, true);
+    assert.match(blocked.nodes.get('job-recovery-comparison').children[1].textContent, /difieren.*no se retirará ninguno/);
+    assert.equal(blocked.nodes.get('btn-run-jobs').disabled, false, 'A blocked recovery must not stop unrelated jobs');
+    blocked.reply('recover/job_recovery', envelope(preview)); await blocked.nodes.get('recheck-job-recovery').fire('click');
+    blocked.reply('recover/job_recovery', { status: 'failed', error: true, message: 'recovery_verification_failed' });
+    const uncertain = blocked.nodes.get('apply-job-recovery').fire('click'); await flush();
+    const uncertainOverlay = blocked.document.body.children.find(node => node.className === 'confirm-overlay'); await uncertainOverlay.children[0].children[1].children[1].fire('click'); await uncertain;
+    assert.equal(blocked.nodes.get('apply-job-recovery').disabled, true);
+    assert.equal(blocked.nodes.get('recheck-job-recovery').disabled, false);
+    assert.match(blocked.nodes.get('job-recovery-status').textContent, /No se confirmó.*verifica de nuevo/);
+    const writes = blocked.calls.filter(call => call.changeType === 'update' || call.changeType === 'recover' && call.action === 'apply');
+    assert.equal(writes.length, 1, 'Review/recheck must not enqueue jobs, rewrite CRM or touch routers');
+
+    const stale = deferred(); blocked.reply('list/job_recovery', () => stale.promise);
+    const oldRefresh = blocked.nodes.get('refresh-job-recoveries').fire('click'); await flush();
+    await blocked.navigate('devices');
+    blocked.reply('list/job_recovery', envelope({ ...listing, groups: [], total: 0 }));
+    await blocked.navigate('jobs');
+    stale.resolve(envelope(listing)); await oldRefresh; await flush();
+    assert.equal(blocked.nodes.get('job-recovery-list').children.length, 0, 'Returning to Jobs must re-read after an old inventory request settles and must not resurrect recovery rows');
+    blocked.reply('list/job_recovery', { status: 'failed', error: true, message: attack });
+    await blocked.nodes.get('refresh-job-recoveries').fire('click');
+    assert.match(blocked.nodes.get('job-recovery-list-status').textContent, /No se pudo refrescar.*última lista/);
+    assert(!renderedMarkup(blocked.nodes.get('job-recovery-list')).includes('<img'));
 }
 
 async function checkInvalidReservationRepairPanel() {
@@ -1022,6 +1100,18 @@ async function checkInvalidReservationRepairPanel() {
     const dialog = jobFixture.document.body.children.find(node => node.className === 'confirm-overlay'); await dialog.children[0].children[1].children[1].fire('click'); await uncertain;
     assert.equal(jobFixture.nodes.get('apply-network-repair').disabled, true, 'A failed/uncertain apply must consume the local token and require a new comparison');
     assert.match(jobFixture.nodes.get('network-repair-status').textContent, /No se confirmó.*Compara nuevamente/);
+    jobFixture.reply('repair/network_repair', envelope({ previewToken: null, expiresAt: null, candidates: [], blocked: [{ service_id: 42, reason: 'cached_identity_changed',
+        diagnostics: { stage: 'identity', local_service_present: true, local_client_id: null, cached_client_id: 18, crm_client_id: 17, identity_source: 'uisp', checked_at: '2026-10-14T13:00:00Z' } }], api_requests: 2 }));
+    await jobFixture.nodes.get('recheck-network-repair').fire('click');
+    assert.equal(jobFixture.nodes.get('apply-network-repair').disabled, true);
+    const identityBlock = jobFixture.nodes.get('network-repair-comparison').children[0];
+    assert.match(identityBlock.innerHTML, /caché no coincide/);
+    assert.equal(identityBlock.children[0].children[0].children[1].textContent, 'Sin comprobar');
+    assert.equal(identityBlock.children[0].children[1].children[1].href, 'https://fixture.invalid/crm/client/18');
+    assert.equal(identityBlock.children[0].children[2].children[1].href, 'https://fixture.invalid/crm/client/17');
+    assert.match(identityBlock.children[1].textContent, /no cambia la identidad ni elimina reservas/);
+    assert.equal(identityBlock.children[2].href, 'https://fixture.invalid/crm/client/service/42');
+    assert.match(identityBlock.children[3].textContent, /Verificado:/);
     const invalidJobFixture = recoveryPanelFixture({ initialReplies: new Map([['list/jobs', envelope({ Q1: { serviceId: 43, error: 'invalid_network_address: requested_service=99 blocking_service=42 source=reserved family=IPv4' },
         Q2: { serviceId: 43, error: 'invalid_network_address: requested_service=43 blocking_service=42 source=applied family=IPv4' },
         Q3: { serviceId: 43, error: 'invalid_network_address: requested_service=43 blocking_service=42 source=reserved family=IPv4' + attack } })]]) }); await flush(); await invalidJobFixture.navigate('jobs');
@@ -1475,6 +1565,29 @@ async function checkCrmEditResultFeedback() {
     assert.match(textTree(uncertain.fixture.nodes.get('crm-ip-result-title')), /muestra el cambio solicitado/);
     assert.equal(uncertain.fixture.calls.filter(call => call.changeType === 'resolve' && call.action === 'apply').length, 1,
         'Observing the requested state never resubmits the original PATCH');
+
+    const rejected = await fixtureFor({ status: 2, apply: { applied: false, uncertain: false, current_address: oldAddress,
+        write_outcome: 'rejected', write_http_status: 422, write_reason: 'validation_failed' }, fresh: owner(oldAddress, 2) });
+    await rejected.apply(); terminal(rejected.fixture);
+    assert.equal(rejected.fixture.nodes.get('crm-ip-result').dataset.state, 'rejected');
+    assert.equal(rejected.fixture.nodes.get('crm-ip-result-title').textContent, 'UISP rechazó el cambio');
+    assert.match(textTree(rejected.fixture.nodes.get('crm-ip-result-detail')), /rechazó los datos.*HTTP de UISP: 422/);
+    assert.equal(rejected.fixture.nodes.get('resolve-crm-ip-history').style.display, 'inline-flex', 'Rejected edits of ended services keep the separately reviewed history option');
+    const rejectedRetry = rejected.fixture.calls.length;
+    rejected.setOwner(owner(null, 2)); await rejected.fixture.nodes.get('verify-crm-ip-result').fire('click');
+    assertReadOnlyRetry(rejected.fixture, rejectedRetry);
+    assert.equal(rejected.fixture.nodes.get('crm-ip-result').dataset.state, 'observed', 'Observing desired state after a rejected write is not an acknowledgement of that write');
+    assert.match(textTree(rejected.fixture.nodes.get('crm-ip-result-detail')), /rechazó los datos/);
+    const rejectedObserved = await fixtureFor({ apply: { applied: true, uncertain: false, current_address: null,
+        write_outcome: 'rejected', write_http_status: 409, write_reason: 'conflict' }, fresh: owner(null) });
+    await rejectedObserved.apply();
+    assert.equal(rejectedObserved.fixture.nodes.get('crm-ip-result').dataset.state, 'observed');
+    assert(!textTree(rejectedObserved.fixture.nodes.get('crm-ip-result-message')).includes('UISP confirmó el cambio'));
+    const acceptedUnobserved = await fixtureFor({ apply: { applied: false, uncertain: true, current_address: oldAddress,
+        write_outcome: 'accepted', write_http_status: 200, write_reason: null }, fresh: owner(oldAddress) });
+    await acceptedUnobserved.apply();
+    assert.equal(acceptedUnobserved.fixture.nodes.get('crm-ip-result').dataset.state, 'unchanged');
+    assert.match(textTree(acceptedUnobserved.fixture.nodes.get('crm-ip-result-detail')), /aceptó la solicitud/);
 
     const unknownOwner = owner(null, 1, { address_evidence: { address: { known: false, value: null }, address6: { known: true, value: null } } });
     const unknown = await fixtureFor({ apply: { applied: false, uncertain: true, current_address_known: false, current_address: null }, fresh: unknownOwner });
@@ -1945,8 +2058,8 @@ async function checkNetworkRecoveryPanel() {
     assert.deepEqual(plain(healthy.diagnostics()[0].data), {}, 'Reactive recovery reads must not request live CRM verification');
     const malformed = recoveryPanelFixture({ bootstrap: '{', details }); await flush();
     assert.equal(malformed.nodes.get('btn-cache').disabled, false, 'An invalid optional bootstrap must not break normal navigation');
-    assert.equal((markup.match(/(?:src|href)="(?:js|css)\/[^"?]+\?v=2\.0\.44"/g) || []).length, 5, 'Every panel asset must use the new revision to invalidate UISP browser caches');
-    assert(!markup.includes('v=2.0.43'));
+    assert.equal((markup.match(/(?:src|href)="(?:js|css)\/[^"?]+\?v=2\.0\.45"/g) || []).length, 5, 'Every panel asset must use the new revision to invalidate UISP browser caches');
+    assert(!markup.includes('v=2.0.44'));
     assert(apiSource.includes("'alert-triangle':"), 'The conflict warning must have its own local warning icon');
 }
 
@@ -3140,7 +3253,7 @@ async function checkLanguagePresentation() {
     tables.get('#jobs-table tbody').children[0].querySelector('.job-checkbox').checked = true;
     const jobRunRequests = requests.length;
     await elements.get('btn-run-jobs').fire('click');
-    assert.deepEqual(requests.slice(jobRunRequests).filter(request => request.payload.target !== 'jobs_status').map(request => request.payload.target + '/' + request.payload.action), ['jobs/run', 'jobs/list'],
+    assert.deepEqual(requests.slice(jobRunRequests).filter(request => !['jobs_status', 'job_recovery'].includes(request.payload.target)).map(request => request.payload.target + '/' + request.payload.action), ['jobs/run', 'jobs/list'],
         'A failed run must fetch the updated queue instead of throwing before its refresh');
     const failedJobMarkup = tables.get('#jobs-table tbody').children[0].innerHTML;
     assert(failedJobMarkup.includes('Router fixture failed &quot;&gt;&lt;img') && !failedJobMarkup.includes('<img'),
@@ -3182,7 +3295,7 @@ async function checkLanguagePresentation() {
     assert(deleteJobConfirmation);
     await deleteJobConfirmation.children[0].children[1].children[1].fire('click');
     await deletingJob;
-    assert.deepEqual(requests.slice(deleteJobRequests).filter(request => request.payload.target !== 'jobs_status').map(request => request.payload.target + '/' + request.payload.action), ['jobs/delete', 'jobs/list']);
+    assert.deepEqual(requests.slice(deleteJobRequests).filter(request => !['jobs_status', 'job_recovery'].includes(request.payload.target)).map(request => request.payload.target + '/' + request.payload.action), ['jobs/delete', 'jobs/list']);
     const deleteJobMarkup = tables.get('#jobs-table tbody').children[0].innerHTML;
     assert(deleteJobMarkup.includes('delete fixture retained job') && deleteJobMarkup.includes('Intentos: 5')
         && deleteJobMarkup.includes('En ejecución'), 'A failed deletion left stale queue details visible');
@@ -3229,7 +3342,7 @@ async function checkLanguagePresentation() {
             await confirmation.children[0].children[1].children[1].fire('click');
         }
         await running;
-        assert.deepEqual(requests.slice(requestStart).filter(request => request.payload.target !== 'jobs_status').map(request => request.payload.target + '/' + request.payload.action),
+        assert.deepEqual(requests.slice(requestStart).filter(request => !['jobs_status', 'job_recovery'].includes(request.payload.target)).map(request => request.payload.target + '/' + request.payload.action),
             ['jobs/' + action, 'jobs/list'], 'Every failed/partial operation must refresh job diagnostics');
         assert.deepEqual(requests[requestStart].payload, { changeType: 'update', target: 'jobs', action, data: ids },
             'UI must send only selected IDs; same-service prerequisite selection belongs to the backend');
@@ -3485,6 +3598,7 @@ async function checkLanguagePresentation() {
     await checkJobsRefresh();
     await checkNonblockingDeviceSync();
     await checkPendingJobsIndicator();
+    await checkJobRecoveryResolutionPanel();
     await checkInvalidReservationRepairPanel();
     await checkCrmNetworkMonitorPanel();
     await checkCrmNetworkResolutionPanel();

@@ -349,6 +349,12 @@ Desde 2.4.13, **Sincronizar y reconectar cuentas** en Dispositivos reconecta sie
 | 143 | Ocultar/mostrar el panel y mantener una operación administrativa o varias sincronizaciones activas. | Pausa sondeos ocultos/durante escrituras, evita solapamientos y reanuda el refresco al terminar. |
 | 144 | Corregir reservas y después reintentar/sincronizar un servicio cuyo plan configure más velocidad que su nombre anunciado. | La reparación no ejecuta ni reescribe trabajos. La ejecución normal conserva la velocidad configurada y sus controles; metadatos inválidos de otro plan siguen teniendo diagnóstico independiente. |
 
+| 145 | Vaciar una cola con dos trabajos cancelados que conservan recuperación. | Muestra cero ejecutables y dos recuperaciones, con lista de servicios y acceso directo; no presenta una tabla vacía como resolución. |
+| 146 | Revisar copias exactas del estado aplicado y confirmar su resolución. | Guarda `jobs.db`, retira sólo los registros redundantes y refresca lista/contador; conserva las filas de trabajos, estado aplicado, servicios y routers. |
+| 147 | Cambiar recursos/IP/perfil/cliente/estado, conservar otra reserva anterior, activar un trabajo o fallar el respaldo entre revisión y confirmación. | Rechaza la resolución y conserva toda la recuperación. No emite comandos ni fuerza sincronización. |
+| 148 | Corregir una reserva malformada sin servicio local o con cliente local nulo; repetir con caché contradictoria y otra identidad pendiente. | Comprueba UISP fresco; sólo corrige el campo inválido si todas las identidades conocidas concuerdan. Nunca crea/completa el servicio ni altera otro propietario. |
+| 149 | UISP rechaza PATCH de un servicio terminado con 403/422 y luego devuelve el valor anterior, desconocido o coincidente. | Conserva el rechazo original, muestra HTTP/causa segura y permite volver a verificar sin reescribir ni reactivar. La revisión histórica conserva expresamente la IP en CRM. |
+
 ## Diagnosticar una conexión pendiente
 
 En Dispositivos, **Puerto accesible** indica que respondió la comprobación del puerto; no valida usuario, contraseña, permisos API ni TLS. El mensaje anterior `device connect failed` no permite elegir entre esas causas. Desde 2.4.16, reintentar un trabajo muestra un motivo más concreto. Corregir la conexión del dispositivo y reintentar la actualización pendiente; no generar otra sincronización para investigar el mismo error. Las tareas posteriores del servicio seguirán esperando hasta completar o cancelar sus antecesores de forma segura.

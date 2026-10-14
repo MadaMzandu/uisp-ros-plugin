@@ -111,6 +111,8 @@ class ApiBackup
 
     public static function download($name): void
     {
+        require_once __DIR__ . '/api_job_recovery.php';
+        if (ApiJobRecovery::backupName($name)) { ApiJobRecovery::download($name); return; }
         $path = self::path($name);
         self::validate($path);
         header('Content-Type: application/octet-stream');
