@@ -1,5 +1,7 @@
 <?php
 
+require_once __DIR__ . '/api_network_address_evidence.php';
+
 /**
  * Read-only owner information for the setup address-conflict diagnostic.
  *
@@ -39,6 +41,7 @@ final class ApiNetworkDiagnostics
 
         $database = $this->openExisting($this->dataPath);
         $cache = $this->openExisting($this->cachePath);
+        $mapping = $database === null ? ['address' => null, 'address6' => null] : ApiNetworkAddressEvidence::mapping($database);
         try {
             $local = $this->rows($database, 'services', ['id', 'clientId', 'status'], array_values($ids));
             $cached = $this->rows($cache, 'services', ['id', 'clientId', 'status'], array_values($ids));
@@ -74,6 +77,8 @@ final class ApiNetworkDiagnostics
                     'refresh_error' => null,
                     'client_refresh_error' => null,
                     'client_verified_at' => null,
+                    'address_evidence' => ApiNetworkAddressEvidence::parse([], []),
+                    'address_verified_at' => null,
                 ];
             }
 
@@ -92,8 +97,9 @@ final class ApiNetworkDiagnostics
         }
 
         $summary = ['requested' => $refresh, 'service_limit' => self::MAX_REFRESH_SERVICES,
-            'services_attempted' => 0, 'api_requests' => 0, 'truncated' => false, 'timed_out' => false];
-        if ($refresh) $summary = $this->refresh($owners, $serviceIds, $summary);
+            'services_attempted' => 0, 'api_requests' => 0, 'api_request_limit' => 7,
+            'catalog_requests' => 0, 'truncated' => false, 'timed_out' => false];
+        if ($refresh) $summary = $this->refresh($owners, $serviceIds, $summary, $mapping);
         $clientSummary = ['requested' => $refreshClients, 'client_limit' => self::MAX_REFRESH_CLIENTS,
             'clients_attempted' => 0, 'api_requests' => 0, 'truncated' => false, 'timed_out' => false];
         if ($refreshClients) $clientSummary = $this->refreshClients($owners, $serviceIds, $clientSummary);
@@ -101,7 +107,17 @@ final class ApiNetworkDiagnostics
             $details['conflicts'][$index]['owners'] = [];
             foreach (array_slice($conflict['service_ids'] ?? [], 0, 50) as $value) {
                 $id = self::positiveId($value);
-                if ($id !== null && isset($owners[$id])) $details['conflicts'][$index]['owners'][] = $owners[$id];
+                if ($id !== null && isset($owners[$id])) {
+                    $owner = $owners[$id];
+                    $field = ($conflict['family'] ?? null) === 'IPv6' ? 'address6' : 'address';
+                    $evidence = $owner['address_evidence'][$field];
+                    $owner['saved_address'] = is_string($conflict['address'] ?? null) ? $conflict['address'] : null;
+                    $owner['current_address'] = $evidence['value'];
+                    $owner['current_address_known'] = $evidence['known'];
+                    $owner['address_comparison'] = ApiNetworkAddressEvidence::compare($owner['saved_address'], $evidence, $field);
+                    $owner['address_refresh_error'] = $evidence['reason'];
+                    $details['conflicts'][$index]['owners'][] = $owner;
+                }
             }
         }
         $details['owner_refresh'] = $summary;
@@ -156,7 +172,7 @@ final class ApiNetworkDiagnostics
         unset($owner);
     }
 
-    private function refresh(array &$owners, array $selection, array $summary): array
+    private function refresh(array &$owners, array $selection, array $summary, array $mapping): array
     {
         $selected = [];
         foreach ($selection ?: array_keys($owners) as $value) {
@@ -169,6 +185,8 @@ final class ApiNetworkDiagnostics
         $selected = array_slice($selected, 0, self::MAX_REFRESH_SERVICES);
         $deadline = $this->now() + self::REFRESH_BUDGET_SECONDS;
         $clientResults = [];
+        $catalogLoaded = false;
+        $validatedMapping = ['address' => null, 'address6' => null];
         foreach ($selected as $id) {
             if ($this->now() >= $deadline) {
                 $owners[$id]['refresh_error'] = 'deadline';
@@ -197,6 +215,21 @@ final class ApiNetworkDiagnostics
                 $owners[$id]['service_status_code'] = self::statusCode($service['status'] ?? null);
                 $owners[$id]['service_status'] = self::statusLabel($owners[$id]['service_status_code']);
                 $owners[$id]['source'] = 'crm';
+                // One explicitly requested catalog read establishes that the
+                // configured keys still identify service attributes. A renamed
+                // or misspelled key must not turn an absent value into proof.
+                if (!$catalogLoaded && ($mapping['address'] !== null || $mapping['address6'] !== null)) {
+                    if ($this->now() >= $deadline) $summary['timed_out'] = true;
+                    else {
+                        $summary['api_requests']++;
+                        $summary['catalog_requests']++;
+                        try { $validatedMapping = ApiNetworkAddressEvidence::validateMapping($mapping, $this->get('custom-attributes')); }
+                        catch (Throwable $error) {}
+                    }
+                    $catalogLoaded = true;
+                }
+                $owners[$id]['address_evidence'] = ApiNetworkAddressEvidence::parse($service, $validatedMapping);
+                $owners[$id]['address_verified_at'] = gmdate('c');
             } catch (Throwable $error) {
                 // The wrapper cannot distinguish authorization, connection,
                 // deleted-service, or HTTP 404 causes safely. Retain local facts.

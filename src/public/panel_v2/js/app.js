@@ -56,6 +56,155 @@ document.addEventListener('DOMContentLoaded', () => {
     let cleanupBoxes = [];
     let cleanupRequiresReload = false;
     let cleanupRemainingCount = null;
+    const navigationViews = new Set(['devices', 'plans', 'config', 'jobs', 'system', 'network_conflicts']);
+    const navigationVersion = 1;
+    const navigationScopeUrl = new URL(api.endpoint || window.location.href, window.location.href);
+    const navigationScope = navigationScopeUrl.origin + navigationScopeUrl.pathname;
+    const navigationStorageKey = 'ros-panel-navigation-v1:' + navigationScope;
+    const viewPositions = new Map();
+    let initialView = 'devices';
+    let navigationReady = false;
+    let navigationGeneration = 0;
+
+    function validPosition(position) {
+        if (!position || typeof position !== 'object' || Array.isArray(position)
+            || !Number.isFinite(position.scrollTop) || position.scrollTop < 0 || position.scrollTop > 10000000) return null;
+        const safe = { scrollTop: position.scrollTop };
+        if (position.anchor) {
+            const anchor = position.anchor;
+            if (!Number.isSafeInteger(anchor.serviceId) || anchor.serviceId < 1 || !Number.isFinite(anchor.offset)
+                || Math.abs(anchor.offset) > 100000 || !Number.isSafeInteger(anchor.occurrence) || anchor.occurrence < 0 || anchor.occurrence > 1000) return null;
+            safe.anchor = { serviceId: anchor.serviceId, offset: anchor.offset, occurrence: anchor.occurrence };
+        }
+        if (position.focus) {
+            const focus = position.focus;
+            if (!Number.isSafeInteger(focus.serviceId) || focus.serviceId < 1 || !['service', 'client', 'cleanup'].includes(focus.action)) return null;
+            safe.focus = { serviceId: focus.serviceId, action: focus.action };
+        }
+        return safe;
+    }
+
+    function navigationStorage() { return globalThis.sessionStorage || globalThis.window?.sessionStorage; }
+    try {
+        const serialized = navigationStorage()?.getItem(navigationStorageKey);
+        if (typeof serialized === 'string' && serialized.length <= 4096) {
+            const saved = JSON.parse(serialized);
+            if (saved?.version === navigationVersion && saved.scope === navigationScope && navigationViews.has(saved.view)
+                && saved.positions && typeof saved.positions === 'object' && !Array.isArray(saved.positions)) {
+                let valid = true;
+                for (const [view, position] of Object.entries(saved.positions)) {
+                    const safe = validPosition(position);
+                    if (!navigationViews.has(view) || !safe) { valid = false; break; }
+                    viewPositions.set(view, safe);
+                }
+                if (valid) initialView = saved.view;
+                else viewPositions.clear();
+            }
+        }
+    } catch (_) { /* Session storage is optional; no business state is persisted. */ }
+
+    function scrollSurface() {
+        const content = byId('content-area');
+        try {
+            const styles = globalThis.getComputedStyle?.(content) || globalThis.window?.getComputedStyle?.(content);
+            if (styles?.overflowY === 'visible' || styles?.overflowY === 'clip') return document.scrollingElement || document.documentElement || content;
+        } catch (_) { /* Cached panel markup can still use the content scroller. */ }
+        return content;
+    }
+
+    function conflictOwnerNodes() {
+        return Array.from(byId('network-conflicts-body')?.children || []).flatMap(row =>
+            Array.from(row.children[1]?.children || []).filter(node => Number.isSafeInteger(Number(node.dataset?.serviceId)) && Number(node.dataset.serviceId) > 0));
+    }
+
+    function surfaceBounds(surface) {
+        if (surface === document.scrollingElement || surface === document.documentElement)
+            return { top: 0, bottom: Number(window.innerHeight) || Number(surface.clientHeight) || 0 };
+        return surface.getBoundingClientRect?.() || { top: 0, bottom: Number(surface.clientHeight) || 0 };
+    }
+
+    function ownerFocus(nodes) {
+        const active = document.activeElement;
+        for (const node of nodes) {
+            const actions = Array.from(node.children).slice(1);
+            const action = actions.find(button => button === active);
+            if (!action) continue;
+            const kind = action.className.includes('conflict-client-verify') ? 'client' : action.className.includes('conflict-cleanup') ? 'cleanup' : 'service';
+            return { serviceId: Number(node.dataset.serviceId), action: kind };
+        }
+        // Removing a focused button during a table refresh moves focus to body.
+        // Retain its safe target until the replacement button can receive focus.
+        const previous = viewPositions.get(currentView)?.focus;
+        return active === document.body && previous && nodes.some(node => Number(node.dataset.serviceId) === previous.serviceId) ? previous : undefined;
+    }
+
+    function capturePosition() {
+        const surface = scrollSurface();
+        const position = { scrollTop: Math.max(0, Number(surface?.scrollTop) || 0) };
+        if (currentView === 'network_conflicts') {
+            const nodes = conflictOwnerNodes();
+            const bounds = surfaceBounds(surface);
+            const visible = nodes.map((node, index) => ({ node, index, rect: node.getBoundingClientRect?.() }))
+                .filter(item => item.rect && item.rect.bottom > bounds.top && item.rect.top < bounds.bottom)
+                .sort((left, right) => Math.abs(left.rect.top - bounds.top) - Math.abs(right.rect.top - bounds.top));
+            if (visible.length) {
+                const nearest = visible[0];
+                const serviceId = Number(nearest.node.dataset.serviceId);
+                position.anchor = { serviceId, offset: nearest.rect.top - bounds.top,
+                    occurrence: nodes.slice(0, nearest.index).filter(node => Number(node.dataset.serviceId) === serviceId).length };
+            }
+            const focus = ownerFocus(nodes);
+            if (focus) position.focus = focus;
+        }
+        return validPosition(position) || { scrollTop: 0 };
+    }
+
+    function restorePosition(position) {
+        if (!position) return;
+        const surface = scrollSurface();
+        if (!surface) return;
+        const max = Math.max(0, (Number(surface.scrollHeight) || 0) - (Number(surface.clientHeight) || 0));
+        let top = position.scrollTop;
+        const nodes = currentView === 'network_conflicts' ? conflictOwnerNodes() : [];
+        if (position.anchor) {
+            const matching = nodes.filter(node => Number(node.dataset.serviceId) === position.anchor.serviceId);
+            const target = matching[position.anchor.occurrence] || matching[0];
+            const rect = target?.getBoundingClientRect?.();
+            if (rect) top = (Number(surface.scrollTop) || 0) + rect.top - surfaceBounds(surface).top - position.anchor.offset;
+        }
+        surface.scrollTop = Math.max(0, Math.min(max, top));
+        if (position.focus) {
+            const target = nodes.find(node => Number(node.dataset.serviceId) === position.focus.serviceId);
+            const className = { service: 'conflict-verify', client: 'conflict-client-verify', cleanup: 'conflict-cleanup' }[position.focus.action];
+            const button = Array.from(target?.children || []).find(node => node.className?.split(' ').includes(className));
+            if (button && !button.disabled) button.focus?.({ preventScroll: true });
+        }
+    }
+
+    function rememberPosition() {
+        if (navigationReady) viewPositions.set(currentView, capturePosition());
+    }
+
+    function saveNavigation() {
+        rememberPosition();
+        const positions = Object.fromEntries([...viewPositions].map(([view, position]) => [view, validPosition(position)]));
+        try { navigationStorage()?.setItem(navigationStorageKey, JSON.stringify({ version: navigationVersion, scope: navigationScope, view: currentView, positions })); }
+        catch (_) { /* Blocked storage never prevents navigation or reload. */ }
+    }
+
+    function beforeTableUpdate(view) {
+        return navigationReady && currentView === view ? { generation: navigationGeneration, position: capturePosition() } : null;
+    }
+
+    function afterTableUpdate(view, saved) {
+        if (!saved || !navigationReady || currentView !== view || navigationGeneration !== saved.generation) return;
+        viewPositions.set(view, saved.position);
+        restorePosition(saved.position);
+    }
+
+    function reloadPanel() { saveNavigation(); window.location.reload(); }
+    globalThis.window?.addEventListener?.('pagehide', saveNavigation);
+    globalThis.window?.addEventListener?.('beforeunload', saveNavigation);
     const recoveryWriteIds = new Set(['save-config-btn', 'sync-attrs-btn', 'save-device-btn', 'save-plan-btn',
         'btn-run-jobs', 'btn-delete-jobs', 'btn-backup', 'btn-rebuild', 'btn-cache', 'btn-upload', 'btn-log-clear', 'plan-reset-invalid']);
 
@@ -147,7 +296,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 const clientSelected = owner.client_id != null && owner.client_id === selectedClient;
                 const retained = { ...owner };
                 if (!serviceSelected && prior.source === 'crm' && owner.source !== 'crm') {
-                    for (const field of ['service_status', 'service_status_code', 'source']) retained[field] = prior[field];
+                    for (const field of ['service_status', 'service_status_code', 'source', 'address_evidence', 'saved_address',
+                        'current_address', 'current_address_known', 'address_comparison', 'address_refresh_error', 'address_verified_at']) retained[field] = prior[field];
                 }
                 const freshClient = owner.client_source === 'crm' || owner.client_refresh_error
                     || (serviceSelected && owner.source === 'crm' && owner.refresh_error);
@@ -162,6 +312,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function renderNetworkConflictsTable() {
+        const savedPosition = beforeTableUpdate('network_conflicts');
         const tbody = byId('network-conflicts-body');
         tbody.replaceChildren();
         const conflicts = Array.isArray(recoveryDetails?.conflicts) ? recoveryDetails.conflicts : [];
@@ -185,6 +336,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (!owner || typeof owner !== 'object') continue;
                 const item = document.createElement('div');
                 item.className = 'conflict-owner';
+                item.dataset.serviceId = String(owner.service_id);
                 const identity = document.createElement('div');
                 identity.className = 'conflict-identity';
                 const clientLabel = owner.client_name || (owner.client_id ? t('Cliente #{id}', { id: owner.client_id }) : t('Cliente sin identificar'));
@@ -224,6 +376,26 @@ document.addEventListener('DOMContentLoaded', () => {
                     translatedText(clientSource, owner.client_source === 'crm' ? (owner.client_verified_at ? 'Cliente verificado en UISP: {time}' : 'Cliente verificado en UISP')
                         : owner.client_source === 'cache' ? 'Cliente: datos guardados' : 'Cliente: sin datos guardados', { time: formatDate(owner.client_verified_at) });
                     identity.appendChild(clientSource);
+                }
+                if (owner.saved_address !== undefined || owner.address_comparison !== undefined) {
+                    const evidence = document.createElement('div'); evidence.className = 'conflict-address-evidence';
+                    const savedAddress = owner.saved_address ?? conflict.address;
+                    const liveAddress = owner.current_address_known === true ? (owner.current_address ?? t('Sin IP asignada')) : t('Sin comprobar');
+                    evidence.innerHTML = `<dl class="conflict-address-grid"><div><dt>${html(t('IP guardada'))}</dt><dd>${html(savedAddress)}</dd></div><div><dt>${html(t('IP actual en UISP'))}</dt><dd>${html(liveAddress)}</dd></div></dl>`;
+                    const comparison = owner.current_address_known === true && ['same', 'removed', 'changed'].includes(owner.address_comparison) ? owner.address_comparison : 'unknown';
+                    const badge = document.createElement('span');
+                    badge.className = `badge badge-${comparison === 'same' ? 'success' : comparison === 'unknown' ? 'neutral' : 'warning'}`;
+                    translatedText(badge, { same: 'Coincide con la IP guardada', removed: 'IP retirada en UISP', changed: 'IP cambiada en UISP', unknown: 'IP actual sin comprobar' }[comparison]);
+                    evidence.appendChild(badge);
+                    if (owner.address_verified_at) {
+                        const checkedAt = document.createElement('small'); checkedAt.className = 'conflict-source';
+                        translatedText(checkedAt, 'Servicio consultado en UISP: {time}', { time: formatDate(owner.address_verified_at) }); evidence.appendChild(checkedAt);
+                    }
+                    if (comparison === 'unknown') {
+                        const note = document.createElement('small');
+                        translatedText(note, 'No hay evidencia suficiente para confirmar la IP actual. Una IP sin comprobar no autoriza su limpieza.'); evidence.appendChild(note);
+                    }
+                    identity.appendChild(evidence);
                 }
                 if (owner.refresh_error && (owner.source !== 'crm' || (owner.client_source !== 'crm' && !owner.client_refresh_error))) {
                     const error = document.createElement('p');
@@ -311,17 +483,20 @@ document.addEventListener('DOMContentLoaded', () => {
         translatedText(limit, 'Se muestran {shown} de {total} conflictos. El diagnóstico conserva el total y una muestra acotada.', { shown: conflicts.length, total: Number(recoveryDetails?.duplicate_groups) || conflicts.length });
         byId('download-network-conflicts').href = api.downloadUrl('network-conflicts');
         byId('download-network-conflicts').download = 'network-conflicts.json';
+        afterTableUpdate('network_conflicts', savedPosition);
     }
 
     function cleanupReason(reason) {
         return t({
-            service_exists: 'El servicio existe en UISP. Se conservan sus asignaciones, cualquiera que sea su estado.',
+            service_exists: 'La IP actual coincide con la reserva guardada. Se conserva la asignación.',
             crm_unavailable: 'No se pudo comprobar el servicio en UISP. Se conserva la asignación.',
             deadline: 'La consulta a UISP agotó el tiempo disponible. Se conserva la asignación.',
             no_live_peer: 'No se confirmó otro servicio existente que comparta esta IP. Se conserva la asignación.',
             not_in_conflict: 'La asignación ya no forma parte de un conflicto.',
+            address_unknown: 'No se pudo confirmar la IP actual en UISP. Se conserva la asignación.',
+            identity_changed: 'La identidad del servicio cambió. Se conserva la asignación.',
             local_changed: 'Los datos locales cambiaron. Revisa la limpieza nuevamente.',
-            queue_busy: 'Revisa los trabajos y sus recursos guardados antes de limpiar esta asignación.'
+            queue_busy: 'Hay trabajos pendientes, en ejecución o en recuperación, o recursos guardados como aplicados en routers. Se conserva la asignación; revisa Trabajos y esos recursos antes de retirarla.'
         }[reason] || 'No se pudo confirmar que esta asignación pueda limpiarse.');
     }
 
@@ -352,15 +527,27 @@ document.addEventListener('DOMContentLoaded', () => {
             cleanupPreview = data;
             for (const candidate of data.candidates.slice(0, 3)) {
                 const id = Number(candidate?.service_id);
-                if (!ids.includes(id) || candidate.reason !== 'crm_not_found') continue;
+                const stale = candidate.reason === 'stale_address';
+                const fields = [...new Set(Array.isArray(candidate.fields) ? candidate.fields : [])].filter(field => ['address', 'address6'].includes(field));
+                const evidence = Array.isArray(candidate.evidence) ? candidate.evidence : [];
+                const reviewedEvidence = fields.map(field => evidence.find(entry => entry?.field === field && typeof entry.saved_address === 'string'
+                    && ((entry.state === 'removed' && entry.current_address === null) || (entry.state === 'changed' && typeof entry.current_address === 'string' && entry.current_address !== entry.saved_address))));
+                if (!ids.includes(id) || (!stale && candidate.reason !== 'crm_not_found') || (stale && (!fields.length || reviewedEvidence.some(entry => !entry)))) continue;
                 const row = document.createElement('label'); row.className = 'cleanup-candidate';
                 const checkbox = document.createElement('input'); checkbox.type = 'checkbox'; checkbox.value = String(id);
                 checkbox.addEventListener('change', updateCleanupButton); cleanupBoxes.push(checkbox);
                 const copy = document.createElement('span');
-                copy.innerHTML = `<strong>${html(t('Asignaciones del servicio #{id}', { id }))}</strong><span class="cleanup-address">${html([candidate.address, candidate.address6].filter(Boolean).join(' · '))}</span>`;
+                const addresses = stale ? reviewedEvidence.map(entry => entry.saved_address) : [candidate.address, candidate.address6].filter(Boolean);
+                copy.innerHTML = `<strong>${html(t('Asignaciones del servicio #{id}', { id }))}</strong><span class="cleanup-address">${html(addresses.join(' · '))}</span>`;
                 const explanation = document.createElement('small');
-                translatedText(explanation, 'UISP confirmó que el servicio no existe. Otro servicio del conflicto está verificado en UISP y se conservará.');
+                translatedText(explanation, stale ? 'UISP confirmó que las IP guardadas indicadas fueron retiradas o cambiadas. Sólo se retirarán esas asignaciones locales; la ficha del servicio y las demás familias se conservarán.'
+                    : 'UISP confirmó que el servicio no existe. Otro servicio del conflicto está verificado en UISP y se conservará.');
                 copy.appendChild(explanation);
+                if (stale) for (const entry of reviewedEvidence) {
+                    const comparison = document.createElement('small'); comparison.className = 'cleanup-address-comparison';
+                    translatedText(comparison, 'IP actual en UISP ({family}): {address}', { family: entry.field === 'address6' ? 'IPv6' : 'IPv4', address: entry.current_address ?? t('Sin IP asignada') });
+                    copy.appendChild(comparison);
+                }
                 const peers = (Array.isArray(candidate.witness_service_ids) ? candidate.witness_service_ids : []).map(Number).filter(peer => Number.isSafeInteger(peer) && peer > 0);
                 if (peers.length) {
                     const witnesses = document.createElement('div'); witnesses.className = 'cleanup-witnesses';
@@ -403,7 +590,7 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (error) { translatedText(byId('network-cleanup-status'), 'Error: {message}', { message: t(error.message) }); }
         finally { cleanupBusy = false; updateCleanupButton(); if (currentView === 'network_conflicts') renderNetworkConflictsTable(); }
     });
-    byId('reload-after-cleanup')?.addEventListener('click', () => window.location.reload());
+    byId('reload-after-cleanup')?.addEventListener('click', reloadPanel);
 
     async function renderNetworkConflicts() {
         if (!recoveryDetails) {
@@ -613,6 +800,10 @@ document.addEventListener('DOMContentLoaded', () => {
     document.addEventListener('keydown', event => { if (event.key === 'Escape') closeModals(); });
 
     function switchView(view, title) {
+        if (!navigationViews.has(view)) return;
+        rememberPosition();
+        navigationReady = false;
+        const generation = ++navigationGeneration;
         if (currentView === 'config') captureConfigDraft();
         if (currentView === 'config' && view !== 'config') configRenderSequence++;
         jobsViewGeneration++;
@@ -633,9 +824,18 @@ document.addEventListener('DOMContentLoaded', () => {
             button.addEventListener('click', () => openDeviceModal());
             topbar.appendChild(button);
         }
+        let rendered = false;
         withLoader(async () => {
             const render = { devices: renderDevices, plans: renderPlans, config: renderConfig, jobs: renderJobs, system: renderSystem, network_conflicts: renderNetworkConflicts }[view];
             if (render) await render();
+            rendered = true;
+        }).then(async () => {
+            if (!rendered || generation !== navigationGeneration || currentView !== view) return;
+            if (typeof globalThis.requestAnimationFrame === 'function') await new Promise(resolve => globalThis.requestAnimationFrame(resolve));
+            if (generation !== navigationGeneration || currentView !== view) return;
+            restorePosition(viewPositions.get(view) || { scrollTop: 0 });
+            navigationReady = true;
+            saveNavigation();
         });
     }
 
@@ -644,7 +844,7 @@ document.addEventListener('DOMContentLoaded', () => {
         switchView(nav.dataset.view, nav.querySelector('span').textContent);
     }));
     byId('btn-view-conflicts')?.addEventListener('click', () => switchView('network_conflicts', 'Conflictos de IP'));
-    byId('btn-recheck-conflicts')?.addEventListener('click', () => window.location.reload());
+    byId('btn-recheck-conflicts')?.addEventListener('click', reloadPanel);
 
     async function renderDevices() {
         const response = checked(await api.getDevices());
@@ -653,6 +853,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function renderDevicesTable() {
+        const savedPosition = beforeTableUpdate('devices');
         const tbody = document.querySelector('#devices-table tbody');
         tbody.replaceChildren();
         const search = byId('search-devices').value.toLocaleLowerCase();
@@ -697,6 +898,7 @@ document.addEventListener('DOMContentLoaded', () => {
             tbody.appendChild(row);
         });
         PanelUtils.replaceIcons();
+        afterTableUpdate('devices', savedPosition);
     }
 
     byId('search-devices').addEventListener('input', renderDevicesTable);
@@ -708,10 +910,10 @@ document.addEventListener('DOMContentLoaded', () => {
     }));
 
     async function renderPlans() {
+        const startedGeneration = navigationGeneration;
         // Sólo la configuración guardada determina qué campos se aplican a los planes.
         planContentionDisabled = null;
-        plansCache = [];
-        renderPlansTable();
+        if (!navigationReady) { plansCache = []; renderPlansTable(); }
         const [plansResponse, configResponse] = await Promise.all([api.getPlans(), api.getConfig()]);
         const response = checked(plansResponse);
         const savedConfig = checked(configResponse).data;
@@ -719,12 +921,15 @@ document.addEventListener('DOMContentLoaded', () => {
             || !Object.prototype.hasOwnProperty.call(savedConfig, 'disable_contention')) {
             throw new Error(t('No se pudo comprobar la configuración de contención. Vuelve a abrir la sección Planes.'));
         }
+        const savedPosition = startedGeneration === navigationGeneration ? beforeTableUpdate('plans') : null;
         planContentionDisabled = Boolean(PanelUtils.flag(savedConfig.disable_contention));
         plansCache = Array.isArray(response.data) ? response.data : Object.values(response.data || {});
         renderPlansTable();
+        afterTableUpdate('plans', savedPosition);
     }
 
     function renderPlansTable() {
+        const savedPosition = beforeTableUpdate('plans');
         const tbody = document.querySelector('#plans-table tbody');
         tbody.replaceChildren();
         const search = byId('search-plans').value.toLocaleLowerCase();
@@ -750,6 +955,7 @@ document.addEventListener('DOMContentLoaded', () => {
             tbody.appendChild(row);
         });
         PanelUtils.replaceIcons();
+        afterTableUpdate('plans', savedPosition);
     }
     byId('search-plans').addEventListener('input', renderPlansTable);
 
@@ -873,6 +1079,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function renderConfig(isAttrs = byId('tab-attrs').classList.contains('active')) {
+        const startedGeneration = navigationGeneration;
         const sequence = ++configRenderSequence;
         captureConfigDraft();
         // The selected tab follows the newest user intent, not response completion order.
@@ -888,6 +1095,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // Preserve edits made while reloading labels or saved values before replacing the controls.
         captureConfigDraft();
         const values = { ...configCache, ...configDraft };
+        const savedPosition = startedGeneration === navigationGeneration ? beforeTableUpdate('config') : null;
         const container = byId('config-fields-container');
         container.replaceChildren();
         const sections = new Map();
@@ -927,6 +1135,7 @@ document.addEventListener('DOMContentLoaded', () => {
         configRendered = true;
         updateConfigSaveStatus();
         applyRecoveryControls();
+        afterTableUpdate('config', savedPosition);
     }
     for (const tab of ['tab-general', 'tab-attrs']) bind(tab, async () => {
         await renderConfig(tab === 'tab-attrs');
@@ -1094,6 +1303,7 @@ document.addEventListener('DOMContentLoaded', () => {
         return null;
     }
     function renderJobsTable(jobs) {
+        const savedPosition = beforeTableUpdate('jobs');
         const selected = new Set(Array.from(document.querySelectorAll('.job-checkbox:checked'), checkbox => checkbox.value));
         const entries = Object.entries(jobs);
         const tbody = document.querySelector('#jobs-table tbody');
@@ -1127,6 +1337,7 @@ document.addEventListener('DOMContentLoaded', () => {
             tbody.appendChild(row);
         });
         updateJobSelection();
+        afterTableUpdate('jobs', savedPosition);
     }
     function updateJobSelection() {
         const boxes = Array.from(document.querySelectorAll('.job-checkbox'));
@@ -1263,12 +1474,16 @@ document.addEventListener('DOMContentLoaded', () => {
         return Number.isNaN(date.getTime()) ? t('Fecha desconocida') : date.toLocaleString(i18n?.getLanguage());
     }
     async function renderSystem() {
+        const startedGeneration = navigationGeneration;
         const system = checked(await api.send('list', 'sys', 'get')).data || {};
+        const systemPosition = startedGeneration === navigationGeneration ? beforeTableUpdate('system') : null;
         byId('system-info-container').innerHTML = [
             ['Versión del plugin', system.app_version], ['Versión de PHP', system.php_version],
             ['Última caché', system.last_cache, true], ['Próxima caché', system.next_cache, true]
         ].map(([label, value, date]) => `<div class="system-info"><div class="text-muted" data-i18n="${html(label)}">${html(t(label))}</div><div${date ? ` data-date="${html(value || '')}"` : ''}>${html(date ? formatDate(value) : value)}</div></div>`).join('');
+        afterTableUpdate('system', systemPosition);
         const backups = checked(await api.getBackups()).data || [];
+        const savedPosition = startedGeneration === navigationGeneration ? beforeTableUpdate('system') : null;
         const grid = byId('backups-grid');
         grid.replaceChildren();
         if (!backups.length) grid.innerHTML = `<div class="empty-state" data-i18n="No hay respaldos.">${html(t('No hay respaldos.'))}</div>`;
@@ -1305,6 +1520,7 @@ document.addEventListener('DOMContentLoaded', () => {
             grid.appendChild(card);
         });
         PanelUtils.replaceIcons();
+        afterTableUpdate('system', savedPosition);
     }
     bind('btn-backup', async () => { completed(await api.createBackup(), t('Respaldo creado.')); await renderSystem(); });
     bind('btn-rebuild', async () => {
@@ -1624,5 +1840,6 @@ document.addEventListener('DOMContentLoaded', () => {
     PanelUtils.replaceIcons();
     api.onRecovery?.(applyRecovery);
     if (api.recovery?.readOnly === true) applyRecovery(api.recovery);
-    switchView('devices', 'Dispositivos administrados');
+    if (initialView === 'network_conflicts' && !recoveryReadOnly) initialView = 'devices';
+    switchView(initialView, initialView);
 });

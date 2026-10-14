@@ -13,8 +13,8 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     
     <!-- Custom CSS -->
-    <script src="js/theme.js?v=2.0.38"></script>
-    <link rel="stylesheet" href="css/style.css?v=2.0.38">
+    <script src="js/theme.js?v=2.0.39"></script>
+    <link rel="stylesheet" href="css/style.css?v=2.0.39">
 </head>
 <body>
 
@@ -543,8 +543,8 @@
     </div>
 
     <!-- Scripts -->
-    <script src="js/i18n.js?v=2.0.38"></script>
-    <script src="js/api.js?v=2.0.38"></script>
-    <script src="js/app.js?v=2.0.38"></script>
+    <script src="js/i18n.js?v=2.0.39"></script>
+    <script src="js/api.js?v=2.0.39"></script>
+    <script src="js/app.js?v=2.0.39"></script>
 </body>
 </html>

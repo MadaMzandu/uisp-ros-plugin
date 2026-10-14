@@ -2,6 +2,18 @@
 
 [Complete English changelog](docs/CHANGELOG_EN.md) · [Texto completo para el PR](docs/PR_DESCRIPTION.md) · [Webhook setup and rationale](docs/WEBHOOK_SETUP_EN.md) · [Mejoras en español](docs/MEJORAS.md)
 
+## Candidato 2.4.24 — conservar la navegación y contrastar las IP actuales
+
+Recargar el panel conserva la sección abierta y la posición de la lista en la misma pestaña. En Conflictos de IP se guarda también un ID de servicio como referencia para volver al propietario visible, incluso si cambió la altura de una fila. La restauración funciona con el desplazamiento de escritorio y móvil, espera la carga de datos y evita que respuestas anteriores desplacen una sección distinta. Si Conflictos de IP dejó de estar disponible, vuelve a Dispositivos. Sólo se guarda navegación en la sesión del navegador; verificaciones, nombres, direcciones, credenciales y autorizaciones de limpieza no se conservan al recargar.
+
+**Verificar en UISP** compara ahora la dirección guardada con el atributo actual del servicio para cada familia. Distingue coincidencia, IP retirada, IP cambiada e información insuficiente. Una lista completa de atributos vacía confirma ausencia únicamente cuando el atributo configurado existe de forma inequívoca en el catálogo actual; campos omitidos, valores inválidos o errores de consulta quedan sin comprobar. Las lecturas siguen siendo explícitas: como máximo tres servicios, tres clientes y un catálogo de atributos por solicitud, dentro del presupuesto orientativo de 12 segundos para iniciar consultas. No se escribe caché ni se cambian reservas al verificar.
+
+**Revisar limpieza** también admite una reserva local cuya IP ya se retiró o cambió en un servicio que sigue existiendo. Exige identidad coincidente y otro servicio actual que conserve esa IP, y vuelve a verificar la evidencia, el atributo configurado y la base local al confirmar. Vacía únicamente la familia elegida y su campo heredado; conserva el servicio y la otra familia. Guarda el respaldo privado antes del cambio y mantiene las protecciones de trabajos pendientes, recuperación y propiedad aplicada en RouterOS. Una IP vacía en CRM por sí sola no demuestra que el router la haya liberado. La ruta anterior de HTTP 404 conserva sus comprobaciones.
+
+Durante la operación normal, una nueva IP ya reservada se rechaza al preparar el trabajo afectado; otros servicios pueden continuar sus suspensiones y reactivaciones. El modo consulta global se activa cuando la base principal ya contiene duplicados. El diagnóstico no vigila continuamente los atributos de todo el CRM.
+
+Validación 2.4.24 aprobada: **32 suites aisladas**, sintaxis de **45 archivos PHP propios** y verificación del instalador de 357 entradas, 124 archivos propios y 13 dependencias fijadas. Informe: `dist/verification-2.4.24.json`. SHA-256: `a9c899ec39a5d395cc322394ad263a587a704b7055bd5350ba342b0a73cd818e`. Se comprobó en navegador la recarga conservando sección y posición en escritorio y móvil, la comparación de IP actual y la revisión de una reserva retirada con datos sintéticos. La limpieza mantiene las protecciones de trabajos y propiedad aplicada; estas pruebas no modifican UISP ni routers de producción.
+
 ## Candidato 2.4.23 — identificar el archivo del cliente por separado
 
 La caché anterior conservaba los nombres de clientes pero omitía `isArchived`. El diagnóstico podía mostrar «Activo (dato guardado)» del servicio sin informar que su cliente estaba archivado. Ahora se guarda ese campo con tres resultados: archivado, no archivado o sin comprobar. La actualización añade una columna nullable y conserva las filas existentes; no convierte la ausencia del dato en «no archivado».

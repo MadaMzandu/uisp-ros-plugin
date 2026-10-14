@@ -104,7 +104,7 @@ $responses = [];
 $calls = [];
 $request = static function (string $path) use (&$responses,&$calls) {
     $calls[] = $path;
-    checkCleanup(preg_match('~^clients/services/[1-9][0-9]*$~D',$path)===1, 'Cleanup attempted an unapproved CRM endpoint');
+    checkCleanup($path==='custom-attributes' || preg_match('~^clients/services/[1-9][0-9]*$~D',$path)===1, 'Cleanup attempted an unapproved CRM endpoint');
     if (!array_key_exists($path,$responses)) throw new RuntimeException('Unexpected synthetic service lookup');
     if ($responses[$path] instanceof Throwable) throw $responses[$path];
     return $responses[$path];
@@ -127,7 +127,7 @@ try {
     $before = cleanupOperational($fixture);
     $preview = $api->preview([1,5,3]);
     checkCleanup(array_column($preview['candidates'],'service_id')===[1,3]
-        && $preview['blocked']===[['service_id'=>5,'reason'=>'service_exists']], 'Preview removed a current ended service or lost an unknown local owner');
+        && $preview['blocked']===[['service_id'=>5,'reason'=>'address_unknown']], 'Preview removed a current ended service or lost an unknown local owner');
     checkCleanup($preview['candidates'][0]['witness_service_ids']===[2]
         && $preview['candidates'][0]['address']==='192.0.2.99' && $preview['candidates'][0]['address6']==='2001:db8::/64'
         && $preview['candidates'][1]['client_id']===null, 'Preview lost complete assignments or invented an unknown client');
@@ -150,7 +150,7 @@ try {
     foreach (range(0,8) as $status) {
         $responses['clients/services/1']=['id'=>1,'clientId'=>10,'status'=>$status,'isArchived'=>true];
         $result=$api->preview([1]);
-        checkCleanup($result['candidates']===[] && $result['blocked']===[['service_id'=>1,'reason'=>'service_exists']]
+        checkCleanup($result['candidates']===[] && $result['blocked']===[['service_id'=>1,'reason'=>'address_unknown']]
             && $result['previewToken']===null, 'Current service state became a cleanup candidate: ' . $status);
     }
     $unavailable=[cleanupHttp(401),cleanupHttp(403),cleanupHttp(429),cleanupHttp(500),null,false,
@@ -302,6 +302,171 @@ try {
         if (in_array($row['id'],[1,7],true)) checkCleanup($row['address']===null && $row['address6']===null, 'Migration reimported a removed legacy address');
     }
 
+    // A full CRM response may prove that one configured address was removed
+    // or changed while the service itself still exists. Reconcile only that
+    // family, only with a current peer owning the old address, and leave all
+    // service data, other families and applied router ownership intact.
+    $oldResponses=$responses;
+    $catalog=[['id'=>100,'key'=>'fixtureAddress','attributeType'=>'service'],
+        ['id'=>101,'key'=>'fixturePrefix','attributeType'=>'service']];
+    $serviceWith=static function (int $id,int $clientId,?string $address,?string $address6): array {
+        return ['id'=>$id,'clientId'=>$clientId,'status'=>1,'attributes'=>[
+            ['key'=>'fixtureAddress','customAttributeId'=>100,'value'=>$address],
+            ['key'=>'fixturePrefix','customAttributeId'=>101,'value'=>$address6]]];
+    };
+    $configured=static function (string $name) use ($root): array {
+        $fixture=cleanupFixture($root,$name);
+        cleanupSql($fixture,"INSERT INTO config VALUES('ip_addr_attr','fixtureAddress'),('ip_addr6_attr','fixturePrefix')");
+        return $fixture;
+    };
+    try {
+        $responses['custom-attributes']=$catalog;
+        $responses['clients/services/1']=$serviceWith(1,10,'','2001:db8::/64');
+        $responses['clients/services/2']=$serviceWith(2,10,'192.0.2.99/32','2001:0DB8:0000::/64');
+        $removed=$configured('crm-removed-ipv4'); $removedApi=$apiFor($removed);
+        $removedBefore=cleanupOperational($removed); $calls=[];
+        $plan=$removedApi->preview([1]);
+        checkCleanup($plan['blocked']===[] && count($plan['candidates'])===1 && $plan['api_requests']===3
+            && $calls===['clients/services/1','custom-attributes','clients/services/2'],
+            'Present-service preview did not bound and separately validate attribute definitions and current peer');
+        checkCleanup($plan['candidates'][0]['reason']==='stale_address' && $plan['candidates'][0]['fields']===['address']
+            && $plan['candidates'][0]['evidence']===[['field'=>'address','saved_address'=>'192.0.2.99','current_address'=>null,'state'=>'removed']]
+            && $plan['candidates'][0]['witness_service_ids']===[2] && cleanupOperational($removed)===$removedBefore,
+            'IPv4 reconciliation preview lost exact evidence or modified operational state');
+        $calls=[]; $applied=$removedApi->apply($plan['previewToken'],[1]);
+        $removedExpected=$removedBefore['data'];
+        $removedExpected['network'][0]['address']=null; $removedExpected['services'][0]['address']=null;
+        checkCleanup(cleanupOperational($removed)===['data'=>$removedExpected,'files'=>$removedBefore['files']]
+            && $calls===['clients/services/1','custom-attributes','clients/services/2']
+            && $applied['cleared_assignments']===[['service_id'=>1,'fields'=>['address'],'reason'=>'stale_address']]
+            && $applied['duplicate_groups']===5,
+            'IPv4 reconciliation deleted the row, changed IPv6/metadata/queue/cache, or skipped fresh proof');
+        checkCleanup(cleanupTables($removed['directory'].'/'.$applied['backup_name'])===$removedBefore['data'],
+            'Reconciliation backup did not capture complete original service and network data');
+
+        $changedFamily=$configured('crm-changed-ipv6'); $changedFamilyApi=$apiFor($changedFamily);
+        $responses['clients/services/1']=$serviceWith(1,10,'192.0.2.99','2001:db8:9:1234::1/64');
+        $plan=$changedFamilyApi->preview([1]); $changedFamilyBefore=cleanupOperational($changedFamily);
+        checkCleanup($plan['candidates'][0]['fields']===['address6'] && $plan['candidates'][0]['evidence'][0]
+            ===['field'=>'address6','saved_address'=>'2001:db8::/64','current_address'=>'2001:db8:9:1234::/64','state'=>'changed'],
+            'IPv6 change did not retain canonical new prefix as reviewed evidence');
+        $changedFamilyApi->apply($plan['previewToken'],[1]);
+        $changedFamilyExpected=$changedFamilyBefore['data'];
+        $changedFamilyExpected['network'][0]['address6']=null; $changedFamilyExpected['services'][0]['prefix6']=null;
+        checkCleanup(cleanupOperational($changedFamily)===['data'=>$changedFamilyExpected,'files'=>$changedFamilyBefore['files']],
+            'IPv6 reconciliation changed IPv4 or assigned an unprovisioned new CRM prefix');
+
+        $legacyStale=$configured('crm-removed-legacy'); $legacyStaleApi=$apiFor($legacyStale);
+        $responses['clients/services/7']=$serviceWith(7,70,null,'2001:db8:7::/64');
+        $responses['clients/services/8']=$serviceWith(8,80,'192.0.2.102','2001:db8:7::/64');
+        $plan=$legacyStaleApi->preview([7]); $legacyBefore=cleanupOperational($legacyStale);
+        $legacyStaleApi->apply($plan['previewToken'],[7]);
+        $legacyExpected=$legacyBefore['data']; $legacyExpected['services'][5]['address']=null;
+        checkCleanup(cleanupOperational($legacyStale)===['data'=>$legacyExpected,'files'=>$legacyBefore['files']],
+            'Legacy reconciliation created a network row or cleared a preserved IPv6/service field');
+
+        $proof=$configured('crm-proof'); $proofApi=$apiFor($proof);
+        $responses['clients/services/1']=$serviceWith(1,10,null,'2001:db8::/64');
+        $responses['clients/services/2']=$serviceWith(2,10,'192.0.2.99','2001:db8::/64');
+        $proofBefore=cleanupOperational($proof);
+        $unknownCatalog=[null,[],cleanupHttp(403),[['id'=>100,'key'=>'fixtureAddress','attributeType'=>'client']],
+            [$catalog[0],$catalog[0],$catalog[1]],
+            [$catalog[0],['id'=>100,'key'=>'fixturePrefix','attributeType'=>'service']],
+            [['id'=>100,'key'=>'renamedAddress','attributeType'=>'service'],$catalog[1]]];
+        foreach ($unknownCatalog as $value) {
+            $responses['custom-attributes']=$value;
+            $result=$proofApi->preview([1]);
+            checkCleanup($result['candidates']===[] && $result['blocked']===[['service_id'=>1,'reason'=>'address_unknown']]
+                && $result['previewToken']===null && cleanupOperational($proof)===$proofBefore,
+                'Missing, renamed, duplicate, wrong-type or unauthorized catalog defined an empty CRM address');
+        }
+        $responses['custom-attributes']=$catalog;
+        $malformedAttributes=[null,false,(object)[],['not-a-list'=>['key'=>'fixtureAddress','value'=>null]],
+            [['key'=>'fixtureAddress']], [['key'=>'fixtureAddress','value'=>[]]],
+            [['key'=>'fixtureAddress','customAttributeId'=>999,'value'=>null]],
+            [['key'=>'fixtureAddress','value'=>'not-an-IP']],
+            [['key'=>'fixtureAddress','value'=>null],['key'=>'fixtureAddress','value'=>null]],
+            [['key'=>'fixtureAddress','value'=>null],false]];
+        foreach ($malformedAttributes as $attributes) {
+            // Keep the independent IPv6 family unchanged when only the IPv4
+            // attribute is malformed; a genuinely empty IPv6 key is valid
+            // evidence for that family in a complete response.
+            if (is_array($attributes) && (!$attributes || array_keys($attributes)===range(0,count($attributes)-1))) {
+                $attributes[]=['key'=>'fixturePrefix','customAttributeId'=>101,'value'=>'2001:db8::/64'];
+            }
+            $responses['clients/services/1']=['id'=>1,'clientId'=>10,'attributes'=>$attributes];
+            $result=$proofApi->preview([1]);
+            checkCleanup($result['candidates']===[] && $result['blocked']===[['service_id'=>1,'reason'=>'address_unknown']],
+                'Malformed/ambiguous CRM attributes were treated as authoritative address removal');
+        }
+        $responses['clients/services/1']=['id'=>1,'clientId'=>10];
+        checkCleanup($proofApi->preview([1])['blocked']===[['service_id'=>1,'reason'=>'address_unknown']],
+            'Omitted attributes in a partial response were treated as removal');
+        $responses['clients/services/1']=$serviceWith(1,10,'192.0.2.99','2001:db8::/64');
+        checkCleanup($proofApi->preview([1])['blocked']===[['service_id'=>1,'reason'=>'service_exists']],
+            'An unchanged live IP was offered for reconciliation');
+        $responses['clients/services/1']=$serviceWith(1,11,null,'2001:db8::/64');
+        checkCleanup($proofApi->preview([1])['blocked']===[['service_id'=>1,'reason'=>'identity_changed']],
+            'A reassigned CRM service was reconciled under its former local client identity');
+        $responses['clients/services/1']=$serviceWith(1,10,null,'2001:db8::/64');
+        foreach ([$serviceWith(2,10,null,'2001:db8::/64'),$serviceWith(2,10,'192.0.2.200','2001:db8::/64'),
+            ['id'=>2,'clientId'=>10],$serviceWith(2,11,'192.0.2.99','2001:db8::/64')] as $peer) {
+            $responses['clients/services/2']=$peer;
+            checkCleanup($proofApi->preview([1])['blocked']===[['service_id'=>1,'reason'=>'no_live_peer']],
+                'A merely existing or reassigned peer was accepted without current ownership of the old address');
+        }
+        $responses['clients/services/2']=$serviceWith(2,10,'192.0.2.99','2001:db8::/64');
+        $plan=$proofApi->preview([1]);
+        $responses['clients/services/1']=$serviceWith(1,10,'192.0.2.201','2001:db8::/64');
+        rejectCleanup(fn()=>$proofApi->apply($plan['previewToken'],[1]),'cleanup_verification_failed');
+        $responses['clients/services/1']=$serviceWith(1,10,null,'2001:db8::/64');
+        $responses['clients/services/2']=$serviceWith(2,10,null,'2001:db8::/64');
+        rejectCleanup(fn()=>$proofApi->apply($plan['previewToken'],[1]),'cleanup_verification_failed');
+        $responses['clients/services/2']=$serviceWith(2,10,'192.0.2.99','2001:db8::/64');
+        $responses['custom-attributes']=[['id'=>102,'key'=>'fixtureAddress','attributeType'=>'service'],$catalog[1]];
+        rejectCleanup(fn()=>$proofApi->apply($plan['previewToken'],[1]),'cleanup_verification_failed');
+        $responses['custom-attributes']=$catalog;
+        $responses['clients/services/1']=cleanupHttp(404);
+        rejectCleanup(fn()=>$proofApi->apply($plan['previewToken'],[1]),'cleanup_verification_failed');
+        $deletedPlan=$proofApi->preview([1]);
+        $responses['clients/services/1']=$serviceWith(1,10,null,'2001:db8::/64');
+        rejectCleanup(fn()=>$proofApi->apply($deletedPlan['previewToken'],[1]),'cleanup_verification_failed');
+        checkCleanup(cleanupOperational($proof)===$proofBefore && !(glob($proof['directory'].'/network-cleanup-*.sqlite')?:[]),
+            'Changed CRM evidence/catalog/witness or repair mode wrote data or a misleading backup');
+        $plan=$proofApi->preview([1]);
+        cleanupSql($proof,"UPDATE config SET value='renamedAddress' WHERE key='ip_addr_attr'");
+        $calls=[];
+        rejectCleanup(fn()=>$proofApi->apply($plan['previewToken'],[1]),'cleanup_local_changed');
+        checkCleanup($calls===[], 'Changed configured address mapping was not rejected before CRM work');
+
+        $owned=$configured('crm-applied-owner'); $ownedApi=$apiFor($owned); $plan=$ownedApi->preview([1]);
+        cleanupQueueSql($owned,"CREATE TABLE jobs(id INTEGER PRIMARY KEY,service_id INTEGER,status TEXT);
+            CREATE TABLE service_versions(service_id INTEGER PRIMARY KEY,applied_payload TEXT,applied_identity TEXT);
+            INSERT INTO service_versions VALUES(1,'{\"network\":{\"address\":\"192.0.2.99\"}}','fixture-applied-owner')");
+        $ownedBefore=cleanupOperational($owned);
+        rejectCleanup(fn()=>$ownedApi->apply($plan['previewToken'],[1]),'cleanup_queue_busy');
+        checkCleanup($ownedApi->preview([1])['blocked']===[['service_id'=>1,'reason'=>'queue_busy']]
+            && cleanupOperational($owned)===$ownedBefore,
+            'CRM IP removal released a reservation still recorded as applied router ownership');
+
+        $shared=$configured('crm-shared-catalog'); $sharedApi=$apiFor($shared);
+        $responses['clients/services/5']=$serviceWith(5,50,null,'2001:db8:5::/64');
+        $responses['clients/services/6']=$serviceWith(6,60,'192.0.2.101','2001:db8:6::/64');
+        $calls=[]; $result=$sharedApi->preview([1,5]);
+        checkCleanup(count($result['candidates'])===2 && $result['api_requests']===5
+            && count(array_filter($calls,static fn(string $path):bool=>$path==='custom-attributes'))===1,
+            'A bounded selection repeated its attribute-catalog lookup per service');
+        $catalogTime=$time; $catalogCalls=[];
+        $slowCatalog=new ApiNetworkCleanup(static function(string $path) use (&$catalogTime,&$catalogCalls,$responses) {
+            $catalogCalls[]=$path;
+            if ($path==='custom-attributes') $catalogTime+=13;
+            return $responses[$path];
+        },$shared['db'],$shared['jobs'],$shared['legacy'],static function() use (&$catalogTime):float {return $catalogTime;});
+        checkCleanup($slowCatalog->preview([1])['blocked']===[['service_id'=>1,'reason'=>'deadline']]
+            && $catalogCalls===['clients/services/1','custom-attributes'],
+            'Cleanup exceeded its deadline to confirm a stale-address witness after a slow catalog read');
+    } finally { $responses=$oldResponses; }
+
     // WAL pages are included while an existing connection keeps them separate
     // from data.db; a whole-file copy would lose these committed records.
     $wal=cleanupFixture($root,'wal'); $walApi=$apiFor($wal);
@@ -339,7 +504,7 @@ try {
     rejectCleanup(fn()=>ApiNetworkCleanup::download(basename($invalid),$root),'backup_schema_invalid');
     checkCleanup(ApiNetworkCleanup::listBackups($root)===[], 'Unrelated SQLite file appeared as a recovery snapshot');
 
-    echo "Network cleanup checks passed: typed HTTP 404 only, all current states protected, unknown owners, independent peers, exact local snapshots, bounded/fresh CRM reads, private expiring review tokens, raw maintenance/queue barriers, complete WAL backups, backup/SQL rollback failures, subset cleanup and legacy reimport prevention.\n";
+    echo "Network cleanup checks passed: exact typed HTTP 404 deletion, explicit per-family stale CRM-address reconciliation, validated service attribute catalog and identity, current canonical-address witnesses, fail-closed/fresh evidence and mapping checks, preserved applied router ownership, private expiring reviews, maintenance/queue barriers, complete WAL backups, rollback failures and legacy reimport prevention.\n";
 } finally {
     $resolved=realpath($root); $temporaryRoot=realpath(sys_get_temp_dir());
     if ($resolved && $temporaryRoot && strpos($resolved,$temporaryRoot.DIRECTORY_SEPARATOR.'uisp-network-cleanup-')===0) {

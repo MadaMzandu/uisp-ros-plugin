@@ -120,13 +120,25 @@ final class ApiNetworkCleanup
             $backupName = $this->createBackup();
             $network = $this->columns($database, 'network');
             $services = $this->columns($database, 'services');
+            $clearedAssignments = [];
             foreach ($ids as $id) {
-                if (isset($network['id'])) $this->execute($database, 'DELETE FROM network WHERE id=?', [$id]);
+                $candidate = $verified['records'][$id]['candidate'];
+                $stale = $candidate['reason'] === 'stale_address';
+                $fields = $stale ? $candidate['fields'] : ['address', 'address6'];
+                if ($stale) {
+                    $assignments = [];
+                    foreach ($fields as $field) if (isset($network[$field])) $assignments[] = '"' . $field . '"=NULL';
+                    if ($assignments && isset($network['id'])) {
+                        $this->execute($database, 'UPDATE network SET ' . implode(',', $assignments) . ' WHERE id=?', [$id]);
+                    }
+                } elseif (isset($network['id'])) $this->execute($database, 'DELETE FROM network WHERE id=?', [$id]);
                 $legacy = [];
-                foreach (['address', 'prefix6'] as $field) {
-                    if (isset($services[$field])) $legacy[] = '"' . $field . '"=NULL';
+                foreach ($fields as $field) {
+                    $legacyField = $field === 'address' ? 'address' : 'prefix6';
+                    if (isset($services[$legacyField])) $legacy[] = '"' . $legacyField . '"=NULL';
                 }
                 if ($legacy) $this->execute($database, 'UPDATE services SET ' . implode(',', $legacy) . ' WHERE id=?', [$id]);
+                $clearedAssignments[] = ['service_id' => $id, 'fields' => $fields, 'reason' => $candidate['reason']];
             }
             $remaining = $this->duplicateCount($database);
             $database->exec('COMMIT');
@@ -135,7 +147,7 @@ final class ApiNetworkCleanup
             // reviewable, but every retry must independently verify CRM again.
             @unlink($tokenPath);
             return ['removed_service_ids' => $ids, 'backup_name' => $backupName,
-                'duplicate_groups' => $remaining, 'requires_reload' => true];
+                'cleared_assignments' => $clearedAssignments, 'duplicate_groups' => $remaining, 'requires_reload' => true];
         } catch (Throwable $error) {
             if ($database !== null && $transaction) {
                 try { $database->exec('ROLLBACK'); } catch (Throwable $ignored) {}
@@ -199,6 +211,14 @@ final class ApiNetworkCleanup
             $apiRequests++;
             return $results[$id] = $this->liveService($id);
         };
+        $catalogResult = null;
+        $catalog = function () use (&$catalogResult, &$apiRequests, $deadline): array {
+            if ($catalogResult !== null) return $catalogResult;
+            if ($apiRequests >= self::MAX_REQUESTS || $this->now() >= $deadline) return ['kind' => 'deadline'];
+            $apiRequests++;
+            try { return $catalogResult = ['kind' => 'present', 'value' => $this->get('custom-attributes')]; }
+            catch (Throwable $error) { return $catalogResult = ['kind' => 'unavailable']; }
+        };
         $records = [];
         $blocked = [];
         foreach ($ids as $id) {
@@ -206,10 +226,57 @@ final class ApiNetworkCleanup
             $groups = $this->groups($database, $snapshot);
             if (!$groups) { $blocked[] = ['service_id' => $id, 'reason' => 'not_in_conflict']; continue; }
             $live = $lookup($id);
-            if ($live['kind'] !== 'absent') {
-                $reason = $live['kind'] === 'present' ? 'service_exists'
-                    : ($live['kind'] === 'deadline' ? 'deadline' : 'crm_unavailable');
+            if (!in_array($live['kind'], ['absent', 'present'], true)) {
+                $reason = $live['kind'] === 'deadline' ? 'deadline' : 'crm_unavailable';
                 $blocked[] = ['service_id' => $id, 'reason' => $reason];
+                continue;
+            }
+            $stale = $live['kind'] === 'present';
+            $evidence = [];
+            $mapping = null;
+            $liveFingerprint = null;
+            if ($stale) {
+                // A CRM address edit is distinct from a deleted service. An
+                // unknown/reassigned local identity cannot authorize a repair.
+                $clientId = self::positiveId($snapshot['service']['clientId'] ?? null);
+                if ($clientId === null || $clientId !== self::positiveId($live['service']['clientId'])) {
+                    $blocked[] = ['service_id' => $id, 'reason' => 'identity_changed'];
+                    continue;
+                }
+                require_once __DIR__ . '/api_network_address_evidence.php';
+                $rawMapping = ApiNetworkAddressEvidence::mapping($database);
+                $definitions = array_filter($rawMapping) ? $catalog() : ['kind' => 'present', 'value' => []];
+                if ($definitions['kind'] === 'deadline') {
+                    $blocked[] = ['service_id' => $id, 'reason' => 'deadline'];
+                    continue;
+                }
+                $mapping = ApiNetworkAddressEvidence::validateMapping($rawMapping, $definitions['value'] ?? null);
+                $addresses = ApiNetworkAddressEvidence::parse($live['service'], $mapping);
+                $selectedGroups = [];
+                $unknown = false;
+                foreach ($groups as $group) {
+                    $comparison = ApiNetworkAddressEvidence::compare($group['address'], $addresses[$group['field']], $group['field']);
+                    if ($comparison === 'unknown') $unknown = true;
+                    if (!in_array($comparison, ['removed', 'changed'], true)) continue;
+                    $selectedGroups[] = $group;
+                    $evidence[] = ['field' => $group['field'], 'saved_address' => $group['address'],
+                        'current_address' => $addresses[$group['field']]['value'], 'state' => $comparison];
+                }
+                if (!$selectedGroups) {
+                    $blocked[] = ['service_id' => $id, 'reason' => $unknown ? 'address_unknown' : 'service_exists'];
+                    continue;
+                }
+                $groups = $selectedGroups;
+                $liveFingerprint = hash('sha256', json_encode(['client_id' => $clientId,
+                    'config' => ApiNetworkAddressEvidence::mappingFingerprint($rawMapping),
+                    'mapping' => ApiNetworkAddressEvidence::mappingFingerprint($mapping), 'addresses' => $addresses], JSON_THROW_ON_ERROR));
+            }
+            // Applying cannot change from deletion to reconciliation, or adopt
+            // a different CRM value/mapping after the operator reviewed it.
+            if ($expected !== null && (($expected[$id]['candidate']['reason'] ?? null) !== ($stale ? 'stale_address' : 'crm_not_found')
+                || ($stale && (!is_string($expected[$id]['live_fingerprint'] ?? null)
+                    || !hash_equals($expected[$id]['live_fingerprint'], $liveFingerprint))))) {
+                $blocked[] = ['service_id' => $id, 'reason' => 'local_changed'];
                 continue;
             }
             $witnesses = [];
@@ -230,7 +297,16 @@ final class ApiNetworkCleanup
                 $witness = null;
                 foreach ($peerIds as $peer) {
                     $result = $lookup($peer);
-                    if ($result['kind'] === 'present') { $witness = $peer; break; }
+                    if ($result['kind'] === 'present') {
+                        if (!$stale) { $witness = $peer; break; }
+                        $peerSnapshot = $this->snapshot($database, $peer);
+                        $peerClientId = self::positiveId($peerSnapshot['service']['clientId'] ?? null);
+                        if ($peerClientId !== null && $peerClientId !== self::positiveId($result['service']['clientId'])) continue;
+                        $peerAddresses = ApiNetworkAddressEvidence::parse($result['service'], $mapping);
+                        $oldAddress = ApiNetworkAddressEvidence::normalize($group['address'], $group['field']);
+                        if ($oldAddress !== null && $peerAddresses[$group['field']]['known'] === true
+                            && $peerAddresses[$group['field']]['value'] === $oldAddress) { $witness = $peer; break; }
+                    }
                     if ($result['kind'] === 'deadline') { $reason = 'deadline'; break; }
                 }
                 if ($witness === null) { $reason = $reason ?? 'no_live_peer'; break; }
@@ -241,8 +317,16 @@ final class ApiNetworkCleanup
             if ($reason !== null) { $blocked[] = ['service_id' => $id, 'reason' => $reason]; continue; }
             $candidate = ['service_id' => $id, 'client_id' => self::positiveId($snapshot['service']['clientId'] ?? null),
                 'address' => $snapshot['address'], 'address6' => $snapshot['address6'],
-                'reason' => 'crm_not_found', 'witness_service_ids' => array_values($witnesses)];
+                'reason' => $stale ? 'stale_address' : 'crm_not_found', 'witness_service_ids' => array_values($witnesses)];
+            if ($stale) {
+                $candidate['fields'] = array_column($evidence, 'field');
+                $candidate['evidence'] = $evidence;
+            }
             $records[$id] = ['candidate' => $candidate, 'fingerprint' => $snapshot['fingerprint'], 'groups' => $verifiedGroups];
+            if ($stale) {
+                $records[$id]['live_fingerprint'] = $liveFingerprint;
+                $records[$id]['config_fingerprint'] = ApiNetworkAddressEvidence::mappingFingerprint($rawMapping);
+            }
         }
         return ['records' => $records, 'blocked' => $blocked, 'api_requests' => $apiRequests];
     }
@@ -250,11 +334,7 @@ final class ApiNetworkCleanup
     private function liveService(int $id): array
     {
         try {
-            if ($this->request !== null) $value = ($this->request)('clients/services/' . $id);
-            else {
-                require_once __DIR__ . '/api_ucrm.php';
-                $value = (new ApiUcrm())->get('clients/services/' . $id);
-            }
+            $value = $this->get('clients/services/' . $id);
             if (!is_object($value) && !is_array($value)) return ['kind' => 'unavailable'];
             $value = (array) $value;
             if (self::positiveId($value['id'] ?? null) !== $id || self::positiveId($value['clientId'] ?? null) === null) {
@@ -262,7 +342,7 @@ final class ApiNetworkCleanup
             }
             // An existing ended, inactive or archived service is still present.
             // Neither its status nor client lifecycle makes it safe to remove.
-            return ['kind' => 'present'];
+            return ['kind' => 'present', 'service' => $value];
         } catch (Throwable $error) {
             for ($current = $error; $current !== null; $current = $current->getPrevious()) {
                 if ($current instanceof \GuzzleHttp\Exception\RequestException) {
@@ -271,6 +351,13 @@ final class ApiNetworkCleanup
             }
             return ['kind' => 'unavailable'];
         }
+    }
+
+    private function get(string $path)
+    {
+        if ($this->request !== null) return ($this->request)($path);
+        require_once __DIR__ . '/api_ucrm.php';
+        return (new ApiUcrm())->get($path);
     }
 
     private function snapshot(SQLite3 $database, int $id): array
@@ -293,6 +380,13 @@ final class ApiNetworkCleanup
     {
         if (!hash_equals($record['fingerprint'], $this->snapshot($database, $id)['fingerprint'])) {
             throw new InvalidArgumentException('cleanup_local_changed');
+        }
+        if (isset($record['config_fingerprint'])) {
+            require_once __DIR__ . '/api_network_address_evidence.php';
+            if (!hash_equals($record['config_fingerprint'],
+                ApiNetworkAddressEvidence::mappingFingerprint(ApiNetworkAddressEvidence::mapping($database)))) {
+                throw new InvalidArgumentException('cleanup_local_changed');
+            }
         }
         foreach ($record['groups'] as $group) {
             if (!hash_equals($group['witness_snapshot'], $this->snapshot($database, $group['witness_id'])['fingerprint'])) {

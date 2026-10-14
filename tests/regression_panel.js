@@ -668,7 +668,8 @@ function contentionFixture(disableContention, translated = false) {
     };
 }
 
-function recoveryPanelFixture({ bootstrap, details } = {}) {
+function recoveryPanelFixture({ bootstrap, details, storage, storageBlocked = false, mobile = false,
+    initialReplies = new Map(), url = 'https://fixture.invalid/crm/_plugins/ros-plugin/public.php?page=panel', raf = false, exposeRenderers = false } = {}) {
     const nodes = new Map(Array.from(markup.matchAll(/\bid="([^"]+)"/g), match => [match[1], new Element(match[1])]));
     const views = ['devices', 'plans', 'config', 'jobs', 'system', 'network_conflicts'];
     const nav = views.map(view => {
@@ -683,14 +684,27 @@ function recoveryPanelFixture({ bootstrap, details } = {}) {
     const walk = node => [node, ...node.children.flatMap(walk)];
     const allNodes = () => [...nodes.values(), ...localTables.values()].flatMap(walk);
     const calls = [];
-    const replies = new Map();
+    const replies = new Map(initialReplies);
+    const events = new Map();
+    const frames = [];
     let onReady, reloads = 0;
     const localDocument = {
-        baseURI: document.baseURI, body: new Element(), hidden: false,
+        baseURI: document.baseURI, body: new Element(), hidden: false, scrollingElement: new Element(),
         getElementById(id) { return nodes.get(id) || null; },
         addEventListener(type, listener) { if (type === 'DOMContentLoaded') onReady = listener; },
         removeEventListener() {},
-        createElement(tag) { const element = new Element(); element.tagName = tag.toUpperCase(); return element; },
+        createElement(tag) {
+            const element = new Element(); element.tagName = tag.toUpperCase();
+            element.focus = options => { element.focusOptions = options; localDocument.activeElement = element; };
+            element.getBoundingClientRect = () => {
+                const owners = nodes.get('network-conflicts-body').children.flatMap(row => row.children[1].children.filter(item => item.dataset.serviceId));
+                const index = owners.indexOf(element);
+                const surface = mobile ? localDocument.scrollingElement : nodes.get('content-area');
+                const top = (mobile ? 0 : 100) + 30 + index * 140 - surface.scrollTop;
+                return { top, bottom: top + 130, height: 130 };
+            };
+            return element;
+        },
         createElementNS() { return new Element(); },
         querySelector(selector) { assert(localTables.has(selector)); return localTables.get(selector); },
         querySelectorAll(selector) {
@@ -704,9 +718,27 @@ function recoveryPanelFixture({ bootstrap, details } = {}) {
             return [];
         }
     };
+    localDocument.activeElement = localDocument.body;
+    for (const surface of [nodes.get('content-area'), localDocument.scrollingElement]) {
+        surface.scrollTop = 0; surface.scrollHeight = 10000; surface.clientHeight = 500;
+        surface.getBoundingClientRect = () => ({ top: 100, bottom: 600, height: 500 });
+    }
+    const realReplace = nodes.get('network-conflicts-body').replaceChildren.bind(nodes.get('network-conflicts-body'));
+    nodes.get('network-conflicts-body').replaceChildren = (...children) => {
+        if (walk(nodes.get('network-conflicts-body')).includes(localDocument.activeElement)) localDocument.activeElement = localDocument.body;
+        return realReplace(...children);
+    };
     const localContext = vm.createContext({
         URL, FormData: FixtureFormData, document: localDocument,
-        window: { location: { href: 'https://fixture.invalid/crm/_plugins/ros-plugin/public.php?page=panel', reload() { reloads++; } } },
+        window: { innerHeight: 500, location: { href: url, reload() { reloads++; } },
+            getComputedStyle() { return { overflowY: mobile ? 'visible' : 'auto' }; },
+            addEventListener(type, listener) { if (!events.has(type)) events.set(type, []); events.get(type).push(listener); }
+        },
+        ...(storage !== undefined || storageBlocked ? { sessionStorage: {
+            getItem(key) { if (storageBlocked) throw new Error('blocked'); return storage?.get(key) ?? null; },
+            setItem(key, value) { if (storageBlocked) throw new Error('blocked'); storage?.set(key, value); }
+        } } : {}),
+        ...(raf ? { requestAnimationFrame(callback) { frames.push(callback); return frames.length; } } : {}),
         setTimeout() { return 1; }, clearTimeout() {},
         fetch: async (endpoint, options) => {
             const payload = typeof options.body === 'string' ? JSON.parse(options.body) : { changeType: 'upload' };
@@ -728,13 +760,18 @@ function recoveryPanelFixture({ bootstrap, details } = {}) {
             return { ok: true, status: 200, json: async () => plain(response) };
         }
     });
-    vm.runInContext(apiSource, localContext); vm.runInContext(appSource, localContext); onReady();
+    const fixtureApp = exposeRenderers ? appSource.replace('    api.onRecovery?.(applyRecovery);', '    globalThis.__fixtureRefresh = { plans: renderPlans, system: renderSystem };\n    api.onRecovery?.(applyRecovery);') : appSource;
+    vm.runInContext(apiSource, localContext); vm.runInContext(fixtureApp, localContext); onReady();
     return { nodes, calls, document: localDocument, tables: localTables, deviceControls, api: vm.runInContext('api', localContext),
         async navigate(view) { await nav[views.indexOf(view)].fire('click'); await flush(); },
         reply(key, response) { replies.set(key, typeof response === 'function' ? response : () => response); },
         reloads() { return reloads; },
         writes() { return calls.filter(call => call.changeType === 'update' || call.changeType === 'upload'); },
-        diagnostics() { return calls.filter(call => call.target === 'network_conflicts'); }
+        diagnostics() { return calls.filter(call => call.target === 'network_conflicts'); },
+        async event(type) { for (const listener of events.get(type) || []) listener(); await flush(); },
+        async runFrames() { for (const callback of frames.splice(0)) callback(); await flush(); },
+        surface() { return mobile ? localDocument.scrollingElement : nodes.get('content-area'); },
+        refresh(view) { return localContext.__fixtureRefresh[view](); }
     };
 }
 
@@ -896,8 +933,8 @@ async function checkNetworkRecoveryPanel() {
     assert.deepEqual(plain(healthy.diagnostics()[0].data), {}, 'Reactive recovery reads must not request live CRM verification');
     const malformed = recoveryPanelFixture({ bootstrap: '{', details }); await flush();
     assert.equal(malformed.nodes.get('btn-cache').disabled, false, 'An invalid optional bootstrap must not break normal navigation');
-    assert.equal((markup.match(/(?:src|href)="(?:js|css)\/[^"?]+\?v=2\.0\.38"/g) || []).length, 5, 'Every panel asset must use the new revision to invalidate UISP browser caches');
-    assert(!markup.includes('v=2.0.37'));
+    assert.equal((markup.match(/(?:src|href)="(?:js|css)\/[^"?]+\?v=2\.0\.39"/g) || []).length, 5, 'Every panel asset must use the new revision to invalidate UISP browser caches');
+    assert(!markup.includes('v=2.0.38'));
     assert(apiSource.includes("'alert-triangle':"), 'The conflict warning must have its own local warning icon');
 }
 
@@ -929,7 +966,7 @@ async function checkNetworkCleanupPanel() {
     assert.equal(peer.textContent, 'Servicio conservado #43');
     assert.equal(peer.href, 'https://fixture.invalid/crm/client/service/43');
     assert.equal(peer.rel, 'noopener noreferrer');
-    assert(fixture.nodes.get('network-cleanup-blocked').children[0].innerHTML.includes('cualquiera que sea su estado'), 'Existing UISP services must be protected irrespective of status');
+    assert(fixture.nodes.get('network-cleanup-blocked').children[0].innerHTML.includes('coincide con la reserva guardada'), 'Current matching IP reservations must remain protected');
     assert.equal(fixture.nodes.get('apply-network-cleanup').disabled, true, 'Cleanup candidates must require explicit checkbox selection');
     await fixture.nodes.get('apply-network-cleanup').fire('click');
     assert.equal(fixture.calls.filter(call => call.changeType === 'cleanup').length, 1, 'Review and an empty selection must never apply cleanup');
@@ -1087,6 +1124,175 @@ async function checkNetworkClientArchivePanel() {
         assert.equal(archive(item(mixed, 71)).textContent, 'Cliente archivado');
         assert.equal(errors(item(mixed, 71)).length, 0, 'Successful client-only verification must clear the client error without falsely claiming that the verified service was unavailable');
     }
+}
+
+async function checkNavigationContinuity() {
+    const scope = 'https://fixture.invalid/crm/_plugins/ros-plugin/public.php';
+    const key = 'ros-panel-navigation-v1:' + scope;
+    const views = ['devices', 'plans', 'config', 'jobs', 'system', 'network_conflicts'];
+    const details = { duplicate_groups: 1, conflicts: [{ family: 'IPv4', address: '192.0.2.77', service_count: 12,
+        service_ids: Array.from({ length: 12 }, (_, index) => 1000 + index), owners: Array.from({ length: 12 }, (_, index) => ({
+            service_id: 1000 + index, client_id: 6000 + index, client_name: 'Nombre privado ' + index, service_status: 'Activo', source: 'cache', client_source: 'cache', client_archived: false
+        })) }] };
+    const response = data => ({ status: 'ok', error: false, data });
+    const stored = (view, positions) => JSON.stringify({ version: 1, scope, view, positions });
+    const targets = { devices: 'devices', plans: 'plans', config: 'messages', jobs: 'jobs', system: 'sys' };
+    const payloads = {
+        devices: [{ id: 1, name: 'Router de ejemplo', ip: '192.0.2.1', status: null }], plans: [{ id: 1, name: 'Plan', ratio: 1, uploadSpeed: 10, downloadSpeed: 20 }],
+        messages: [[], { config_disable_contention: { name: 'disable_contention', label: 'Desactivar contención', type: 1 } }], jobs: {}, sys: { app_version: '2.4.24' }
+    };
+    for (const view of views) {
+        const storage = new Map();
+        const first = recoveryPanelFixture({ bootstrap: { readOnly: true, details }, details, storage });
+        await first.navigate(view); first.surface().scrollTop = 400; await first.event('pagehide');
+        const saved = JSON.parse(storage.get(key));
+        assert.equal(saved.view, view); assert.equal(saved.positions[view].scrollTop, 400);
+        const pending = deferred();
+        const initialReplies = targets[view] ? new Map([['list/' + targets[view], () => pending.promise]]) : new Map();
+        const restored = recoveryPanelFixture({ bootstrap: { readOnly: true, details }, details, storage, initialReplies });
+        assert.equal(restored.surface().scrollTop, 0, 'Position must wait for the view data and layout: ' + view);
+        await flush();
+        if (targets[view]) {
+            assert.equal(restored.surface().scrollTop, 0, 'An initial empty render must not restore too early: ' + view);
+            assert.equal(JSON.parse(storage.get(key)).positions[view].scrollTop, 400, 'Initial loading must not overwrite the saved position');
+            pending.resolve(response(payloads[targets[view]])); await flush();
+        }
+        assert.equal(restored.nodes.get('view-' + view).style.display, 'block');
+        assert.equal(restored.surface().scrollTop, 400, 'Every allowed section must restore its scroll after rendering: ' + view);
+        assert.equal(restored.writes().length, 0);
+        assert.equal(restored.diagnostics().filter(call => call.data.refresh || call.data.refreshClients).length, 0, 'Restoring a section must not verify services or clients automatically');
+    }
+    const perView = recoveryPanelFixture({ bootstrap: { readOnly: true, details }, details, storage: new Map() });
+    await perView.navigate('plans'); perView.surface().scrollTop = 123;
+    await perView.navigate('config'); perView.surface().scrollTop = 234;
+    await perView.navigate('plans'); assert.equal(perView.surface().scrollTop, 123);
+    await perView.navigate('config'); assert.equal(perView.surface().scrollTop, 234, 'Each section keeps its own position between navigation clicks');
+    const storage = new Map();
+    const first = recoveryPanelFixture({ bootstrap: { readOnly: true, details }, details, storage }); await first.navigate('network_conflicts');
+    const owners = fixture => fixture.nodes.get('network-conflicts-body').children[0].children[1].children.filter(node => node.dataset.serviceId);
+    const owner = (fixture, id) => owners(fixture).find(node => Number(node.dataset.serviceId) === id);
+    first.surface().scrollTop = 450; owner(first, 1003).children[3].focus({ preventScroll: true });
+    const verified = plain(details); Object.assign(verified.conflicts[0].owners[3], { client_source: 'crm', client_archived: true, client_verified_at: '2026-10-14T13:00:00Z' });
+    first.api.setRecovery({ readOnly: true, details: verified });
+    await first.event('beforeunload');
+    const serialized = storage.get(key), state = JSON.parse(serialized);
+    assert.deepEqual(state.positions.network_conflicts.anchor, { serviceId: 1003, offset: 0, occurrence: 0 });
+    assert.deepEqual(state.positions.network_conflicts.focus, { serviceId: 1003, action: 'client' });
+    for (const forbidden of ['Nombre privado', '192.0.2.77', 'client_name', 'client_archived', 'client_verified_at', 'previewToken', 'password', 'cookie', '6003'])
+        assert(!serialized.includes(forbidden), 'Session navigation must contain no owner/client/proof/business data: ' + forbidden);
+    const reordered = plain(details);
+    const [moved] = reordered.conflicts[0].owners.splice(3, 1); reordered.conflicts[0].owners.splice(7, 0, moved);
+    const restored = recoveryPanelFixture({ bootstrap: { readOnly: true, details: reordered }, details: reordered, storage,
+        url: scope + '?page=panel&cache=changed' }); await flush();
+    assert.equal(restored.surface().scrollTop, 1010, 'A reordered conflict must restore the same service row and relative offset');
+    assert.equal(restored.document.activeElement, owner(restored, 1003).children[3], 'Restore a safe verification focus target without replaying its action');
+    assert(!owner(restored, 1003).children[0].children[0].className.includes('client-archived-name'), 'Navigation storage must never restore prior CRM archive proof');
+    assert.equal(restored.diagnostics().length, 0);
+    const rerendered = plain(reordered);
+    const [movedAgain] = rerendered.conflicts[0].owners.splice(7, 1); rerendered.conflicts[0].owners.splice(1, 0, movedAgain);
+    restored.reply('list/network_conflicts', { status: 'ok', error: false, data: rerendered, recovery: { readOnly: true } });
+    await owner(restored, 1003).children[3].fire('click'); await flush();
+    assert.equal(restored.surface().scrollTop, 170, 'Client verification table refreshes must keep the visible service anchor through reordering');
+    assert.equal(restored.document.activeElement, owner(restored, 1003).children[3]);
+    await restored.nodes.get('btn-recheck-conflicts').fire('click');
+    assert.equal(restored.reloads(), 1);
+    assert.equal(JSON.parse(storage.get(key)).positions.network_conflicts.scrollTop, 170, 'Recheck must synchronously flush the latest position before reloading');
+    restored.surface().scrollTop = 200; await restored.nodes.get('reload-after-cleanup').fire('click');
+    assert.equal(JSON.parse(storage.get(key)).positions.network_conflicts.scrollTop, 200, 'Cleanup reload must use the same synchronous continuity flush');
+    const removed = plain(rerendered); removed.conflicts[0].owners = removed.conflicts[0].owners.filter(entry => entry.service_id !== 1003);
+    const absent = recoveryPanelFixture({ bootstrap: { readOnly: true, details: removed }, details: removed, storage });
+    absent.surface().scrollHeight = 300; absent.surface().clientHeight = 200; await flush();
+    assert.equal(absent.surface().scrollTop, 100, 'If the service anchor vanished, clamp the saved numeric position to the new content');
+    assert.equal(absent.document.activeElement, absent.document.body, 'A removed anchor must never focus a different client');
+    const mobileStorage = new Map();
+    const mobile = recoveryPanelFixture({ bootstrap: { readOnly: true, details }, details, storage: mobileStorage, mobile: true }); await mobile.navigate('network_conflicts');
+    mobile.surface().scrollTop = 450; await mobile.event('pagehide');
+    const mobileReload = recoveryPanelFixture({ bootstrap: { readOnly: true, details }, details, storage: mobileStorage, mobile: true }); await flush();
+    assert.equal(mobileReload.document.scrollingElement.scrollTop, 450, 'Responsive layouts must restore the document scroller');
+    assert.equal(mobileReload.nodes.get('content-area').scrollTop, 0);
+    const healthy = recoveryPanelFixture({ storage, details }); await flush();
+    assert.equal(healthy.nodes.get('view-devices').style.display, 'block', 'Healthy panels must fall back when the remembered conflicts view is unavailable');
+    assert.equal(healthy.diagnostics().length, 0);
+    for (const invalid of ['{', 'x'.repeat(4097), stored('unsafe_view', {}), JSON.stringify({ version: 2, scope, view: 'system', positions: {} }),
+        JSON.stringify({ version: 1, scope: 'wrong-scope', view: 'system', positions: {} }), stored('system', { system: { scrollTop: -1 } }),
+        stored('system', { system: { scrollTop: 1, focus: { serviceId: 42, action: 'execute' } } })]) {
+        const invalidStorage = new Map([[key, invalid]]);
+        const fixture = recoveryPanelFixture({ storage: invalidStorage, details }); await flush();
+        assert.equal(fixture.nodes.get('view-devices').style.display, 'block');
+        assert.deepEqual(fixture.calls.map(call => call.target), ['devices'], 'Invalid navigation state must not trigger unexpected section or CRM loads');
+    }
+    const blocked = recoveryPanelFixture({ storageBlocked: true, details }); await flush(); await blocked.navigate('system');
+    assert.equal(blocked.nodes.get('view-system').style.display, 'block');
+    const otherScope = recoveryPanelFixture({ storage: new Map([[key, stored('system', { system: { scrollTop: 123 } })]]), details,
+        url: 'https://fixture.invalid/crm/_plugins/other-plugin/public.php?page=panel' }); await flush();
+    assert.equal(otherScope.nodes.get('view-devices').style.display, 'block', 'Per-plugin session state must not leak into another endpoint');
+    const pending = deferred();
+    const raceStorage = new Map([[key, stored('plans', { plans: { scrollTop: 280 }, system: { scrollTop: 90 } })]]);
+    const race = recoveryPanelFixture({ storage: raceStorage, details, initialReplies: new Map([['list/plans', () => pending.promise]]) }); await flush();
+    await race.navigate('system'); assert.equal(race.surface().scrollTop, 90);
+    pending.resolve(response(payloads.plans)); await flush();
+    assert.equal(race.surface().scrollTop, 90, 'Late results from a previous section must not restore its scroll over the new destination');
+    assert.equal(JSON.parse(raceStorage.get(key)).view, 'system');
+    const frameRace = recoveryPanelFixture({ storage: new Map([[key, stored('devices', { devices: { scrollTop: 500 }, system: { scrollTop: 80 } })]]), details, raf: true });
+    await flush(); await frameRace.navigate('system'); await frameRace.runFrames();
+    assert.equal(frameRace.surface().scrollTop, 80, 'The animation-frame restoration must check navigation generation again');
+    for (const target of ['config', 'plans', 'sys', 'backups']) {
+        const view = ['sys', 'backups'].includes(target) ? 'system' : target;
+        const fixture = recoveryPanelFixture({ bootstrap: { readOnly: true, details }, details, exposeRenderers: true }); await fixture.navigate(view);
+        fixture.surface().scrollTop = 200;
+        const waiting = deferred(); fixture.reply('list/' + target, () => waiting.promise);
+        const refresh = view === 'config' ? fixture.nodes.get('tab-general').fire('click') : fixture.refresh(view);
+        await flush(); fixture.surface().scrollTop = 450;
+        waiting.resolve(response(target === 'config' ? { disable_contention: false } : target === 'backups' ? [] : payloads[target]));
+        await refresh; await flush();
+        assert.equal(fixture.surface().scrollTop, 450, 'A same-section async refresh must respect newer scrolling while ' + target + ' is pending');
+        assert.equal(fixture.writes().length, 0);
+    }
+}
+
+async function checkCurrentAddressEvidence() {
+    const base = (id, state, current, known = true) => ({ service_id: id, client_id: 200 + id, client_name: 'Cliente de ejemplo', service_status: 'Activo', source: 'crm',
+        client_source: 'cache', client_archived: false, saved_address: '192.0.2.77', current_address: current, current_address_known: known, address_comparison: state,
+        address_verified_at: '2026-10-14T13:00:00Z', address_evidence: { address: { known, value: current, reason: known ? null : 'attributes_unknown' } } });
+    const details = { duplicate_groups: 1, conflicts: [{ family: 'IPv4', address: '192.0.2.77', service_ids: [42, 43, 44, 45], service_count: 4,
+        owners: [base(42, 'removed', null), base(43, 'changed', '192.0.2.88'), base(44, 'same', '192.0.2.77'), base(45, 'changed', attack, false)] }] };
+    const fixture = recoveryPanelFixture({ bootstrap: { readOnly: true, details }, details }); await fixture.navigate('network_conflicts');
+    const owner = id => fixture.nodes.get('network-conflicts-body').children[0].children[1].children.find(node => Number(node.dataset.serviceId) === id);
+    const evidence = id => owner(id).children[0].children.find(node => node.className === 'conflict-address-evidence');
+    assert(evidence(42).innerHTML.includes('192.0.2.77') && evidence(42).innerHTML.includes('Sin IP asignada'));
+    assert.equal(evidence(42).children[0].textContent, 'IP retirada en UISP');
+    assert(evidence(43).innerHTML.includes('192.0.2.88')); assert.equal(evidence(43).children[0].textContent, 'IP cambiada en UISP');
+    assert.equal(evidence(44).children[0].textContent, 'Coincide con la IP guardada');
+    assert.equal(evidence(45).children[0].textContent, 'IP actual sin comprobar', 'Unknown evidence must never be presented as removal or change');
+    assert(!evidence(45).innerHTML.includes('<img') && !evidence(45).innerHTML.includes(attack));
+    assert.match(evidence(45).lastElementChild.textContent, /sin comprobar no autoriza su limpieza/);
+    assert.equal(fixture.diagnostics().length, 0, 'Displaying current-address metadata must not initiate hidden CRM reads');
+    const clientOnly = plain(details);
+    Object.assign(clientOnly.conflicts[0].owners[0], { source: 'cache', saved_address: '192.0.2.77', current_address: null, current_address_known: false, address_comparison: 'unknown',
+        address_verified_at: null, address_evidence: { address: { known: false, value: null, reason: 'mapping_unknown' } }, client_source: 'crm', client_archived: true });
+    fixture.reply('list/network_conflicts', { status: 'ok', error: false, data: clientOnly, recovery: { readOnly: true } });
+    await owner(42).children[3].fire('click'); await flush();
+    assert.equal(evidence(42).children[0].textContent, 'IP retirada en UISP', 'Client-only verification must retain previously verified address evidence');
+    await fixture.navigate('system'); await fixture.navigate('network_conflicts');
+    assert.equal(evidence(42).children[0].textContent, 'IP retirada en UISP');
+    const token = 'b'.repeat(64);
+    fixture.reply('cleanup/network_conflicts', { status: 'ok', error: false, data: { previewToken: token, expiresAt: '2099-10-14T13:00:00Z', candidates: [{ service_id: 42, client_id: 242,
+        address: '192.0.2.77', address6: '2001:db8::42', reason: 'stale_address', fields: ['address'],
+        evidence: [{ field: 'address', saved_address: '192.0.2.77', current_address: null, state: 'removed' }], witness_service_ids: [43] }], blocked: [{ service_id: 45, reason: 'address_unknown' }] }, recovery: { readOnly: true } });
+    await owner(42).children[2].fire('click');
+    const candidate = fixture.nodes.get('network-cleanup-candidates').children[0];
+    assert(candidate, 'A verified stale_address candidate must be reviewable');
+    assert(candidate.children[1].innerHTML.includes('192.0.2.77'));
+    assert(!candidate.children[1].innerHTML.includes('2001:db8::42'), 'An unaffected IPv6 assignment must not be presented as selected for removal');
+    assert.match(candidate.children[1].children[0].textContent, /la ficha del servicio y las demás familias se conservarán/);
+    assert.equal(candidate.children[1].children[1].textContent, 'IP actual en UISP (IPv4): Sin IP asignada');
+    assert.equal(fixture.nodes.get('apply-network-cleanup').disabled, true); assert.equal(candidate.children[0].checked, false);
+    assert.match(fixture.nodes.get('network-cleanup-blocked').children[0].innerHTML, /No se pudo confirmar la IP actual/);
+    assert.equal(fixture.calls.filter(call => call.changeType === 'cleanup' && call.action === 'apply').length, 0, 'Current IP mismatch markers and review must never apply cleanup automatically');
+    const unknownService = plain(clientOnly); unknownService.conflicts[0].owners[0].source = 'crm';
+    fixture.reply('list/network_conflicts', { status: 'ok', error: false, data: unknownService, recovery: { readOnly: true } });
+    await owner(42).children[1].fire('click'); await flush();
+    assert.equal(evidence(42).children[0].textContent, 'IP actual sin comprobar', 'An explicit failed/unknown address comparison must replace an older mismatch proof');
 }
 
 async function checkNumericPlanEditors() {
@@ -2268,5 +2474,7 @@ async function checkLanguagePresentation() {
     await checkNetworkRecoveryPanel();
     await checkNetworkCleanupPanel();
     await checkNetworkClientArchivePanel();
+    await checkNavigationContinuity();
+    await checkCurrentAddressEvidence();
     console.log('Panel regression checks passed: recovery navigation, escaped owner/status diagnostics, same-origin CRM links, explicit single-service verification without blocking navigation, update/upload guards and diagnostic downloads; partial provisioning counts/diagnostics/persistence and full totals, API contracts, old HTML/API manual editors, saved global contention flags and drafts, legacy zero ratios, configuration keyboard drafts during pending saves/reloads, language changes preserving open modal/custom values/scroll and asynchronous settings drafts, stale language response rejection, legacy global language preservation, inactive control omission, configuration failure recovery, stable local editor visibility, deferred plan saves and failure drafts, burst templates and math, custom plans, legacy sentinels, drafts, one-click saves, nonblocking notifications, safe text, numeric types, overrides, TLS, backup routes and failure cleanup.');
 })().catch(error => { console.error(error); process.exitCode = 1; });

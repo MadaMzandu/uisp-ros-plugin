@@ -2,9 +2,21 @@
 
 [Español](MEJORAS.md) · [PR description](PR_DESCRIPTION.md) · [Webhook setup and rationale](WEBHOOK_SETUP_EN.md)
 
-This revision combines [dhanielsnieto's changes in PR #89](https://github.com/MadaMzandu/uisp-ros-plugin/pull/89) with the subsequent fixes prepared in this repository. The comparison starts at `7ca8dc8`; the original PR ends at `056b89f`. The current candidate is **2.4.23**. The operator confirmed archived-plan speed recovery in their 2.4.19 installation. That confirmation covers this historical scenario; the remaining UISP and RouterOS integration scenarios still require their own checks before production readiness can be established.
+This revision combines [dhanielsnieto's changes in PR #89](https://github.com/MadaMzandu/uisp-ros-plugin/pull/89) with the subsequent fixes prepared in this repository. The comparison starts at `7ca8dc8`; the original PR ends at `056b89f`. The current candidate is **2.4.24**. The operator confirmed archived-plan speed recovery in their 2.4.19 installation. That confirmation covers this historical scenario; the remaining UISP and RouterOS integration scenarios still require their own checks before production readiness can be established.
 
 The plugin connects UISP CRM to MikroTik through the **native RouterOS API**, normally on port `8728`, or `8729` with TLS. The panel manages that integration; it does not switch the transport to SSH, WinBox, or REST.
+
+## Candidate 2.4.24: retain navigation and compare current CRM addresses
+
+Reloading retains the open section and list position in the same tab. IP conflicts also uses a service ID as an anchor to return to the visible owner when row heights change. Restoration covers desktop and mobile scrolling, waits for rendered data, and rejects late responses from a different view. If IP conflicts is no longer available, the panel falls back to Devices. Session storage contains navigation only; verification facts, customer names, addresses, credentials, and cleanup authorization do not survive a reload.
+
+**Verify in UISP** now compares each family's saved address with the current service attribute, distinguishing matching, removed, changed, and unknown. An explicitly complete empty attributes list proves absence only after the configured attribute is uniquely validated against the current catalog. Omitted properties, invalid values, ambiguous mappings, and failed reads remain unknown. Reads remain explicit and bounded to three services, three clients, and one attribute catalog per request, with a soft 12-second budget for starting further reads. Verification does not write cache or reservations.
+
+**Review cleanup** also accepts a stale local address removed or changed in a service that still exists. It requires matching identity and a current peer still using the old address, then rechecks live evidence, configured mapping, and local snapshots before confirmation. It clears only the selected family and its legacy field, preserving the service and the other family. A private backup precedes the transaction; pending work, unresolved recovery, and recorded applied RouterOS ownership remain blockers. An empty CRM IP alone does not prove the router released it. The existing exact-HTTP-404 path retains its checks.
+
+During normal operation, an already reserved new IP is rejected while preparing its affected job; other services can continue automatic suspension/reactivation. Global consultation mode applies when the main plugin database already contains duplicates. This diagnostic does not continuously monitor every CRM attribute.
+
+**2.4.24 validation passed:** 32 isolated suites, syntax checks for 45 first-party PHP files, and installer verification covering 357 entries, 124 first-party files, and 13 locked dependencies. Report: `dist/verification-2.4.24.json`. SHA-256: `a9c899ec39a5d395cc322394ad263a587a704b7055bd5350ba342b0a73cd818e`. Browser checks covered retained section/position after desktop and mobile reload, current IP comparison, and review of a removed address with synthetic data. Cleanup retains job and applied-ownership protections; these checks do not modify production UISP or routers.
 
 ## Candidate 2.4.23: identify client archival independently
 
@@ -80,7 +92,7 @@ This revision's standalone warning is superseded by 2.4.21 view mode. Its report
 - Evidence of partially creating a suspension profile is preserved. Cleanup verifies an existing profile before changing accounts or sessions; mismatched frozen values remain an error. A missing profile is not recreated during cleanup, and an existing profile is not overwritten.
 - Connection handling is unchanged: each service batch opens and closes its own API connection; queries and cleanup can open additional connections. API login/logout messages alone do not mean PPP sessions were disconnected. No connection sharing between batches was introduced.
 
-The historical 2.4.17 validation passed 27 suites, checks for 39 first-party PHP files, and verification of a ZIP containing 351 entries, 118 first-party files, and 13 pinned dependencies. Its report and hash are retained later in this changelog; the validation status of current candidate 2.4.23 is recorded above.
+The historical 2.4.17 validation passed 27 suites, checks for 39 first-party PHP files, and verification of a ZIP containing 351 entries, 118 first-party files, and 13 pinned dependencies. Its report and hash are retained later in this changelog; the validation status of current candidate 2.4.24 is recorded above.
 
 ## Changes contributed in PR #89
 
@@ -307,7 +319,7 @@ Later production evidence identified missing tokens and a URL pasted as the secr
 
 ## Installation and validation readiness
 
-The current version is 2.4.23. Its validation status appears at the beginning of this changelog. Archived-plan recovery confirmation belongs to 2.4.19 and retains its historical scope. When duplicate IPs are reported, inspect all six views and review their owners. **Review cleanup** previews a selection of obsolete reservations and allows explicit confirmation of eligible entries with a private backup. Pending work, unresolved recovery, and an account's applied state block removal of its reservations. The generated backup remains downloadable from **System**, including after a reload. Resolve any remaining conflicts and reload to complete migration; other writes and provisioning stay paused until then. The [real-environment test guide](PRUEBAS_REALES.md) contains 85 scenarios for the remaining checks.
+The current version is 2.4.24. Its validation status appears at the beginning of this changelog. Archived-plan recovery confirmation belongs to 2.4.19 and retains its historical scope. When duplicate IPs are reported, inspect all six views and review their owners. **Review cleanup** previews a selection of obsolete reservations and allows explicit confirmation of eligible entries with a private backup. Pending work, unresolved recovery, and an account's applied state block removal of its reservations. The generated backup remains downloadable from **System**, including after a reload. Resolve any remaining conflicts and reload to complete migration; other writes and provisioning stay paused until then. The [real-environment test guide](PRUEBAS_REALES.md) contains 93 scenarios for the remaining checks.
 
 ### Historical 2.4.17 result
 
