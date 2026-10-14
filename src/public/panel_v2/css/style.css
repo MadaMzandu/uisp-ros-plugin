@@ -176,6 +176,17 @@ th.sortable:hover, th.sortable.asc, th.sortable.desc { color: var(--link); }
 .network-warning p { font-size: 0.77rem; line-height: 1.5; }
 .network-warning .btn { flex-shrink: 0; background: transparent; color: var(--warning-text); border-color: var(--warning-border); }
 .crm-network-warning small { display: block; margin-top: 5px; font-size: 0.7rem; line-height: 1.5; }
+.jobs-warning small { display: block; margin-top: 5px; font-size: 0.7rem; line-height: 1.5; }
+.invalid-reservations-pane { margin-bottom: 28px; }
+.repair-list { display: grid; gap: 10px; }
+.repair-list-item { padding: 13px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-subtle); }
+.repair-family { display: flex; align-items: start; justify-content: space-between; gap: 12px; margin-top: 10px; }
+.repair-family .btn { flex-shrink: 0; }
+.repair-address-values { min-width: 0; overflow-wrap: anywhere; }
+.repair-address-values span { display: block; color: var(--text-muted); font-size: 0.7rem; margin: 5px 0; }
+.repair-address-values strong { display: block; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 0.8rem; overflow-wrap: anywhere; }
+.repair-comparison { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; padding: 10px 0; }
+.job-repair-button { display: block; margin-top: 8px; font-size: 0.75rem; }
 .crm-conflicts-pane { margin-bottom: 24px; }
 .stored-conflicts-pane { padding-top: 20px; border-top: 1px solid var(--border); }
 .crm-monitor-status { margin-bottom: 7px; font-size: 0.8rem; line-height: 1.5; }
@@ -433,6 +444,8 @@ details.config-section[open] > summary.config-section-header::after { content: '
     .utility-card p { overflow-wrap: anywhere; }
     .backups-grid { grid-template-columns: minmax(0, 1fr); }
     .network-warning { flex-wrap: wrap; }
+    .repair-family { flex-direction: column; }
+    .repair-comparison { grid-template-columns: 1fr; }
     .network-warning .btn { margin-left: 30px; }
     .conflicts-table .conflict-address { width: 110px; }
     .conflicts-table td, .conflicts-table th { padding-left: 10px; padding-right: 10px; }

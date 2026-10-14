@@ -1,1 +1,1 @@
-Modernize the panel and resolve CRM IP conflicts with clear, verifiable outcomes
+Modernize the panel, repair local IP reservations safely, and expose pending jobs

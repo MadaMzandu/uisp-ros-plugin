@@ -396,6 +396,51 @@ PHP
             && ($invalidMonitor['response']['message'] ?? null)==='invalid_crm_monitor_request'
             && recoveryDiskSnapshot()===$before, 'A monitor poll accepted a request to trigger CRM reads');
 
+        // Read-only counts and malformed-reservation inventory bypass setup while
+        // retaining administrative authentication and same-origin checks.
+        $jobStatusRequest = ['changeType'=>'list','target'=>'jobs_status','action'=>'list','data'=>new stdClass()];
+        $repairListRequest = ['changeType'=>'list','target'=>'network_repair','action'=>'list','data'=>new stdClass()];
+        foreach ([$jobStatusRequest,$repairListRequest] as $localRequest) {
+            foreach ([[],['Origin'=>'https://other-fixture.invalid','X-Fixture-Admin'=>'read']] as $headers) {
+                $rejected = $request($localRequest,$headers);
+                checkMigrationConflict($rejected['http']===403 && ($rejected['response']['data'] ?? null)===[],
+                    'Local queue/repair inventory bypassed admin or same-origin boundary');
+            }
+            $listed = $request($localRequest,$reader);
+            checkMigrationConflict($listed['http']===200 && ($listed['response']['error'] ?? true)===false
+                && !isset($listed['response']['recovery']), 'Local queue/repair inventory incorrectly initialized migration');
+            if ($localRequest['target']==='jobs_status') checkMigrationConflict(
+                ($listed['response']['data']['available'] ?? false)===true && ($listed['response']['data']['pending'] ?? null)===1,
+                'Read-only queue status missed the stored legacy pending job');
+            else checkMigrationConflict(($listed['response']['data']['total'] ?? null)===2
+                && array_column($listed['response']['data']['rows'] ?? [],'service_id')===[21,22],
+                'Repair inventory lost malformed entries or treated valid duplicated addresses as malformed');
+        }
+        $repairPreviewRequest = ['changeType'=>'repair','target'=>'network_repair','action'=>'preview',
+            'data'=>['selection'=>[['serviceId'=>7,'fields'=>['address']]]]];
+        $repairApplyRequest = ['changeType'=>'repair','target'=>'network_repair','action'=>'apply',
+            'data'=>['previewToken'=>str_repeat('a',64)]];
+        foreach ([$repairPreviewRequest,$repairApplyRequest] as $repairRequest) {
+            foreach ([$reader,[],['Origin'=>'https://other-fixture.invalid','X-Fixture-Admin'=>'edit']] as $headers) {
+                $rejected = $request($repairRequest,$headers);
+                checkMigrationConflict($rejected['http']===403 && ($rejected['response']['data'] ?? null)===[],
+                    'Reservation repair bypassed edit grant or origin');
+            }
+        }
+        foreach ([
+            ['changeType'=>'list','target'=>'jobs_status','action'=>'list','data'=>['refresh'=>true]],
+            ['changeType'=>'list','target'=>'jobs_status','entity'=>'clients','data'=>new stdClass()],
+            ['changeType'=>'list','target'=>'network_repair','data'=>['refresh'=>true]],
+            ['changeType'=>'repair','target'=>'network_repair','action'=>'preview','data'=>['selection'=>[['serviceId'=>'7','fields'=>['address']]]]],
+            ['changeType'=>'repair','target'=>'network_repair','action'=>'apply','data'=>['previewToken'=>str_repeat('a',64),'selection'=>[]]],
+        ] as $invalidRequest) {
+            $rejected = $request($invalidRequest,$admin);
+            checkMigrationConflict($rejected['http']===400 && ($rejected['response']['error'] ?? false)===true,
+                'Local repair/status endpoint accepted malformed data or CRM-read controls');
+        }
+        checkMigrationConflict(!is_file($directory . '/sdk-reads.jsonl') && recoveryDiskSnapshot()===$before,
+            'Local queue/repair reads initialized a queue, read CRM, migrated or modified stored recovery data');
+
         // Correction endpoints keep their edit/origin boundary before recovery
         // setup. Invalid selections and reviews must not initialize state or
         // call CRM merely because a local migration is currently blocked.

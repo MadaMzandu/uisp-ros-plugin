@@ -305,7 +305,7 @@ function jobsRefreshFixture(storage = new Map(), blockedStorage = false) {
         queueReply(reply) { jobReplies.push(typeof reply === 'function' ? reply : () => reply); },
         setState(value) { state = value; }, setUpdateReply(reply) { updateReply = reply; },
         listCalls() { return calls.filter(call => call.target === 'jobs' && call.changeType === 'list').length; },
-        autoTimers() { return [...clock.values()].filter(timer => [5000, 10000, 30000, 60000].includes(timer.delay) && timer.callback.name !== 'pollCrmMonitor'); },
+        autoTimers() { return [...clock.values()].filter(timer => [5000, 10000, 30000, 60000].includes(timer.delay) && !['pollCrmMonitor', 'pollJobsStatus'].includes(timer.callback.name)); },
         async hidden(value) { localDocument.hidden = value; for (const listener of events.get('visibilitychange') || []) listener(); await flush(); },
         async page(type) { for (const listener of windowEvents.get(type) || []) listener(); await flush(); },
         async tick(milliseconds) {
@@ -892,6 +892,140 @@ async function checkNonblockingDeviceSync() {
     await olderRead;
     assert.equal(row(1), latestRow, 'A late inventory response cannot overwrite the newer device refresh');
     assert.equal(rows().length, 1);
+}
+
+async function checkPendingJobsIndicator() {
+    const envelope = data => ({ status: 'ok', error: false, data });
+    const summary = (extra = {}) => ({ available: true, pending: 2, failed: 1, running: 1, recovery: 1,
+        total: 4, checked_at: '2026-10-14T13:00:00Z', source: 'sqlite', reason: null, ...extra });
+    const fixture = recoveryPanelFixture({ initialReplies: new Map([['list/jobs_status', envelope(summary())]]) }); await flush();
+    const calls = () => fixture.calls.filter(call => call.target === 'jobs_status');
+    assert.equal(calls().length, 1);
+    assert.deepEqual(plain(calls()[0]), { changeType: 'list', target: 'jobs_status', action: 'list', data: {} });
+    assert.equal(fixture.nodes.get('jobs-pending-warning').style.display, 'flex');
+    assert.equal(fixture.nodes.get('jobs-pending-count').textContent, '4');
+    assert.equal(fixture.nodes.get('jobs-pending-title').textContent, 'Trabajos pendientes: 3');
+    assert.match(fixture.nodes.get('jobs-pending-note').textContent, /2 pendientes.*1 con error.*1 en ejecución.*1 en recuperación/);
+    assert.equal(fixture.calls.filter(call => call.target === 'jobs').length, 0, 'A global queue indicator must use the local status route without initializing the queue list');
+    assert.equal(fixture.nodes.get('save-device-btn').disabled, false);
+    const notices = fixture.nodes.get('notifications').children.length;
+    fixture.reply('list/jobs_status', { status: 'failed', error: true, message: attack }); await fixture.tick(30000);
+    assert.equal(fixture.nodes.get('jobs-pending-count').textContent, '4');
+    assert.match(fixture.nodes.get('jobs-pending-freshness').textContent, /desactualizado/);
+    assert.equal(fixture.nodes.get('notifications').children.length, notices, 'Failed status polls must use inline stale feedback without popup spam');
+    for (const invalid of [summary({ total: 0 }), summary({ pending: 0, failed: 1, total: 2 }), summary({ checked_at: attack }),
+        { available: false, pending: null, running: null, failed: null, recovery: null, total: null, checked_at: null, source: null, reason: 'unavailable' }]) {
+        fixture.reply('list/jobs_status', envelope(invalid)); await fixture.tick(30000);
+        assert.equal(fixture.nodes.get('jobs-pending-count').textContent, '4', 'Malformed/unavailable status must retain the last known queue counts');
+    }
+    fixture.reply('list/jobs_status', envelope(summary({ pending: 0, failed: 0, running: 0, recovery: 0, total: 0, checked_at: '2026-10-14T13:01:00Z' })));
+    await fixture.tick(30000);
+    assert.equal(fixture.nodes.get('jobs-pending-warning').style.display, 'none'); assert.equal(fixture.nodes.get('jobs-pending-count').style.display, 'none');
+    await fixture.hidden(true); const hiddenCalls = calls().length; await fixture.tick(60000); assert.equal(calls().length, hiddenCalls);
+    await fixture.hidden(false); assert.equal(calls().length, hiddenCalls + 1);
+    const slow = deferred(); fixture.reply('list/jobs_status', () => slow.promise); await fixture.tick(30000);
+    const started = calls().length;
+    await fixture.hidden(true); await fixture.hidden(false); await fixture.tick(60000);
+    assert.equal(calls().length, started, 'Slow status reads and visibility resumes must never overlap requests');
+    fixture.reply('list/jobs_status', envelope(summary({ pending: 0, failed: 0, running: 0, recovery: 0, total: 0, checked_at: '2026-10-14T13:02:00Z' })));
+    slow.resolve(envelope(summary({ checked_at: '2026-10-14T13:03:00Z' }))); await flush();
+    assert.equal(fixture.nodes.get('jobs-pending-warning').style.display, 'none', 'A read from before visibility changed must not resurrect stale pending jobs');
+    const read = deferred(); fixture.reply('list/jobs_status', () => read.promise); await fixture.tick(30000);
+    const write = deferred(); fixture.reply('update/config', () => write.promise);
+    const saving = fixture.api.saveConfig({ fixture: true }); await flush();
+    const duringWrite = calls().length;
+    read.resolve(envelope(summary({ checked_at: '2026-10-14T13:05:00Z' }))); await flush(); await fixture.tick(60000);
+    assert.equal(calls().length, duringWrite, 'Status reads must pause during writes and ignore reads that predate the mutation');
+    fixture.reply('list/jobs_status', envelope(summary({ pending: 0, failed: 0, running: 0, recovery: 0, total: 0, checked_at: '2026-10-14T13:04:00Z' })));
+    write.resolve(envelope({})); await saving; await flush();
+    assert.equal(calls().length, duringWrite + 1); assert.equal(fixture.nodes.get('jobs-pending-warning').style.display, 'none');
+    await fixture.event('pagehide'); const stopped = calls().length; await fixture.tick(60000); assert.equal(calls().length, stopped);
+    await fixture.event('pageshow'); assert.equal(calls().length, stopped + 1);
+    fixture.reply('list/jobs_status', envelope(summary({ checked_at: '2026-10-14T13:06:00Z' }))); await fixture.tick(30000);
+    await fixture.nodes.get('btn-view-pending-jobs').fire('click'); await flush();
+    assert.equal(fixture.nodes.get('view-jobs').style.display, 'block', 'The global review action must open Jobs');
+    const unavailable = recoveryPanelFixture({ bootstrap: { readOnly: true, details: { duplicate_groups: 0, conflicts: [] } }, details: { duplicate_groups: 0, conflicts: [] },
+        initialReplies: new Map([['list/jobs_status', envelope({ available: false })]]) }); await flush();
+    assert.equal(unavailable.nodes.get('jobs-pending-count').textContent, '?');
+    assert.equal(unavailable.nodes.get('jobs-pending-title').textContent, 'No se pudo comprobar el estado de los trabajos.');
+    assert.equal(unavailable.calls.filter(call => call.target === 'jobs_status').length, 1, 'Recovery mode must keep the read-only status route available');
+}
+
+async function checkInvalidReservationRepairPanel() {
+    const envelope = data => ({ status: 'ok', error: false, data });
+    const bad = { source: 'network', value: attack };
+    const listing = { rows: [{ service_id: 42, client_id: 17, status: 1, fields: [{ field: 'address', family: 'IPv4', sources: [bad] }] }],
+        total: 1, truncated: false, checked_at: '2026-10-14T13:00:00Z' };
+    const token = 'd'.repeat(64);
+    const candidate = { service_id: 42, client_id: 17, status: 1, pending_jobs: 1,
+        fields: [{ field: 'address', family: 'IPv4', saved: [bad], current_address: '192.0.2.42', action: 'replace', reason: 'crm_address' }] };
+    const preview = { previewToken: token, expiresAt: '2099-10-14T13:00:00Z', candidates: [candidate], blocked: [], api_requests: 4 };
+    const backup = 'network-cleanup-20261014T130000Z-' + 'd'.repeat(32) + '.sqlite';
+    const fixture = recoveryPanelFixture({ initialReplies: new Map([['list/network_repair', envelope(listing)], ['repair/network_repair', envelope(preview)]]) }); await flush();
+    assert.equal(fixture.calls.filter(call => call.target === 'network_repair').length, 0, 'Panel boot must not perform hidden local repair inventory or CRM comparisons');
+    await fixture.navigate('network_conflicts');
+    const item = fixture.nodes.get('invalid-reservations-list').children[0];
+    assert.equal(item.children[0].children[0].href, 'https://fixture.invalid/crm/client/service/42');
+    assert.equal(item.children[0].children[1].href, 'https://fixture.invalid/crm/client/17');
+    assert(item.children[1].children[0].innerHTML.includes('&lt;img') && !renderedMarkup(item).includes('<img'), 'Malformed reservations must be escaped, never executed');
+    assert.equal(fixture.calls.filter(call => call.changeType === 'repair').length, 0);
+    await item.children[1].children[1].fire('click');
+    assert.deepEqual(plain(fixture.calls.filter(call => call.changeType === 'repair').at(-1)), { changeType: 'repair', target: 'network_repair', action: 'preview', data: { selection: [{ serviceId: 42, fields: ['address'] }] } });
+    assert.equal(fixture.nodes.get('network-repair-modal').style.display, 'flex'); assert.equal(fixture.nodes.get('apply-network-repair').disabled, false);
+    assert.equal(fixture.nodes.get('network-repair-title').textContent, 'Corregir reserva inválida');
+    assert.equal(fixture.nodes.get('network-repair-comparison').style.display, 'grid');
+    assert(!renderedMarkup(fixture.nodes.get('network-repair-comparison')).includes('<img'));
+    assert.match(fixture.nodes.get('network-repair-comparison').children[0].children[2].textContent, /No se sincronizará el router ni se ejecutarán trabajos/);
+    assert.match(fixture.nodes.get('network-repair-comparison').children[0].children[3].textContent, /1 trabajo pendiente\. La corrección no lo ejecutará/);
+    const confirm = async yes => {
+        const dialog = fixture.document.body.children.find(node => node.className === 'confirm-overlay');
+        assert(dialog); await dialog.children[0].children[1].children[yes ? 1 : 0].fire('click');
+    };
+    const cancel = fixture.nodes.get('apply-network-repair').fire('click'); await flush(); await confirm(false); await cancel;
+    assert.equal(fixture.calls.filter(call => call.action === 'apply' && call.target === 'network_repair').length, 0, 'Cancelling final repair confirmation must preserve all data');
+    fixture.reply('repair/network_repair', payload => payload.action === 'preview' ? envelope(preview) : envelope({ repaired: [{ service_id: 42,
+        fields: [{ field: 'address', family: 'IPv4', action: 'replace', current_address: '192.0.2.42' }] }], backup_name: backup,
+        requires_reload: true, checked_at: '2026-10-14T13:01:00Z', jobs_preserved: true, requires_sync: false }));
+    fixture.reply('list/network_repair', envelope({ ...listing, rows: [], total: 0 }));
+    const apply = fixture.nodes.get('apply-network-repair').fire('click'); await flush(); await confirm(true); await apply;
+    const applies = fixture.calls.filter(call => call.action === 'apply' && call.target === 'network_repair');
+    assert.deepEqual(plain(applies[0]), { changeType: 'repair', target: 'network_repair', action: 'apply', data: { previewToken: token } });
+    assert.equal(fixture.nodes.get('network-repair-result').children[0].textContent, 'Reserva local corregida');
+    assert.equal(fixture.nodes.get('network-repair-title').textContent, 'Resultado de la corrección');
+    assert.equal(fixture.nodes.get('network-repair-comparison').style.display, 'none');
+    assert.equal(fixture.nodes.get('network-repair-comparison').children.length, 0, 'Confirmed repair must discard the old pending comparison and future-tense proposal');
+    assert(fixture.nodes.get('network-repair-result').children[2].innerHTML.includes('192.0.2.42'));
+    assert(fixture.nodes.get('network-repair-result').children[2].innerHTML.includes('Reserva local antes de la corrección')
+        && fixture.nodes.get('network-repair-result').children[2].innerHTML.includes('&lt;img')
+        && !fixture.nodes.get('network-repair-result').children[2].innerHTML.includes('<img'), 'Old malformed values belong only in an explicitly before-labelled escaped receipt');
+    assert.equal(fixture.nodes.get('network-repair-result').children[3].href, 'https://fixture.invalid/crm/_plugins/ros-plugin/public.php?download=' + backup);
+    assert.equal(fixture.nodes.get('invalid-reservations-list').children.length, 0, 'Successful repair must refresh the local inventory');
+    assert.equal(fixture.nodes.get('apply-network-repair').style.display, 'none');
+    await fixture.nodes.get('apply-network-repair').fire('click'); assert.equal(fixture.calls.filter(call => call.action === 'apply' && call.target === 'network_repair').length, 1, 'A completed token must not be replayed');
+    assert.equal(fixture.nodes.get('reload-after-repair').style.display, 'inline-flex');
+    assert.equal(fixture.calls.filter(call => call.changeType === 'update').length, 0, 'Repair result must never execute jobs, synchronize or change the CRM');
+    await fixture.nodes.get('reload-after-repair').fire('click'); assert.equal(fixture.reloads(), 1);
+    const jobFixture = recoveryPanelFixture({ initialReplies: new Map([['list/jobs', envelope({ Q1: { serviceId: 43, state: 'pending', error: 'invalid_network_address: requested_service=43 blocking_service=42 source=reserved family=IPv4' } })],
+        ['repair/network_repair', envelope({ previewToken: null, expiresAt: '2099-10-14T13:00:00Z', candidates: [], blocked: [{ service_id: 42, reason: 'applied_ownership' }], api_requests: 3 })]]) }); await flush(); await jobFixture.navigate('jobs');
+    const job = jobFixture.tables.get('#jobs-table tbody').children[0];
+    assert.equal(job.querySelector('.job-description').children[0].textContent, 'Revisar reserva del servicio #42');
+    await job.querySelector('.job-description').children[0].fire('click');
+    assert.equal(jobFixture.nodes.get('apply-network-repair').disabled, true);
+    assert.match(jobFixture.nodes.get('network-repair-comparison').children[0].innerHTML, /aplicados en un router/);
+    jobFixture.reply('repair/network_repair', envelope({ ...preview, candidates: [{ ...candidate, status: 2, pending_jobs: 0,
+        fields: [{ ...candidate.fields[0], current_address: null, action: 'clear', reason: 'crm_no_address' }] }] }));
+    await jobFixture.nodes.get('recheck-network-repair').fire('click');
+    assert.equal(jobFixture.nodes.get('apply-network-repair').disabled, false);
+    assert.match(jobFixture.nodes.get('network-repair-comparison').children[0].children[2].textContent, /no tiene IP asignada.*Sólo se retirará la reserva local inválida/);
+    jobFixture.reply('repair/network_repair', { status: 'failed', error: true, message: 'repair_verification_failed' });
+    const uncertain = jobFixture.nodes.get('apply-network-repair').fire('click'); await flush();
+    const dialog = jobFixture.document.body.children.find(node => node.className === 'confirm-overlay'); await dialog.children[0].children[1].children[1].fire('click'); await uncertain;
+    assert.equal(jobFixture.nodes.get('apply-network-repair').disabled, true, 'A failed/uncertain apply must consume the local token and require a new comparison');
+    assert.match(jobFixture.nodes.get('network-repair-status').textContent, /No se confirmó.*Compara nuevamente/);
+    const invalidJobFixture = recoveryPanelFixture({ initialReplies: new Map([['list/jobs', envelope({ Q1: { serviceId: 43, error: 'invalid_network_address: requested_service=99 blocking_service=42 source=reserved family=IPv4' },
+        Q2: { serviceId: 43, error: 'invalid_network_address: requested_service=43 blocking_service=42 source=applied family=IPv4' },
+        Q3: { serviceId: 43, error: 'invalid_network_address: requested_service=43 blocking_service=42 source=reserved family=IPv4' + attack } })]]) }); await flush(); await invalidJobFixture.navigate('jobs');
+    assert(invalidJobFixture.tables.get('#jobs-table tbody').children.every(row => row.querySelector('.job-description').children.length === 0), 'Only a strict reserved diagnostic matching the requested service may offer local repair');
 }
 
 async function checkCrmNetworkMonitorPanel() {
@@ -1811,8 +1945,8 @@ async function checkNetworkRecoveryPanel() {
     assert.deepEqual(plain(healthy.diagnostics()[0].data), {}, 'Reactive recovery reads must not request live CRM verification');
     const malformed = recoveryPanelFixture({ bootstrap: '{', details }); await flush();
     assert.equal(malformed.nodes.get('btn-cache').disabled, false, 'An invalid optional bootstrap must not break normal navigation');
-    assert.equal((markup.match(/(?:src|href)="(?:js|css)\/[^"?]+\?v=2\.0\.43"/g) || []).length, 5, 'Every panel asset must use the new revision to invalidate UISP browser caches');
-    assert(!markup.includes('v=2.0.42'));
+    assert.equal((markup.match(/(?:src|href)="(?:js|css)\/[^"?]+\?v=2\.0\.44"/g) || []).length, 5, 'Every panel asset must use the new revision to invalidate UISP browser caches');
+    assert(!markup.includes('v=2.0.43'));
     assert(apiSource.includes("'alert-triangle':"), 'The conflict warning must have its own local warning icon');
 }
 
@@ -1864,12 +1998,12 @@ async function checkNetworkCleanupPanel() {
     fixture.reply('cleanup/network_conflicts', payload => ({ status: 'ok', error: false, data: {
         removed_service_ids: [42], backup_name: backupName, duplicate_groups: 0, requires_reload: true
     }, recovery: { readOnly: true } }));
-    const readsBeforeApply = fixture.calls.filter(call => call.changeType === 'list').length;
+    const readsBeforeApply = fixture.calls.filter(call => call.changeType === 'list' && call.target !== 'jobs_status').length;
     const applying = fixture.nodes.get('apply-network-cleanup').fire('click'); await flush();
     confirmation = fixture.document.body.children.find(node => node.className === 'confirm-overlay');
     await confirmation.children[0].children[1].children[1].fire('click'); await applying;
-    assert.deepEqual(plain(fixture.calls.at(-1)), { changeType: 'cleanup', target: 'network_conflicts', action: 'apply', data: { previewToken: token, serviceIds: [42] } });
-    assert.equal(fixture.calls.filter(call => call.changeType === 'list').length, readsBeforeApply, 'Cleanup must not automatically issue setup/list/synchronization requests');
+    assert.deepEqual(plain(fixture.calls.filter(call => call.target !== 'jobs_status').at(-1)), { changeType: 'cleanup', target: 'network_conflicts', action: 'apply', data: { previewToken: token, serviceIds: [42] } });
+    assert.equal(fixture.calls.filter(call => call.changeType === 'list' && call.target !== 'jobs_status').length, readsBeforeApply, 'Cleanup must not automatically issue setup/list/synchronization requests; the read-only queue summary remains independent');
     assert.equal(fixture.writes().length, 0, 'Cleanup must leave all ordinary update and upload operations paused');
     assert.equal(fixture.nodes.get('network-conflicts-count').textContent, '0', 'Zero remaining conflicts must be shown without falling back to an old table count');
     assert.equal(fixture.nodes.get('network-cleanup-result').children[0].textContent, 'Se retiraron las asignaciones de 1 servicios. Quedan 0 conflictos de IP.');
@@ -2097,7 +2231,7 @@ async function checkNavigationContinuity() {
         const invalidStorage = new Map([[key, invalid]]);
         const fixture = recoveryPanelFixture({ storage: invalidStorage, details }); await flush();
         assert.equal(fixture.nodes.get('view-devices').style.display, 'block');
-        assert.deepEqual(fixture.calls.map(call => call.target), ['crm_network_conflicts', 'devices'], 'Invalid navigation state allows only the local monitor status and default section reads');
+        assert.deepEqual(fixture.calls.map(call => call.target), ['crm_network_conflicts', 'jobs_status', 'devices'], 'Invalid navigation state allows only the local monitor and queue status and default section reads');
     }
     const blocked = recoveryPanelFixture({ storageBlocked: true, details }); await flush(); await blocked.navigate('system');
     assert.equal(blocked.nodes.get('view-system').style.display, 'block');
@@ -3006,7 +3140,7 @@ async function checkLanguagePresentation() {
     tables.get('#jobs-table tbody').children[0].querySelector('.job-checkbox').checked = true;
     const jobRunRequests = requests.length;
     await elements.get('btn-run-jobs').fire('click');
-    assert.deepEqual(requests.slice(jobRunRequests).map(request => request.payload.target + '/' + request.payload.action), ['jobs/run', 'jobs/list'],
+    assert.deepEqual(requests.slice(jobRunRequests).filter(request => request.payload.target !== 'jobs_status').map(request => request.payload.target + '/' + request.payload.action), ['jobs/run', 'jobs/list'],
         'A failed run must fetch the updated queue instead of throwing before its refresh');
     const failedJobMarkup = tables.get('#jobs-table tbody').children[0].innerHTML;
     assert(failedJobMarkup.includes('Router fixture failed &quot;&gt;&lt;img') && !failedJobMarkup.includes('<img'),
@@ -3048,7 +3182,7 @@ async function checkLanguagePresentation() {
     assert(deleteJobConfirmation);
     await deleteJobConfirmation.children[0].children[1].children[1].fire('click');
     await deletingJob;
-    assert.deepEqual(requests.slice(deleteJobRequests).map(request => request.payload.target + '/' + request.payload.action), ['jobs/delete', 'jobs/list']);
+    assert.deepEqual(requests.slice(deleteJobRequests).filter(request => request.payload.target !== 'jobs_status').map(request => request.payload.target + '/' + request.payload.action), ['jobs/delete', 'jobs/list']);
     const deleteJobMarkup = tables.get('#jobs-table tbody').children[0].innerHTML;
     assert(deleteJobMarkup.includes('delete fixture retained job') && deleteJobMarkup.includes('Intentos: 5')
         && deleteJobMarkup.includes('En ejecución'), 'A failed deletion left stale queue details visible');
@@ -3095,7 +3229,7 @@ async function checkLanguagePresentation() {
             await confirmation.children[0].children[1].children[1].fire('click');
         }
         await running;
-        assert.deepEqual(requests.slice(requestStart).map(request => request.payload.target + '/' + request.payload.action),
+        assert.deepEqual(requests.slice(requestStart).filter(request => request.payload.target !== 'jobs_status').map(request => request.payload.target + '/' + request.payload.action),
             ['jobs/' + action, 'jobs/list'], 'Every failed/partial operation must refresh job diagnostics');
         assert.deepEqual(requests[requestStart].payload, { changeType: 'update', target: 'jobs', action, data: ids },
             'UI must send only selected IDs; same-service prerequisite selection belongs to the backend');
@@ -3350,6 +3484,8 @@ async function checkLanguagePresentation() {
     await checkNumericPlanEditors();
     await checkJobsRefresh();
     await checkNonblockingDeviceSync();
+    await checkPendingJobsIndicator();
+    await checkInvalidReservationRepairPanel();
     await checkCrmNetworkMonitorPanel();
     await checkCrmNetworkResolutionPanel();
     await checkCrmHistoricalResolutionPanel();

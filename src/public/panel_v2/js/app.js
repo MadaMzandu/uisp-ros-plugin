@@ -11,6 +11,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const orphanModal = byId('orphan-modal');
     const cleanupModal = byId('network-cleanup-modal');
     const crmEditModal = byId('crm-ip-edit-modal');
+    const repairModal = byId('network-repair-modal');
     let notificationRegion = byId('notifications');
     let currentView = 'devices';
     let devicesCache = [];
@@ -34,6 +35,14 @@ document.addEventListener('DOMContentLoaded', () => {
     let jobsRefreshOnResume = false;
     let jobsLastUpdated = null;
     let jobsRefreshFailed = false;
+    let jobsStatus = null;
+    let jobsStatusFailure = false;
+    let jobsStatusInFlight = null;
+    let jobsStatusTimer;
+    let jobsStatusStopped = false;
+    let jobsStatusEpoch = 0;
+    let jobsStatusRefreshRequested = false;
+    let jobsStatusMutations = 0;
     let planContentionDisabled = null;
     let configCache = {};
     let configDraft = {};
@@ -76,6 +85,14 @@ document.addEventListener('DOMContentLoaded', () => {
     let crmEditOutcome = null;
     let crmEditBusy = false;
     let crmEditGeneration = 0;
+    let repairReport = null;
+    let repairListInFlight = null;
+    let repairListFailure = false;
+    let repairTarget = null;
+    let repairPreview = null;
+    let repairBusy = false;
+    let repairGeneration = 0;
+    let repairRequiresReload = false;
     const navigationViews = new Set(['devices', 'plans', 'config', 'jobs', 'system', 'network_conflicts']);
     const navigationVersion = 1;
     const navigationScopeUrl = new URL(api.endpoint || window.location.href, window.location.href);
@@ -1350,6 +1367,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function renderNetworkConflicts() {
         renderCrmMonitor();
+        await refreshInvalidReservations();
         if (!crmMonitorReport) await refreshCrmMonitor();
         if (recoveryReadOnly && !recoveryDetails) {
             const response = checked(await api.getNetworkConflicts());
@@ -1357,6 +1375,204 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         if (recoveryReadOnly) renderNetworkConflictsTable();
     }
+
+    const repairFields = { address: 'IPv4', address6: 'IPv6' };
+    function repairServiceStatus(value) {
+        return t(Number.isInteger(value) ? ['Preparado', 'Activo', 'Terminado', 'Suspendido', 'Preparado bloqueado', 'Obsoleto', 'Diferido', 'Cotizado', 'Inactivo'][value] || 'Sin comprobar' : 'Sin comprobar');
+    }
+    function repairValues(values) {
+        return Array.isArray(values) && values.length > 0 && values.length <= 2
+            && values.every(entry => entry && ['network', 'legacy'].includes(entry.source) && typeof entry.value === 'string');
+    }
+    function repairValueMarkup(values) {
+        return values.map(entry => `<div><span>${html(t(entry.source === 'network' ? 'Reserva local' : 'Reserva heredada'))}</span><strong>${html(entry.value.slice(0, 256))}${entry.value.length > 256 ? '…' : ''}</strong></div>`).join('');
+    }
+    function renderInvalidReservations() {
+        const list = byId('invalid-reservations-list');
+        if (!list) return;
+        list.replaceChildren();
+        for (const row of repairReport?.rows || []) {
+            const item = document.createElement('article'); item.className = 'repair-list-item';
+            const identity = document.createElement('div'); identity.className = 'conflict-owner-meta';
+            identity.appendChild(conflictLink(t('Servicio #{id}', { id: row.service_id }), '/crm/client/service/' + row.service_id, 'service'));
+            if (Number.isSafeInteger(row.client_id) && row.client_id > 0) identity.appendChild(conflictLink(t('Cliente #{id}', { id: row.client_id }), '/crm/client/' + row.client_id, 'client'));
+            const state = document.createElement('span'); state.className = 'badge badge-neutral'; translatedText(state, 'Servicio: {state}', { state: repairServiceStatus(row.status) }); identity.appendChild(state);
+            item.appendChild(identity);
+            for (const field of row.fields) {
+                const family = document.createElement('div'); family.className = 'repair-family';
+                const copy = document.createElement('div'); copy.className = 'repair-address-values';
+                copy.innerHTML = `<strong>${html(field.family)}</strong>${repairValueMarkup(field.sources)}`;
+                const review = document.createElement('button'); review.type = 'button'; review.className = 'btn btn-secondary';
+                translatedText(review, 'Comparar con UISP'); review.disabled = repairBusy || repairRequiresReload;
+                review.addEventListener('click', () => previewNetworkRepair(row.service_id, field.field));
+                family.append(copy, review); item.appendChild(family);
+            }
+            list.appendChild(item);
+        }
+        const count = repairReport?.total;
+        translatedText(byId('invalid-reservations-status'), repairRequiresReload ? 'Recarga el panel para comprobar las reservas y continuar con el estado actualizado.' : repairListInFlight ? 'Buscando reservas locales inválidas...'
+            : repairListFailure ? repairReport ? 'No se pudo actualizar la lista. Se conserva la última consulta de reservas inválidas.' : 'No se pudo consultar la lista de reservas inválidas.'
+            : !repairReport ? 'Sin actualizar.' : repairReport?.truncated ? 'Se muestran {shown} de {count} servicios con reservas inválidas.'
+            : count > 0 ? 'Servicios con reservas inválidas: {count}. La comparación con UISP requiere una revisión explícita.' : 'No se encontraron reservas locales inválidas.',
+            { count: count ?? 0, shown: repairReport?.rows.length ?? 0 });
+        byId('refresh-invalid-reservations').disabled = repairListInFlight !== null || repairBusy;
+        byId('reload-after-reservation-list-repair').style.display = repairRequiresReload ? 'inline-flex' : 'none';
+    }
+    function refreshInvalidReservations() {
+        if (!byId('invalid-reservations-list') || typeof api.getInvalidNetworkReservations !== 'function') return Promise.resolve();
+        if (repairListInFlight) return repairListInFlight;
+        const work = (async () => {
+            try {
+                const data = checked(await api.getInvalidNetworkReservations()).data;
+                if (!data || !Array.isArray(data.rows) || data.rows.length > 100 || !Number.isSafeInteger(data.total) || data.total < data.rows.length
+                    || data.truncated !== (data.total > data.rows.length) || !monitorDate(data.checked_at)
+                    || new Set(data.rows.map(row => row?.service_id)).size !== data.rows.length
+                    || data.rows.some(row => !row || !Number.isSafeInteger(row.service_id) || row.service_id < 1 || !Array.isArray(row.fields) || !row.fields.length || row.fields.length > 2
+                        || new Set(row.fields.map(field => field?.field)).size !== row.fields.length
+                        || row.fields.some(field => !field || !Object.prototype.hasOwnProperty.call(repairFields, field.field) || repairFields[field.field] !== field.family || !repairValues(field.sources)))) throw new Error(t('Respuesta inválida del servidor.'));
+                repairReport = data; repairListFailure = false;
+            } catch (_) { repairListFailure = true; }
+            finally { repairListInFlight = null; renderInvalidReservations(); }
+        })();
+        repairListInFlight = work; renderInvalidReservations(); return work;
+    }
+    function repairReason(reason) {
+        return t({
+            queue_busy: 'Hay trabajos en ejecución, recuperación o recursos aplicados que impiden corregir esta reserva con seguridad.',
+            applied_ownership: 'Hay recursos guardados como aplicados en un router. Se conserva la reserva hasta comprobar esos recursos.',
+            running_job: 'Un trabajo está en ejecución. Espera a que termine y vuelve a comparar.',
+            recovery_job: 'Hay un trabajo en recuperación. Revisa Trabajos antes de corregir la reserva.',
+            crm_unavailable: 'No se pudo comprobar el servicio en UISP. Se conserva la reserva.',
+            address_unknown: 'UISP no confirmó una dirección válida ni una retirada de IP. Se conserva la reserva.',
+            identity_changed: 'La identidad del servicio cambió. Se conserva la reserva.',
+            local_changed: 'La reserva local cambió. Compara nuevamente antes de corregirla.',
+            valid_reservation: 'La reserva ya es válida. No hay una corrección pendiente.',
+            no_invalid_reservation: 'No hay una reserva inválida seleccionada que corregir.',
+            collision: 'La IP de UISP coincide con una reserva de otro servicio. Se conserva la reserva hasta resolver el conflicto.',
+            deadline: 'La consulta a UISP agotó el tiempo disponible. Vuelve a comparar.'
+        }[reason] || {
+            identity_unknown: 'No se confirmó la identidad del servicio. Se conserva la reserva.',
+            crm_address_unknown: 'UISP no confirmó una dirección válida ni una retirada de IP. Se conserva la reserva.',
+            crm_ownership_unknown: 'No se pudieron comprobar todas las IP de otros servicios en UISP. Revisa los atributos IP del CRM y vuelve a comparar. Se conserva la reserva.',
+            crm_ownership_limit: 'La comprobación de propietarios de UISP superó el límite. Se conserva la reserva.',
+            crm_address_changed: 'La IP de UISP cambió durante la revisión. Compara nuevamente.',
+            address_in_use: 'La IP de UISP coincide con una reserva de otro servicio. Se conserva la reserva hasta resolver el conflicto.',
+            valid_local_reservation: 'Existe una reserva local válida que se conservará. Revisa la diferencia con UISP antes de corregir.',
+            local_ownership_unknown: 'No se pudo comprobar la propiedad de las reservas locales. Se conserva la reserva.',
+            local_ownership_limit: 'La comprobación local superó el límite. Se conserva la reserva.',
+            queue_unknown: 'No se pudo comprobar la cola de trabajos. Se conserva la reserva.',
+            queue_recovery: 'Hay un trabajo en recuperación. Revisa Trabajos antes de corregir la reserva.',
+            pending_identity_changed: 'Un trabajo pendiente corresponde a otra identidad del servicio. Se conserva la reserva.',
+            pending_address_changed: 'Un trabajo pendiente solicita una IP diferente a UISP. Se conserva la reserva.',
+            legacy_queue_pending: 'Hay trabajos heredados pendientes que no pueden comprobarse con seguridad. Se conserva la reserva.',
+            repair_local_changed: 'La reserva local cambió. Compara nuevamente antes de corregirla.',
+            repair_verification_failed: 'La verificación cambió antes de guardar. Compara nuevamente.',
+            repair_preview_expired: 'La revisión venció. Compara nuevamente antes de guardar.',
+            repair_backup_failed: 'No se pudo crear el respaldo. La corrección no se confirmó.',
+            repair_busy: 'Hay otra operación en curso. Espera a que termine y vuelve a comparar.'
+        }[reason] || 'No se pudo confirmar que esta reserva pueda corregirse con seguridad.');
+    }
+    function updateRepairControls() {
+        byId('apply-network-repair').disabled = repairBusy || repairRequiresReload || !repairPreview?.previewToken || !repairPreview.candidates?.length;
+        byId('recheck-network-repair').disabled = repairBusy || repairRequiresReload || !repairTarget;
+        for (const button of document.querySelectorAll('.job-repair-button')) {
+            button.disabled = repairBusy || repairRequiresReload;
+            if (repairRequiresReload) button.title = t('Recarga el panel para comprobar las reservas y continuar con el estado actualizado.');
+        }
+        renderInvalidReservations();
+    }
+    async function previewNetworkRepair(serviceId, field) {
+        if (repairBusy || repairRequiresReload || !repairModal || !Number.isSafeInteger(serviceId) || serviceId < 1 || !Object.prototype.hasOwnProperty.call(repairFields, field)) return;
+        repairTarget = { serviceId, field }; repairPreview = null; repairBusy = true;
+        const generation = ++repairGeneration;
+        repairModal.style.display = 'flex';
+        translatedText(byId('network-repair-title'), 'Corregir reserva inválida');
+        byId('network-repair-result').style.display = 'none'; byId('network-repair-result').replaceChildren();
+        byId('network-repair-comparison').replaceChildren(); byId('network-repair-comparison').style.display = 'grid';
+        byId('apply-network-repair').style.display = 'inline-flex'; byId('recheck-network-repair').style.display = 'inline-flex'; byId('reload-after-repair').style.display = 'none';
+        translatedText(byId('network-repair-status'), 'Comparando la reserva del servicio #{id} con UISP...', { id: serviceId }); updateRepairControls();
+        try {
+            const data = checked(await api.previewNetworkRepair([{ serviceId, fields: [field] }])).data;
+            if (generation !== repairGeneration) return;
+            if (!data || !Array.isArray(data.candidates) || !Array.isArray(data.blocked) || data.candidates.length > 1 || data.blocked.length > 1
+                || data.candidates.length + data.blocked.length !== 1 || data.blocked.some(row => row?.service_id !== serviceId || typeof row.reason !== 'string')
+                || data.candidates.some(candidate => candidate.service_id !== serviceId || !Array.isArray(candidate.fields) || candidate.fields.length !== 1
+                    || candidate.fields.some(entry => entry.field !== field || entry.family !== repairFields[field] || !repairValues(entry.saved)
+                        || !['replace', 'clear'].includes(entry.action) || (entry.action === 'clear' ? entry.current_address !== null : typeof entry.current_address !== 'string')
+                        || !['crm_address', 'crm_no_address', 'crm_not_found'].includes(entry.reason)))
+                || data.candidates.length > 0 && (typeof data.previewToken !== 'string' || !/^[a-f0-9]{64}$/.test(data.previewToken) || !monitorDate(data.expiresAt))) throw new Error(t('Respuesta inválida del servidor.'));
+            repairPreview = data;
+            for (const candidate of data.candidates) {
+                const item = document.createElement('article'); item.className = 'repair-list-item';
+                const identity = document.createElement('div'); identity.className = 'conflict-owner-meta';
+                identity.appendChild(conflictLink(t('Servicio #{id}', { id: serviceId }), '/crm/client/service/' + serviceId, 'service'));
+                if (Number.isSafeInteger(candidate.client_id) && candidate.client_id > 0) identity.appendChild(conflictLink(t('Cliente #{id}', { id: candidate.client_id }), '/crm/client/' + candidate.client_id, 'client'));
+                const state = document.createElement('span'); state.className = 'badge badge-neutral'; translatedText(state, 'Servicio: {state}', { state: repairServiceStatus(candidate.status) }); identity.appendChild(state); item.appendChild(identity);
+                for (const entry of candidate.fields) {
+                    const comparison = document.createElement('div'); comparison.className = 'repair-comparison';
+                    comparison.innerHTML = `<div class="repair-address-values">${repairValueMarkup(entry.saved)}</div><div class="repair-address-values"><span>${html(t('IP actual en UISP'))} · ${html(entry.family)}</span><strong>${html(entry.current_address ?? t('Sin IP asignada'))}</strong></div>`;
+                    item.appendChild(comparison);
+                    const note = document.createElement('p'); note.className = 'form-note';
+                    translatedText(note, entry.reason === 'crm_not_found' ? 'UISP confirmó que el servicio no existe. Sólo se retirará la reserva local inválida revisada.'
+                        : entry.action === 'clear' ? 'UISP confirmó que esta familia no tiene IP asignada. Sólo se retirará la reserva local inválida revisada.'
+                        : 'La reserva inválida se sustituirá por la IP válida confirmada en UISP. No se sincronizará el router ni se ejecutarán trabajos.'); item.appendChild(note);
+                }
+                if (Number.isSafeInteger(candidate.pending_jobs) && candidate.pending_jobs > 0) {
+                    const jobs = document.createElement('p'); jobs.className = 'form-note'; translatedText(jobs, candidate.pending_jobs === 1
+                        ? 'Este servicio tiene 1 trabajo pendiente. La corrección no lo ejecutará; los reintentos continuarán según su programación.'
+                        : 'Este servicio tiene {count} trabajos pendientes. La corrección no los ejecutará; los reintentos continuarán según su programación.', { count: candidate.pending_jobs }); item.appendChild(jobs);
+                }
+                byId('network-repair-comparison').appendChild(item);
+            }
+            for (const blocked of data.blocked.slice(0, 3)) {
+                if (blocked?.service_id !== serviceId) continue;
+                const item = document.createElement('div'); item.className = 'cleanup-blocked-item'; item.innerHTML = `<strong>${html(t('Servicio #{id}', { id: serviceId }))}</strong><p>${html(repairReason(blocked.reason))}</p>`;
+                byId('network-repair-comparison').appendChild(item);
+            }
+            translatedText(byId('network-repair-status'), data.candidates.length ? 'Corrección revisada. Vence: {time}. Confirma para guardar sólo esta reserva local.' : 'La reserva se conserva. Puedes comparar nuevamente cuando se resuelva el motivo indicado.', { time: formatDate(data.expiresAt) });
+        } catch (error) { translatedText(byId('network-repair-status'), 'Error: {message}', { message: t(error.message) }); }
+        finally { if (generation === repairGeneration) { repairBusy = false; updateRepairControls(); } }
+    }
+    byId('refresh-invalid-reservations')?.addEventListener('click', refreshInvalidReservations);
+    byId('recheck-network-repair')?.addEventListener('click', () => repairTarget && previewNetworkRepair(repairTarget.serviceId, repairTarget.field));
+    byId('reload-after-repair')?.addEventListener('click', reloadPanel);
+    byId('reload-after-reservation-list-repair')?.addEventListener('click', reloadPanel);
+    byId('apply-network-repair')?.addEventListener('click', async () => {
+        if (repairBusy || repairRequiresReload || !repairPreview?.previewToken || !repairTarget) return;
+        const target = { ...repairTarget }, token = repairPreview.previewToken;
+        const reviewedField = repairPreview.candidates[0]?.fields[0];
+        repairBusy = true; updateRepairControls();
+        try {
+            if (!await confirmAction(t('¿Corregir la reserva local {family} del servicio #{id} con la revisión de UISP? Se creará un respaldo y se conservarán los servicios y routers.', { family: repairFields[target.field], id: target.serviceId }))) return;
+            // A token is single use. Do not leave an apply button after an uncertain response.
+            repairPreview = null;
+            const response = await api.applyNetworkRepair(token);
+            const data = checked(response).data;
+            if (!data || !Array.isArray(data.repaired) || data.repaired.length !== 1 || data.repaired[0]?.service_id !== target.serviceId
+                || !Array.isArray(data.repaired[0].fields) || data.repaired[0].fields.length !== 1 || data.repaired[0].fields[0]?.field !== target.field
+                || data.repaired[0].fields[0]?.family !== repairFields[target.field] || !['clear', 'replace'].includes(data.repaired[0].fields[0]?.action)
+                || data.repaired[0].fields[0].action !== reviewedField?.action || data.repaired[0].fields[0].current_address !== reviewedField?.current_address
+                || data.jobs_preserved !== true || data.requires_sync !== false || typeof data.requires_reload !== 'boolean'
+                || !monitorDate(data.checked_at) || typeof data.backup_name !== 'string' || !/^network-cleanup-\d{8}T\d{6}Z-[a-f0-9]{32}\.sqlite$/.test(data.backup_name)) throw new Error(t('Respuesta inválida del servidor.'));
+            repairRequiresReload = data.requires_reload === true;
+            translatedText(byId('network-repair-title'), 'Resultado de la corrección');
+            byId('network-repair-comparison').replaceChildren(); byId('network-repair-comparison').style.display = 'none';
+            const result = byId('network-repair-result'); result.className = 'crm-ip-result is-confirmed'; result.replaceChildren();
+            const title = document.createElement('h4'); translatedText(title, 'Reserva local corregida');
+            const note = document.createElement('p'); translatedText(note, 'La corrección terminó. Los servicios, UISP y los routers se conservaron. Revisa Trabajos para comprobar los siguientes reintentos.');
+            const summary = document.createElement('dl'); summary.className = 'conflict-address-grid';
+            const previous = reviewedField.saved.map(entry => `${entry.value.slice(0, 256)}${entry.value.length > 256 ? '…' : ''}`).join(' · ');
+            summary.innerHTML = `<div><dt>${html(t('Reserva local antes de la corrección'))} · ${html(repairFields[target.field])}</dt><dd>${html(previous)}</dd></div><div><dt>${html(t('Reserva local corregida'))} · ${html(repairFields[target.field])}</dt><dd>${html(reviewedField.current_address ?? t('Sin IP asignada'))}</dd></div><div><dt>${html(t('Verificado'))}</dt><dd>${html(formatDate(data.checked_at))}</dd></div>`;
+            const backup = document.createElement('a'); backup.className = 'btn btn-secondary'; backup.href = api.downloadUrl(data.backup_name); backup.download = data.backup_name; translatedText(backup, 'Descargar respaldo');
+            result.append(title, note, summary, backup); result.style.display = 'block'; result.focus?.({ preventScroll: true });
+            translatedText(byId('network-repair-status'), repairRequiresReload ? 'Recarga el panel para comprobar las reservas y continuar con el estado actualizado.' : 'Corrección confirmada: {time}.', { time: formatDate(data.checked_at) });
+            byId('apply-network-repair').style.display = 'none'; byId('recheck-network-repair').style.display = 'none'; byId('reload-after-repair').style.display = repairRequiresReload ? 'inline-flex' : 'none';
+            await refreshInvalidReservations(); refreshJobsStatus();
+        } catch (error) {
+            translatedText(byId('network-repair-status'), 'No se confirmó la corrección. Compara nuevamente antes de intentar otro cambio. {message}', { message: repairReason(error.message) });
+            await refreshInvalidReservations();
+        } finally { repairBusy = false; updateRepairControls(); }
+    });
 
     function translatedText(node, source, params = {}) {
         node.textContent = t(source, params);
@@ -1556,6 +1772,9 @@ document.addEventListener('DOMContentLoaded', () => {
         if (crmEditModal && !crmEditBusy) {
             crmEditModal.style.display = 'none'; crmEditGeneration++; crmEditTarget = null; crmEditOutcome = null; resetCrmEditPreview(); updateCrmEditorControls();
         }
+        if (repairModal && !repairBusy) {
+            repairModal.style.display = 'none'; repairGeneration++; repairTarget = null; repairPreview = null;
+        }
         byId('dev-password').value = '';
     }
 
@@ -1608,6 +1827,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }));
     byId('btn-view-conflicts')?.addEventListener('click', () => switchView('network_conflicts', 'Conflictos de IP'));
     byId('btn-view-crm-conflicts')?.addEventListener('click', () => switchView('network_conflicts', 'Conflictos de IP'));
+    byId('btn-view-pending-jobs')?.addEventListener('click', () => switchView('jobs', 'Trabajos'));
     byId('btn-recheck-conflicts')?.addEventListener('click', reloadPanel);
 
     async function renderDevices() {
@@ -1953,6 +2173,71 @@ document.addEventListener('DOMContentLoaded', () => {
         await renderConfig();
     });
 
+    function renderJobsStatus() {
+        if (!byId('jobs-pending-warning')) return;
+        const known = jobsStatus?.available === true;
+        const pending = known ? jobsStatus.pending + jobsStatus.recovery : null;
+        const uncertain = jobsStatusFailure || !known;
+        const count = byId('jobs-pending-count');
+        count.textContent = known && jobsStatus.total > 0 ? String(jobsStatus.total) : uncertain ? '?' : '';
+        count.style.display = known && jobsStatus.total > 0 || uncertain ? 'inline-block' : 'none';
+        count.title = t(uncertain ? 'El estado de los trabajos no está actualizado.' : 'Trabajos pendientes o en ejecución');
+        byId('jobs-pending-warning').style.display = uncertain || known && jobsStatus.total > 0 ? 'flex' : 'none';
+        translatedText(byId('jobs-pending-title'), known ? pending > 0 ? 'Trabajos pendientes: {count}' : 'Trabajos en ejecución: {count}'
+            : 'No se pudo comprobar el estado de los trabajos.', { count: pending > 0 ? pending : jobsStatus?.running ?? 0 });
+        translatedText(byId('jobs-pending-note'), known
+            ? '{pending} pendientes · {failed} con error · {running} en ejecución · {recovery} en recuperación. Revisa Trabajos para comprobar el resultado.'
+            : 'El aviso no cambia ni ejecuta trabajos. Puedes seguir usando el panel.', jobsStatus || {});
+        const time = known ? formatDate(jobsStatus.checked_at) : null;
+        translatedText(byId('jobs-pending-freshness'), uncertain ? time
+            ? 'El estado puede estar desactualizado. Última consulta: {time}.' : 'Se volverá a comprobar automáticamente cuando el panel esté visible.'
+            : 'Última consulta: {time}. Este aviso no detiene las operaciones de otros clientes.', { time });
+    }
+    function clearJobsStatusTimer() { clearTimeout(jobsStatusTimer); jobsStatusTimer = undefined; }
+    function scheduleJobsStatus() {
+        clearJobsStatusTimer();
+        if (document.hidden === true || jobsStatusStopped || jobsStatusInFlight || jobsStatusMutations > 0) return;
+        jobsStatusTimer = setTimeout(function pollJobsStatus() { jobsStatusTimer = undefined; refreshJobsStatus(); }, 30000);
+    }
+    function refreshJobsStatus() {
+        if (jobsStatusInFlight) { jobsStatusRefreshRequested = true; return jobsStatusInFlight; }
+        if (document.hidden === true || jobsStatusStopped || jobsStatusMutations > 0 || typeof api.getJobsStatus !== 'function') return Promise.resolve();
+        clearJobsStatusTimer();
+        jobsStatusRefreshRequested = false;
+        const epoch = jobsStatusEpoch;
+        jobsStatusInFlight = (async () => {
+            try {
+                const data = checked(await api.getJobsStatus()).data;
+                if (epoch !== jobsStatusEpoch || document.hidden === true || jobsStatusStopped || jobsStatusMutations > 0) return;
+                if (!data || data.available !== true || !['pending', 'running', 'failed', 'recovery', 'total'].every(key => Number.isSafeInteger(data[key]) && data[key] >= 0)
+                    || data.failed > data.pending || data.total !== data.pending + data.running + data.recovery || !monitorDate(data.checked_at)
+                    || !['sqlite', 'legacy', 'empty'].includes(data.source) || data.reason !== null) throw new Error('invalid_jobs_status');
+                if (jobsStatus?.available && new Date(data.checked_at).getTime() < new Date(jobsStatus.checked_at).getTime()) throw new Error('old_jobs_status');
+                jobsStatus = data; jobsStatusFailure = false;
+            } catch (_) { if (epoch === jobsStatusEpoch) jobsStatusFailure = true; }
+            finally {
+                jobsStatusInFlight = null;
+                renderJobsStatus();
+                if (jobsStatusRefreshRequested && document.hidden !== true && !jobsStatusStopped && jobsStatusMutations === 0) {
+                    jobsStatusRefreshRequested = false; refreshJobsStatus();
+                } else scheduleJobsStatus();
+            }
+        })();
+        return jobsStatusInFlight;
+    }
+    api.onMutation?.(started => {
+        jobsStatusEpoch++; clearJobsStatusTimer();
+        jobsStatusMutations = Math.max(0, jobsStatusMutations + (started ? 1 : -1));
+        jobsStatusRefreshRequested = true;
+        if (!started && jobsStatusMutations === 0) refreshJobsStatus();
+    });
+    document.addEventListener('visibilitychange', () => {
+        clearJobsStatusTimer(); jobsStatusEpoch++;
+        if (document.hidden !== true) refreshJobsStatus();
+    });
+    globalThis.window?.addEventListener?.('pagehide', () => { jobsStatusStopped = true; jobsStatusEpoch++; clearJobsStatusTimer(); });
+    globalThis.window?.addEventListener?.('pageshow', () => { jobsStatusStopped = false; jobsStatusEpoch++; refreshJobsStatus(); });
+
     function jobsVisible() {
         return currentView === 'jobs' && document.hidden !== true && !jobsRefreshStopped;
     }
@@ -2115,6 +2400,11 @@ document.addEventListener('DOMContentLoaded', () => {
         return `<span data-i18n="${html(source)}" data-i18n-values="${html(JSON.stringify(params))}">${html(t(source, params))}</span>`
             + (url ? ` <a class="conflict-link" href="${html(url)}" target="_blank" rel="noopener noreferrer">${html(label)}</a>` : '');
     }
+    function jobNetworkRepairTarget(error, serviceId) {
+        const match = /^invalid_network_address: requested_service=([1-9]\d{0,14}) blocking_service=([1-9]\d{0,14}) source=reserved family=(IPv4|IPv6)$/.exec(error);
+        if (!match || !Number.isSafeInteger(Number(match[1])) || !Number.isSafeInteger(Number(match[2])) || Number(match[1]) !== Number(serviceId)) return null;
+        return { serviceId: Number(match[2]), field: match[3] === 'IPv6' ? 'address6' : 'address' };
+    }
     function renderJobsTable(jobs) {
         const savedPosition = beforeTableUpdate('jobs');
         const selected = new Set(Array.from(document.querySelectorAll('.job-checkbox:checked'), checkbox => checkbox.value));
@@ -2148,6 +2438,14 @@ document.addEventListener('DOMContentLoaded', () => {
             checkbox.value = key;
             checkbox.checked = selected.has(key) && (!job.state || job.state === 'pending');
             checkbox.addEventListener('change', updateJobSelection);
+            const repair = jobNetworkRepairTarget(error, job.serviceId ?? job.id);
+            if (repair && repairModal && typeof api.previewNetworkRepair === 'function') {
+                const review = document.createElement('button'); review.type = 'button'; review.className = 'btn btn-secondary job-repair-button';
+                translatedText(review, 'Revisar reserva del servicio #{id}', { id: repair.serviceId });
+                review.disabled = repairBusy || repairRequiresReload;
+                review.addEventListener('click', () => previewNetworkRepair(repair.serviceId, repair.field));
+                row.querySelector('.job-description').appendChild(review);
+            }
             tbody.appendChild(row);
         });
         updateJobSelection();
@@ -2624,6 +2922,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (recoveryReadOnly) applyRecovery({ readOnly: true });
         renderCrmMonitor();
         renderCrmEditResult();
+        renderJobsStatus();
+        renderInvalidReservations();
         for (const direction of ['upload', 'download']) if (planNumericDraft.has(direction + 'Speed'))
             byId('plan-' + direction + 'Override').placeholder = t('UISP: valor inválido');
         byId('dev-port').placeholder = t('Predeterminado: {port}', { port: byId('dev-ssl').checked ? 8729 : 8728 });
@@ -2658,5 +2958,6 @@ document.addEventListener('DOMContentLoaded', () => {
     if (api.recovery?.readOnly === true) applyRecovery(api.recovery);
     renderCrmMonitor();
     refreshCrmMonitor();
+    refreshJobsStatus();
     switchView(initialView, initialView);
 });

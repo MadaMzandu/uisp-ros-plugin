@@ -147,6 +147,7 @@ class ApiService {
         this.endpoint = endpoint || current.pathname;
         this.recovery = null;
         this.recoveryListeners = new Set();
+        this.mutationListeners = new Set();
         const bootstrap = document.querySelectorAll('#network-recovery-state')[0];
         if (bootstrap) {
             try { this.setRecovery(JSON.parse(bootstrap.textContent)); }
@@ -160,6 +161,12 @@ class ApiService {
     }
     onRecovery(listener) {
         this.recoveryListeners.add(listener);
+    }
+    onMutation(listener) { this.mutationListeners.add(listener); }
+    async mutatingRequest(options) {
+        for (const listener of this.mutationListeners) listener(true);
+        try { return await this.request(options); }
+        finally { for (const listener of this.mutationListeners) listener(false); }
     }
     blockedWrite() {
         return Promise.resolve({ status: 'failed', error: true,
@@ -197,9 +204,11 @@ class ApiService {
     send(changeType, target, action = 'list', data = {}) {
         const cleanup = changeType === 'cleanup' && target === 'network_conflicts' && ['preview', 'apply'].includes(action);
         const crmRepair = ['cleanup', 'resolve'].includes(changeType) && target === 'crm_network_conflicts' && ['preview', 'apply'].includes(action);
-        if (changeType !== 'list' && !cleanup && !crmRepair && this.recovery?.readOnly === true) return this.blockedWrite();
+        const localRepair = changeType === 'repair' && target === 'network_repair' && ['preview', 'apply'].includes(action);
+        if (changeType !== 'list' && !cleanup && !crmRepair && !localRepair && this.recovery?.readOnly === true) return this.blockedWrite();
         if (target === 'orphans' && this.recovery?.readOnly === true) return this.blockedRouterRead();
-        return this.request({ method: 'POST', headers: { 'Content-Type': 'application/json' },
+        const mutate = changeType === 'update' || action === 'apply' && ['cleanup', 'resolve', 'repair'].includes(changeType);
+        return (mutate ? this.mutatingRequest.bind(this) : this.request.bind(this))({ method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ changeType, target, action, data }) }).then(response => {
                 if (changeType === 'list' && target === 'network_conflicts' && !response.error && response.recovery?.readOnly === true)
                     this.setRecovery({ ...response.recovery, details: response.data });
@@ -210,7 +219,7 @@ class ApiService {
         if (this.recovery?.readOnly === true) return this.blockedWrite();
         const body = new FormData();
         body.append('backup', file);
-        return this.request({ method: 'POST', body });
+        return this.mutatingRequest({ method: 'POST', body });
     }
     downloadUrl(name) {
         if (name !== 'network-conflicts' && !/^backup-[0-6]$/.test(name)
@@ -229,6 +238,10 @@ class ApiService {
     saveConfig(data) { return this.send('update', 'config', 'edit', data); }
     getFields(language) { return this.send('list', 'messages', 'list', language ? { language } : {}); }
     getJobs() { return this.send('list', 'jobs'); }
+    getJobsStatus() { return this.send('list', 'jobs_status'); }
+    getInvalidNetworkReservations() { return this.send('list', 'network_repair'); }
+    previewNetworkRepair(selection) { return this.send('repair', 'network_repair', 'preview', { selection }); }
+    applyNetworkRepair(previewToken) { return this.send('repair', 'network_repair', 'apply', { previewToken }); }
     getNetworkConflicts(data = {}) { return this.send('list', 'network_conflicts', 'list', data); }
     getCrmNetworkConflicts() { return this.send('list', 'crm_network_conflicts', 'list', {}); }
     verifyCrmNetworkServices(serviceIds) { return this.send('list', 'crm_network_resolution', 'verify', { serviceIds }); }

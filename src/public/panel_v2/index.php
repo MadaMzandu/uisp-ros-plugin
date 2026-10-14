@@ -13,8 +13,8 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     
     <!-- Custom CSS -->
-    <script src="js/theme.js?v=2.0.43"></script>
-    <link rel="stylesheet" href="css/style.css?v=2.0.43">
+    <script src="js/theme.js?v=2.0.44"></script>
+    <link rel="stylesheet" href="css/style.css?v=2.0.44">
 </head>
 <body>
 
@@ -43,6 +43,7 @@
                 <a href="#" class="nav-item" data-view="jobs">
                     <i data-feather="list"></i>
                     <span data-i18n="Trabajos">Trabajos</span>
+                    <span class="badge badge-warning conflict-nav-count" id="jobs-pending-count" style="display: none;"></span>
                 </a>
                 <a href="#" class="nav-item" data-view="system">
                     <i data-feather="cpu"></i>
@@ -101,6 +102,15 @@
                 </div>
                 <button type="button" class="btn btn-secondary" id="btn-view-crm-conflicts" data-i18n="Revisar">Revisar</button>
             </aside>
+            <aside class="network-warning jobs-warning" id="jobs-pending-warning" role="status" style="display: none;">
+                <i data-feather="alert-triangle"></i>
+                <div class="network-warning-copy">
+                    <strong id="jobs-pending-title"></strong>
+                    <p id="jobs-pending-note"></p>
+                    <small id="jobs-pending-freshness"></small>
+                </div>
+                <button type="button" class="btn btn-secondary" id="btn-view-pending-jobs" data-i18n="Revisar">Revisar</button>
+            </aside>
             
             <div class="content-area" id="content-area">
                 <!-- Loader -->
@@ -110,6 +120,14 @@
                 
                 <!-- Dynamic Content Views -->
                 <section id="view-network_conflicts" class="view-section" style="display: none;">
+                    <section class="invalid-reservations-pane" id="invalid-reservations-pane">
+                        <div class="conflicts-heading">
+                            <div><h2 data-i18n="Reservas inválidas">Reservas inválidas</h2><p data-i18n="Compara las reservas locales inválidas con UISP y revisa una corrección con respaldo. Los servicios actuales y los routers se conservan.">Compara las reservas locales inválidas con UISP y revisa una corrección con respaldo. Los servicios actuales y los routers se conservan.</p></div>
+                            <div class="conflicts-toolbar"><button type="button" class="btn btn-secondary" id="refresh-invalid-reservations" data-i18n="Refrescar">Refrescar</button><button type="button" class="btn btn-primary" id="reload-after-reservation-list-repair" style="display: none;" data-i18n="Recargar panel">Recargar panel</button></div>
+                        </div>
+                        <p id="invalid-reservations-status" class="form-note" role="status" aria-live="polite"></p>
+                        <div id="invalid-reservations-list" class="repair-list"></div>
+                    </section>
                     <div class="crm-conflicts-pane" id="crm-network-conflicts-pane">
                         <div class="conflicts-heading">
                             <div>
@@ -354,6 +372,23 @@
     </div>
 
     <!-- Modals -->
+    <div id="network-repair-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="network-repair-title" style="display: none;">
+        <div class="modal network-cleanup-dialog">
+            <div class="modal-header"><h3 id="network-repair-title" data-i18n="Corregir reserva inválida">Corregir reserva inválida</h3><button type="button" class="close-modal" aria-label="Cerrar" data-i18n-aria-label="Cerrar"><i data-feather="x"></i></button></div>
+            <div class="modal-body">
+                <p class="form-note" data-i18n="Sólo se corregirán las reservas locales inválidas revisadas. Se creará un respaldo; UISP, los routers y las demás asignaciones no se modificarán.">Sólo se corregirán las reservas locales inválidas revisadas. Se creará un respaldo; UISP, los routers y las demás asignaciones no se modificarán.</p>
+                <p id="network-repair-status" class="form-note" role="status" aria-live="polite"></p>
+                <div id="network-repair-comparison" class="repair-list"></div>
+                <section id="network-repair-result" class="crm-ip-result" role="status" aria-live="polite" tabindex="-1" style="display: none;"></section>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary close-modal" data-i18n="Cerrar">Cerrar</button>
+                <button type="button" class="btn btn-secondary" id="recheck-network-repair" data-i18n="Comparar con UISP">Comparar con UISP</button>
+                <button type="button" class="btn btn-primary" id="apply-network-repair" disabled data-i18n="Corregir reserva local">Corregir reserva local</button>
+                <button type="button" class="btn btn-primary" id="reload-after-repair" style="display: none;" data-i18n="Recargar panel">Recargar panel</button>
+            </div>
+        </div>
+    </div>
     <div id="crm-ip-edit-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="crm-ip-edit-title" style="display: none;">
         <div class="modal crm-ip-edit-dialog">
             <div class="modal-header">
@@ -643,8 +678,8 @@
     </div>
 
     <!-- Scripts -->
-    <script src="js/i18n.js?v=2.0.43"></script>
-    <script src="js/api.js?v=2.0.43"></script>
-    <script src="js/app.js?v=2.0.43"></script>
+    <script src="js/i18n.js?v=2.0.44"></script>
+    <script src="js/api.js?v=2.0.44"></script>
+    <script src="js/app.js?v=2.0.44"></script>
 </body>
 </html>

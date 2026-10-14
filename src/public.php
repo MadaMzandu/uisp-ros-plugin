@@ -64,6 +64,44 @@ try {
     require_once 'lib/api_cache.php';
     $setupComplete = false;
     if (!$webhook && empty($_FILES)) {
+        // Counts read existing local storage only, even when migration is paused.
+        if ($method === 'POST' && is_object($data) && ($data->changeType ?? '') === 'list'
+            && ($data->target ?? '') === 'jobs_status') {
+            if (!empty($data->entity) || ($data->action ?? 'list') !== 'list' || (isset($data->data)
+                && (!is_object($data->data) || count(get_object_vars($data->data)) !== 0))) {
+                throw new InvalidArgumentException('invalid_jobs_status_request');
+            }
+            require_once 'lib/api_jobs_status.php';
+            respond('jobs_status', false, (new ApiJobsStatus())->read());
+            exit;
+        }
+        if ($method === 'POST' && is_object($data) && ($data->target ?? '') === 'network_repair') {
+            $values = $data->data ?? null;
+            if (!empty($data->entity) || !is_object($values)) throw new InvalidArgumentException('invalid_network_repair_request');
+            require_once 'lib/api_network_repair.php';
+            $repair = new ApiNetworkRepair();
+            if (($data->changeType ?? '') === 'list' && ($data->action ?? 'list') === 'list'
+                && count(get_object_vars($values)) === 0) {
+                $result = $repair->listing();
+            } elseif (($data->changeType ?? '') === 'repair' && ($data->action ?? '') === 'preview'
+                && array_keys(get_object_vars($values)) === ['selection'] && is_array($values->selection)) {
+                if (is_file('data/data.db')) (new ApiSetup())->assertCompatible();
+                $selection = [];
+                foreach ($values->selection as $item) {
+                    if (!is_object($item) || array_diff(array_keys(get_object_vars($item)), ['serviceId', 'fields'])
+                        || !is_int($item->serviceId ?? null) || !is_array($item->fields ?? null))
+                        throw new InvalidArgumentException('invalid_network_repair_request');
+                    $selection[] = ['serviceId' => $item->serviceId, 'fields' => $item->fields];
+                }
+                $result = $repair->preview($selection);
+            } elseif (($data->changeType ?? '') === 'repair' && ($data->action ?? '') === 'apply'
+                && array_keys(get_object_vars($values)) === ['previewToken'] && is_string($values->previewToken)) {
+                if (is_file('data/data.db')) (new ApiSetup())->assertCompatible();
+                $result = $repair->apply($values->previewToken);
+            } else throw new InvalidArgumentException('invalid_network_repair_request');
+            respond('network_repair', false, $result);
+            exit;
+        }
         // The monitor endpoint only reads its independent completed snapshot.
         // Polling never initializes jobs, refreshes CRM/cache, or gates writes.
         if ($method === 'POST' && is_object($data) && ($data->changeType ?? '') === 'list'
