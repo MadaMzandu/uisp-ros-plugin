@@ -2,9 +2,19 @@
 
 [Español](MEJORAS.md) · [PR description](PR_DESCRIPTION.md) · [Webhook setup and rationale](WEBHOOK_SETUP_EN.md)
 
-This revision combines [dhanielsnieto's changes in PR #89](https://github.com/MadaMzandu/uisp-ros-plugin/pull/89) with the subsequent fixes prepared in this repository. The comparison starts at `7ca8dc8`; the original PR ends at `056b89f`. The current candidate is **2.4.19**. The operator has confirmed that archived-plan speed recovery works in their installation. That confirmation covers this scenario; the remaining UISP and RouterOS integration scenarios still require their own checks before production readiness can be established.
+This revision combines [dhanielsnieto's changes in PR #89](https://github.com/MadaMzandu/uisp-ros-plugin/pull/89) with the subsequent fixes prepared in this repository. The comparison starts at `7ca8dc8`; the original PR ends at `056b89f`. The current candidate is **2.4.20**. The operator confirmed archived-plan speed recovery in their 2.4.19 installation. That confirmation covers this historical scenario; the remaining UISP and RouterOS integration scenarios still require their own checks before production readiness can be established.
 
 The plugin connects UISP CRM to MikroTik through the **native RouterOS API**, normally on port `8728`, or `8729` with TLS. The panel manages that integration; it does not switch the transport to SSH, WinBox, or REST.
+
+## Candidate 2.4.20: address conflict diagnostics before migration
+
+- Service IPs must remain globally unique, including across different routers. An upgrade still rejects a legacy database containing the same IPv4 address or IPv6 address/prefix for multiple services, preserving those assignments for explicit review.
+- The authenticated panel shows a Spanish warning with an indicator and conflict count, a family/address/service-ID table, a JSON diagnostic download, and a recheck action. Both reported groups and service IDs are bounded; credentials are excluded.
+- POST requests retain JSON with the specific `duplicate_network_addresses_resolve_before_upgrade` error. Address and service-ID details are restricted to administrators; webhooks receive only the code and conflict count. Administrative permissions and webhook authentication remain enforced.
+- Read-only preflight runs before queue initialization and backup rotation, repeats under setup locks, and is checked again inside the migration transaction. It includes the projected import from legacy `services.address` and `services.prefix6` columns, preventing `INSERT OR IGNORE` from silently discarding a conflicting assignment.
+- Installation remains paused until the assignments are explicitly corrected and rechecked. The warning preserves existing IPs and sends no RouterOS account or session changes; it does not delete rows, reassign addresses, or repair conflicts automatically.
+
+**2.4.20 validation passed:** 29 isolated suites, syntax checks for 41 first-party PHP files, and installer verification covering 353 entries, 120 first-party files, and 13 locked dependencies. Report: `dist/verification-2.4.20.json`. SHA-256: `fd74d7d8b81c8937a8553e20305e4bcdbc743cf6b19d7f34401e7956dfda7a01`. Tests use temporary databases and simulated/local transports; the warning and explicit assignment resolution still need verification in Familynet.
 
 ## Candidate 2.4.19: Internet type validation and metadata diagnostics
 
@@ -34,7 +44,7 @@ The plugin connects UISP CRM to MikroTik through the **native RouterOS API**, no
 - Evidence of partially creating a suspension profile is preserved. Cleanup verifies an existing profile before changing accounts or sessions; mismatched frozen values remain an error. A missing profile is not recreated during cleanup, and an existing profile is not overwritten.
 - Connection handling is unchanged: each service batch opens and closes its own API connection; queries and cleanup can open additional connections. API login/logout messages alone do not mean PPP sessions were disconnected. No connection sharing between batches was introduced.
 
-The historical 2.4.17 validation passed 27 suites, checks for 39 first-party PHP files, and verification of a ZIP containing 351 entries, 118 first-party files, and 13 pinned dependencies. Its report and hash are retained later in this changelog; current candidate 2.4.19 validation is recorded above.
+The historical 2.4.17 validation passed 27 suites, checks for 39 first-party PHP files, and verification of a ZIP containing 351 entries, 118 first-party files, and 13 pinned dependencies. Its report and hash are retained later in this changelog; the validation status of current candidate 2.4.20 is recorded above.
 
 ## Changes contributed in PR #89
 
@@ -261,7 +271,7 @@ Later production evidence identified missing tokens and a URL pasted as the secr
 
 ## Installation and validation readiness
 
-The current version is 2.4.19. Its automated report and the operator's confirmation of archived-plan recovery appear at the beginning of this changelog. The [real-environment test guide](PRUEBAS_REALES.md) contains 65 scenarios for the remaining checks.
+The current version is 2.4.20. Its validation status appears at the beginning of this changelog. Archived-plan recovery confirmation belongs to 2.4.19 and retains its historical scope. If the duplicate-address warning appears, review its services, download the diagnostic, and explicitly correct the assignments before rechecking and continuing installation. The [real-environment test guide](PRUEBAS_REALES.md) contains 69 scenarios for the remaining checks.
 
 ### Historical 2.4.17 result
 

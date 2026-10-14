@@ -1,1 +1,1 @@
-Modernize the panel and improve provisioning, webhook security, job recovery, and archived plans
+Modernize the panel and improve provisioning, job recovery, archived plans, and migration diagnostics

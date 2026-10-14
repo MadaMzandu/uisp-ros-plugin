@@ -6,6 +6,16 @@ Esta revisión reúne las modificaciones de [dhanielsnieto en el PR #89](https:/
 
 El plugin comunica UISP CRM con los MikroTik mediante la **API nativa de RouterOS**. Los puertos habituales son `8728` para API y `8729` para API con TLS. El panel permite administrar esa integración; no cambia el transporte a SSH, WinBox o REST.
 
+## Candidato 2.4.20: conflictos de direcciones antes de migrar
+
+- Las IP deben ser únicas globalmente entre servicios, también cuando pertenecen a routers distintos. Una base heredada con la misma IPv4 o dirección/prefijo IPv6 en varios servicios sigue rechazándose al actualizar; se conservan sus asignaciones para una revisión explícita.
+- El panel autenticado presenta un aviso en español con indicador y contador de conflictos, tabla de familia/dirección/IDs de servicios, descarga del diagnóstico JSON y opción para volver a comprobar. El informe tiene límites de grupos e IDs y no expone credenciales.
+- POST conserva JSON con el error específico `duplicate_network_addresses_resolve_before_upgrade`. Las direcciones y los IDs se muestran sólo a administradores; los webhooks reciben el código y el contador de conflictos. Se mantienen los permisos administrativos y la autenticación de eventos.
+- La comprobación inicial es de sólo lectura y ocurre antes de inicializar la cola o rotar respaldos. Se repite bajo los bloqueos de instalación y dentro de la transacción de migración; incluye el resultado proyectado de importar `services.address` y `services.prefix6` antiguos. Un conflicto se detecta antes de que `INSERT OR IGNORE` pueda omitir la asignación.
+- Instalar el candidato no resuelve las colisiones: la instalación permanece pausada hasta corregir explícitamente las asignaciones y volver a comprobar. El aviso no modifica IP, cuentas ni sesiones en RouterOS; no elimina filas ni reasigna direcciones automáticamente.
+
+Validación 2.4.20 aprobada: **29 suites aisladas**, sintaxis de **41 archivos PHP propios** y comprobación del instalador de 353 entradas, 120 archivos propios y 13 dependencias. Informe: `dist/verification-2.4.20.json`. SHA-256: `fd74d7d8b81c8937a8553e20305e4bcdbc743cf6b19d7f34401e7956dfda7a01`. Las pruebas usan bases temporales y transportes simulados/locales; queda comprobar el aviso y la resolución de las asignaciones en Familynet.
+
 ## Candidato 2.4.19: tipo Internet y diagnóstico de metadatos
 
 - La validación de 2.4.18 comparaba el tipo con `internet` de forma sensible a mayúsculas y rechazaba la forma `Internet` devuelta por UISP. Se normaliza esa comparación sin aceptar tipos generales ni valores mal formados.
@@ -34,7 +44,7 @@ El plugin comunica UISP CRM con los MikroTik mediante la **API nativa de RouterO
 - Se conserva la evidencia de una creación parcial del perfil de suspensión. La limpieza verifica un perfil existente antes de modificar cuentas/sesiones; si no coincide con los valores congelados, se mantiene el fallo. Un perfil ausente no se recrea durante esta limpieza, y el existente no se sobrescribe.
 - El ciclo de conexiones no cambia: cada lote de servicio abre y cierra su conexión API; las consultas y limpiezas pueden abrir otras. Los logs de login/logout de API no equivalen por sí solos a desconectar PPP. No se incorpora una conexión compartida entre lotes.
 
-La validación de 2.4.17 pasó 27 suites, 39 archivos PHP propios y un ZIP de 351 entradas, 118 archivos propios y 13 dependencias fijadas. Su informe y hash históricos se conservan más abajo; la validación del candidato actual 2.4.19 se indica arriba.
+La validación de 2.4.17 pasó 27 suites, 39 archivos PHP propios y un ZIP de 351 entradas, 118 archivos propios y 13 dependencias fijadas. Su informe y hash históricos se conservan más abajo; el estado de validación del candidato actual 2.4.20 se indica arriba.
 
 ## Cambios aportados en el PR #89
 
@@ -261,7 +271,7 @@ La evidencia real posterior identificó tokens ausentes y una URL pegada como se
 
 ## Preparación para instalar y validar
 
-La versión actual es 2.4.19; su informe automatizado y la confirmación de recuperación de planes archivados se indican al principio. La [guía de pruebas reales](PRUEBAS_REALES.md) contiene 65 escenarios para las comprobaciones restantes.
+La versión actual es 2.4.20; su estado de validación se indica al principio. La confirmación de recuperación de planes archivados corresponde a 2.4.19 y conserva su alcance histórico. Si aparece el aviso de direcciones duplicadas, revisar sus servicios, descargar el diagnóstico y corregir las asignaciones antes de volver a comprobar y continuar la instalación. La [guía de pruebas reales](PRUEBAS_REALES.md) contiene 69 escenarios para las comprobaciones restantes.
 
 ### Resultado histórico de 2.4.17
 

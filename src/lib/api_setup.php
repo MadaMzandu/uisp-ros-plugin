@@ -1,5 +1,5 @@
 <?php
-const MY_VERSION = '2.4.19';
+const MY_VERSION = '2.4.20';
 const MAX_BACKUPS = 6 ;
 
 include_once 'api_sqlite.php';
@@ -23,6 +23,19 @@ final class ApiVersionMismatchException extends InvalidArgumentException
     public function getVersions(): array { return $this->versions; }
 }
 
+final class ApiNetworkAddressConflictException extends InvalidArgumentException
+{
+    private array $details;
+
+    public function __construct(array $details)
+    {
+        $this->details = $details;
+        parent::__construct('duplicate_network_addresses_resolve_before_upgrade');
+    }
+
+    public function getDetails(): array { return $this->details; }
+}
+
 class ApiSetup
 {
     private ?object $_db = null ;
@@ -38,6 +51,12 @@ class ApiSetup
 
     public function run(){
         if (SQLite3::version()['versionNumber'] < 3024000) throw new RuntimeException('SQLite 3.24 or newer is required');
+        // Queue initialization can import/recover old jobs. A known-incompatible upgrade
+        // must stop before that initialization as well as before backup rotation.
+        if (is_file('data/data.db')) {
+            $this->assertCompatible();
+            $this->assertNetworkAddressesUnique();
+        }
         if (!is_dir('data') && !mkdir('data', 0700, true) && !is_dir('data')) throw new RuntimeException('data_directory_failed');
         require_once __DIR__ . '/api_job_queue.php';
         myJobQueue()->withAdministrativeLock(function (): void { $this->runLocked(); });
@@ -48,6 +67,10 @@ class ApiSetup
         $lock = fopen('data/setup.lock', 'c');
         if (!$lock || !flock($lock, LOCK_EX)) throw new RuntimeException('setup_lock_failed');
         try {
+        if (!$this->needs_db()) {
+            $this->assertCompatible();
+            $this->assertNetworkAddressesUnique();
+        }
         if($this->needs_db()){
             $this->db_create();
         }
@@ -73,6 +96,8 @@ class ApiSetup
     {
         // Reject incompatible versions before rotating any existing recovery snapshot.
         $this->assertCompatible();
+        // Failed upgrades must not cycle through and replace the operator's recovery copies.
+        $this->assertNetworkAddressesUnique();
         if(!$this->db_backup()){
             fail('backup_failure');
         }
@@ -83,6 +108,8 @@ class ApiSetup
     {
         $this->assertCompatible();
         $this->dbApi()->transaction(function () {
+            // Check the effective legacy import under the write lock before changing any columns.
+            $this->assertNetworkAddressesUnique();
             // Migrate by column name in place; never guess column order or tolerate SQL failures.
             foreach (['network','services','plans','devices','config'] as $table) {
                 $desired = $this->get_cols($table);
@@ -104,11 +131,6 @@ class ApiSetup
                 }
             }
             $this->do_conversions();
-            foreach (['address','address6'] as $family) {
-                if ($this->dbApi()->singleQuery('SELECT count(*) FROM (SELECT ' . $family . ' FROM network WHERE ' . $family . " IS NOT NULL AND " . $family . "<>'' GROUP BY " . $family . ' HAVING count(*)>1)')) {
-                    throw new RuntimeException('duplicate_network_addresses_resolve_before_upgrade');
-                }
-            }
             $this->dbApi()->exec(file_get_contents('includes/schema.sql'));
             $this->dbApi()->execute("UPDATE devices SET type='mikrotik' WHERE type IS NULL OR type=''");
             $this->set_version();
@@ -120,6 +142,49 @@ class ApiSetup
     {
         $version = $this->databaseVersion();
         if (version_compare($version, MY_VERSION, '>')) throw new ApiVersionMismatchException($version, $this->context);
+    }
+
+    public function assertNetworkAddressesUnique(): void
+    {
+        $db = $this->dbApi();
+        $network = $this->get_cols('network', false);
+        $services = $this->get_cols('services', false);
+        $details = ['duplicate_groups' => 0, 'conflicts' => [], 'conflicts_truncated' => false];
+        foreach (['address' => 'IPv4', 'address6' => 'IPv6'] as $field => $family) {
+            $parts = [];
+            if (isset($network['id'], $network[$field])) {
+                $parts[] = 'SELECT id,' . $field . ' AS address FROM network';
+            }
+            // INSERT OR IGNORE imports only missing IDs. The existing network row wins,
+            // including its NULL address, and legacy IPv6 lives in services.prefix6.
+            $legacyField = $field === 'address' ? 'address' : 'prefix6';
+            if (isset($services['id'], $services['address'], $services[$legacyField])) {
+                $parts[] = 'SELECT s.id,s.' . $legacyField . ' AS address FROM services s'
+                    . (isset($network['id']) ? ' WHERE NOT EXISTS (SELECT 1 FROM network n WHERE n.id=s.id)' : '');
+            }
+            if (!$parts) continue;
+            $effective = '(' . implode(' UNION ALL ', $parts) . ')';
+            $groups = 'SELECT address,count(*) AS service_count FROM ' . $effective
+                . " WHERE address IS NOT NULL AND address<>'' GROUP BY address HAVING count(*)>1";
+            $count = (int) $db->singleQuery('SELECT count(*) FROM (' . $groups . ')');
+            $details['duplicate_groups'] += $count;
+            $remaining = 20 - count($details['conflicts']);
+            if (!$count || !$remaining) continue;
+            foreach ($db->selectCustom($groups . ' ORDER BY address LIMIT ' . $remaining) as $group) {
+                // Separate limited lookup avoids building an unbounded group_concat result.
+                $owners = $db->selectCustom('SELECT id FROM ' . $effective . ' WHERE address=? ORDER BY id LIMIT 50', [$group['address']]);
+                $details['conflicts'][] = [
+                    'family' => $family,
+                    'address' => (string) $group['address'],
+                    'service_ids' => array_map(static function (array $row): int { return (int) $row['id']; }, $owners),
+                    'service_count' => (int) $group['service_count'],
+                    'services_truncated' => (int) $group['service_count'] > count($owners),
+                ];
+            }
+        }
+        if (!$details['duplicate_groups']) return;
+        $details['conflicts_truncated'] = $details['duplicate_groups'] > count($details['conflicts']);
+        throw new ApiNetworkAddressConflictException($details);
     }
 
     private function databaseVersion(): string

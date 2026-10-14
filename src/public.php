@@ -97,5 +97,23 @@ try {
     $details = $error instanceof ApiVersionMismatchException ? $error->getVersions() : [];
     if ($details) $details['runtime_cache_needs_restart'] = (bool) ($runtimeRefresh['needs_restart'] ?? false);
     if ($details) MyLog()->Append(['version_mismatch' => $details], LOG_ERR);
+    if ($error instanceof ApiNetworkAddressConflictException) {
+        $details = $error->getDetails();
+        MyLog()->Append(['network_address_conflicts' => $details], LOG_ERR);
+        // A billing webhook is not an administrative read grant, including when
+        // compatibility mode explicitly accepts events without a secret.
+        if ($webhook ?? false) $details = ['duplicate_groups' => $details['duplicate_groups']];
+        // Authentication and write permissions have already been checked above.
+        // Only the panel GET gets HTML; jobs/webhooks keep the controlled JSON error.
+        if (($method ?? '') === 'GET' && ($_GET['page'] ?? '') === 'panel' && !isset($_GET['download'])) {
+            header('Content-Type: text/html; charset=utf-8');
+            $networkConflictDetails = $details;
+            require 'public/panel_v2/network_conflicts.php';
+            exit;
+        }
+        if (($method ?? '') === 'GET' && ($_GET['download'] ?? '') === 'network-conflicts') {
+            header('Content-Disposition: attachment; filename="ros-plugin-ip-conflicts.json"');
+        }
+    }
     respond($error instanceof InvalidArgumentException ? $error->getMessage() : 'operation_failed_check_log', true, $details);
 }

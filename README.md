@@ -2,6 +2,16 @@
 
 [Complete English changelog](docs/CHANGELOG_EN.md) · [Texto completo para el PR](docs/PR_DESCRIPTION.md) · [Webhook setup and rationale](docs/WEBHOOK_SETUP_EN.md) · [Mejoras en español](docs/MEJORAS.md)
 
+## Candidato 2.4.20 — diagnóstico de IP duplicadas al actualizar
+
+Si una instalación anterior conserva la misma IPv4 o dirección/prefijo IPv6 en varios servicios, la actualización se detiene para mantener la unicidad global de las IP, incluso entre routers distintos. Antes se mostraba `operation_failed_check_log` sin indicar las asignaciones en conflicto. La 2.4.20 muestra al administrador un aviso en español con contador de conflictos y una tabla de familia, dirección e IDs de servicios; permite descargar el diagnóstico JSON y volver a comprobar los datos.
+
+La comprobación inicial es de sólo lectura y precede a la inicialización de la cola y a la rotación de respaldos. Se repite dentro de la transacción de migración e incluye las direcciones que se importarían desde servicios antiguos, para impedir que `INSERT OR IGNORE` omita una asignación en conflicto. Las respuestas POST conservan JSON con el error específico `duplicate_network_addresses_resolve_before_upgrade`. Los detalles acotados se reservan a administradores; los webhooks reciben sólo el código y el total de conflictos.
+
+Instalar 2.4.20, revisar las asignaciones indicadas y corregirlas explícitamente según las IP reales de cada servicio, conservando los respaldos privados. La instalación sigue pausada hasta resolver los conflictos y volver a comprobar. El aviso conserva las IP existentes y no envía cambios al router; no reasigna ni repara direcciones automáticamente.
+
+Validación 2.4.20 aprobada: **29 suites aisladas**, sintaxis de **41 archivos PHP propios** y comprobación del instalador de 353 entradas, 120 archivos propios y 13 dependencias. Informe: `dist/verification-2.4.20.json`. SHA-256: `fd74d7d8b81c8937a8553e20305e4bcdbc743cf6b19d7f34401e7956dfda7a01`. Las pruebas usan bases temporales y transportes simulados/locales; queda comprobar el aviso y la resolución de las asignaciones en Familynet. Los resultados históricos de 2.4.19 y versiones anteriores se conservan a continuación.
+
 ## Candidato 2.4.19 — compatibilidad del tipo de plan devuelto por UISP
 
 La validación añadida en 2.4.18 aceptaba sólo `servicePlanType: "internet"`, pero UISP devuelve también `"Internet"`. Ese dato válido se rechazaba al refrescar el catálogo y al recuperar planes archivados por ID. La 2.4.19 acepta ambas formas, conserva el rechazo de tipos ajenos a Internet y mantiene las comprobaciones de nombre, ID y velocidades. También reconoce el campo de respuesta `archived` al mostrar el estado del plan.
@@ -86,15 +96,15 @@ El [inventario completo de mejoras](docs/MEJORAS.md) reúne tus cambios del [PR 
 
 La comunicación con MikroTik utiliza la **API nativa de RouterOS**, con TLS opcional; los cambios de interfaz no alteran ese mecanismo. Los apartados siguientes conservan el detalle de las revisiones anteriores y la documentación original.
 
-La segunda revisión corrige además propiedad de cuentas/colas padre, hidratación de clientes fuera de caché, bajas con router desconectado y migración de trabajos terminales anteriores, reintentos de perfiles/padres compartidos, pools IPv6 por revisión, idiomas regionales y respuestas tardías al cambiar pestañas. El detalle de cada fallo y su resultado está en el inventario. La [guía de pruebas reales](docs/PRUEBAS_REALES.md) contiene 65 casos para comprobar en laboratorio.
+La segunda revisión corrige además propiedad de cuentas/colas padre, hidratación de clientes fuera de caché, bajas con router desconectado y migración de trabajos terminales anteriores, reintentos de perfiles/padres compartidos, pools IPv6 por revisión, idiomas regionales y respuestas tardías al cambiar pestañas. El detalle de cada fallo y su resultado está en el inventario. La [guía de pruebas reales](docs/PRUEBAS_REALES.md) contiene 69 casos para comprobar en laboratorio.
 
 Para verificar el candidato después de instalar dependencias y construir el ZIP:
 
 ```text
-python tools/verify_plugin.py --php RUTA_PHP --node RUTA_NODE --archive dist/ros-plugin-2.4.19-candidate.zip --output dist/verification-2.4.19.json
+python tools/verify_plugin.py --php RUTA_PHP --node RUTA_NODE --archive dist/ros-plugin-2.4.20-candidate.zip --output dist/verification-2.4.20.json
 ```
 
-En Windows sin configuración PHP, añadir `--extension-dir RUTA_EXT`. El verificador ejecuta 28 suites y comprueba sintaxis PHP, correspondencia del código/dependencias y exclusión de datos/fixtures del instalador. El resultado de 2.4.19 es PASS. Para construirlo: `python tools/build_plugin.py --vendor-dir src/vendor --output dist/ros-plugin-2.4.19-candidate.zip`.
+En Windows sin configuración PHP, añadir `--extension-dir RUTA_EXT`. El verificador ejecuta las suites y comprueba sintaxis PHP, correspondencia del código/dependencias y exclusión de datos/fixtures del instalador. Validación 2.4.20 aprobada: **29 suites aisladas**, sintaxis de **41 archivos PHP propios** y comprobación del instalador de 353 entradas, 120 archivos propios y 13 dependencias. Informe: `dist/verification-2.4.20.json`. SHA-256: `fd74d7d8b81c8937a8553e20305e4bcdbc743cf6b19d7f34401e7956dfda7a01`. Las pruebas usan bases temporales y transportes simulados/locales; queda comprobar el aviso y la resolución de las asignaciones en Familynet. Para construirlo: `python tools/build_plugin.py --vendor-dir src/vendor --output dist/ros-plugin-2.4.20-candidate.zip`.
 
 ## Implementación de estabilización 2.4.7 — candidato para laboratorio
 
