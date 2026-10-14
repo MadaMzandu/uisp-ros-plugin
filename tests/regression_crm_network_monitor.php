@@ -70,10 +70,13 @@ try {
     checkCrmMonitor(count($calls) === 3 && !$partial['available'] && $partial['scan_in_progress'] && $partial['services_scanned'] === 1000,
         'First tick exceeded request limits or exposed an incomplete snapshot');
     $calls = [];
+    $now += 17; // Completion time differs from when the first pages were read.
     $first = $monitor->tick();
     checkCrmMonitor(count($calls) === 2 && $calls[1][1]['offset'] === 1000 && $first['available'] && !$first['scan_in_progress']
         && $first['duplicate_groups'] === 2 && !$first['stale'] && $first['services_scanned'] === 1001
         && $first['families'] === ['IPv4', 'IPv6'], 'Incremental full cycle did not publish canonical duplicate groups');
+    checkCrmMonitor($first['completed_scan_started_at'] === $partial['scan_started_at']
+        && $first['completed_scan_started_at'] !== $first['checked_at'], 'Completed report lost the original cycle start time');
     checkCrmMonitor($first['conflicts'][0]['address'] === '192.0.2.9' && $first['conflicts'][1]['address'] === '2001:db8::/64'
         && $first['conflicts'][0]['owners'][0]['client_url'] === '/crm/client/1001'
         && $first['conflicts'][0]['owners'][0]['source'] === 'crm_snapshot', 'Monitor did not retain validated live owner identities');
@@ -298,7 +301,37 @@ try {
     checkCrmMonitor(!$legacy->read()['available'] && $calls===[] && hash_file('sha256',$legacyPath)===$legacyHash,
         'Polling migrated v3 state or contacted CRM');
     checkCrmMonitor($legacy->tick()['duplicate_groups']===2,'Scheduler did not safely upgrade/review v3 state');
-    $db=new SQLite3($legacyPath,SQLITE3_OPEN_READONLY); checkCrmMonitor($db->querySingle('PRAGMA user_version')===4,'Monitor schema upgrade was not committed'); $db->close();
+    $db=new SQLite3($legacyPath,SQLITE3_OPEN_READONLY); checkCrmMonitor($db->querySingle('PRAGMA user_version')===5,'Monitor schema upgrade was not committed'); $db->close();
+    // The exact 2.4.26 schema also remains readable without writes. Its old
+    // publication has unknown cycle provenance until the scheduler completes
+    // a new cycle; upgrading must preserve its rows and historical columns.
+    $v4Path=$directory.'/legacy-v4-monitor.db'; $v4db=new SQLite3($v4Path); $sourceDb=new SQLite3($legacyPath,SQLITE3_OPEN_READONLY);
+    $v4db->exec('PRAGMA application_id=1129467214; PRAGMA user_version=4');
+    foreach (['monitor_meta','snapshot_services','staging_services','snapshot_address','snapshot_address6'] as $table) {
+        $sql=$sourceDb->querySingle("SELECT sql FROM sqlite_master WHERE name='".$table."'");
+        $v4db->exec(preg_replace('/,\s*published_started_at REAL(?=\))/', '', $sql));
+        if (strpos($table,'snapshot_address')===0) continue;
+        $rows=$sourceDb->query('SELECT * FROM '.$table);
+        while ($row=$rows->fetchArray(SQLITE3_ASSOC)) {
+            unset($row['published_started_at']);
+            $columns=array_keys($row);
+            $insert=$v4db->prepare('INSERT INTO '.$table.'('.implode(',',$columns).') VALUES(:'.implode(',:',$columns).')');
+            foreach ($row as $column=>$value) $insert->bindValue(':'.$column,$value,$value===null?SQLITE3_NULL:(is_int($value)?SQLITE3_INTEGER:(is_float($value)?SQLITE3_FLOAT:SQLITE3_TEXT)));
+            $insert->execute()->finalize(); $insert->close();
+        }
+        $rows->finalize();
+    }
+    $sourceDb->close(); $v4db->close();
+    $v4=new ApiCrmNetworkMonitor($request,$dataPath,$v4Path,static function()use(&$now):float{return $now;});
+    $v4Hash=hash_file('sha256',$v4Path); $calls=[]; $v4Read=$v4->read();
+    checkCrmMonitor($v4Read['available'] && $v4Read['duplicate_groups']===2 && $v4Read['completed_scan_started_at']===null
+        && $calls===[] && hash_file('sha256',$v4Path)===$v4Hash,'Polling changed or rejected exact v4 state');
+    $now+=301; $v5Read=$v4->tick();
+    checkCrmMonitor($v5Read['available'] && $v5Read['duplicate_groups']===2 && $v5Read['completed_scan_started_at']===gmdate('c',(int)$now),
+        'Scheduled v4 upgrade discarded rows or omitted completed-cycle provenance');
+    $v4db=new SQLite3($v4Path); checkCrmMonitor($v4db->querySingle('PRAGMA user_version')===5,'v4 was not upgraded to v5');
+    $v4db->exec('UPDATE monitor_meta SET published_started_at=published_at+1'); $v4db->close();
+    checkCrmMonitor($v4->read()['last_error']==='state_unavailable','Impossible completed-cycle timestamp was accepted');
     checkCrmMonitor(monitorFileHashes($directory)===$historyBefore,'Historical monitoring changed operational databases');
 
     $db = new SQLite3($dataPath); $db->exec("UPDATE config SET value='' WHERE key IN ('ip_addr_attr','ip_addr6_attr')"); $db->close();

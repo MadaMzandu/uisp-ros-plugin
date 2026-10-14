@@ -13,8 +13,8 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     
     <!-- Custom CSS -->
-    <script src="js/theme.js?v=2.0.41"></script>
-    <link rel="stylesheet" href="css/style.css?v=2.0.41">
+    <script src="js/theme.js?v=2.0.42"></script>
+    <link rel="stylesheet" href="css/style.css?v=2.0.42">
 </head>
 <body>
 
@@ -142,6 +142,17 @@
                             </table>
                         </div>
                         <p class="form-note conflicts-limit" id="crm-network-conflicts-limit" style="display: none;"></p>
+                        <div id="crm-network-resolved" class="crm-network-resolved" style="display: none;">
+                            <h3 data-i18n="Conflictos resueltos">Conflictos resueltos</h3>
+                            <p id="crm-network-resolved-summary" role="status" aria-live="polite"></p>
+                            <p class="form-note" data-i18n="Estos conflictos ya no cuentan como pendientes. La próxima revisión automática comprobará si la situación cambió.">Estos conflictos ya no cuentan como pendientes. La próxima revisión automática comprobará si la situación cambió.</p>
+                            <div class="table-container conflicts-table-container">
+                                <table class="data-table conflicts-table">
+                                    <thead><tr><th data-i18n="IP / familia">IP / familia</th><th data-i18n="Cliente y servicio">Cliente y servicio</th></tr></thead>
+                                    <tbody id="crm-network-resolved-body"></tbody>
+                                </table>
+                            </div>
+                        </div>
                     </div>
                     <div id="stored-network-conflicts-pane" class="stored-conflicts-pane" style="display: none;">
                     <div class="conflicts-heading">
@@ -619,8 +630,8 @@
     </div>
 
     <!-- Scripts -->
-    <script src="js/i18n.js?v=2.0.41"></script>
-    <script src="js/api.js?v=2.0.41"></script>
-    <script src="js/app.js?v=2.0.41"></script>
+    <script src="js/i18n.js?v=2.0.42"></script>
+    <script src="js/api.js?v=2.0.42"></script>
+    <script src="js/app.js?v=2.0.42"></script>
 </body>
 </html>

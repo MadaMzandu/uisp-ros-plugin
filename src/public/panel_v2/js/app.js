@@ -60,6 +60,9 @@ document.addEventListener('DOMContentLoaded', () => {
     let cleanupRequiresReload = false;
     let cleanupRemainingCount = null;
     let cleanupSource = 'stored';
+    let cleanupFamily = null;
+    let cleanupGroup = null;
+    const crmLocalAssignmentProofs = new Map();
     let crmMonitorReport = null;
     let crmMonitorFailure = false;
     let crmMonitorInFlight = null;
@@ -137,7 +140,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function conflictOwnerNodes() {
-        return ['crm-network-conflicts-body', 'network-conflicts-body'].flatMap(id =>
+        return ['crm-network-conflicts-body', 'crm-network-resolved-body', 'network-conflicts-body'].flatMap(id =>
             Array.from(byId(id)?.children || []).flatMap(row => Array.from(row.children[1]?.children || [])
                 .filter(node => Number.isSafeInteger(Number(node.dataset?.serviceId)) && Number(node.dataset.serviceId) > 0)));
     }
@@ -315,7 +318,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const total = Number(recoveryDetails?.duplicate_groups);
         const stored = recoveryReadOnly ? (cleanupRemainingCount ?? (Number.isSafeInteger(total) && total >= 0 ? total
             : Array.isArray(recoveryDetails?.conflicts) ? recoveryDetails.conflicts.length : 0)) : 0;
-        const current = crmMonitorReport?.available ? crmMonitorReport.duplicate_groups + monitorIssueCount(crmMonitorReport) : 0;
+        const current = crmMonitorReport?.available ? pendingCrmConflictCount() + monitorIssueCount(crmMonitorReport) : 0;
         const count = (Number.isSafeInteger(stored) && stored > 0 ? stored : 0) + current;
         byId('network-conflicts-nav').style.display = 'flex';
         byId('network-conflicts-count').textContent = count > 0 || recoveryReadOnly ? String(count) : '';
@@ -331,15 +334,74 @@ document.addEventListener('DOMContentLoaded', () => {
         return Number.isSafeInteger(report?.unknown_address_count) && report.unknown_address_count >= 0 ? report.unknown_address_count : 0;
     }
 
+    function resolvedCrmGroup(group) {
+        const proof = crmVerifiedGroups.get(JSON.stringify([group.family, group.address]));
+        if (!proof || proof.state !== 'resolved' || group.services_truncated === true || !crmMonitorReport?.available
+            || proof.snapshot_checked_at !== crmMonitorReport.checked_at) return null;
+        const ids = Array.isArray(group.service_ids) ? group.service_ids : group.owners?.map(owner => owner.service_id);
+        if (!Array.isArray(ids) || ids.length < 2 || ids.some(id => !Number.isSafeInteger(id) || id < 1)
+            || new Set(ids).size !== ids.length || (group.service_count !== undefined && group.service_count !== ids.length)
+            || !Array.isArray(proof.service_ids) || proof.service_ids.length !== ids.length
+            || new Set(proof.service_ids).size !== proof.service_ids.length
+            || proof.service_ids.some(id => !ids.includes(id)) || !Array.isArray(proof.owners)) return null;
+        const addresses = new Set();
+        for (const id of ids) {
+            const snapshotOwner = group.owners.find(owner => owner.service_id === id);
+            const owner = proof.owners.find(owner => owner.service_id === id);
+            const evidence = owner?.address_evidence?.[group.family === 'IPv6' ? 'address6' : 'address'];
+            if (!snapshotOwner || !owner || snapshotOwner.client_id !== owner.client_id || owner.refresh_error
+                || typeof owner.service_exists !== 'boolean' || evidence?.known !== true) return null;
+            if (Array.isArray(owner.historical_families) && owner.historical_families.includes(group.family)) {
+                if (owner.service_exists !== true || owner.service_status_code !== 2) return null;
+                continue;
+            }
+            if (owner.service_exists === false && evidence.value !== null) return null;
+            if (evidence.value !== null) {
+                if (addresses.has(evidence.value)) return null;
+                addresses.add(evidence.value);
+            }
+        }
+        return proof;
+    }
+
+    function resolvedCrmGroups() {
+        return crmMonitorReport?.available ? crmMonitorReport.conflicts.filter(group => resolvedCrmGroup(group)) : [];
+    }
+
+    function pendingCrmConflictCount() {
+        return Math.max(0, (crmMonitorReport?.available ? crmMonitorReport.duplicate_groups : 0) - resolvedCrmGroups().length);
+    }
+
+    function recordCrmLocalAssignments(id, state, checkedAt, cleaned = false) {
+        if (!Number.isSafeInteger(id) || id < 1 || !monitorDate(checkedAt)) return;
+        for (const [field, family] of [['address', 'IPv4'], ['address6', 'IPv6']]) {
+            const evidence = state?.[field];
+            if (evidence?.known !== true || typeof evidence.present !== 'boolean') continue;
+            const key = JSON.stringify([id, family]);
+            const prior = crmLocalAssignmentProofs.get(key);
+            if (prior && new Date(prior.checked_at).getTime() > new Date(checkedAt).getTime()) continue;
+            if (evidence.present) crmLocalAssignmentProofs.delete(key);
+            else crmLocalAssignmentProofs.set(key, { checked_at: checkedAt, cleaned: cleaned || prior?.cleaned === true });
+        }
+    }
+
+    function crmAssignmentCleaned(id, family) {
+        return crmLocalAssignmentProofs.get(JSON.stringify([id, family]));
+    }
+
     function normalizeCrmMonitor(report) {
+        const completedStart = monitorDate(report?.completed_scan_started_at);
         if (!report || typeof report !== 'object' || Array.isArray(report) || typeof report.available !== 'boolean'
             || !Number.isSafeInteger(report.duplicate_groups) || report.duplicate_groups < 0 || !Array.isArray(report.conflicts)
             || (report.available && (!monitorDate(report.checked_at) || report.conflicts.length > report.duplicate_groups
                 || (report.duplicate_groups > 0 && !report.conflicts.length)))
+            || (report.completed_scan_started_at != null && (!completedStart || !monitorDate(report.checked_at)
+                || new Date(completedStart).getTime() > new Date(report.checked_at).getTime()))
             || report.conflicts.some(group => !group || !['IPv4', 'IPv6'].includes(group.family)
-                || typeof group.address !== 'string' || group.address.length > 128 || !Array.isArray(group.owners))) throw new Error('invalid_crm_monitor_report');
+                || typeof group.address !== 'string' || group.address.length > 128 || !Array.isArray(group.owners))
+            || new Set(report.conflicts.map(group => JSON.stringify([group.family, group.address]))).size !== report.conflicts.length) throw new Error('invalid_crm_monitor_report');
         // Render a bounded snapshot. Customer details never enter navigation storage.
-        return { ...report, checked_at: monitorDate(report.checked_at), scan_started_at: monitorDate(report.scan_started_at),
+        return { ...report, checked_at: monitorDate(report.checked_at), scan_started_at: monitorDate(report.scan_started_at), completed_scan_started_at: completedStart,
             conflicts: report.conflicts.slice(0, 100) };
     }
 
@@ -347,7 +409,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const savedPosition = beforeTableUpdate('network_conflicts');
         const report = crmMonitorReport;
         const available = report?.available === true;
-        const count = available ? report.duplicate_groups : 0;
+        const count = available ? pendingCrmConflictCount() : 0;
+        const resolvedGroups = resolvedCrmGroups();
         const issueCount = available ? monitorIssueCount(report) : 0;
         const stale = crmMonitorFailure || (available && report?.stale === true) || Boolean(report?.last_error);
         const checkedAt = available ? t('Última revisión completa: {time}', { time: formatDate(report.checked_at) }) : '';
@@ -364,18 +427,22 @@ document.addEventListener('DOMContentLoaded', () => {
             : 'Las suspensiones y reactivaciones automáticas de los demás clientes continúan.');
         byId('crm-network-warning-freshness').textContent = freshness;
         const status = byId('crm-network-conflicts-status');
-        status.classList.toggle('is-stale', stale);
+        status.classList.toggle('is-stale', stale && (count > 0 || issueCount > 0 || !resolvedGroups.length));
         const messages = [];
         if (stale) messages.push(t('La revisión no está actualizada. Se conserva el último resultado disponible.'));
         if (report?.scan_in_progress === true) messages.push(t('Revisión en curso: {count} servicios consultados.', {
             count: Number.isSafeInteger(report.services_scanned) && report.services_scanned >= 0 ? report.services_scanned : 0
         }));
         else if (available) messages.push(t(count > 0 ? (count === 1 ? '{count} conflicto encontrado en los servicios del CRM.' : '{count} conflictos encontrados en los servicios del CRM.') : issueCount > 0
-            ? (issueCount === 1 ? '{count} dirección del CRM no se pudo comprobar.' : '{count} direcciones del CRM no se pudieron comprobar.') : 'No se encontraron IP duplicadas en las familias revisadas.', { count: count > 0 ? count : issueCount }));
+            ? (issueCount === 1 ? '{count} dirección del CRM no se pudo comprobar.' : '{count} direcciones del CRM no se pudieron comprobar.') : resolvedGroups.length
+                ? 'Los conflictos de esta revisión fueron resueltos y verificados en UISP.' : 'No se encontraron IP duplicadas en las familias revisadas.', { count: count > 0 ? count : issueCount }));
         else messages.push(t(crmMonitorInFlight ? 'Cargando el estado del monitoreo...' : 'El monitoreo automático aún no ha completado su primera revisión.'));
         if (issueCount > 0 && (count > 0 || report?.scan_in_progress === true))
             messages.push(t(issueCount === 1 ? '{count} dirección del CRM no se pudo comprobar.' : '{count} direcciones del CRM no se pudieron comprobar.', { count: issueCount }));
         status.textContent = messages.join(' ');
+        byId('crm-network-resolved').style.display = resolvedGroups.length ? 'block' : 'none';
+        translatedText(byId('crm-network-resolved-summary'), resolvedGroups.length === 1 ? '{count} conflicto resuelto y verificado en UISP.'
+            : '{count} conflictos resueltos y verificados en UISP.', { count: resolvedGroups.length });
         byId('crm-network-conflicts-freshness').textContent = freshness;
         const issueList = byId('crm-network-address-issues-list'); issueList.replaceChildren();
         const issues = available && Array.isArray(report.address_issues) ? report.address_issues.slice(0, 20).filter(issue => issue
@@ -424,19 +491,23 @@ document.addEventListener('DOMContentLoaded', () => {
         translatedText(historyLimit, 'Se muestran {shown} de {total} asignaciones históricas revisadas.', { shown: historical.length, total: historyCount });
         const tbody = byId('crm-network-conflicts-body');
         tbody.replaceChildren();
+        const resolvedBody = byId('crm-network-resolved-body'); resolvedBody.replaceChildren();
         const groups = available ? report.conflicts : [];
-        if (!groups.length) {
+        const pendingGroups = groups.filter(group => !resolvedCrmGroup(group));
+        if (!pendingGroups.length) {
             const empty = available && count === 0 ? issueCount > 0 ? 'No hay conflictos confirmados entre las direcciones comprobadas.' : 'Sin IP duplicadas en las familias revisadas.' : available
                 ? 'No hay detalles disponibles de estos conflictos.' : 'Los resultados aparecerán al completar la revisión automática.';
-            tbody.innerHTML = `<tr><td colspan="2" class="empty-state">${html(t(empty))}</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="2" class="empty-state">${html(t(resolvedGroups.length && count === 0 ? 'No quedan conflictos pendientes en esta revisión.' : empty))}</td></tr>`;
         }
         for (const group of groups) {
             const row = document.createElement('tr');
+            const resolved = resolvedCrmGroup(group);
+            if (resolved) row.className = 'crm-resolved-row';
             const address = document.createElement('td'); address.className = 'conflict-address';
             const owners = group.owners.slice(0, 50).filter(owner => owner && Number.isSafeInteger(owner.service_id) && owner.service_id > 0);
             const total = Number.isSafeInteger(group.service_count) && group.service_count >= owners.length ? group.service_count : owners.length;
-            address.innerHTML = `<strong>${html(group.address)}</strong><span class="text-muted">${html(group.family)}</span><span class="badge badge-warning">${html(t('{count} servicios en CRM', { count: total }))}</span>`;
-            if (group.current_confirmed === false) {
+            address.innerHTML = `<strong>${html(group.address)}</strong><span class="text-muted">${html(group.family)}</span><span class="badge ${resolved ? 'badge-success' : 'badge-warning'}">${html(t(resolved ? 'Conflicto resuelto' : '{count} servicios en CRM', { count: total }))}</span>`;
+            if (!resolved && group.current_confirmed === false) {
                 const pending = document.createElement('span'); pending.className = 'badge badge-neutral';
                 translatedText(pending, 'Pendiente de comprobar'); address.appendChild(pending);
                 const prior = document.createElement('p'); prior.className = 'conflict-source';
@@ -445,7 +516,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const verification = crmVerifiedGroups.get(JSON.stringify([group.family, group.address]));
             if (verification) {
                 const note = document.createElement('p'); note.className = 'crm-selection-status';
-                translatedText(note, verification.state === 'resolved' ? 'Conflicto seleccionado resuelto. El aviso general se actualizará en la próxima revisión automática.'
+                translatedText(note, resolved ? 'Resolución verificada. Este conflicto ya no cuenta como pendiente.'
                     : verification.state === 'duplicate' ? 'Los servicios comprobados todavía comparten una IP.'
                     : 'La verificación seleccionada está incompleta. El aviso general conserva la revisión automática.');
                 address.appendChild(note);
@@ -505,11 +576,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 const more = document.createElement('p'); more.className = 'form-note';
                 translatedText(more, 'Se muestran {shown} de {total} servicios en CRM.', { shown: owners.length, total }); ownersCell.appendChild(more);
             }
-            row.append(address, ownersCell); tbody.appendChild(row);
+            row.append(address, ownersCell); (resolved ? resolvedBody : tbody).appendChild(row);
         }
         const limit = byId('crm-network-conflicts-limit');
-        limit.style.display = available && (report.conflicts_truncated === true || count > groups.length) ? 'block' : 'none';
-        translatedText(limit, 'Se muestran {shown} de {total} conflictos. El diagnóstico conserva el total y una muestra acotada.', { shown: groups.length, total: count });
+        limit.style.display = available && (report.conflicts_truncated === true || count > pendingGroups.length) ? 'block' : 'none';
+        translatedText(limit, 'Se muestran {shown} de {total} conflictos pendientes. Los conflictos fuera de esta muestra aún deben comprobarse.', { shown: pendingGroups.length, total: count });
         updateConflictNavigation();
         afterTableUpdate('network_conflicts', savedPosition);
     }
@@ -530,10 +601,21 @@ document.addEventListener('DOMContentLoaded', () => {
                 || Object.values(owner.address_evidence || {}).some(evidence => !evidence || typeof evidence.known !== 'boolean'
                     || (evidence.known && evidence.value !== null && (typeof evidence.value !== 'string' || evidence.value.length > 128)))))
             throw new Error(t('Respuesta inválida del servidor.'));
-        for (const owner of data.owners) crmVerifiedOwners.set(owner.service_id, { owner, checked_at: data.checked_at });
+        for (const owner of data.owners) {
+            const prior = crmVerifiedOwners.get(owner.service_id)?.owner;
+            for (const [field, family] of [['address', 'IPv4'], ['address6', 'IPv6']]) {
+                if (prior && (prior.client_id !== owner.client_id || JSON.stringify(prior.address_evidence?.[field]) !== JSON.stringify(owner.address_evidence?.[field])
+                    || JSON.stringify(prior.historical_families) !== JSON.stringify(owner.historical_families))) crmLocalAssignmentProofs.delete(JSON.stringify([owner.service_id, family]));
+            }
+            crmVerifiedOwners.set(owner.service_id, { owner, checked_at: data.checked_at });
+            recordCrmLocalAssignments(owner.service_id, owner.local_assignment_state, owner.local_assignment_checked_at || data.checked_at);
+        }
         for (const result of data.groups) if (result && ['IPv4', 'IPv6'].includes(result.family) && typeof result.address === 'string'
             && result.address.length <= 128 && ['resolved', 'duplicate', 'unknown'].includes(result.state))
-            crmVerifiedGroups.set(JSON.stringify([result.family, result.address]), { ...result, checked_at: data.checked_at });
+            crmVerifiedGroups.set(JSON.stringify([result.family, result.address]), { ...result, checked_at: data.checked_at,
+                observed_at: data.owners.reduce((earliest, owner) => monitorDate(owner.address_verified_at)
+                    && new Date(owner.address_verified_at).getTime() < new Date(earliest).getTime() ? owner.address_verified_at : earliest, data.checked_at),
+                snapshot_checked_at: data.snapshot_checked_at, owners: data.owners });
         return data;
     }
 
@@ -562,8 +644,9 @@ document.addEventListener('DOMContentLoaded', () => {
         item.appendChild(edit);
         if (group.address !== null) {
             const cleanup = document.createElement('button'); cleanup.type = 'button'; cleanup.className = 'btn btn-secondary conflict-cleanup';
-            translatedText(cleanup, 'Revisar limpieza'); cleanup.disabled = disabled || cleanupRequiresReload;
-            cleanup.addEventListener('click', () => previewCleanup([id], 'crm_snapshot')); item.appendChild(cleanup);
+            const cleaned = crmAssignmentCleaned(id, group.family);
+            translatedText(cleanup, cleaned ? cleaned.cleaned ? 'Ya limpiada' : 'Sin reserva local' : 'Revisar limpieza'); cleanup.disabled = Boolean(disabled || cleanupRequiresReload || cleaned);
+            cleanup.addEventListener('click', () => previewCleanup([id], 'crm_snapshot', group.family)); item.appendChild(cleanup);
         }
     }
 
@@ -693,7 +776,7 @@ document.addEventListener('DOMContentLoaded', () => {
             byId('crm-ip-address').value = result.applied === true && result.uncertain === false && result.current_address_known === true
                 && typeof result.current_address === 'string' ? result.current_address : '';
             translatedText(byId('crm-ip-edit-status'), result.applied === true && result.uncertain === false
-                ? preview.operation === 'history' ? 'Asignación histórica resuelta. El CRM conserva su historial; la revisión automática actualizará el aviso general.'
+                ? preview.operation === 'history' ? 'Asignación histórica resuelta. El CRM conserva su historial.'
                     : 'Cambio guardado en el CRM. Comprueba el servicio y sincroniza su equipo para reconciliar el router.'
                 : 'UISP no confirmó el resultado del cambio. Verifica el servicio antes de intentar otro cambio.');
             if (result.applied && !result.uncertain) {
@@ -711,7 +794,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     const cleanup = document.createElement('button'); cleanup.type = 'button'; cleanup.className = 'btn btn-secondary';
                     translatedText(cleanup, 'Revisar limpieza'); cleanup.addEventListener('click', () => {
                         if (crmEditBusy) return;
-                        crmEditModal.style.display = 'none'; previewCleanup([target.owner.service_id], 'crm_snapshot');
+                        crmEditModal.style.display = 'none'; previewCleanup([target.owner.service_id], 'crm_snapshot', target.group.family);
                     }); byId('crm-ip-review').appendChild(cleanup); byId('crm-ip-review').style.display = 'block';
                 }
             } else { crmEditTarget = { ...target, verified: false }; }
@@ -726,16 +809,38 @@ document.addEventListener('DOMContentLoaded', () => {
     function clearCrmMonitorTimer() { clearTimeout(crmMonitorTimer); crmMonitorTimer = undefined; }
     function expireCrmVerifications(incoming) {
         if (!incoming.available || incoming.last_error || !monitorDate(incoming.checked_at)) return;
-        const timestamp = new Date(incoming.checked_at).getTime();
+        const timestamp = new Date(incoming.completed_scan_started_at || incoming.checked_at).getTime();
         const incomingOwners = new Map(incoming.conflicts.flatMap(group => group.owners).map(owner => [owner.service_id, owner]));
         const incomingGroups = new Map(incoming.conflicts.map(group => [JSON.stringify([group.family, group.address]), group]));
         for (const [id, verification] of crmVerifiedOwners) {
             const owner = incomingOwners.get(id);
-            if (timestamp > new Date(verification.checked_at).getTime() || (owner && owner.client_id !== verification.owner.client_id)) crmVerifiedOwners.delete(id);
+            if (timestamp > new Date(monitorDate(verification.owner.address_verified_at) || verification.checked_at).getTime()
+                || (owner && (owner.client_id !== verification.owner.client_id
+                    || (verification.owner.historical_families?.length > 0 && owner.service_status_code !== 2)))) crmVerifiedOwners.delete(id);
         }
         for (const [key, verification] of crmVerifiedGroups) {
             const group = incomingGroups.get(key);
-            if (!group || timestamp > new Date(verification.checked_at).getTime()) crmVerifiedGroups.delete(key);
+            const ids = Array.isArray(group?.service_ids) ? group.service_ids : group?.owners?.map(owner => owner.service_id);
+            const sameSelection = Array.isArray(ids) && Array.isArray(verification.service_ids) && ids.length === verification.service_ids.length
+                && ids.every(id => verification.service_ids.includes(id)) && group.services_truncated !== true
+                && (group.service_count === undefined || group.service_count === ids.length)
+                && ids.every(id => {
+                    const owner = group.owners.find(owner => owner.service_id === id);
+                    const prior = verification.owners?.find(owner => owner.service_id === id);
+                    return owner?.client_id === prior?.client_id && (!prior?.historical_families?.includes(group.family) || owner?.service_status_code === 2);
+                });
+            if (!group || !sameSelection || timestamp > new Date(verification.observed_at || verification.checked_at).getTime()) crmVerifiedGroups.delete(key);
+            else verification.snapshot_checked_at = incoming.checked_at;
+        }
+        // A new snapshot may change a service's identity or IP. Such a row
+        // cannot inherit a local-cleanup confirmation for an old assignment.
+        for (const [key, proof] of crmLocalAssignmentProofs) {
+            const [id, family] = JSON.parse(key);
+            const prior = crmMonitorReport?.conflicts?.filter(group => group.family === family).find(group => group.owners.some(owner => owner.service_id === id));
+            const current = incoming.conflicts.filter(group => group.family === family).find(group => group.owners.some(owner => owner.service_id === id));
+            if (timestamp > new Date(proof.checked_at).getTime() || (prior && current && (prior.address !== current.address
+                || prior.owners.find(owner => owner.service_id === id)?.client_id !== current.owners.find(owner => owner.service_id === id)?.client_id
+                || prior.owners.find(owner => owner.service_id === id)?.service_status_code !== current.owners.find(owner => owner.service_id === id)?.service_status_code))) crmLocalAssignmentProofs.delete(key);
         }
     }
     function scheduleCrmMonitor() {
@@ -754,7 +859,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (incoming.available && crmMonitorReport?.available
                     && new Date(incoming.checked_at).getTime() < new Date(crmMonitorReport.checked_at).getTime()) throw new Error('old_crm_monitor_report');
                 if (['mapping_changed', 'mapping_unavailable'].includes(incoming.last_error)) {
-                    crmVerifiedOwners.clear(); crmVerifiedGroups.clear();
+                    crmVerifiedOwners.clear(); crmVerifiedGroups.clear(); crmLocalAssignmentProofs.clear();
                 }
                 // An incomplete scan cannot replace a completed report with a false zero.
                 if (crmMonitorReport?.available && (!incoming.available || incoming.last_error)) {
@@ -1010,11 +1115,14 @@ document.addEventListener('DOMContentLoaded', () => {
         byId('apply-network-cleanup').disabled = cleanupBusy || verifyingService !== null || verifyingClient !== null || !cleanupPreview || selected === 0 || selected > 3;
     }
 
-    async function previewCleanup(serviceIds, source = 'stored') {
+    async function previewCleanup(serviceIds, source = 'stored', family = null) {
         if (cleanupBusy || verifyingService !== null || verifyingClient !== null || crmVerifyBusy || crmEditBusy || cleanupRequiresReload || !cleanupModal) return;
         const ids = [...new Set(serviceIds.map(Number))].filter(id => Number.isSafeInteger(id) && id > 0).slice(0, 3);
         if (!ids.length) return;
         cleanupBusy = true; cleanupPreview = null; cleanupBoxes = []; cleanupSource = source === 'crm_snapshot' ? source : 'stored';
+        cleanupFamily = ['IPv4', 'IPv6'].includes(family) ? family : null;
+        cleanupGroup = cleanupSource === 'crm_snapshot' ? crmMonitorReport?.conflicts.find(group => group.family === cleanupFamily
+            && group.owners.some(owner => ids.includes(owner.service_id))) || null : null;
         cleanupModal.style.display = 'flex';
         byId('network-cleanup-candidates').replaceChildren();
         byId('network-cleanup-blocked').replaceChildren();
@@ -1066,12 +1174,21 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
                 row.append(checkbox, copy); byId('network-cleanup-candidates').appendChild(row);
             }
+            let cleanedCount = 0;
             for (const blocked of data.blocked) {
+                if (!blocked || !Number.isSafeInteger(blocked.service_id) || blocked.service_id < 1) continue;
+                if (cleanupSource === 'crm_snapshot' && ids.includes(blocked.service_id)) recordCrmLocalAssignments(blocked.service_id, blocked.local_assignment_state, blocked.checked_at);
+                const field = cleanupFamily === 'IPv6' ? 'address6' : cleanupFamily === 'IPv4' ? 'address' : null;
+                const cleaned = blocked.reason === 'no_local_assignment' || (cleanupSource === 'crm_snapshot' && field
+                    && blocked.local_assignment_state?.[field]?.known === true && blocked.local_assignment_state[field].present === false);
                 const row = document.createElement('div'); row.className = 'cleanup-blocked-item';
-                row.innerHTML = `<strong>${html(t('Servicio #{id}', { id: blocked.service_id }))}</strong><p>${html(cleanupReason(blocked.reason))}</p>`;
+                if (cleaned) { row.className += ' is-cleaned'; if (ids.includes(blocked.service_id)) cleanedCount++; }
+                row.innerHTML = `<strong>${html(t('Servicio #{id}', { id: blocked.service_id }))}${cleaned ? ' · ' + html(t(crmAssignmentCleaned(blocked.service_id, cleanupFamily)?.cleaned ? 'Ya limpiada' : 'Sin reserva local')) : ''}</strong><p>${html(cleaned
+                    ? t('No hay reservas locales de esta IP que limpiar.') : cleanupReason(blocked.reason))}</p>`;
                 byId('network-cleanup-blocked').appendChild(row);
             }
-            translatedText(byId('network-cleanup-status'), cleanupBoxes.length ? 'Selecciona las asignaciones que deseas limpiar. La revisión vence: {time}.' : 'No hay asignaciones que puedan limpiarse con seguridad en esta revisión.', { time: formatDate(data.expiresAt) });
+            translatedText(byId('network-cleanup-status'), cleanupBoxes.length ? 'Selecciona las asignaciones que deseas limpiar. La revisión vence: {time}.'
+                : cleanedCount === ids.length ? 'No hay reservas locales seleccionadas que limpiar.' : 'No hay asignaciones que puedan limpiarse con seguridad en esta revisión.', { time: formatDate(data.expiresAt) });
         } catch (error) { translatedText(byId('network-cleanup-status'), 'Error: {message}', { message: t(error.message) }); }
         finally { cleanupBusy = false; updateCleanupButton(); if (currentView === 'network_conflicts') { renderNetworkConflictsTable(); renderCrmMonitor(); } }
     }
@@ -1080,21 +1197,29 @@ document.addEventListener('DOMContentLoaded', () => {
         if (cleanupBusy || verifyingService !== null || verifyingClient !== null || !cleanupPreview) return;
         const ids = cleanupBoxes.filter(box => box.checked).map(box => Number(box.value));
         if (!ids.length || ids.length > 3) return;
+        const originGroup = cleanupGroup;
         cleanupBusy = true; updateCleanupButton();
         try {
             if (!await confirmAction(t('¿Limpiar las asignaciones locales de {count} servicios seleccionados? Se creará un respaldo. UISP y los routers no se modificarán.', { count: ids.length }))) return;
             translatedText(byId('network-cleanup-status'), 'Creando respaldo y limpiando asignaciones locales...');
             const result = checked(await api.applyNetworkCleanup(cleanupPreview.previewToken, ids, cleanupSource)).data;
             if (!result || !Array.isArray(result.removed_service_ids) || !Number.isSafeInteger(result.duplicate_groups) || result.duplicate_groups < 0
+                || result.removed_service_ids.some(id => !Number.isSafeInteger(id) || !ids.includes(id))
                 || typeof result.requires_reload !== 'boolean') throw new Error(t('Respuesta inválida del servidor.'));
+            if (cleanupSource === 'crm_snapshot') for (const id of result.removed_service_ids) {
+                const candidate = cleanupPreview.candidates.find(entry => entry.service_id === id);
+                const fields = candidate?.reason === 'crm_not_found' ? ['address', 'address6'] : candidate?.fields || [];
+                for (const field of fields) if (['address', 'address6'].includes(field)) recordCrmLocalAssignments(id,
+                    { [field]: { known: true, present: false } }, monitorDate(result.local_assignment_checked_at) || new Date().toISOString(), true);
+            }
             const backupUrl = api.downloadUrl(result.backup_name);
             cleanupRequiresReload = result.requires_reload; cleanupPreview = null;
             if (cleanupSource === 'stored' || recoveryReadOnly) cleanupRemainingCount = result.duplicate_groups;
             cleanupBoxes.forEach(box => { box.disabled = true; });
             const summary = document.createElement('p');
             translatedText(summary, cleanupSource === 'crm_snapshot' && !recoveryReadOnly
-                ? result.removed_service_ids.length === 1 ? 'Se limpiaron las reservas locales de {count} servicio. El aviso del CRM se actualizará en la próxima revisión automática.'
-                    : 'Se limpiaron las reservas locales de {count} servicios. El aviso del CRM se actualizará en la próxima revisión automática.'
+                ? result.removed_service_ids.length === 1 ? 'Se limpiaron las reservas locales de {count} servicio. La verificación del CRM se muestra por separado.'
+                    : 'Se limpiaron las reservas locales de {count} servicios. La verificación del CRM se muestra por separado.'
                 : 'Se retiraron las asignaciones de {count} servicios. Quedan {remaining} conflictos de IP.', { count: result.removed_service_ids.length, remaining: result.duplicate_groups });
             const backup = document.createElement('a'); backup.className = 'btn btn-secondary'; backup.href = backupUrl; backup.download = result.backup_name;
             translatedText(backup, 'Descargar respaldo de la limpieza');
@@ -1104,6 +1229,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 : 'La limpieza local terminó. Puedes seguir usando el panel.');
             byId('apply-network-cleanup').style.display = 'none'; byId('reload-after-cleanup').style.display = result.requires_reload ? 'inline-flex' : 'none';
             if (recoveryReadOnly) applyRecovery({ readOnly: true });
+            if (cleanupSource === 'crm_snapshot' && result.removed_service_ids.length) {
+                try {
+                    const group = originGroup && crmMonitorReport?.conflicts.find(group => group.family === originGroup.family && group.address === originGroup.address);
+                    if (group) await verifyCrmOwners(group, result.removed_service_ids[0]);
+                    else await refreshCrmMonitor();
+                } catch (_) {
+                    translatedText(byId('network-cleanup-status'), 'La limpieza local terminó, pero no se pudo actualizar la verificación del CRM. Vuelve a verificar el conflicto.');
+                }
+            }
         } catch (error) { translatedText(byId('network-cleanup-status'), 'Error: {message}', { message: t(error.message) }); }
         finally { cleanupBusy = false; updateCleanupButton(); if (currentView === 'network_conflicts') { renderNetworkConflictsTable(); renderCrmMonitor(); } }
     });
@@ -1389,6 +1523,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!await confirmAction(t('¿Sincronizar las cuentas administradas de este MikroTik y reconectar todas sus sesiones PPP/Hotspot?'))) return;
             if (recoveryReadOnly) return;
             deviceSyncs.set(id, 'running');
+            crmLocalAssignmentProofs.clear();
             if (currentView === 'devices') renderDevicesTable();
             completed(await api.send('update', 'system', 'insert', { type: 'device', id }),
                 t('Sincronización y reconexión completadas.'), name);

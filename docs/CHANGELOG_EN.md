@@ -2,9 +2,21 @@
 
 [Español](MEJORAS.md) · [PR description](PR_DESCRIPTION.md) · [Webhook setup and rationale](WEBHOOK_SETUP_EN.md)
 
-This revision combines [dhanielsnieto's changes in PR #89](https://github.com/MadaMzandu/uisp-ros-plugin/pull/89) with the subsequent fixes prepared in this repository. The comparison starts at `7ca8dc8`; the original PR ends at `056b89f`. The current candidate is **2.4.26**. The operator confirmed archived-plan speed recovery in their 2.4.19 installation. That confirmation covers this historical scenario; the remaining UISP and RouterOS integration scenarios still require their own checks before production readiness can be established.
+This revision combines [dhanielsnieto's changes in PR #89](https://github.com/MadaMzandu/uisp-ros-plugin/pull/89) with the subsequent fixes prepared in this repository. The comparison starts at `7ca8dc8`; the original PR ends at `056b89f`. The current candidate is **2.4.27**. The operator confirmed archived-plan speed recovery in their 2.4.19 installation. That confirmation covers this historical scenario; the remaining UISP and RouterOS integration scenarios still require their own checks before production readiness can be established.
 
 The plugin connects UISP CRM to MikroTik through the **native RouterOS API**, normally on port `8728`, or `8729` with TLS. The panel manages that integration; it does not switch the transport to SSH, WinBox, or REST.
+
+## Candidate 2.4.27: distinguish resolved conflicts and cleaned reservations
+
+A fully verified group moves immediately to the green **Resolved conflicts** section and no longer contributes to the warning or sidebar's pending count. The UI requires complete matching service IDs, client identities, known per-family evidence, and no remaining effective duplicate; unknown, truncated, reassigned, or unobserved groups stay pending. If all reviewed groups are resolved, the pending list says so while retaining the scope and time of the completed automatic scan.
+
+The monitor reports the start time of its completed cycle independently from publication. Pages from a scan started before a newer selected verification cannot immediately resurrect the old warning. A later completed review, changed group/identity, reactivation of a reviewed ended owner, or mapping change revokes the applicable proof. Selected verification remains in memory for the open panel, outside navigation storage; a reload uses the automatic report and fresh explicit verification. It does not persist customer evidence in the browser or start a full CRM scan from polling.
+
+Local cleanup now distinguishes **Already cleaned** after a successful cleanup receipt from **No local reservation** after fresh per-family absence checks. It checks both current network rows and legacy service fields, including values such as zero that must not be treated as empty. Unknown schema, failed reads, remaining other-family assignments, and applied ownership remain conservative. Empty CRM-source previews return a neutral status without a cleanup token or CRM requests. Cleanup success performs one bounded verification of its originating group; a continuing CRM duplicate stays pending, and failed follow-up verification preserves the confirmed cleanup receipt without claiming CRM resolution.
+
+The new monitor metadata is upgraded only by the scheduler from its exact known v3/v4 schemas to v5. Panel reads leave previous schemas unchanged. The version retains per-device synchronization progress and existing backend protections.
+
+**2.4.27 validation passed:** 35 isolated suites, syntax checks for 48 first-party PHP files, and installer verification covering 360 entries, 127 first-party files, and 13 locked dependencies. Report: `dist/verification-2.4.27.json`. SHA-256: `fcabbdb8b67dc77d2cbefa97e339bad4270eabb5a885199f3bc01d3f32aa8b88`. Browser checks used synthetic data to verify the green resolved section, cleared pending count, and cleaned reservation indicator. No production CRM or RouterOS changes were performed.
 
 ## Candidate 2.4.26: resolve CRM conflicts and synchronize devices without blocking the panel
 
@@ -122,7 +134,7 @@ This revision's standalone warning is superseded by 2.4.21 view mode. Its report
 - Evidence of partially creating a suspension profile is preserved. Cleanup verifies an existing profile before changing accounts or sessions; mismatched frozen values remain an error. A missing profile is not recreated during cleanup, and an existing profile is not overwritten.
 - Connection handling is unchanged: each service batch opens and closes its own API connection; queries and cleanup can open additional connections. API login/logout messages alone do not mean PPP sessions were disconnected. No connection sharing between batches was introduced.
 
-The historical 2.4.17 validation passed 27 suites, checks for 39 first-party PHP files, and verification of a ZIP containing 351 entries, 118 first-party files, and 13 pinned dependencies. Its report and hash are retained later in this changelog; the validation status of current candidate 2.4.26 is recorded above.
+The historical 2.4.17 validation passed 27 suites, checks for 39 first-party PHP files, and verification of a ZIP containing 351 entries, 118 first-party files, and 13 pinned dependencies. Its report and hash are retained later in this changelog; the validation status of current candidate 2.4.27 is recorded above.
 
 ## Changes contributed in PR #89
 
@@ -349,7 +361,7 @@ Later production evidence identified missing tokens and a URL pasted as the secr
 
 ## Installation and validation readiness
 
-The current version is 2.4.26. Its validation status appears at the beginning of this changelog. Archived-plan recovery confirmation belongs to 2.4.19 and retains its historical scope. CRM warnings keep other jobs available: current duplicate addresses can be corrected explicitly, and a freshly verified ended service can have its exact historical assignment reviewed without editing its CRM history. **Review cleanup** separately previews eligible obsolete local reservations with a private backup; pending work, unresolved recovery, and recorded applied ownership still protect their reservations. Backups remain downloadable from **System** after reload. Only the separate duplicate-reservation preflight that prevents safe migration pauses other writes and provisioning; it requires resolving those stored conflicts and reloading. The [real-environment test guide](PRUEBAS_REALES.md) contains 116 scenarios for the remaining checks.
+The current version is 2.4.27. Its validation status appears at the beginning of this changelog. Archived-plan recovery confirmation belongs to 2.4.19 and retains its historical scope. CRM warnings keep other jobs available: current duplicate addresses can be corrected explicitly, and a freshly verified ended service can have its exact historical assignment reviewed without editing its CRM history. **Review cleanup** separately previews eligible obsolete local reservations with a private backup; pending work, unresolved recovery, and recorded applied ownership still protect their reservations. Backups remain downloadable from **System** after reload. Only the separate duplicate-reservation preflight that prevents safe migration pauses other writes and provisioning; it requires resolving those stored conflicts and reloading. The [real-environment test guide](PRUEBAS_REALES.md) contains 124 scenarios for the remaining checks.
 
 ### Historical 2.4.17 result
 

@@ -29,7 +29,7 @@ $now = 1800000000.0;
 try {
     require $source . '/vendor/autoload.php';
     require $source . '/lib/api_crm_network_resolution.php';
-    require $source . '/lib/api_network_cleanup.php';
+    require_once $source . '/lib/api_network_cleanup.php';
     $db = new SQLite3($dataPath);
     $db->enableExceptions(true);
     $db->exec("CREATE TABLE config(key TEXT PRIMARY KEY,value TEXT);
@@ -228,6 +228,15 @@ try {
     checkResolution($db->querySingle('SELECT address FROM network WHERE id=1') === null
         && $db->querySingle('SELECT address6 FROM network WHERE id=1') === '2001:db8:1::/64'
         && $services[1]['attributes'][1]['value'] === '192.0.2.9', 'Historical cleanup altered preserved CRM history or the opposite local family');
+    $cleanedOwner = $api->verify([1])['owners'][0];
+    checkResolution($cleanedOwner['local_assignment_state'] === [
+        'address' => ['known' => true, 'present' => false], 'address6' => ['known' => true, 'present' => true]]
+        && is_string($cleanedOwner['local_assignment_checked_at']),
+        'Fresh verification did not preserve cleaned IPv4 status separately from retained IPv6');
+    $repeatedHistory = $cleanup->preview([1], true);
+    checkResolution($repeatedHistory['previewToken'] === null
+        && $repeatedHistory['blocked'][0]['local_assignment_state'] === $cleanedOwner['local_assignment_state'],
+        'Repeated CRM cleanup hid selected-family absence behind an independently current family');
     $db->exec("UPDATE network SET address='192.0.2.99' WHERE id=1; UPDATE services SET address='192.0.2.99' WHERE id=1"); $db->close();
     $services[1] = resolutionService(1, null, 2);
     $blocked = $cleanup->preview([1]);

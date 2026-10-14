@@ -2,6 +2,7 @@
 
 require_once __DIR__ . '/api_crm_network_monitor.php';
 require_once __DIR__ . '/api_crm_network_history.php';
+require_once __DIR__ . '/api_network_cleanup.php';
 
 /** Explicit CRM IP corrections. Automatic monitoring never invokes this class. */
 final class ApiCrmNetworkResolution
@@ -105,6 +106,8 @@ final class ApiCrmNetworkResolution
                     catch (Throwable $ignored) { $clients[$clientId] = ['client_refresh_error' => 'unavailable']; }
                 }
             }
+            $owner['local_assignment_state'] = ApiNetworkCleanup::localAssignmentState($id, $this->dataPath);
+            $owner['local_assignment_checked_at'] = self::date($this->now());
             $owners[$id] = array_replace($owner, $clients[$clientId] ?? []);
         }
         $groups = [];

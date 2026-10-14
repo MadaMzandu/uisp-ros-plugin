@@ -1,1 +1,1 @@
-Modernize the panel, resolve CRM IP conflicts, and synchronize devices concurrently
+Modernize the panel, resolve CRM IP conflicts, and distinguish pending and resolved work

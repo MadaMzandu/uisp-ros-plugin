@@ -235,6 +235,11 @@ a.conflict-link:hover { text-decoration: underline; }
 .cleanup-witnesses { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 7px; font-size: 0.78rem; }
 .cleanup-blocked-item { border-left: 3px solid var(--warning-border); padding: 10px 12px; background: var(--warning-bg); border-radius: 6px; }
 .cleanup-blocked-item p { margin-top: 5px; font-size: 0.79rem; color: var(--text-muted); }
+.cleanup-blocked-item.is-cleaned { border-color: var(--border); background: var(--surface-subtle); }
+.crm-network-resolved { margin-top: 20px; padding: 14px; border: 1px solid var(--success); border-radius: 8px; }
+.crm-network-resolved h3 { color: var(--success); font-size: 0.95rem; margin-bottom: 8px; }
+.crm-network-resolved > p { margin-bottom: 10px; font-size: 0.8rem; }
+.crm-resolved-row .crm-selection-status { color: var(--success); }
 .cleanup-result { padding: 13px; border: 1px solid var(--border); border-radius: 7px; background: var(--surface-subtle); }
 .cleanup-result p { margin-bottom: 10px; }
 .backup-label { display: block; margin-bottom: 4px; font-size: 0.78rem; }

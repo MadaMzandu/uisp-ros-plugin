@@ -1,4 +1,4 @@
-# Pruebas reales del candidato 2.4.26
+# Pruebas reales del candidato 2.4.27
 
 Las pruebas automatizadas usan bases temporales, transportes simulados y sockets locales. Esta lista comprueba la integración **UISP → plugin → API nativa de RouterOS** en una copia de UISP y un CHR/router con clientes de prueba. Registrar versiones de UISP, PHP y RouterOS, así como ID del servicio, plan, trabajo, estado e IP/prefijo en cada caso.
 
@@ -6,7 +6,9 @@ Para un servicio terminado que UISP no permita editar, **Resolver asignación hi
 
 La limpieza local histórica se revisa por separado, incluso cuando CRM conserva la misma IP: exige que la prueba histórica coincida con una consulta fresca del servicio terminado, y conserva respaldo, exclusión de mantenimiento y protecciones de trabajos y propiedad aplicada. Un trabajo pendiente o cuenta registrada como aplicada impide retirar esa reserva. El mapeo o atributo sin comprobar no autoriza exclusión ni limpieza. El panel lee la estructura anterior v3 del monitor sin escribir; únicamente el proceso programado la actualiza a v4, conservando direcciones y evidencia por familia.
 
-Validación 2.4.26 aprobada: **35 suites aisladas**, sintaxis de **48 archivos PHP propios** y verificación del instalador de 360 entradas, 127 archivos propios y 13 dependencias fijadas. Informe: `dist/verification-2.4.26.json`. SHA-256: `b290f01d7ca0f5a2f38ec4cc827096844f49763df92285a8b51d94f27ff90a3b`. La revisión en navegador utilizó datos ficticios para progreso simultáneo, corrección de CRM con revisión/confirmación, resolución histórica de un servicio terminado y limpieza local con el panel disponible. No se modificaron CRM ni RouterOS de producción.
+Validación 2.4.27 aprobada: **35 suites aisladas**, sintaxis de **48 archivos PHP propios** y verificación del instalador de 360 entradas, 127 archivos propios y 13 dependencias fijadas. Informe: `dist/verification-2.4.27.json`. SHA-256: `fcabbdb8b67dc77d2cbefa97e339bad4270eabb5a885199f3bc01d3f32aa8b88`. Se comprobó con datos ficticios en navegador el apartado verde de resueltos, el contador pendiente y el indicador de reserva limpiada. No se modificaron CRM ni RouterOS de producción.
+
+Validación histórica 2.4.26 aprobada: **35 suites aisladas**, sintaxis de **48 archivos PHP propios** y verificación del instalador de 360 entradas, 127 archivos propios y 13 dependencias fijadas. Informe: `dist/verification-2.4.26.json`. SHA-256: `b290f01d7ca0f5a2f38ec4cc827096844f49763df92285a8b51d94f27ff90a3b`. La revisión en navegador utilizó datos ficticios para progreso simultáneo, corrección de CRM con revisión/confirmación, resolución histórica de un servicio terminado y limpieza local con el panel disponible. No se modificaron CRM ni RouterOS de producción.
 
 Validación histórica 2.4.25 aprobada: **34 suites aisladas**, sintaxis de **46 archivos PHP propios** y verificación del instalador de 358 entradas, 125 archivos propios y 13 dependencias fijadas. Informe: `dist/verification-2.4.25.json`. SHA-256: `e12899924c05f8c739deb30004d5430cd0ee6c4113683579285fd7cd1c9f60e6`. Se comprobó en navegador el aviso independiente, las operaciones habilitadas, los enlaces y las incidencias de dirección con datos sintéticos. Las regresiones verifican la continuidad de servicios ya asignados y la conservación segura de evidencia parcial. La integración de producción mantiene su comprobación específica.
 
@@ -49,6 +51,18 @@ En Conflictos de IP, revisar el nombre, ID del servicio, estado y origen de los 
 Una reserva anterior puede explicar una colisión. Resolverla exige comparar la asignación guardada con el CRM y el router y tomar una decisión explícita, conservando respaldos. Consultar, descargar o verificar no reasigna direcciones ni elimina reservas. Usar clientes y datos sintéticos para reproducir estos escenarios.
 
 El archivo del cliente se muestra por separado del estado de su servicio. **Verificar cliente** consulta directamente la ficha asociada al ID conocido, aunque el servicio ya no esté disponible. Los indicadores «archivado», «no archivado» y «sin comprobar» distinguen valores verificados de datos guardados. Esa consulta no habilita la limpieza ni modifica la caché durante recuperación.
+
+## Candidato 2.4.27 — distinguir conflictos resueltos y reservas limpiadas
+
+Un grupo comprobado por completo pasa inmediatamente al apartado verde **Conflictos resueltos** y deja de sumar al aviso y al contador de pendientes. Exige IDs de todos los servicios e identidades coincidentes, evidencia conocida de la familia y ausencia de duplicado operativo. Los grupos sin comprobar, truncados, reasignados o fuera de la muestra siguen pendientes. Al resolver todos los grupos revisados, la lista lo indica y conserva el alcance y la fecha de la revisión automática completa.
+
+El monitor distingue el inicio de la revisión completada de su fecha de publicación. Las páginas de una revisión iniciada antes de una verificación seleccionada más reciente no vuelven a presentar inmediatamente el aviso antiguo. Una revisión posterior, cambio de grupo/identidad, reactivación del propietario histórico o cambio de mapeo revoca la prueba correspondiente. La verificación seleccionada permanece en memoria del panel abierto, separada de la navegación guardada; al recargar se usa el resultado automático y la verificación explícita fresca. No se guardan datos de clientes en el navegador ni se inicia un escaneo completo desde las consultas del panel.
+
+La limpieza local distingue **Ya limpiada** tras una limpieza confirmada de **Sin reserva local** tras comprobar la ausencia por familia. Consulta tanto la fila de red como los campos antiguos del servicio, sin confundir valores como cero con un campo vacío. La estructura desconocida, lectura fallida, asignaciones de la otra familia y propiedad aplicada mantienen sus protecciones. Una revisión CRM sin reservas devuelve estado neutral, sin token ni consultas a UISP. Después de limpiar se verifica una sola selección acotada del grupo original; un duplicado real que continúe en CRM conserva su aviso, y un fallo de esa consulta conserva el resultado de limpieza sin inventar resolución del CRM.
+
+Los metadatos del monitor se actualizan únicamente desde el proceso programado, de sus estructuras exactas conocidas v3/v4 a v5. La lectura del panel no migra ni escribe esas estructuras anteriores. Se conserva el progreso por equipo de las sincronizaciones y las protecciones del servidor.
+
+Validación 2.4.27 aprobada: **35 suites aisladas**, sintaxis de **48 archivos PHP propios** y verificación del instalador de 360 entradas, 127 archivos propios y 13 dependencias fijadas. Informe: `dist/verification-2.4.27.json`. SHA-256: `fcabbdb8b67dc77d2cbefa97e339bad4270eabb5a885199f3bc01d3f32aa8b88`. Se comprobó con datos ficticios en navegador el apartado verde de resueltos, el contador pendiente y el indicador de reserva limpiada. No se modificaron CRM ni RouterOS de producción.
 
 ## Revisar y limpiar reservas antiguas
 
@@ -273,6 +287,15 @@ Desde 2.4.13, **Sincronizar y reconectar cuentas** en Dispositivos reconecta sie
 | 114 | Limpiar la reserva de un histórico revisado con igual IP aún guardada en CRM; repetir con cuenta aplicada, trabajo pendiente y evidencia histórica cambiada. | Respalda y retira únicamente familias elegibles; conserva el CRM y bloquea recursos protegidos o prueba antigua. |
 | 115 | Simular rechazo del PATCH para un servicio terminado, fallo de permisos/lectura y servicio desaparecido con HTTP 404. | No inventa un éxito ni reintenta la mutación. La revisión histórica permite tratar el terminado comprobado; el 404 conserva el flujo de limpieza protegido. Fallos de lectura permanecen sin comprobar. |
 | 116 | Actualizar un monitor v3 existente, leerlo antes del cron y completar después una revisión con históricos; volver a consultar y filtrar. | La lectura no migra ni escribe. El cron actualiza exclusivamente su estructura conocida, conserva las direcciones originales y muestra históricos revisados con acceso a verificación/limpieza. |
+
+| 117 | Verificar y resolver uno de varios grupos; repetir con total superior a la muestra y grupo truncado. | El comprobado pasa a resueltos y descuenta exactamente un grupo. Los demás, incluso los no visibles, siguen pendientes. |
+| 118 | Devolver prueba incompleta, propietario reasignado, valor desconocido o servicio histórico reactivado. | No resta el grupo del aviso ni lo presenta como resuelto. |
+| 119 | Completar páginas iniciadas antes de la verificación y después iniciar una revisión nueva con duplicado recurrente. | La publicación antigua no resucita el aviso; la revisión posterior revoca la prueba y vuelve a mostrar el duplicado. |
+| 120 | Repetir la consulta tras limpiar, conservar una familia y vaciar la otra; comparar con campo heredado inválido y estructura desconocida. | Muestra ausencia comprobada por familia de forma neutral. No declara limpiado un valor protegido, inválido o sin comprobar. |
+| 121 | Limpiar una reserva y consultar de nuevo el grupo con duplicado CRM aún vigente, resuelto o lectura fallida. | Hace una única verificación acotada. Distingue limpieza local de resolución real y conserva el resultado confirmado si falla la consulta posterior. |
+| 122 | Reaprovisionar, reactivar o cambiar la IP/identidad después de indicar una reserva ausente. | Revoca el indicador anterior y permite volver a revisar; el servidor comprueba siempre la evidencia actual. |
+| 123 | Leer estructuras conocidas v3 y v4 del monitor antes del cron; migrar y publicar en varias ejecuciones. | La consulta no escribe. La migración programada conserva las filas y publica por separado el inicio y el final de la revisión completada. |
+| 124 | Resolver un conflicto CRM cuando una migración está pausada por reservas locales duplicadas, y recargar el panel. | El aviso CRM no levanta la restricción independiente. La recarga utiliza el resultado automático y la verificación seleccionada fresca, sin guardar evidencia de clientes en el navegador. |
 
 ## Diagnosticar una conexión pendiente
 

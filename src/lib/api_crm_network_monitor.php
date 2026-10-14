@@ -12,7 +12,7 @@ final class ApiCrmNetworkMonitor
     private const BUDGET_SECONDS = 12.0;
     private const MAX_SERVICES = 100000;
     private const APPLICATION_ID = 1129467214;
-    private const SCHEMA_VERSION = 4;
+    private const SCHEMA_VERSION = 5;
     private bool $historyColumns = false;
     private $request;
     private $clock;
@@ -115,6 +115,7 @@ final class ApiCrmNetworkMonitor
             $meta = $this->metadata($database);
             $report['scan_in_progress'] = $meta['cycle_started_at'] !== null;
             $report['scan_started_at'] = self::timestamp($meta['cycle_started_at']);
+            $report['completed_scan_started_at'] = self::timestamp($meta['published_started_at']);
             $report['services_scanned'] = $meta['scan_offset'];
             $report['snapshot_services_count'] = $meta['published_count'];
             $report['last_error'] = $meta['last_error'];
@@ -210,7 +211,7 @@ final class ApiCrmNetworkMonitor
     private function emptyReport(): array
     {
         return ['available' => false, 'duplicate_groups' => 0, 'conflicts' => [], 'conflicts_truncated' => false,
-            'checked_at' => null, 'scan_started_at' => null, 'scan_in_progress' => false, 'last_error' => null,
+            'checked_at' => null, 'scan_started_at' => null, 'completed_scan_started_at' => null, 'scan_in_progress' => false, 'last_error' => null,
             'stale' => true, 'services_scanned' => 0, 'snapshot_services_count' => 0, 'families' => [], 'unavailable_families' => [],
             'coverage_complete' => false, 'unknown_address_count' => 0, 'address_issues' => [], 'address_issues_truncated' => false,
             'historical_assignments_count' => 0, 'historical_assignments' => [],
@@ -247,7 +248,7 @@ final class ApiCrmNetworkMonitor
             if ($created) {
                 $database->exec('PRAGMA journal_mode=DELETE; PRAGMA application_id=' . self::APPLICATION_ID . '; PRAGMA user_version=' . self::SCHEMA_VERSION);
                 $database->exec('BEGIN IMMEDIATE');
-                $database->exec('CREATE TABLE monitor_meta(id INTEGER PRIMARY KEY CHECK(id=1),published_at REAL,published_count INTEGER NOT NULL DEFAULT 0,published_config_fingerprint TEXT,published_mapping TEXT,cycle_started_at REAL,last_attempt_at REAL,scan_offset INTEGER NOT NULL DEFAULT 0,config_fingerprint TEXT,mapping_fingerprint TEXT,mapping TEXT,last_error TEXT,published_keys TEXT,cycle_keys TEXT);
+                $database->exec('CREATE TABLE monitor_meta(id INTEGER PRIMARY KEY CHECK(id=1),published_at REAL,published_count INTEGER NOT NULL DEFAULT 0,published_config_fingerprint TEXT,published_mapping TEXT,cycle_started_at REAL,last_attempt_at REAL,scan_offset INTEGER NOT NULL DEFAULT 0,config_fingerprint TEXT,mapping_fingerprint TEXT,mapping TEXT,last_error TEXT,published_keys TEXT,cycle_keys TEXT,published_started_at REAL);
                     INSERT INTO monitor_meta(id) VALUES(1);
                     CREATE TABLE snapshot_services(id INTEGER PRIMARY KEY CHECK(id>0),client_id INTEGER NOT NULL CHECK(client_id>0),status INTEGER NOT NULL CHECK(status BETWEEN 0 AND 8),address TEXT,address6 TEXT,address_known INTEGER NOT NULL CHECK(address_known IN (0,1)),address6_known INTEGER NOT NULL CHECK(address6_known IN (0,1)),address_reason TEXT,address6_reason TEXT,address_historical INTEGER NOT NULL DEFAULT 0 CHECK(address_historical IN (0,1)),address6_historical INTEGER NOT NULL DEFAULT 0 CHECK(address6_historical IN (0,1)));
                     CREATE TABLE staging_services(id INTEGER PRIMARY KEY CHECK(id>0),client_id INTEGER NOT NULL CHECK(client_id>0),status INTEGER NOT NULL CHECK(status BETWEEN 0 AND 8),address TEXT,address6 TEXT,address_known INTEGER NOT NULL CHECK(address_known IN (0,1)),address6_known INTEGER NOT NULL CHECK(address6_known IN (0,1)),address_reason TEXT,address6_reason TEXT,address_historical INTEGER NOT NULL DEFAULT 0 CHECK(address_historical IN (0,1)),address6_historical INTEGER NOT NULL DEFAULT 0 CHECK(address6_historical IN (0,1)));
@@ -257,30 +258,33 @@ final class ApiCrmNetworkMonitor
             }
             $schema = (int) $database->querySingle('PRAGMA user_version');
             if ((int) $database->querySingle('PRAGMA application_id') !== self::APPLICATION_ID
-                || !in_array($schema, [3, self::SCHEMA_VERSION], true)
+                || !in_array($schema, [3, 4, self::SCHEMA_VERSION], true)
                 || strtolower((string) $database->querySingle('PRAGMA journal_mode')) !== 'delete'
                 || (int) $database->querySingle("SELECT COUNT(*) FROM sqlite_master WHERE type IN ('trigger','view')") !== 0
                 || (int) $database->querySingle("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'") !== 3) throw new RuntimeException('state_unavailable');
             foreach (['snapshot_services', 'staging_services'] as $table) {
                 $expected = ['id', 'client_id', 'status', 'address', 'address6', 'address_known', 'address6_known', 'address_reason', 'address6_reason'];
-                if ($schema === self::SCHEMA_VERSION) $expected = array_merge($expected, ['address_historical', 'address6_historical']);
+                if ($schema >= 4) $expected = array_merge($expected, ['address_historical', 'address6_historical']);
                 if ($this->columns($database, $table) !== $expected) throw new RuntimeException('state_unavailable');
             }
-            if ($this->columns($database, 'monitor_meta') !== ['id', 'published_at', 'published_count', 'published_config_fingerprint', 'published_mapping', 'cycle_started_at', 'last_attempt_at', 'scan_offset', 'config_fingerprint', 'mapping_fingerprint', 'mapping', 'last_error', 'published_keys', 'cycle_keys']) throw new RuntimeException('state_unavailable');
+            $expectedMeta = ['id', 'published_at', 'published_count', 'published_config_fingerprint', 'published_mapping', 'cycle_started_at', 'last_attempt_at', 'scan_offset', 'config_fingerprint', 'mapping_fingerprint', 'mapping', 'last_error', 'published_keys', 'cycle_keys'];
+            if ($schema === self::SCHEMA_VERSION) $expectedMeta[] = 'published_started_at';
+            if ($this->columns($database, 'monitor_meta') !== $expectedMeta) throw new RuntimeException('state_unavailable');
             $this->metadata($database);
             // Only the scheduler upgrades our exact known schema. Panel polls
-            // continue reading v3 without creating files or changing its rows.
-            if ($schema === 3 && $write) {
+            // continue reading v3/v4 without creating files or changing rows.
+            if ($schema < self::SCHEMA_VERSION && $write) {
                 $database->exec('BEGIN IMMEDIATE');
                 try {
-                    foreach (['snapshot_services', 'staging_services'] as $table) {
+                    foreach ($schema === 3 ? ['snapshot_services', 'staging_services'] : [] as $table) {
                         foreach (['address', 'address6'] as $field) $database->exec('ALTER TABLE ' . $table . ' ADD COLUMN ' . $field . '_historical INTEGER NOT NULL DEFAULT 0 CHECK(' . $field . '_historical IN (0,1))');
                     }
+                    $database->exec('ALTER TABLE monitor_meta ADD COLUMN published_started_at REAL');
                     $database->exec('PRAGMA user_version=' . self::SCHEMA_VERSION . '; COMMIT');
                     $schema = self::SCHEMA_VERSION;
                 } catch (Throwable $failure) { $database->exec('ROLLBACK'); throw $failure; }
             }
-            $this->historyColumns = $schema === self::SCHEMA_VERSION;
+            $this->historyColumns = $schema >= 4;
             return $database;
         } catch (Throwable $failure) { $database->close(); throw $failure; }
     }
@@ -299,12 +303,16 @@ final class ApiCrmNetworkMonitor
         if ((int) $database->querySingle('SELECT COUNT(*) FROM monitor_meta') !== 1) throw new RuntimeException('state_unavailable');
         $meta = $database->querySingle('SELECT * FROM monitor_meta WHERE id=1', true);
         if (!is_array($meta) || !$meta) throw new RuntimeException('state_unavailable');
+        // Prior exact schemas have no completed-cycle provenance yet.
+        $meta['published_started_at'] = $meta['published_started_at'] ?? null;
         foreach (['published_count', 'scan_offset'] as $key) {
             if (!is_int($meta[$key]) || $meta[$key] < 0 || $meta[$key] > self::MAX_SERVICES) throw new RuntimeException('state_unavailable');
         }
-        foreach (['published_at', 'cycle_started_at', 'last_attempt_at'] as $key) {
+        foreach (['published_at', 'published_started_at', 'cycle_started_at', 'last_attempt_at'] as $key) {
             if ($meta[$key] !== null && (!is_numeric($meta[$key]) || !is_finite((float) $meta[$key]) || $meta[$key] < 0)) throw new RuntimeException('state_unavailable');
         }
+        if ($meta['published_started_at'] !== null && ($meta['published_at'] === null
+            || $meta['published_started_at'] > $meta['published_at'])) throw new RuntimeException('state_unavailable');
         foreach (['published_config_fingerprint', 'config_fingerprint', 'mapping_fingerprint'] as $key) {
             if ($meta[$key] !== null && (!is_string($meta[$key]) || preg_match('/^[a-f0-9]{64}$/D', $meta[$key]) !== 1)) throw new RuntimeException('state_unavailable');
         }
@@ -425,7 +433,7 @@ final class ApiCrmNetworkMonitor
             $statement->bindValue(':carry6', $carry['address6'] ? 1 : 0, SQLITE3_INTEGER);
             $statement->execute()->finalize(); $statement->close();
             $database->exec('DELETE FROM snapshot_services WHERE id NOT IN (SELECT id FROM staging_services)');
-            $statement = $database->prepare('UPDATE monitor_meta SET published_at=:now,published_count=scan_offset,published_config_fingerprint=config_fingerprint,published_mapping=mapping,published_keys=cycle_keys,cycle_started_at=NULL,last_error=NULL WHERE id=1');
+            $statement = $database->prepare('UPDATE monitor_meta SET published_at=:now,published_started_at=cycle_started_at,published_count=scan_offset,published_config_fingerprint=config_fingerprint,published_mapping=mapping,published_keys=cycle_keys,cycle_started_at=NULL,last_error=NULL WHERE id=1');
             $statement->bindValue(':now', $now, SQLITE3_FLOAT);
             $statement->execute()->finalize(); $statement->close();
             $database->exec('DELETE FROM staging_services; COMMIT');

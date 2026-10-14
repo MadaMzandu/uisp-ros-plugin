@@ -2,6 +2,18 @@
 
 [Complete English changelog](docs/CHANGELOG_EN.md) · [Texto completo para el PR](docs/PR_DESCRIPTION.md) · [Webhook setup and rationale](docs/WEBHOOK_SETUP_EN.md) · [Mejoras en español](docs/MEJORAS.md)
 
+## Candidato 2.4.27 — distinguir conflictos resueltos y reservas limpiadas
+
+Un grupo comprobado por completo pasa inmediatamente al apartado verde **Conflictos resueltos** y deja de sumar al aviso y al contador de pendientes. Exige IDs de todos los servicios e identidades coincidentes, evidencia conocida de la familia y ausencia de duplicado operativo. Los grupos sin comprobar, truncados, reasignados o fuera de la muestra siguen pendientes. Al resolver todos los grupos revisados, la lista lo indica y conserva el alcance y la fecha de la revisión automática completa.
+
+El monitor distingue el inicio de la revisión completada de su fecha de publicación. Las páginas de una revisión iniciada antes de una verificación seleccionada más reciente no vuelven a presentar inmediatamente el aviso antiguo. Una revisión posterior, cambio de grupo/identidad, reactivación del propietario histórico o cambio de mapeo revoca la prueba correspondiente. La verificación seleccionada permanece en memoria del panel abierto, separada de la navegación guardada; al recargar se usa el resultado automático y la verificación explícita fresca. No se guardan datos de clientes en el navegador ni se inicia un escaneo completo desde las consultas del panel.
+
+La limpieza local distingue **Ya limpiada** tras una limpieza confirmada de **Sin reserva local** tras comprobar la ausencia por familia. Consulta tanto la fila de red como los campos antiguos del servicio, sin confundir valores como cero con un campo vacío. La estructura desconocida, lectura fallida, asignaciones de la otra familia y propiedad aplicada mantienen sus protecciones. Una revisión CRM sin reservas devuelve estado neutral, sin token ni consultas a UISP. Después de limpiar se verifica una sola selección acotada del grupo original; un duplicado real que continúe en CRM conserva su aviso, y un fallo de esa consulta conserva el resultado de limpieza sin inventar resolución del CRM.
+
+Los metadatos del monitor se actualizan únicamente desde el proceso programado, de sus estructuras exactas conocidas v3/v4 a v5. La lectura del panel no migra ni escribe esas estructuras anteriores. Se conserva el progreso por equipo de las sincronizaciones y las protecciones del servidor.
+
+Validación 2.4.27 aprobada: **35 suites aisladas**, sintaxis de **48 archivos PHP propios** y verificación del instalador de 360 entradas, 127 archivos propios y 13 dependencias fijadas. Informe: `dist/verification-2.4.27.json`. SHA-256: `fcabbdb8b67dc77d2cbefa97e339bad4270eabb5a885199f3bc01d3f32aa8b88`. Se comprobó con datos ficticios en navegador el apartado verde de resueltos, el contador pendiente y el indicador de reserva limpiada. No se modificaron CRM ni RouterOS de producción.
+
 ## Candidato 2.4.26 — resolver conflictos del CRM y sincronizar equipos sin bloquear el panel
 
 La sincronización muestra su progreso en la fila del equipo elegido. El panel sigue disponible y permite iniciar la sincronización de otros equipos. Evita enviar dos veces el mismo equipo mientras su petición está activa, incluso al filtrar o regresar a la sección. Los resultados identifican el equipo y conservan los errores parciales o trabajos pendientes. Se mantienen los bloqueos de servicio y router físico; un destino físico compartido puede dejar trabajo para reintento. La sincronización manual sigue reconectando las sesiones PPP/Hotspot administradas del equipo elegido.
@@ -177,10 +189,10 @@ La segunda revisión corrige además propiedad de cuentas/colas padre, hidrataci
 Para verificar el candidato después de instalar dependencias y construir el ZIP:
 
 ```text
-python tools/verify_plugin.py --php RUTA_PHP --node RUTA_NODE --archive dist/ros-plugin-2.4.26-candidate.zip --output dist/verification-2.4.26.json
+python tools/verify_plugin.py --php RUTA_PHP --node RUTA_NODE --archive dist/ros-plugin-2.4.27-candidate.zip --output dist/verification-2.4.27.json
 ```
 
-En Windows sin configuración PHP, añadir `--extension-dir RUTA_EXT`. El verificador ejecuta las suites y comprueba sintaxis PHP, correspondencia del código/dependencias y exclusión de datos/fixtures del instalador. El estado de validación de 2.4.25 se indica al principio. Para construirlo: `python tools/build_plugin.py --vendor-dir src/vendor --output dist/ros-plugin-2.4.26-candidate.zip`.
+En Windows sin configuración PHP, añadir `--extension-dir RUTA_EXT`. El verificador ejecuta las suites y comprueba sintaxis PHP, correspondencia del código/dependencias y exclusión de datos/fixtures del instalador. El estado de validación de 2.4.25 se indica al principio. Para construirlo: `python tools/build_plugin.py --vendor-dir src/vendor --output dist/ros-plugin-2.4.27-candidate.zip`.
 
 Si una migración queda pendiente por IP duplicadas, usar **Conflictos de IP → Revisar limpieza** para comprobar las reservas obsoletas elegibles, revisar los motivos y confirmar únicamente la selección aprobada. Los trabajos pendientes, la recuperación pendiente y el estado aplicado de una cuenta protegen sus reservas; limpiar IP no retira recursos del router. Conservar el respaldo privado generado, que permanece descargable desde **Sistema** después de recargar. Tras resolver el último conflicto, recargar el panel para completar la migración antes de reanudar las demás escrituras.
 

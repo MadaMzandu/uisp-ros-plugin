@@ -123,6 +123,39 @@ try {
         'clients/services/6'=>['id'=>6,'clientId'=>60,'status'=>8],
         'clients/services/7'=>cleanupHttp(404),'clients/services/8'=>['id'=>8,'clientId'=>80,'status'=>2]];
     $fixture = cleanupFixture($root,'baseline');
+    $absence = cleanupFixture($root, 'absence-status');
+    cleanupSql($absence, "UPDATE network SET address=NULL,address6='' WHERE id=1;
+        UPDATE services SET address='',prefix6=NULL WHERE id=1");
+    $absenceApi = new ApiNetworkCleanup($request, $absence['db'], $absence['jobs'], $absence['legacy'], $clock);
+    $absenceBefore = cleanupOperational($absence); $calls = [];
+    $emptyPreview = $absenceApi->preview([1], true);
+    $emptyState = ['address' => ['known' => true, 'present' => false], 'address6' => ['known' => true, 'present' => false]];
+    checkCleanup($emptyPreview['previewToken'] === null && $emptyPreview['candidates'] === []
+        && $emptyPreview['blocked'][0]['reason'] === 'no_local_assignment'
+        && $emptyPreview['blocked'][0]['local_assignment_state'] === $emptyState
+        && is_string($emptyPreview['blocked'][0]['checked_at']) && $emptyPreview['api_requests'] === 0 && $calls === []
+        && ApiNetworkCleanup::localAssignmentState(1, $absence['db']) === $emptyState
+        && ApiNetworkCleanup::localAssignmentState(999, $absence['db']) === $emptyState
+        && cleanupOperational($absence) === $absenceBefore,
+        'Already empty CRM cleanup offered another action, contacted CRM, or failed to expose read-only absence');
+    $oldEmpty = $absenceApi->preview([1]);
+    checkCleanup($oldEmpty['blocked'] === [['service_id' => 1, 'reason' => 'not_in_conflict']],
+        'Empty CRM display status changed saved-conflict cleanup behavior');
+    cleanupSql($absence, "UPDATE services SET address='0' WHERE id=1");
+    $legacyState = ApiNetworkCleanup::localAssignmentState(1, $absence['db']);
+    $legacyPreview = $absenceApi->preview([1], true);
+    checkCleanup($legacyState['address'] === ['known' => true, 'present' => true]
+        && $legacyState['address6'] === ['known' => true, 'present' => false]
+        && $legacyPreview['blocked'][0]['reason'] === 'not_in_conflict'
+        && $legacyPreview['blocked'][0]['local_assignment_state'] === $legacyState,
+        'Null network reservation hid malformed but present legacy ownership');
+    cleanupSql($absence, "UPDATE services SET address=NULL WHERE id=1; UPDATE network SET address6='2001:db8:1::/64' WHERE id=1");
+    checkCleanup(ApiNetworkCleanup::localAssignmentState(1, $absence['db']) === [
+        'address' => ['known' => true, 'present' => false], 'address6' => ['known' => true, 'present' => true]],
+        'Per-family absence discarded an independently retained IPv6 reservation');
+    checkCleanup(ApiNetworkCleanup::localAssignmentState(1, $absence['directory'] . '/missing.db') === [
+        'address' => ['known' => false, 'present' => null], 'address6' => ['known' => false, 'present' => null]]
+        && !file_exists($absence['directory'] . '/missing.db'), 'Missing database was created or reported as known clean');
     $api = $apiFor($fixture);
     $before = cleanupOperational($fixture);
     $preview = $api->preview([1,5,3]);

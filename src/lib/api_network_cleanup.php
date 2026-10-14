@@ -45,6 +45,11 @@ final class ApiNetworkCleanup
                 $records[$id] = $record;
                 $candidates[] = $record['candidate'];
             }
+            if ($crmSource) foreach ($blocked as &$entry) {
+                $entry['local_assignment_state'] = $this->assignmentState($database, $entry['service_id']);
+                $entry['checked_at'] = gmdate('Y-m-d\TH:i:s\Z', (int) $this->now());
+            }
+            unset($entry);
         } finally { $database->close(); }
         $expires = (int) $this->now() + self::PREVIEW_TTL;
         $token = null;
@@ -70,6 +75,23 @@ final class ApiNetworkCleanup
         }
         return ['previewToken' => $token, 'expiresAt' => gmdate('Y-m-d\TH:i:s\Z', $expires),
             'candidates' => $candidates, 'blocked' => $blocked, 'api_requests' => $verified['api_requests']];
+    }
+
+    /** Read-only display evidence; absence here never authorizes a CRM or router change. */
+    public static function localAssignmentState(int $id, string $dataPath = 'data/data.db'): array
+    {
+        $unknown = ['address' => ['known' => false, 'present' => null],
+            'address6' => ['known' => false, 'present' => null]];
+        if ($id < 1) return $unknown;
+        $database = null;
+        try {
+            $api = new self(null, $dataPath);
+            $database = $api->openDatabase(false);
+            $database->exec('BEGIN');
+            $api->assertSafeSchema($database);
+            return $api->assignmentState($database, $id);
+        } catch (Throwable $ignored) { return $unknown; }
+        finally { if ($database !== null) $database->close(); }
     }
 
     public function apply(string $token, array $serviceIds, ?bool $crmSource = null): array
@@ -148,7 +170,8 @@ final class ApiNetworkCleanup
             // reviewable, but every retry must independently verify CRM again.
             @unlink($tokenPath);
             return ['removed_service_ids' => $ids, 'backup_name' => $backupName,
-                'cleared_assignments' => $clearedAssignments, 'duplicate_groups' => $remaining, 'requires_reload' => true];
+                'cleared_assignments' => $clearedAssignments, 'duplicate_groups' => $remaining, 'requires_reload' => true,
+                'local_assignment_checked_at' => gmdate('Y-m-d\TH:i:s\Z', (int) $this->now())];
         } catch (Throwable $error) {
             if ($database !== null && $transaction) {
                 try { $database->exec('ROLLBACK'); } catch (Throwable $ignored) {}
@@ -236,7 +259,13 @@ final class ApiNetworkCleanup
                     }
                 }
             }
-            if (!$groups) { $blocked[] = ['service_id' => $id, 'reason' => 'not_in_conflict']; continue; }
+            if (!$groups) {
+                $state = $crmSource ? $this->assignmentState($database, $id) : null;
+                $empty = $state !== null && $state['address'] === ['known' => true, 'present' => false]
+                    && $state['address6'] === ['known' => true, 'present' => false];
+                $blocked[] = ['service_id' => $id, 'reason' => $empty ? 'no_local_assignment' : 'not_in_conflict'];
+                continue;
+            }
             $live = $lookup($id);
             if (!in_array($live['kind'], ['absent', 'present'], true)) {
                 $reason = $live['kind'] === 'deadline' ? 'deadline' : 'crm_unavailable';
@@ -395,6 +424,34 @@ final class ApiNetworkCleanup
         $fingerprint = hash('sha256', json_encode(['network_columns' => $networkColumns, 'service_columns' => $serviceColumns,
             'network' => $network, 'service' => $service], JSON_THROW_ON_ERROR));
         return ['service' => $service, 'address' => $address, 'address6' => $address6, 'fingerprint' => $fingerprint];
+    }
+
+    private function assignmentState(SQLite3 $database, int $id): array
+    {
+        $state = ['address' => ['known' => false, 'present' => null],
+            'address6' => ['known' => false, 'present' => null]];
+        $network = $this->columns($database, 'network');
+        $services = $this->columns($database, 'services');
+        $parts = [];
+        $values = [];
+        foreach (['address' => 'address', 'address6' => 'prefix6'] as $field => $legacy) {
+            foreach (['network' => [$network, $field], 'services' => [$services, $legacy]] as $table => $source) {
+                [$columns, $column] = $source;
+                if (!isset($columns['id'], $columns[$column])) continue;
+                $state[$field] = ['known' => true, 'present' => false];
+                // Inspect both stores. A NULL network row must not hide legacy
+                // data that could be imported again by a later migration.
+                $parts[] = "SELECT '" . $field . "' AS family,CASE WHEN \"" . $column
+                    . "\" IS NOT NULL AND \"" . $column . "\"<>'' THEN 1 ELSE 0 END AS present FROM \""
+                    . $table . '" WHERE id=?';
+                $values[] = $id;
+            }
+        }
+        if ($parts) foreach ($this->query($database, 'SELECT family,max(present) AS present FROM ('
+            . implode(' UNION ALL ', $parts) . ') GROUP BY family', $values) as $row) {
+            $state[$row['family']]['present'] = (int) $row['present'] === 1;
+        }
+        return $state;
     }
 
     private function assertSnapshot(SQLite3 $database, int $id, array $record): void
