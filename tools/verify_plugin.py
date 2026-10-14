@@ -31,7 +31,7 @@ def main() -> int:
     suites = [
         'backend', 'jobs', 'router', 'burst', 'runtime', 'stability', 'client_queue',
         'locale', 'second_audit', 'ownership', 'shared_resources', 'shared_pool',
-        'nonfinite', 'profile_names', 'unmanaged', 'reconnect', 'reconnect_router', 'webhook_auth', 'webhook_flow', 'billing_router', 'job_diagnostics', 'job_actions', 'cancelled_recovery', 'archived_plans', 'migration_conflicts',
+        'nonfinite', 'profile_names', 'unmanaged', 'reconnect', 'reconnect_router', 'webhook_auth', 'webhook_flow', 'billing_router', 'job_diagnostics', 'job_actions', 'cancelled_recovery', 'archived_plans', 'migration_conflicts', 'recovery_reads', 'network_diagnostics',
     ]
     commands = [('regression_' + name, php_tests + ['tests/regression_' + name + '.php']) for name in suites]
     commands += [('regression_' + name, [args.node, 'tests/regression_' + name + '.js']) for name in ['panel', 'theme', 'i18n']]

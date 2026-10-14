@@ -6,7 +6,21 @@ Esta revisión reúne las modificaciones de [dhanielsnieto en el PR #89](https:/
 
 El plugin comunica UISP CRM con los MikroTik mediante la **API nativa de RouterOS**. Los puertos habituales son `8728` para API y `8729` para API con TLS. El panel permite administrar esa integración; no cambia el transporte a SSH, WinBox o REST.
 
-## Candidato 2.4.20: conflictos de direcciones antes de migrar
+## Candidato 2.4.21: panel disponible en modo consulta
+
+- El aviso independiente de 2.4.20 se integra en el panel habitual. Si las IP duplicadas impiden migrar, las seis vistas —Dispositivos, Planes, Configuración, Trabajos, Sistema y Conflictos de IP— siguen accesibles, con indicador ámbar, contador y aviso persistentes de modo consulta. La unicidad global y la pausa del aprovisionamiento se mantienen.
+- `ApiPanelRecovery` entrega el panel GET con HTTP 200 y un bloque JSON seguro de estado inicial. `ApiRecoveryReads` admite sólo consultas administrativas de una lista explícita de destinos; abre SQLite con `SQLITE3_OPEN_READONLY` y proyecta esquemas antiguos en memoria. No inicializa/importa la cola, escribe caché, comprueba routers ni recupera automáticamente metadatos del CRM.
+- Mientras la migración siga pendiente no se pueden guardar ajustes, crear/editar/eliminar dispositivos o planes, ejecutar/eliminar trabajos, crear/restaurar respaldos, reconstruir datos ni enviar aprovisionamiento. Las vistas muestran las instantáneas guardadas. La descarga de respaldos existentes conserva el permiso administrativo de edición exigido antes.
+- `ApiNetworkDiagnostics` añade nombres de clientes y estados locales con su origen, y enlaces del mismo origen al cliente (`/crm/client/{id}`) y servicio (`/crm/client/service/{id}`). Los IDs se validan y los textos se muestran escapados; el diagnóstico detallado sigue reservado a administradores. Los webhooks reciben sólo el código y contador de conflictos.
+- **Verificar en UISP** solicita una consulta explícita del servicio y su cliente. Cada petición admite hasta tres servicios presentes en el diagnóstico y seis lecturas CRM, con un presupuesto de 12 segundos para iniciar nuevas consultas. Es un límite orientativo: una solicitud ya iniciada puede terminar después. La consulta no actualiza caché, cola, reservas ni routers.
+- El archivo de cliente utiliza el campo oficial `isArchived`. Un servicio terminado (`2`) o inactivo (`8`) no confirma por sí solo el archivo o la eliminación del cliente. Una ausencia de caché, fallo de lectura o respuesta 404 queda sin confirmar y conserva los datos conocidos. Las reservas antiguas pueden explicar un conflicto, pero no se eliminan ni reasignan automáticamente.
+- Descargar el diagnóstico o volver a comprobar no corrige las asignaciones. El operador debe contrastarlas con el CRM y los routers, resolver explícitamente el conflicto y completar la migración antes de reanudar las escrituras. La documentación y las pruebas usan únicamente identidades y datos sintéticos.
+
+Validación 2.4.21 aprobada: **31 suites aisladas**, sintaxis de **43 archivos PHP propios** y comprobación del instalador de 355 entradas, 122 archivos propios y 13 dependencias. Informe: `dist/verification-2.4.21.json`. SHA-256: `ecc819f6f6d247ae28b1b181292a75fe836e79c06596cc09c0727068cde8786a`. Se verificó también la navegación y el aviso con datos ficticios en navegador. La integración de esta versión en UISP y la corrección explícita de las reservas requieren comprobación en la instalación afectada.
+
+## Cambios incorporados en 2.4.20: conflictos de direcciones antes de migrar
+
+La presentación independiente de esta revisión se sustituye por el modo consulta de 2.4.21; su informe, hash y comportamiento de rechazo se conservan como evidencia histórica.
 
 - Las IP deben ser únicas globalmente entre servicios, también cuando pertenecen a routers distintos. Una base heredada con la misma IPv4 o dirección/prefijo IPv6 en varios servicios sigue rechazándose al actualizar; se conservan sus asignaciones para una revisión explícita.
 - El panel autenticado presenta un aviso en español con indicador y contador de conflictos, tabla de familia/dirección/IDs de servicios, descarga del diagnóstico JSON y opción para volver a comprobar. El informe tiene límites de grupos e IDs y no expone credenciales.
@@ -44,7 +58,7 @@ Validación 2.4.20 aprobada: **29 suites aisladas**, sintaxis de **41 archivos P
 - Se conserva la evidencia de una creación parcial del perfil de suspensión. La limpieza verifica un perfil existente antes de modificar cuentas/sesiones; si no coincide con los valores congelados, se mantiene el fallo. Un perfil ausente no se recrea durante esta limpieza, y el existente no se sobrescribe.
 - El ciclo de conexiones no cambia: cada lote de servicio abre y cierra su conexión API; las consultas y limpiezas pueden abrir otras. Los logs de login/logout de API no equivalen por sí solos a desconectar PPP. No se incorpora una conexión compartida entre lotes.
 
-La validación de 2.4.17 pasó 27 suites, 39 archivos PHP propios y un ZIP de 351 entradas, 118 archivos propios y 13 dependencias fijadas. Su informe y hash históricos se conservan más abajo; el estado de validación del candidato actual 2.4.20 se indica arriba.
+La validación de 2.4.17 pasó 27 suites, 39 archivos PHP propios y un ZIP de 351 entradas, 118 archivos propios y 13 dependencias fijadas. Su informe y hash históricos se conservan más abajo; el estado de validación del candidato actual 2.4.21 se indica arriba.
 
 ## Cambios aportados en el PR #89
 
@@ -271,7 +285,7 @@ La evidencia real posterior identificó tokens ausentes y una URL pegada como se
 
 ## Preparación para instalar y validar
 
-La versión actual es 2.4.20; su estado de validación se indica al principio. La confirmación de recuperación de planes archivados corresponde a 2.4.19 y conserva su alcance histórico. Si aparece el aviso de direcciones duplicadas, revisar sus servicios, descargar el diagnóstico y corregir las asignaciones antes de volver a comprobar y continuar la instalación. La [guía de pruebas reales](PRUEBAS_REALES.md) contiene 69 escenarios para las comprobaciones restantes.
+La versión actual es 2.4.21; su estado de validación se indica al principio. La confirmación de recuperación de planes archivados corresponde a 2.4.19 y conserva su alcance histórico. Ante IP duplicadas, consultar las seis vistas, revisar el diagnóstico y verificar explícitamente los propietarios en UISP. Las escrituras y el aprovisionamiento siguen pausados hasta resolver las asignaciones y completar la migración; consultar el panel no libera reservas. La [guía de pruebas reales](PRUEBAS_REALES.md) contiene 75 escenarios para las comprobaciones restantes.
 
 ### Resultado histórico de 2.4.17
 

@@ -1,22 +1,24 @@
 ## Summary
 
-This PR brings the panel improvements from [PR #89](https://github.com/MadaMzandu/uisp-ros-plugin/pull/89) together with a durable provisioning queue, explicit webhook authentication modes, reliable suspension/reactivation handling, recovery of plans still assigned to customers after archival, and clear migration conflict diagnostics. Candidate **2.4.20** uses the native RouterOS API with optional TLS.
+This PR brings the panel improvements from [PR #89](https://github.com/MadaMzandu/uisp-ros-plugin/pull/89) together with a durable provisioning queue, explicit webhook authentication modes, reliable suspension/reactivation handling, archived-plan recovery, and panel consultation during paused migrations. Candidate **2.4.21** uses the native RouterOS API with optional TLS.
 
 **The full English changelog and webhook setup guide are included below, not only linked.** Historical entries identify behavior superseded by later revisions; the summary describes the current implementation.
 
-## Candidate 2.4.20: migration conflict diagnostics
+## Candidate 2.4.21: consult the panel while migration is paused
 
-Upgrading a legacy installation with duplicate service IP assignments previously returned only `operation_failed_check_log`. The authenticated panel now shows a Spanish warning with a conflict count and family/address/service-ID table, plus JSON download and recheck actions. POST requests retain a specific JSON error. Bounded address/service details are restricted to administrators; webhooks receive only the code and conflict count.
+Duplicate IP assignments still prevent safe migration and pause writes/provisioning. The usual panel now remains accessible in view mode: Devices, Plans, Configuration, Jobs, System, and IP conflicts retain navigation with a persistent amber warning/count. The normal panel GET returns HTTP 200 with a safely encoded JSON bootstrap, replacing the standalone 2.4.20 error page.
 
-Read-only preflight checks global uniqueness before queue initialization or backup rotation, then repeats inside the migration transaction. It accounts for projected legacy service-address imports so `INSERT OR IGNORE` cannot silently discard a conflicting assignment. Installation remains paused until the operator explicitly resolves the assignments and rechecks them. Existing IPs are preserved; the warning sends no RouterOS changes and performs no automatic reassignment or repair.
+`ApiPanelRecovery`, `ApiRecoveryReads`, and `ApiNetworkDiagnostics` provide allowlisted administrative reads from SQLite opened read-only, with legacy projections in memory. Consultation does not initialize/import jobs, write cache data, probe routers, or fetch CRM metadata automatically. Settings changes, job execution/deletion, backup creation/restoration, rebuilds, and provisioning remain paused; existing backup downloads retain their administrative edit permission.
 
-**2.4.20 validation passed:** 29 isolated suites, syntax checks for 41 first-party PHP files, and installer verification covering 353 entries, 120 first-party files, and 13 locked dependencies. Report: `dist/verification-2.4.20.json`. SHA-256: `fd74d7d8b81c8937a8553e20305e4bcdbc743cf6b19d7f34401e7956dfda7a01`. Tests use temporary databases and simulated/local transports; the warning and explicit assignment resolution still need verification in Familynet.
+The conflict view adds client names, local status/source, and verified same-origin links to `/crm/client/{id}` and `/crm/client/service/{id}`. Explicit per-service **Verify in UISP** reads current service/client records, capped at three diagnostic owners and six CRM reads per request, with a soft 12-second budget for starting further reads. It performs no mutations. Client archival uses `isArchived`; ended (`2`) and inactive (`8`) service states remain distinct. Missing cache or HTTP 404 does not confirm deletion/archival or release stale reservations. Detailed results remain administrator-only; webhooks receive only the error code and count. Existing IPs remain preserved until the operator explicitly resolves the assignments and migration completes.
+
+**2.4.21 validation passed:** 31 isolated suites, syntax checks for 43 first-party PHP files, and installer verification covering 355 entries, 122 first-party files, and 13 locked dependencies. Report: `dist/verification-2.4.21.json`. SHA-256: `ecc819f6f6d247ae28b1b181292a75fe836e79c06596cc09c0727068cde8786a`. Browser checks also verified navigation and the warning with synthetic data. This revision still requires UISP integration verification and explicit reservation resolution in the affected installation.
 
 ## What changes
 
 | Area | Functions, improvements, and fixes |
 | --- | --- |
-| Panel and daily use | Compact responsive forms, collapsible help, search/sorting, persistent drafts, local SVG icons, clearer feedback, repaired device/plan actions, and orphan inspection |
+| Panel and daily use | Compact responsive forms, collapsible help, search/sorting, persistent drafts, local SVG icons, repaired device/plan actions, orphan inspection, and all six views available for consultation during migration conflicts |
 | Appearance and languages | Light/dark/system themes and Spanish, English, Portuguese, French, German, and Italian; browser-local preferences and draft preservation |
 | Plans and shaping | Effective speed overrides, editable burst templates and previews, contention controls, legacy blank/zero handling, finite-number validation, and per-service partial results |
 | Archived plans | Recover names and base speeds by exact CRM ID, accept `Internet` response casing, preserve local overrides, and update owned profiles without duplication |
@@ -27,7 +29,7 @@ Read-only preflight checks global uniqueness before queue initialization or back
 | Resource ownership | Readable profile names/comments, guarded in-place renames, account/session/queue ownership checks, current shared resources on retries, and revision-specific IPv6 pools |
 | Data and networking | Atomic IP reservations, correct IPv4/IPv6 handling, efficient exclusions, partial-event preservation, literal credentials, atomic cache publication, and documentary services without a Site |
 | Access and transport | UISP administrative permissions, a dedicated webhook secret with optional compatibility mode, prepared SQL, bounded HTTP requests, optional verified RouterOS TLS, and redacted logs |
-| Backups and installation | Validated SQLite backups/migrations, read-only duplicate-address preflight and warning, exclusive restoration, locked dependencies, reproducible ZIPs, version checks, and selective OPcache refresh |
+| Backups and installation | Validated SQLite backups/migrations, read-only duplicate-address preflight and owner diagnostics, paused writes during unsafe migration, privileged downloads of existing backups, exclusive restoration, locked dependencies, reproducible ZIPs, version checks, and selective OPcache refresh |
 
 ## Why webhook configuration changed
 
@@ -39,18 +41,19 @@ An explicit **Allow webhooks without a secret (compatibility)** checkbox preserv
 
 1. Preserve the previous ZIP and private copies of `data.db`, `jobs.db`, and configuration. Panel backups cover `data.db` only.
 2. Pause old workers/deliveries while replacing the package and wait for active requests to finish.
-3. Install 2.4.20 and open the panel. If duplicate addresses pause installation, download the diagnostic, review the affected services against their actual IPs, explicitly resolve the assignments, and recheck before resuming workers or deliveries. IPs must be globally unique across services and routers.
+3. Install 2.4.21 and open the panel. If duplicate addresses pause migration, use all six views in consultation mode, review the diagnostic, and explicitly verify affected owners in UISP. Resolve assignments and complete migration before resuming workers or deliveries. IPs must be globally unique across services and routers; the panel does not release stale reservations automatically.
 4. Configure a matching webhook secret at both ends, or explicitly select compatibility mode. Installing the package does not update an existing UISP endpoint URL.
 5. Verify a fresh event and its provisioning outcome. A successful HTTP response or empty pending-jobs list alone does not establish the final RouterOS traffic policy.
 6. Apply service jobs or synchronize the selected router to migrate profiles. **Manual per-router synchronization reconnects its managed PPP/Hotspot sessions.** Existing suspension-profile firewall behavior remains the operator's configuration.
 
 ## Validation and scope
 
-- **2.4.20 validation passed:** 29 isolated suites, syntax checks for 41 first-party PHP files, and installer verification covering 353 entries, 120 first-party files, and 13 locked dependencies. Report: `dist/verification-2.4.20.json`. SHA-256: `fd74d7d8b81c8937a8553e20305e4bcdbc743cf6b19d7f34401e7956dfda7a01`. Tests use temporary databases and simulated/local transports; the warning and explicit assignment resolution still need verification in Familynet. Report: `dist/verification-2.4.20.json`; installer: `dist/ros-plugin-2.4.20-candidate.zip`.
+- **2.4.21 validation passed:** 31 isolated suites, syntax checks for 43 first-party PHP files, and installer verification covering 355 entries, 122 first-party files, and 13 locked dependencies. Report: `dist/verification-2.4.21.json`. SHA-256: `ecc819f6f6d247ae28b1b181292a75fe836e79c06596cc09c0727068cde8786a`. Browser checks also verified navigation and the warning with synthetic data. This revision still requires UISP integration verification and explicit reservation resolution in the affected installation. Intended report: `dist/verification-2.4.21.json`; installer: `dist/ros-plugin-2.4.21-candidate.zip`.
+- Historical **2.4.20 validation passed:** 29 isolated suites, syntax checks for 41 first-party PHP files, and installer verification covering 353 entries, 120 first-party files, and 13 locked dependencies. Report: `dist/verification-2.4.20.json`. SHA-256: `fd74d7d8b81c8937a8553e20305e4bcdbc743cf6b19d7f34401e7956dfda7a01`. Tests use temporary databases and simulated/local transports; the warning and explicit assignment resolution still need verification in Familynet. Installer: `dist/ros-plugin-2.4.20-candidate.zip`.
 - Historical **2.4.19** validation passed **28 isolated suites**, plus syntax checks for **40 owned PHP files**.
 - Historical **2.4.19** installer verification passed: **352 entries**, **119 owned source files**, **13 locked dependencies**, source/dependency correspondence, CRC, and exclusion of operational/test data.
 - On **2026-10-11**, the operator confirmed that **2.4.19 recovers speeds correctly for archived plans in a real installation**.
-- The **69-case integration checklist** is not marked complete. Hardware/runtime combinations, traffic measurements, firewall/FastTrack behavior, migration conflicts, and remaining failure scenarios retain their own checks.
+- The **75-case integration checklist** is not marked complete. Hardware/runtime combinations, traffic measurements, firewall/FastTrack behavior, migration conflicts, consultation/CRM diagnosis, and remaining failure scenarios retain their own checks.
 - Historical **2.4.19** report: `dist/verification-2.4.19.json`. Installer: `dist/ros-plugin-2.4.19-candidate.zip`.
 
 ```text
@@ -182,11 +185,25 @@ Check the relevant RouterOS logging topics and the actual profile/session state.
 
 # UISP ROS Plugin — cumulative changelog
 
-This revision combines [dhanielsnieto's changes in PR #89](https://github.com/MadaMzandu/uisp-ros-plugin/pull/89) with the subsequent fixes prepared in this repository. The comparison starts at `7ca8dc8`; the original PR ends at `056b89f`. The current candidate is **2.4.20**. The operator confirmed archived-plan speed recovery in their 2.4.19 installation. That confirmation covers this historical scenario; the remaining UISP and RouterOS integration scenarios still require their own checks before production readiness can be established.
+This revision combines [dhanielsnieto's changes in PR #89](https://github.com/MadaMzandu/uisp-ros-plugin/pull/89) with the subsequent fixes prepared in this repository. The comparison starts at `7ca8dc8`; the original PR ends at `056b89f`. The current candidate is **2.4.21**. The operator confirmed archived-plan speed recovery in their 2.4.19 installation. That confirmation covers this historical scenario; the remaining UISP and RouterOS integration scenarios still require their own checks before production readiness can be established.
 
 The plugin connects UISP CRM to MikroTik through the **native RouterOS API**, normally on port `8728`, or `8729` with TLS. The panel manages that integration; it does not switch the transport to SSH, WinBox, or REST.
 
-## Candidate 2.4.20: address conflict diagnostics before migration
+## Candidate 2.4.21: panel consultation during a paused upgrade
+
+- Replaces the standalone 2.4.20 warning with the usual panel. All six views—Devices, Plans, Configuration, Jobs, System, and IP conflicts—remain accessible while duplicate addresses prevent migration, with a persistent amber indicator, count, and view-mode notice. Global uniqueness and the provisioning pause remain enforced.
+- `ApiPanelRecovery` returns the panel GET with HTTP 200 and a safely encoded JSON bootstrap. `ApiRecoveryReads` handles only an explicit allowlist of administrative reads, opens SQLite with `SQLITE3_OPEN_READONLY`, and projects legacy schemas in memory. It does not initialize/import the queue, write cache data, probe routers, or fetch CRM metadata automatically.
+- While migration remains blocked, settings and devices/plans cannot be changed, jobs cannot be executed/deleted, backups cannot be created/restored, and rebuild/provisioning actions remain paused. Views show stored snapshots. Downloading existing backups retains the administrative edit permission previously required for downloads.
+- `ApiNetworkDiagnostics` adds client names and local status with their source, together with same-origin client (`/crm/client/{id}`) and service (`/crm/client/service/{id}`) links. IDs are validated and text is escaped. Detailed diagnostics remain administrator-only; webhooks receive only the error code and conflict count.
+- **Verify in UISP** explicitly reads the selected service and its client. Each request accepts up to three services present in the diagnostic and performs at most six CRM reads, with a 12-second budget for starting further reads. This is a soft budget: a request already in flight can finish later. Verification does not update cache, queue, reservations, or routers.
+- Client archival uses the official `isArchived` field. An ended service (`2`) or inactive service (`8`) does not establish that its client is archived or deleted. Missing cache records, failed reads, and HTTP 404 remain unconfirmed and preserve known information. Stale reservations can explain a conflict but are never released or reassigned automatically.
+- Downloading or rechecking the diagnostic does not repair assignments. The operator must compare them with CRM/router state, explicitly resolve the conflict, and complete migration before writes resume. Documentation and fixtures use synthetic identities and data.
+
+**2.4.21 validation passed:** 31 isolated suites, syntax checks for 43 first-party PHP files, and installer verification covering 355 entries, 122 first-party files, and 13 locked dependencies. Report: `dist/verification-2.4.21.json`. SHA-256: `ecc819f6f6d247ae28b1b181292a75fe836e79c06596cc09c0727068cde8786a`. Browser checks also verified navigation and the warning with synthetic data. This revision still requires UISP integration verification and explicit reservation resolution in the affected installation.
+
+## Changes introduced in 2.4.20: address conflict diagnostics before migration
+
+This revision's standalone warning is superseded by 2.4.21 view mode. Its report, hash, and rejection behavior remain recorded as historical evidence.
 
 - Service IPs must remain globally unique, including across different routers. An upgrade still rejects a legacy database containing the same IPv4 address or IPv6 address/prefix for multiple services, preserving those assignments for explicit review.
 - The authenticated panel shows a Spanish warning with an indicator and conflict count, a family/address/service-ID table, a JSON diagnostic download, and a recheck action. Both reported groups and service IDs are bounded; credentials are excluded.
@@ -224,7 +241,7 @@ The plugin connects UISP CRM to MikroTik through the **native RouterOS API**, no
 - Evidence of partially creating a suspension profile is preserved. Cleanup verifies an existing profile before changing accounts or sessions; mismatched frozen values remain an error. A missing profile is not recreated during cleanup, and an existing profile is not overwritten.
 - Connection handling is unchanged: each service batch opens and closes its own API connection; queries and cleanup can open additional connections. API login/logout messages alone do not mean PPP sessions were disconnected. No connection sharing between batches was introduced.
 
-The historical 2.4.17 validation passed 27 suites, checks for 39 first-party PHP files, and verification of a ZIP containing 351 entries, 118 first-party files, and 13 pinned dependencies. Its report and hash are retained later in this changelog; the validation status of current candidate 2.4.20 is recorded above.
+The historical 2.4.17 validation passed 27 suites, checks for 39 first-party PHP files, and verification of a ZIP containing 351 entries, 118 first-party files, and 13 pinned dependencies. Its report and hash are retained later in this changelog; the validation status of current candidate 2.4.21 is recorded above.
 
 ## Changes contributed in PR #89
 
@@ -451,7 +468,7 @@ Later production evidence identified missing tokens and a URL pasted as the secr
 
 ## Installation and validation readiness
 
-The current version is 2.4.20. Its validation status appears at the beginning of this changelog. Archived-plan recovery confirmation belongs to 2.4.19 and retains its historical scope. If the duplicate-address warning appears, review its services, download the diagnostic, and explicitly correct the assignments before rechecking and continuing installation. The [real-environment test guide](docs/PRUEBAS_REALES.md) contains 69 scenarios for the remaining checks.
+The current version is 2.4.21. Its validation status appears at the beginning of this changelog. Archived-plan recovery confirmation belongs to 2.4.19 and retains its historical scope. When duplicate IPs are reported, inspect all six views, review the diagnostic, and explicitly verify owners in UISP. Writes and provisioning remain paused until assignments are resolved and migration completes; viewing the panel does not release reservations. The [real-environment test guide](docs/PRUEBAS_REALES.md) contains 75 scenarios for the remaining checks.
 
 ### Historical 2.4.17 result
 
@@ -501,4 +518,4 @@ The [draft PR description](docs/PR_DESCRIPTION.md) presents the change for upstr
 - `docs/CHANGELOG_EN.md`: standalone English changelog.
 - `docs/MEJORAS.md`: Spanish improvement inventory.
 - `docs/WEBHOOK_SETUP_EN.md`: English webhook setup and rationale.
-- `docs/PRUEBAS_REALES.md`: Spanish setup guide and 69-case integration checklist.
+- `docs/PRUEBAS_REALES.md`: Spanish setup guide and 75-case integration checklist.

@@ -2,7 +2,19 @@
 
 [Complete English changelog](docs/CHANGELOG_EN.md) · [Texto completo para el PR](docs/PR_DESCRIPTION.md) · [Webhook setup and rationale](docs/WEBHOOK_SETUP_EN.md) · [Mejoras en español](docs/MEJORAS.md)
 
-## Candidato 2.4.20 — diagnóstico de IP duplicadas al actualizar
+## Candidato 2.4.21 — consultar el panel durante una migración pendiente
+
+Cuando las IP duplicadas impiden migrar una base anterior, el panel habitual permanece disponible en **modo consulta**. Sus seis vistas —Dispositivos, Planes, Configuración, Trabajos, Sistema y Conflictos de IP— conservan la navegación, con un aviso ámbar y contador persistentes. La vista de conflictos permite descargar el diagnóstico, abrir los clientes y servicios afectados en el CRM y volver a comprobar las asignaciones.
+
+El diagnóstico muestra nombres y estados guardados, indicando su origen. **Verificar en UISP** consulta explícitamente el servicio y su cliente para contrastar el estado actual; abrir el panel no inicia esas consultas. Un cliente archivado se identifica por `isArchived`; un servicio terminado (`2`) o inactivo (`8`) tiene un estado distinto. Una fila ausente en caché o una respuesta 404 no confirman eliminación ni archivo. Una reserva anterior puede explicar una colisión y necesita revisión; no se libera automáticamente.
+
+Mientras persistan los conflictos, se pueden consultar los datos guardados, pero no editar ajustes, ejecutar o eliminar trabajos, crear/restaurar respaldos ni aprovisionar cuentas. La descarga de respaldos existentes conserva el permiso administrativo de edición. Estas consultas abren las bases en modo de sólo lectura, sin importar la cola, refrescar la caché ni consultar routers. Las IP existentes se conservan hasta una resolución explícita que permita completar la migración.
+
+Validación 2.4.21 aprobada: **31 suites aisladas**, sintaxis de **43 archivos PHP propios** y comprobación del instalador de 355 entradas, 122 archivos propios y 13 dependencias. Informe: `dist/verification-2.4.21.json`. SHA-256: `ecc819f6f6d247ae28b1b181292a75fe836e79c06596cc09c0727068cde8786a`. Se verificó también la navegación y el aviso con datos ficticios en navegador. La integración de esta versión en UISP y la corrección explícita de las reservas requieren comprobación en la instalación afectada. Los informes de 2.4.20 y 2.4.19 se conservan como evidencia histórica.
+
+## Cambios incorporados en 2.4.20 — diagnóstico de IP duplicadas al actualizar
+
+La pantalla independiente de aviso de esta revisión se integra en el panel habitual desde 2.4.21, manteniendo la pausa de las escrituras descrita arriba.
 
 Si una instalación anterior conserva la misma IPv4 o dirección/prefijo IPv6 en varios servicios, la actualización se detiene para mantener la unicidad global de las IP, incluso entre routers distintos. Antes se mostraba `operation_failed_check_log` sin indicar las asignaciones en conflicto. La 2.4.20 muestra al administrador un aviso en español con contador de conflictos y una tabla de familia, dirección e IDs de servicios; permite descargar el diagnóstico JSON y volver a comprobar los datos.
 
@@ -96,15 +108,15 @@ El [inventario completo de mejoras](docs/MEJORAS.md) reúne tus cambios del [PR 
 
 La comunicación con MikroTik utiliza la **API nativa de RouterOS**, con TLS opcional; los cambios de interfaz no alteran ese mecanismo. Los apartados siguientes conservan el detalle de las revisiones anteriores y la documentación original.
 
-La segunda revisión corrige además propiedad de cuentas/colas padre, hidratación de clientes fuera de caché, bajas con router desconectado y migración de trabajos terminales anteriores, reintentos de perfiles/padres compartidos, pools IPv6 por revisión, idiomas regionales y respuestas tardías al cambiar pestañas. El detalle de cada fallo y su resultado está en el inventario. La [guía de pruebas reales](docs/PRUEBAS_REALES.md) contiene 69 casos para comprobar en laboratorio.
+La segunda revisión corrige además propiedad de cuentas/colas padre, hidratación de clientes fuera de caché, bajas con router desconectado y migración de trabajos terminales anteriores, reintentos de perfiles/padres compartidos, pools IPv6 por revisión, idiomas regionales y respuestas tardías al cambiar pestañas. El detalle de cada fallo y su resultado está en el inventario. La [guía de pruebas reales](docs/PRUEBAS_REALES.md) contiene 75 casos para comprobar en laboratorio.
 
 Para verificar el candidato después de instalar dependencias y construir el ZIP:
 
 ```text
-python tools/verify_plugin.py --php RUTA_PHP --node RUTA_NODE --archive dist/ros-plugin-2.4.20-candidate.zip --output dist/verification-2.4.20.json
+python tools/verify_plugin.py --php RUTA_PHP --node RUTA_NODE --archive dist/ros-plugin-2.4.21-candidate.zip --output dist/verification-2.4.21.json
 ```
 
-En Windows sin configuración PHP, añadir `--extension-dir RUTA_EXT`. El verificador ejecuta las suites y comprueba sintaxis PHP, correspondencia del código/dependencias y exclusión de datos/fixtures del instalador. Validación 2.4.20 aprobada: **29 suites aisladas**, sintaxis de **41 archivos PHP propios** y comprobación del instalador de 353 entradas, 120 archivos propios y 13 dependencias. Informe: `dist/verification-2.4.20.json`. SHA-256: `fd74d7d8b81c8937a8553e20305e4bcdbc743cf6b19d7f34401e7956dfda7a01`. Las pruebas usan bases temporales y transportes simulados/locales; queda comprobar el aviso y la resolución de las asignaciones en Familynet. Para construirlo: `python tools/build_plugin.py --vendor-dir src/vendor --output dist/ros-plugin-2.4.20-candidate.zip`.
+En Windows sin configuración PHP, añadir `--extension-dir RUTA_EXT`. El verificador ejecuta las suites y comprueba sintaxis PHP, correspondencia del código/dependencias y exclusión de datos/fixtures del instalador. Validación 2.4.21 aprobada: **31 suites aisladas**, sintaxis de **43 archivos PHP propios** y comprobación del instalador de 355 entradas, 122 archivos propios y 13 dependencias. Informe: `dist/verification-2.4.21.json`. SHA-256: `ecc819f6f6d247ae28b1b181292a75fe836e79c06596cc09c0727068cde8786a`. Se verificó también la navegación y el aviso con datos ficticios en navegador. La integración de esta versión en UISP y la corrección explícita de las reservas requieren comprobación en la instalación afectada. Para construirlo: `python tools/build_plugin.py --vendor-dir src/vendor --output dist/ros-plugin-2.4.21-candidate.zip`.
 
 ## Implementación de estabilización 2.4.7 — candidato para laboratorio
 

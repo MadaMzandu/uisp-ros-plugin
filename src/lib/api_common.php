@@ -35,7 +35,7 @@ function bail($event, $data = [])
     throw new InvalidArgumentException($event);
 }
 
-function respond($msg,$err = false,$data = [])
+function respond($msg,$err = false,$data = [], array $metadata = [])
 {
     if (defined('JSON_RESPOND_SENT')) return;
     define('JSON_RESPOND_SENT', true);
@@ -46,6 +46,7 @@ function respond($msg,$err = false,$data = [])
         'message' => $msg,
         'data' => $data,
     ];
+    if (isset($metadata['recovery'])) $response['recovery'] = $metadata['recovery'];
     if(!headers_sent()) header('content-type: application/json');
     if ($err && !headers_sent()) { // failed header
         if (http_response_code() < 400) http_response_code(400);

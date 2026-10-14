@@ -62,7 +62,13 @@ try {
     set_error_handler('myErrorHandler');
     require_once 'lib/api_setup.php';
     require_once 'lib/api_cache.php';
+    $setupComplete = false;
+    if (!$webhook && empty($_FILES)) {
+        require_once 'lib/api_panel_recovery.php';
+        if (ApiPanelRecovery::diagnosticRequest($method, is_object($data) ? $data : null, $_GET)) exit;
+    }
     run_setup();
+    $setupComplete = true;
     cache_setup();
     require_once 'lib/api_router.php';
     require_once 'lib/api_backup.php';
@@ -103,17 +109,19 @@ try {
         // A billing webhook is not an administrative read grant, including when
         // compatibility mode explicitly accepts events without a secret.
         if ($webhook ?? false) $details = ['duplicate_groups' => $details['duplicate_groups']];
-        // Authentication and write permissions have already been checked above.
-        // Only the panel GET gets HTML; jobs/webhooks keep the controlled JSON error.
-        if (($method ?? '') === 'GET' && ($_GET['page'] ?? '') === 'panel' && !isset($_GET['download'])) {
-            header('Content-Type: text/html; charset=utf-8');
-            $networkConflictDetails = $details;
-            require 'public/panel_v2/network_conflicts.php';
-            exit;
-        }
-        if (($method ?? '') === 'GET' && ($_GET['download'] ?? '') === 'network-conflicts') {
-            header('Content-Disposition: attachment; filename="ros-plugin-ip-conflicts.json"');
+        if (!($webhook ?? false) && !($setupComplete ?? false)) {
+            try {
+                require_once 'lib/api_panel_recovery.php';
+                if (ApiPanelRecovery::handle($method, is_object($data) ? $data : null, $_GET, $error)) exit;
+            } catch (Throwable $recoveryError) {
+                MyLog()->Append(['recovery_read_failed', 'type' => get_class($recoveryError)], LOG_ERR);
+                http_response_code($recoveryError instanceof InvalidArgumentException ? 400 : 500);
+                respond($recoveryError instanceof InvalidArgumentException ? $recoveryError->getMessage() : 'recovery_read_failed', true);
+                exit;
+            }
         }
     }
-    respond($error instanceof InvalidArgumentException ? $error->getMessage() : 'operation_failed_check_log', true, $details);
+    $metadata = $error instanceof ApiNetworkAddressConflictException && !($webhook ?? false) && !($setupComplete ?? false)
+        ? ['recovery' => ['readOnly' => true]] : [];
+    respond($error instanceof InvalidArgumentException ? $error->getMessage() : 'operation_failed_check_log', true, $details, $metadata);
 }

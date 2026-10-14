@@ -45,6 +45,217 @@ document.addEventListener('DOMContentLoaded', () => {
     let sortDirection = 'asc';
     let loadingCount = 0;
     let languageLoad = 0;
+    let recoveryReadOnly = false;
+    let recoveryDetails = null;
+    let recoveryLoading = false;
+    let verifyingService = null;
+    const recoveryWriteIds = new Set(['save-config-btn', 'sync-attrs-btn', 'save-device-btn', 'save-plan-btn',
+        'btn-run-jobs', 'btn-delete-jobs', 'btn-backup', 'btn-rebuild', 'btn-cache', 'btn-upload', 'btn-log-clear', 'plan-reset-invalid']);
+
+    function markRecoveryWrite(button) {
+        if (!button) return button;
+        button.dataset.recoveryWrite = 'true';
+        if (recoveryReadOnly) {
+            button.disabled = true;
+            button.title = t('Los cambios están pausados hasta corregir las IP duplicadas.');
+        }
+        return button;
+    }
+
+    function markRecoveryRouterRead(button) {
+        button.dataset.recoveryRouterRead = 'true';
+        if (recoveryReadOnly) {
+            button.disabled = true;
+            button.title = t('Las consultas al router estarán disponibles al completar la actualización.');
+        }
+        return button;
+    }
+
+    function applyRecoveryControls() {
+        if (!recoveryReadOnly) return;
+        for (const id of recoveryWriteIds) markRecoveryWrite(byId(id));
+        for (const control of document.querySelectorAll('[data-recovery-write]')) markRecoveryWrite(control);
+        for (const control of document.querySelectorAll('[data-recovery-router-read]')) markRecoveryRouterRead(control);
+        for (const control of document.querySelectorAll('#device-form input, #device-form select, #plan-form input, #plan-form select, #config-form input, #config-form select, .burst-preset-btn'))
+            control.disabled = true;
+        updateConfigSaveStatus();
+    }
+
+    function applyRecovery(state) {
+        if (state?.readOnly !== true) return;
+        recoveryReadOnly = true;
+        if (state.details && typeof state.details === 'object') recoveryDetails = retainVerifiedOwners(recoveryDetails, state.details, verifyingService);
+        const count = Number(recoveryDetails?.duplicate_groups) || (Array.isArray(recoveryDetails?.conflicts) ? recoveryDetails.conflicts.length : 0);
+        byId('network-warning').style.display = 'flex';
+        byId('network-conflicts-nav').style.display = 'flex';
+        byId('network-conflicts-count').textContent = String(count);
+        translatedText(byId('network-warning-title'), 'IP duplicadas: {count} conflictos', { count });
+        applyRecoveryControls();
+        if (currentView === 'network_conflicts') renderNetworkConflictsTable();
+        if (!recoveryDetails && !recoveryLoading && typeof api.getNetworkConflicts === 'function') {
+            recoveryLoading = true;
+            api.getNetworkConflicts().then(response => {
+                checked(response);
+                if (response.data && typeof response.data === 'object') applyRecovery({ readOnly: true, details: response.data });
+            }).catch(error => notify(error.message, 'error')).finally(() => { recoveryLoading = false; });
+        }
+    }
+
+    function safeCrmUrl(value, kind) {
+        if (typeof value !== 'string' || !value) return null;
+        try {
+            const url = new URL(value, window.location.href);
+            const page = new URL(window.location.href);
+            const allowed = kind === 'service' ? /^\/crm\/client\/service\/[1-9]\d*$/ : /^\/crm\/client\/[1-9]\d*$/;
+            if (url.origin !== page.origin || url.username || url.password || url.search || url.hash || !allowed.test(url.pathname)) return null;
+            return url.href;
+        } catch (_) { return null; }
+    }
+
+    function conflictLink(label, rawUrl, kind) {
+        const link = document.createElement(safeCrmUrl(rawUrl, kind) ? 'a' : 'span');
+        link.className = 'conflict-link';
+        link.textContent = label;
+        const url = safeCrmUrl(rawUrl, kind);
+        if (url) { link.href = url; link.target = '_blank'; link.rel = 'noopener noreferrer'; }
+        return link;
+    }
+
+    function retainVerifiedOwners(previous, incoming, selectedService) {
+        if (!incoming || !Array.isArray(incoming.conflicts)) return incoming;
+        const groups = new Map((Array.isArray(previous?.conflicts) ? previous.conflicts : []).map(group =>
+            [JSON.stringify([group.family, group.address]), group]));
+        return { ...incoming, conflicts: incoming.conflicts.map(group => {
+            const priorGroup = groups.get(JSON.stringify([group.family, group.address]));
+            if (!priorGroup || !Array.isArray(group.owners)) return group;
+            const owners = new Map((Array.isArray(priorGroup.owners) ? priorGroup.owners : []).map(owner => [Number(owner.service_id), owner]));
+            return { ...group, owners: group.owners.map(owner => {
+                const prior = owners.get(Number(owner.service_id));
+                // Only reuse facts for an unchanged assignment and client. A
+                // selected owner's latest outcome, including failure, wins.
+                if (!prior || Number(owner.service_id) === selectedService || owner.client_id !== prior.client_id) return owner;
+                const retained = { ...owner };
+                if (prior.source === 'crm' && owner.source !== 'crm') {
+                    for (const field of ['service_status', 'service_status_code', 'source']) retained[field] = prior[field];
+                }
+                if (prior.client_source === 'crm' && owner.client_source !== 'crm') {
+                    for (const field of ['client_name', 'client_archived', 'client_deleted', 'client_source']) retained[field] = prior[field];
+                }
+                return retained;
+            }) };
+        }) };
+    }
+
+    function renderNetworkConflictsTable() {
+        const tbody = byId('network-conflicts-body');
+        tbody.replaceChildren();
+        const conflicts = Array.isArray(recoveryDetails?.conflicts) ? recoveryDetails.conflicts : [];
+        if (!conflicts.length) {
+            tbody.innerHTML = `<tr><td colspan="2" class="empty-state">${html(t('No hay asignaciones duplicadas en este diagnóstico.'))}</td></tr>`;
+        }
+        for (const conflict of conflicts) {
+            const row = document.createElement('tr');
+            const address = document.createElement('td');
+            address.className = 'conflict-address';
+            address.innerHTML = `<strong>${html(conflict.address)}</strong><span class="text-muted">${html(conflict.family)}</span><span class="badge badge-warning">${html(t('{count} servicios', { count: Number(conflict.service_count) || (conflict.service_ids || []).length }))}</span>`;
+            const ownersCell = document.createElement('td');
+            ownersCell.className = 'conflict-owners';
+            const known = new Set();
+            const owners = Array.isArray(conflict.owners) ? conflict.owners.slice(0, 50) : [];
+            for (const owner of owners) known.add(Number(owner?.service_id));
+            // Older diagnostics can contain service IDs before client details are available.
+            for (const id of Array.isArray(conflict.service_ids) ? conflict.service_ids.slice(0, 50) : [])
+                if (!known.has(Number(id))) owners.push({ service_id: id });
+            for (const owner of owners.slice(0, 50)) {
+                if (!owner || typeof owner !== 'object') continue;
+                const item = document.createElement('div');
+                item.className = 'conflict-owner';
+                const identity = document.createElement('div');
+                identity.className = 'conflict-identity';
+                const clientLabel = owner.client_name || (owner.client_id ? t('Cliente #{id}', { id: owner.client_id }) : t('Cliente sin identificar'));
+                identity.appendChild(conflictLink(clientLabel, owner.client_url, 'client'));
+                const meta = document.createElement('div');
+                meta.className = 'conflict-owner-meta';
+                meta.appendChild(conflictLink(t('Servicio #{id}', { id: owner.service_id }), owner.service_url, 'service'));
+                const states = [owner.service_status && owner.service_status !== 'Sin verificar' ? owner.service_status : t('Sin comprobar')];
+                if (owner.client_archived === true || owner.client_archived === 1) states.push(t(owner.client_source === 'crm' ? 'Cliente archivado' : 'Cliente archivado (dato guardado)'));
+                if (owner.client_deleted === true || owner.client_deleted === 1) states.push(t('Cliente eliminado'));
+                for (const label of states) {
+                    const badge = document.createElement('span');
+                    badge.className = 'badge badge-neutral';
+                    badge.textContent = t(String(label));
+                    meta.appendChild(badge);
+                }
+                identity.appendChild(meta);
+                const source = document.createElement('p');
+                source.className = 'conflict-source';
+                const sourceLabel = { database: 'Base del plugin', cache: 'Caché del plugin', crm: 'Servicio verificado en UISP', missing: 'Sin datos guardados' };
+                translatedText(source, sourceLabel[owner.source] || 'Sin datos guardados');
+                identity.appendChild(source);
+                if (owner.client_source === 'crm' || owner.source === 'crm') {
+                    const clientSource = document.createElement('p');
+                    clientSource.className = 'conflict-source';
+                    translatedText(clientSource, owner.client_source === 'crm' ? 'Cliente verificado en UISP'
+                        : owner.client_source === 'cache' ? 'Cliente: datos guardados' : 'Cliente: sin datos guardados');
+                    identity.appendChild(clientSource);
+                }
+                if (owner.refresh_error) {
+                    const error = document.createElement('p');
+                    error.className = 'conflict-refresh-error';
+                    translatedText(error, owner.refresh_error === 'deadline' ? 'La consulta a UISP agotó el tiempo disponible. Vuelve a verificar este servicio.'
+                        : owner.source === 'crm' && owner.client_source !== 'crm' ? 'No se pudo verificar el cliente en UISP. Se conservan los datos guardados.'
+                        : 'UISP no devolvió este servicio. Puede estar eliminado o no ser accesible; compruébalo en el CRM.');
+                    identity.appendChild(error);
+                }
+                item.appendChild(identity);
+                const id = Number(owner.service_id);
+                if (Number.isSafeInteger(id) && id > 0) {
+                    const verify = document.createElement('button');
+                    verify.type = 'button'; verify.className = 'btn btn-secondary conflict-verify';
+                    translatedText(verify, verifyingService === id ? 'Verificando...' : 'Verificar en UISP');
+                    verify.disabled = verifyingService !== null;
+                    verify.addEventListener('click', async () => {
+                        if (verifyingService !== null) return;
+                        const previous = recoveryDetails;
+                        verifyingService = id;
+                        renderNetworkConflictsTable();
+                        try {
+                            const response = checked(await api.getNetworkConflicts({ refresh: true, serviceIds: [id] }));
+                            recoveryDetails = retainVerifiedOwners(previous, response.data, id);
+                            applyRecovery({ readOnly: true, details: recoveryDetails });
+                        } catch (error) { notify(error.message, 'error'); }
+                        finally {
+                            verifyingService = null;
+                            if (currentView === 'network_conflicts') renderNetworkConflictsTable();
+                        }
+                    });
+                    item.appendChild(verify);
+                }
+                ownersCell.appendChild(item);
+            }
+            if (conflict.services_truncated) {
+                const more = document.createElement('p');
+                more.className = 'form-note';
+                translatedText(more, 'Se muestran los primeros {shown} de {total} servicios.', { shown: Math.min(owners.length, 50), total: Number(conflict.service_count) || 0 });
+                ownersCell.appendChild(more);
+            }
+            row.append(address, ownersCell);
+            tbody.appendChild(row);
+        }
+        const limit = byId('network-conflicts-limit');
+        limit.style.display = recoveryDetails?.conflicts_truncated ? 'block' : 'none';
+        translatedText(limit, 'Se muestran {shown} de {total} conflictos. El diagnóstico conserva el total y una muestra acotada.', { shown: conflicts.length, total: Number(recoveryDetails?.duplicate_groups) || conflicts.length });
+        byId('download-network-conflicts').href = api.downloadUrl('network-conflicts');
+        byId('download-network-conflicts').download = 'network-conflicts.json';
+    }
+
+    async function renderNetworkConflicts() {
+        if (!recoveryDetails) {
+            const response = checked(await api.getNetworkConflicts());
+            recoveryDetails = response.data;
+        }
+        renderNetworkConflictsTable();
+    }
 
     function translatedText(node, source, params = {}) {
         node.textContent = t(source, params);
@@ -70,6 +281,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function checked(response) {
+        if (response?.recovery?.readOnly === true) applyRecovery(response.recovery);
         if (!response || response.error || ['failed', 'error'].includes(response.status)) {
             throw new Error(response?.message || t('No se pudo completar la operación.'));
         }
@@ -162,18 +374,20 @@ document.addEventListener('DOMContentLoaded', () => {
         finally {
             loadingCount--;
             loader.style.display = loadingCount > 0 ? 'flex' : 'none';
-            if (button) button.disabled = false;
+            if (button) button.disabled = recoveryReadOnly && (button.dataset.recoveryWrite === 'true' || button.dataset.recoveryRouterRead === 'true');
+            applyRecoveryControls();
         }
     }
 
     function bind(id, work) {
         byId(id)?.addEventListener('click', event => {
             event.preventDefault();
+            if (recoveryReadOnly && recoveryWriteIds.has(id)) return;
             return withLoader(() => work(event), event.currentTarget);
         });
     }
 
-    function actionButton(label, icon, work, variant = 'secondary', { loading = true } = {}) {
+    function actionButton(label, icon, work, variant = 'secondary', { loading = true, write = false, routerRead = false } = {}) {
         const button = document.createElement('button');
         button.type = 'button';
         button.className = `btn btn-${variant} row-action`;
@@ -182,9 +396,11 @@ document.addEventListener('DOMContentLoaded', () => {
         button.setAttribute('data-i18n-title', label);
         button.setAttribute('data-i18n-aria-label', label);
         button.innerHTML = `<i data-feather="${html(icon)}"></i>`;
+        if (write) markRecoveryWrite(button);
+        if (routerRead) markRecoveryRouterRead(button);
         let running = false;
         button.addEventListener('click', async () => {
-            if (running) return;
+            if (running || ((write || routerRead) && recoveryReadOnly)) return;
             if (loading) return withLoader(work, button);
             // Abrir un editor local no necesita superponer la pantalla de carga.
             running = true;
@@ -246,7 +462,7 @@ document.addEventListener('DOMContentLoaded', () => {
         jobsViewGeneration++;
         clearJobsRefreshTimer();
         currentView = view;
-        translatedText(byId('page-title'), { devices: 'Dispositivos administrados', plans: 'Planes', config: 'Configuración', jobs: 'Trabajos', system: 'Sistema' }[view] || title);
+        translatedText(byId('page-title'), { devices: 'Dispositivos administrados', plans: 'Planes', config: 'Configuración', jobs: 'Trabajos', system: 'Sistema', network_conflicts: 'Conflictos de IP' }[view] || title);
         document.querySelectorAll('.nav-item').forEach(nav => nav.classList.toggle('active', nav.dataset.view === view));
         document.querySelectorAll('.view-section').forEach(section => {
             section.style.display = section.id === `view-${view}` ? 'block' : 'none';
@@ -257,11 +473,12 @@ document.addEventListener('DOMContentLoaded', () => {
             const button = document.createElement('button');
             button.className = 'btn btn-primary';
             translatedText(button, 'Agregar dispositivo');
+            markRecoveryWrite(button);
             button.addEventListener('click', () => openDeviceModal());
             topbar.appendChild(button);
         }
         withLoader(async () => {
-            const render = { devices: renderDevices, plans: renderPlans, config: renderConfig, jobs: renderJobs, system: renderSystem }[view];
+            const render = { devices: renderDevices, plans: renderPlans, config: renderConfig, jobs: renderJobs, system: renderSystem, network_conflicts: renderNetworkConflicts }[view];
             if (render) await render();
         });
     }
@@ -270,6 +487,8 @@ document.addEventListener('DOMContentLoaded', () => {
         event.preventDefault();
         switchView(nav.dataset.view, nav.querySelector('span').textContent);
     }));
+    byId('btn-view-conflicts')?.addEventListener('click', () => switchView('network_conflicts', 'Conflictos de IP'));
+    byId('btn-recheck-conflicts')?.addEventListener('click', () => window.location.reload());
 
     async function renderDevices() {
         const response = checked(await api.getDevices());
@@ -296,27 +515,28 @@ document.addEventListener('DOMContentLoaded', () => {
         devices.forEach(device => {
             const row = document.createElement('tr');
             const online = PanelUtils.flag(device.status);
+            const deviceStatus = device.status == null ? 'Sin comprobar' : online ? 'Puerto accesible' : 'Desconectado';
             row.innerHTML = `<td>${html(device.id)}</td><td>${html(device.name)}</td><td>${html(device.ip)}</td>
-                <td>${html(device.users ?? 0)}</td><td><span class="badge badge-${online ? 'success' : 'danger'}" data-i18n="${online ? 'Puerto accesible' : 'Desconectado'}">${html(t(online ? 'Puerto accesible' : 'Desconectado'))}</span></td><td class="row-actions"></td>`;
+                <td>${html(device.users ?? 0)}</td><td><span class="badge badge-${device.status == null ? 'neutral' : online ? 'success' : 'danger'}" data-i18n="${deviceStatus}">${html(t(deviceStatus))}</span></td><td class="row-actions"></td>`;
             const actions = row.querySelector('.row-actions');
             actions.append(
-                actionButton('Ver cuentas huérfanas', 'users', () => viewOrphans(device.id)),
-                actionButton('Editar dispositivo', 'edit-2', () => openDeviceModal(device), 'secondary', { loading: false }),
+                actionButton('Ver cuentas huérfanas', 'users', () => viewOrphans(device.id), 'secondary', { routerRead: true }),
+                actionButton(recoveryReadOnly ? 'Ver dispositivo' : 'Editar dispositivo', 'edit-2', () => openDeviceModal(device), 'secondary', { loading: false }),
                 actionButton('Sincronizar y reconectar cuentas', 'refresh-cw', async () => {
                     if (!await confirmAction(t('¿Sincronizar las cuentas administradas de este MikroTik y reconectar todas sus sesiones PPP/Hotspot?'))) return;
                     completed(await api.send('update', 'system', 'insert', { type: 'device', id: Number(device.id) }), t('Sincronización y reconexión completadas.'));
                     await renderDevices();
-                }),
+                }, 'secondary', { write: true }),
                 actionButton('Vaciar cuentas administradas', 'x-circle', async () => {
                     if (!await confirmAction(t('¿Eliminar todas las cuentas administradas por el plugin de este MikroTik?'))) return;
                     completed(await api.send('update', 'system', 'delete', { type: 'device', id: Number(device.id) }), t('Cuentas eliminadas.'));
                     await renderDevices();
-                }),
+                }, 'secondary', { write: true }),
                 actionButton('Eliminar dispositivo', 'trash-2', async () => {
                     if (!await confirmAction(t('¿Eliminar este dispositivo del plugin?'))) return;
                     checked(await api.send('update', 'devices', 'delete', { id: Number(device.id) }));
                     await renderDevices();
-                }, 'danger')
+                }, 'danger', { write: true })
             );
             tbody.appendChild(row);
         });
@@ -370,7 +590,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 <td>${speedLabel('download')}</td>
                 <td>${burstLabel(plan.burstUpload, 'burstUpload')}</td>
                 <td>${burstLabel(plan.burstDownload, 'burstDownload')}</td><td class="row-actions"></td>`;
-            row.querySelector('.row-actions').appendChild(actionButton('Editar plan', 'edit-2', () => openPlanModal(plan), 'secondary', { loading: false }));
+            row.querySelector('.row-actions').appendChild(actionButton(recoveryReadOnly ? 'Ver plan' : 'Editar plan', 'edit-2', () => openPlanModal(plan), 'secondary', { loading: false }));
             tbody.appendChild(row);
         });
         PanelUtils.replaceIcons();
@@ -398,7 +618,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function updateConfigSaveStatus() {
         const status = byId('config-save-status');
         const changed = Object.entries(configDraft).some(([name, value]) => configComparableValue(name, value) !== configComparableValue(name, configCache[name]));
-        if (status) status.textContent = changed ? t('Cambios sin guardar.') : t('Guarda para aplicar los cambios.');
+        if (status) status.textContent = recoveryReadOnly ? t('Modo consulta: los cambios están pausados.') : changed ? t('Cambios sin guardar.') : t('Guarda para aplicar los cambios.');
     }
 
     function captureConfigDraft() {
@@ -550,6 +770,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         configRendered = true;
         updateConfigSaveStatus();
+        applyRecoveryControls();
     }
     for (const tab of ['tab-general', 'tab-attrs']) bind(tab, async () => {
         await renderConfig(tab === 'tab-attrs');
@@ -578,7 +799,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function updateJobsRefreshStatus() {
         const busy = jobsActionPending || jobsRefreshInFlight !== null;
         if (byId('btn-refresh-jobs')) byId('btn-refresh-jobs').disabled = busy;
-        for (const id of ['btn-run-jobs', 'btn-delete-jobs']) if (byId(id)) byId(id).disabled = jobsActionPending;
+        for (const id of ['btn-run-jobs', 'btn-delete-jobs']) if (byId(id)) byId(id).disabled = jobsActionPending || recoveryReadOnly;
         const status = byId('jobs-refresh-status');
         if (!status) return;
         if (jobsRefreshInFlight) translatedText(status, 'Actualizando...');
@@ -907,7 +1128,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (!await confirmAction(t('¿Restaurar {name}?', { name: backup.name }))) return;
                 completed(await api.restoreBackup(backup.name), t('Copia de seguridad restaurada.'));
                 await renderSystem();
-            }));
+            }, 'secondary', { write: true }));
             const download = document.createElement('a');
             download.className = 'btn btn-secondary row-action';
             download.href = api.downloadUrl(backup.name);
@@ -932,6 +1153,7 @@ document.addEventListener('DOMContentLoaded', () => {
     bind('btn-cache', async () => { completed(await api.rebuildCache(), t('Caché reconstruida.')); await renderSystem(); });
     bind('btn-log-clear', async () => { completed(await api.clearLogs(), t('Registro limpiado.')); });
     byId('btn-upload').addEventListener('click', () => {
+        if (recoveryReadOnly) return;
         const input = document.createElement('input');
         input.type = 'file';
         input.accept = '.db,.sqlite';
@@ -952,15 +1174,17 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     byId('dev-ssl').addEventListener('change', updateTlsControls);
     function openDeviceModal(device) {
+        if (recoveryReadOnly && !device) return;
         byId('device-form').reset();
         byId('dev-id').value = device?.id ?? '';
-        translatedText(byId('modal-title'), device ? 'Editar dispositivo' : 'Agregar dispositivo');
+        translatedText(byId('modal-title'), recoveryReadOnly ? 'Ver dispositivo' : device ? 'Editar dispositivo' : 'Agregar dispositivo');
         byId('dev-password').value = '';
         byId('dev-password').required = !device;
         for (const field of ['name', 'ip', 'user', 'port', 'pool', 'pool6', 'pfxLength']) byId('dev-' + field).value = device?.[field] ?? '';
         byId('dev-ssl').checked = device ? Boolean(PanelUtils.flag(device.ssl ?? (Number(device.port) === 8729 ? 1 : 0))) : false;
         byId('dev-allowSelfSigned').checked = Boolean(PanelUtils.flag(device?.allowSelfSigned));
         updateTlsControls();
+        applyRecoveryControls();
         deviceModal.style.display = 'flex';
         byId('dev-name').focus();
     }
@@ -1078,6 +1302,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         updatePlanNumericWarning();
         updateBurstPreview();
+        applyRecoveryControls();
     });
 
     function planBurstInput() {
@@ -1181,6 +1406,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!burstEditorAvailable()) notify(t('Recarga el panel para ver las plantillas de burst.'), 'info');
         updatePlanNumericWarning();
         updateBurstPreview();
+        applyRecoveryControls();
     }
     bind('save-plan-btn', async () => {
         const form = byId('plan-form');
@@ -1203,6 +1429,7 @@ document.addEventListener('DOMContentLoaded', () => {
         updatePlanNumericWarning();
         updateBurstPreview();
         updateJobsRefreshStatus();
+        if (recoveryReadOnly) applyRecovery({ readOnly: true });
         for (const direction of ['upload', 'download']) if (planNumericDraft.has(direction + 'Speed'))
             byId('plan-' + direction + 'Override').placeholder = t('UISP: valor inválido');
         byId('dev-port').placeholder = t('Predeterminado: {port}', { port: byId('dev-ssl').checked ? 8729 : 8728 });
@@ -1233,5 +1460,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     PanelUtils.replaceIcons();
+    api.onRecovery?.(applyRecovery);
+    if (api.recovery?.readOnly === true) applyRecovery(api.recovery);
     switchView('devices', 'Dispositivos administrados');
 });

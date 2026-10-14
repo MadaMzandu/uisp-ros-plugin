@@ -13,8 +13,8 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     
     <!-- Custom CSS -->
-    <script src="js/theme.js?v=2.0.35"></script>
-    <link rel="stylesheet" href="css/style.css?v=2.0.35">
+    <script src="js/theme.js?v=2.0.36"></script>
+    <link rel="stylesheet" href="css/style.css?v=2.0.36">
 </head>
 <body>
 
@@ -48,6 +48,11 @@
                     <i data-feather="cpu"></i>
                     <span data-i18n="Sistema">Sistema</span>
                 </a>
+                <a href="#" class="nav-item conflict-nav" data-view="network_conflicts" id="network-conflicts-nav" style="display: none;">
+                    <i data-feather="alert-triangle"></i>
+                    <span data-i18n="Conflictos de IP">Conflictos de IP</span>
+                    <span class="badge badge-warning conflict-nav-count" id="network-conflicts-count"></span>
+                </a>
             </nav>
             <div class="preference-controls">
                 <label class="preference-control" for="panel-theme">
@@ -77,6 +82,15 @@
                     <!-- Dynamic actions like Add Device will go here -->
                 </div>
             </header>
+
+            <aside class="network-warning" id="network-warning" role="status" style="display: none;">
+                <i data-feather="alert-triangle"></i>
+                <div class="network-warning-copy">
+                    <strong id="network-warning-title"></strong>
+                    <p data-i18n="Puedes consultar el plugin. Los cambios y la sincronización están pausados hasta corregir las IP duplicadas.">Puedes consultar el plugin. Los cambios y la sincronización están pausados hasta corregir las IP duplicadas.</p>
+                </div>
+                <button type="button" class="btn btn-secondary" id="btn-view-conflicts" data-i18n="Revisar">Revisar</button>
+            </aside>
             
             <div class="content-area" id="content-area">
                 <!-- Loader -->
@@ -85,6 +99,29 @@
                 </div>
                 
                 <!-- Dynamic Content Views -->
+                <section id="view-network_conflicts" class="view-section" style="display: none;">
+                    <div class="conflicts-heading">
+                        <div>
+                            <h2 data-i18n="Asignaciones duplicadas">Asignaciones duplicadas</h2>
+                            <p data-i18n="Comprueba cada servicio en UISP. Un cliente archivado o un servicio terminado puede conservar una IP en la caché del plugin.">Comprueba cada servicio en UISP. Un cliente archivado o un servicio terminado puede conservar una IP en la caché del plugin.</p>
+                        </div>
+                        <div class="conflicts-toolbar">
+                            <a class="btn btn-secondary" id="download-network-conflicts" data-i18n="Descargar diagnóstico">Descargar diagnóstico</a>
+                            <button type="button" class="btn btn-primary" id="btn-recheck-conflicts" data-i18n="Volver a comprobar">Volver a comprobar</button>
+                        </div>
+                    </div>
+                    <p class="form-note" data-i18n="Los datos guardados pueden estar desactualizados. Verificar en UISP consulta el estado actual; no modifica clientes, servicios ni routers.">Los datos guardados pueden estar desactualizados. Verificar en UISP consulta el estado actual; no modifica clientes, servicios ni routers.</p>
+                    <div class="table-container conflicts-table-container">
+                        <table class="data-table conflicts-table" id="network-conflicts-table">
+                            <thead><tr>
+                                <th data-i18n="IP / familia">IP / familia</th>
+                                <th data-i18n="Cliente y servicio">Cliente y servicio</th>
+                            </tr></thead>
+                            <tbody id="network-conflicts-body"></tbody>
+                        </table>
+                    </div>
+                    <p class="form-note conflicts-limit" id="network-conflicts-limit" style="display: none;"></p>
+                </section>
                 <div id="view-devices" class="view-section" style="display: none;">
                     <div class="list-toolbar">
                         <div class="search-field">
@@ -485,8 +522,8 @@
     </div>
 
     <!-- Scripts -->
-    <script src="js/i18n.js?v=2.0.35"></script>
-    <script src="js/api.js?v=2.0.35"></script>
-    <script src="js/app.js?v=2.0.35"></script>
+    <script src="js/i18n.js?v=2.0.36"></script>
+    <script src="js/api.js?v=2.0.36"></script>
+    <script src="js/app.js?v=2.0.36"></script>
 </body>
 </html>

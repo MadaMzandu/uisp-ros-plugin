@@ -1,1 +1,1 @@
-Modernize the panel and improve provisioning, job recovery, archived plans, and migration diagnostics
+Modernize the panel and improve provisioning, job recovery, archived plans, and migration consultation

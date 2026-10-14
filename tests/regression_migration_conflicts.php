@@ -71,6 +71,7 @@ function migrationPersistentSnapshot(): array {
         'state'=>is_file('data/state.json') ? file_get_contents('data/state.json') : null,
         'cursor'=>mySqlite()->singleQuery('SELECT value FROM config WHERE key=?', false, ['backup_cursor']),
         'jobs'=>myJobQueue()->list(),
+        'cache_hash'=>is_file('data/cache.db') ? hash_file('sha256','data/cache.db') : null,
         'log'=>is_file('data/plugin.log') ? file_get_contents('data/plugin.log') : null,
     ];
 }
@@ -118,11 +119,37 @@ function publicMigrationSnapshot(): array {
     unset($snapshot['log']);
     return $snapshot;
 }
-function checkWebhookMigrationPrivacy(string $directory): void {
+function recoveryDiskSnapshot(string $dataDirectory = 'data'): array {
+    $snapshot = [];
+    $iterator = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($dataDirectory, FilesystemIterator::SKIP_DOTS),
+        RecursiveIteratorIterator::SELF_FIRST);
+    foreach ($iterator as $file) {
+        // Authentication settings and the private request log are intentionally changed by these fixtures.
+        if (in_array($file->getFilename(), ['config.json','plugin.log'], true)) continue;
+        $snapshot[$file->getPathname()] = $file->isDir() ? 'directory' : hash_file('sha256',$file->getPathname());
+    }
+    ksort($snapshot);
+    return $snapshot;
+}
+function publicMigrationWebhookChecks(string $directory): void {
     $process = null;
     $priorConfig = is_file('data/config.json') ? file_get_contents('data/config.json') : null;
-    file_put_contents($directory . '/webhook-router.php',
-        '<?php set_include_path(__DIR__ . "/lib" . PATH_SEPARATOR . get_include_path()); require __DIR__ . "/public.php";');
+    file_put_contents($directory . '/webhook-router.php', <<<'PHP'
+<?php
+set_include_path(__DIR__ . '/lib' . PATH_SEPARATOR . get_include_path());
+// This disposable loopback server alone owns this synthetic authentication header.
+$fixturePermission = $_SERVER['HTTP_X_FIXTURE_ADMIN'] ?? null;
+if (in_array($fixturePermission, ['edit','view'], true)) {
+    $GLOBALS['testUser'] = (object)['isClient'=>false,'permissions'=>['system/plugins'=>$fixturePermission]];
+}
+if (($_SERVER['HTTP_X_FIXTURE_MODE'] ?? '')==='restore-after-setup') {
+    set_include_path(__DIR__ . '/clean-restore/lib' . PATH_SEPARATOR . get_include_path());
+    require __DIR__ . '/clean-restore/public.php';
+    exit;
+}
+require __DIR__ . '/public.php';
+PHP
+    );
     try {
         $listener = stream_socket_server('tcp://127.0.0.1:0', $errorNumber, $errorMessage);
         checkMigrationConflict($listener!==false, 'Could not allocate a loopback webhook privacy fixture');
@@ -142,17 +169,117 @@ function checkWebhookMigrationPrivacy(string $directory): void {
         }
         checkMigrationConflict($ready, 'Loopback webhook privacy server did not become ready: '
             . file_get_contents($directory . '/webhook-server-error.log'));
-        $request = static function (array $event, array $headers = []) use ($address): array {
-            $httpHeaders = ['Content-Type: application/json'];
+        $request = static function ($event, array $headers = [], string $method = 'POST', string $query = '',
+            string $contentType = 'application/json') use ($address): array {
+            $httpHeaders = ['Content-Type: ' . $contentType,'Origin: http://' . $address];
             foreach ($headers as $name=>$value) $httpHeaders[] = $name . ': ' . $value;
-            $context = stream_context_create(['http'=>['method'=>'POST','header'=>implode("\r\n",$httpHeaders),
-                'content'=>json_encode($event,JSON_THROW_ON_ERROR),'ignore_errors'=>true,'timeout'=>3]]);
-            $body = file_get_contents('http://' . $address . '/public.php', false, $context);
+            $payload = $method==='GET' ? '' : (is_string($event) ? $event : json_encode($event,JSON_THROW_ON_ERROR));
+            $context = stream_context_create(['http'=>['method'=>$method,'header'=>implode("\r\n",$httpHeaders),
+                'content'=>$payload,'ignore_errors'=>true,'timeout'=>3]]);
+            $body = file_get_contents('http://' . $address . '/public.php' . $query, false, $context);
             $status = (int)(preg_match('/^HTTP\/\S+ (\d+)/',$http_response_header[0] ?? '',$match) ? $match[1] : 0);
-            return ['http'=>$status,'body'=>$body,'response'=>json_decode($body,true,512,JSON_THROW_ON_ERROR)];
+            $decoded = strpos(ltrim($body),'{')===0 ? json_decode($body,true,512,JSON_THROW_ON_ERROR) : null;
+            return ['http'=>$status,'body'=>$body,'response'=>$decoded];
         };
+        $admin = ['X-Fixture-Admin'=>'edit'];
+        $reader = ['X-Fixture-Admin'=>'view'];
+        $before = recoveryDiskSnapshot();
+        checkMigrationConflict(!is_file('data/jobs.db') && !is_file('data/cache.db'),
+            'HTTP recovery no-initialization fixtures were not isolated before queue/cache creation');
+        foreach (['devices','plans','config','jobs','messages','lang','sys','backups','services'] as $target) {
+            $data = $target==='services' ? ['did'=>1] : ($target==='messages' ? ['language'=>'es'] : new stdClass());
+            $response = $request(['changeType'=>'list','target'=>$target,'action'=>'list','data'=>$data],$reader);
+            checkMigrationConflict($response['http']===200 && ($response['response']['error'] ?? null)===false
+                && ($response['response']['message'] ?? null)==='recovery_read_only'
+                && ($response['response']['recovery']['readOnly'] ?? null)===true
+                && array_key_exists('data',$response['response']), 'Recovery list failed for ' . $target . ': ' . $response['body']);
+            $listed = $response['response']['data'];
+            if ($target==='devices') checkMigrationConflict(count($listed)===1 && $listed[0]['id']===1
+                && !array_key_exists('password',$listed[0]), 'Recovery devices lost stored rows or exposed a password');
+            if ($target==='plans') checkMigrationConflict(count($listed)===1 && $listed[0]['uploadOverride']===2.5,
+                'Recovery plan list changed its saved decimal speed');
+            if ($target==='config') checkMigrationConflict(($listed['active_list'] ?? null)==='00123'
+                && ($listed['version'] ?? null)==='2.3.1', 'Recovery configuration altered text identifiers or version');
+            if ($target==='jobs') checkMigrationConflict(count($listed)===1 && ($listed['L1']['serviceId'] ?? null)===90,
+                'Recovery jobs could not read the original legacy queue without importing it');
+            if ($target==='messages' || $target==='lang') checkMigrationConflict(count($listed)===2,
+                'Recovery localization omitted its message or field dictionary');
+            if ($target==='sys') checkMigrationConflict(($listed['app_version'] ?? null)===MY_VERSION,
+                'Recovery system list omitted the executing version');
+            if ($target==='backups') checkMigrationConflict(count($listed)===7, 'Recovery backup list omitted stored recovery snapshots');
+            if ($target==='services') checkMigrationConflict(($listed['count'] ?? null)===2
+                && array_column($listed['data'],'id')===[8,22], 'Recovery services list lost active services or included terminal ones');
+            checkMigrationConflict(recoveryDiskSnapshot()===$before,
+                'Recovery list initialized/imported jobs or cache, migrated, or changed stored data: ' . $target);
+        }
+        $systemGet = $request(['changeType'=>'list','target'=>'sys','action'=>'get'],$reader);
+        checkMigrationConflict($systemGet['http']===200 && ($systemGet['response']['error'] ?? null)===false,
+            'Read-only system GET action became unavailable during recovery');
+        $localDetails = $request(['changeType'=>'list','target'=>'network_conflicts','data'=>new stdClass()],$reader);
+        checkMigrationConflict($localDetails['http']===200 && ($localDetails['response']['message'] ?? null)==='network_diagnostics'
+            && ($localDetails['response']['data']['duplicate_groups'] ?? null)===2
+            && ($localDetails['response']['recovery']['readOnly'] ?? null)===true,
+            'Administrative local conflict refresh did not return diagnostics');
+        checkMigrationConflict(!is_file($directory . '/sdk-reads.jsonl') && recoveryDiskSnapshot()===$before,
+            'Default recovery reads called UISP or changed stored state');
+
+        // An explicit bounded refresh may consult CRM, retaining all local databases and queue files.
+        $refreshed = $request(['changeType'=>'list','target'=>'network_conflicts','data'=>['refresh'=>true,'serviceIds'=>[7,999]]],$reader);
+        $ownerGroup = conflictByAddress($refreshed['response']['data'],'IPv4','203.0.113.7');
+        $owner = $ownerGroup['owners'][0];
+        checkMigrationConflict($refreshed['http']===200 && $owner['service_id']===7 && $owner['client_id']===70
+            && $owner['service_status_code']===2 && $owner['service_status']==='Terminado'
+            && $owner['client_name']==='Archived fixture client' && $owner['client_archived']===true
+            && $owner['source']==='crm' && $owner['client_source']==='crm'
+            && $owner['client_deleted']===null && $owner['refresh_error']===null
+            && $owner['service_url']==='/crm/client/service/7' && $owner['client_url']==='/crm/client/70',
+            'Explicit refresh omitted accurate ended-service/archived-client metadata or usable CRM routes');
+        $sdkReads = array_map(static fn($line)=>json_decode($line,true),file($directory . '/sdk-reads.jsonl',FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES));
+        checkMigrationConflict($sdkReads===['clients/services/7','clients/70']
+            && ($refreshed['response']['data']['owner_refresh']['services_attempted'] ?? null)===1,
+            'Owner refresh read beyond selected conflict services or used unexpected CRM paths');
+        checkMigrationConflict(recoveryDiskSnapshot()===$before, 'Explicit owner refresh published cache data or changed provisioning state');
+
+        foreach ([['changeType'=>'list','target'=>'unknown'],['changeType'=>'list','target'=>'devices','action'=>'edit'],
+            ['changeType'=>'list','target'=>'devices','data'=>[]],['changeType'=>'list','target'=>'devices','entity'=>''],
+            ['changeType'=>'list','target'=>'services','data'=>['did'=>'1 OR 1=1']],
+            ['changeType'=>'list','target'=>'network_conflicts','action'=>'edit'],
+            ['changeType'=>'list','target'=>'network_conflicts','data'=>['serviceIds'=>'7']],'{"malformed":'] as $invalid) {
+            $response = $request($invalid,$admin);
+            checkMigrationConflict($response['http']===400 && ($response['response']['error'] ?? null)===true,
+                'Recovery accepted malformed, unallowed or write-like list request');
+            checkMigrationConflict(recoveryDiskSnapshot()===$before, 'Invalid recovery request changed stored data');
+        }
+        foreach ([['changeType'=>'update','target'=>'devices','action'=>'edit','data'=>['id'=>1,'name'=>'Must not persist']],
+            ['changeType'=>'update','target'=>'plans','action'=>'edit','data'=>['id'=>1,'uploadOverride'=>99]],
+            ['changeType'=>'update','target'=>'jobs','action'=>'exec'],['changeType'=>'update','target'=>'jobs','action'=>'retry'],
+            ['changeType'=>'update','target'=>'jobs','action'=>'cancel'],['changeType'=>'update','target'=>'backups','action'=>'restore','data'=>['name'=>'backup-0']],
+            ['changeType'=>'update','target'=>'config','action'=>'edit','data'=>['lease_time'=>99]]] as $mutation) {
+            $response = $request($mutation,$admin);
+            checkMigrationConflict($response['http']===400 && ($response['response']['message'] ?? null)==='duplicate_network_addresses_resolve_before_upgrade'
+                && ($response['response']['recovery']['readOnly'] ?? null)===true,
+                'Recovery allowed a provisioning, configuration, job or restore write');
+            checkMigrationConflict(recoveryDiskSnapshot()===$before, 'Blocked recovery write changed stored data');
+        }
+        $boundary = 'MigrationFixtureBoundary0001';
+        $upload = '--' . $boundary . "\r\nContent-Disposition: form-data; name=\"backup\"; filename=\"fixture.sqlite\"\r\n"
+            . "Content-Type: application/octet-stream\r\n\r\n" . file_get_contents('data/backup-0') . "\r\n--" . $boundary . "--\r\n";
+        $uploadResponse = $request($upload,$admin,'POST','','multipart/form-data; boundary=' . $boundary);
+        checkMigrationConflict($uploadResponse['http']===400
+            && ($uploadResponse['response']['message'] ?? null)==='duplicate_network_addresses_resolve_before_upgrade'
+            && ($uploadResponse['response']['recovery']['readOnly'] ?? null)===true
+            && recoveryDiskSnapshot()===$before, 'Recovery upload bypassed the live-database write guard');
+        foreach ([['GET','?page=panel'],['GET','?download=network-conflicts']] as [$method,$query]) {
+            $response = $request([],[],$method,$query);
+            checkMigrationConflict($response['http']===403 && ($response['response']['data'] ?? null)===[],
+                'Unauthenticated recovery read disclosed private assignments');
+        }
+        foreach (['network-conflicts','backup-0'] as $download) {
+            $response = $request([],$reader,'GET','?download=' . $download);
+            checkMigrationConflict($response['http']===403 && ($response['response']['data'] ?? null)===[],
+                'Read-only administrator bypassed existing download edit permission');
+        }
         $secret = 'MIGRATION-PRIVACY-FIXTURE-SECRET-0123456789';
-        $before = publicMigrationSnapshot();
         foreach ([[['webhookAllowWithoutSecret'=>true],[]],
             [['webhookSecret'=>$secret],['X-Webhook-Token'=>$secret]],
             [['webhookSecret'=>$secret],['Authorization'=>'Bearer ' . $secret]]] as [$settings,$headers]) {
@@ -169,7 +296,7 @@ function checkWebhookMigrationPrivacy(string $directory): void {
                     && strpos($response['body'],'onerror')===false && strpos($response['body'],'service_ids')===false
                     && strpos($response['body'],'conflicts')===false,
                     'Compatibility/authenticated webhook disclosed private conflict diagnostics');
-                checkMigrationConflict(publicMigrationSnapshot()===$before,
+                checkMigrationConflict(recoveryDiskSnapshot()===$before,
                     'Rejected webhook migration changed persistent recovery or operational state');
             }
         }
@@ -179,7 +306,59 @@ function checkWebhookMigrationPrivacy(string $directory): void {
         checkMigrationConflict($unauthorized['http']===403
             && ($unauthorized['response']['message'] ?? null)==='unauthorized'
             && ($unauthorized['response']['data'] ?? null)===[], 'Unauthenticated webhook exposed conflict totals or assignments');
-        checkMigrationConflict(publicMigrationSnapshot()===$before, 'Unauthorized webhook changed persistent recovery state');
+        checkMigrationConflict(recoveryDiskSnapshot()===$before, 'Unauthorized webhook changed persistent recovery state');
+
+        // A rejected candidate backup after successful setup must not lock a clean live panel.
+        $cleanDirectory = $directory . '/clean-restore';
+        mkdir($cleanDirectory,0700);
+        foreach (['lib','includes','includes/l10n','data','vendor','public','public/panel_v2'] as $folder) {
+            mkdir($cleanDirectory . '/' . $folder,0700);
+        }
+        foreach (glob($directory . '/lib/*.php') as $file) copy($file,$cleanDirectory . '/lib/' . basename($file));
+        foreach (glob($directory . '/includes/*') as $file) if (is_file($file)) copy($file,$cleanDirectory . '/includes/' . basename($file));
+        foreach (glob($directory . '/includes/l10n/*.json') as $file) copy($file,$cleanDirectory . '/includes/l10n/' . basename($file));
+        foreach (['public.php','manifest.json','vendor/autoload.php','public/panel_v2/index.php'] as $file) {
+            copy($directory . '/' . $file,$cleanDirectory . '/' . $file);
+        }
+        $cleanLive = new ApiSqlite($cleanDirectory . '/data/data.db');
+        $cleanLive->exec(file_get_contents('includes/schema.sql'));
+        (new ApiSetup($cleanLive))->config_load();
+        $cleanLive->saveConfig(['version'=>MY_VERSION,'cache_version'=>'1.8.11','next_cache'=>'2100-01-01','next_sites'=>'2100-01-01']);
+        $cleanLive->insert(['id'=>123,'name'=>'Clean live plan'], 'plans');
+        $cleanLive->close();
+        $cleanCache = new ApiSqlite($cleanDirectory . '/data/cache.db');
+        $cleanCache->exec(file_get_contents('includes/cache.sql')); $cleanCache->close();
+        file_put_contents($cleanDirectory . '/data/state.json','{"version":"1.0.0","backup":"2100-01-01","cleanup":"2100-01-01"}');
+        copy('data/backup-0',$cleanDirectory . '/data/backup-0');
+        $cleanHeaders = $admin + ['X-Fixture-Mode'=>'restore-after-setup'];
+        $normal = $request([],$cleanHeaders,'GET','?page=panel');
+        checkMigrationConflict($normal['http']===200 && strpos($normal['body'],'id="network-recovery-state"')===false,
+            'Clean live panel unexpectedly entered recovery: ' . $normal['http'] . ' ' . substr($normal['body'],0,500)
+            . ' ' . substr(file_get_contents($directory . '/webhook-server-error.log'),-1800));
+        $cleanBeforeRestore = recoveryDiskSnapshot($cleanDirectory . '/data');
+        $cleanJobs = new ApiSqlite($cleanDirectory . '/data/jobs.db');
+        $cleanQueueBefore = migrationDatabaseSnapshot($cleanJobs); $cleanJobs->close();
+        $rejectedCandidate = $request(['changeType'=>'update','target'=>'backups','action'=>'restore','data'=>['name'=>'backup-0']],$cleanHeaders);
+        checkMigrationConflict($rejectedCandidate['http']===400
+            && ($rejectedCandidate['response']['message'] ?? null)==='duplicate_network_addresses_resolve_before_upgrade'
+            && !array_key_exists('recovery',$rejectedCandidate['response'])
+            && ($rejectedCandidate['response']['data']['duplicate_groups'] ?? null)===2,
+            'Rejected backup candidate falsely switched a healthy live panel to read-only recovery');
+        $cleanAfterRestore = recoveryDiskSnapshot($cleanDirectory . '/data');
+        // An authorized restore acquires/removes the queue's durable maintenance gate.
+        // Its SQLite pages can change while all jobs and queue metadata remain identical.
+        foreach (array_keys($cleanBeforeRestore) as $path) if (basename($path)==='jobs.db') unset($cleanBeforeRestore[$path]);
+        foreach (array_keys($cleanAfterRestore) as $path) if (basename($path)==='jobs.db') unset($cleanAfterRestore[$path]);
+        $cleanJobs = new ApiSqlite($cleanDirectory . '/data/jobs.db');
+        $cleanQueueAfter = migrationDatabaseSnapshot($cleanJobs); $cleanJobs->close();
+        checkMigrationConflict($cleanAfterRestore===$cleanBeforeRestore,
+            'Rejected candidate after successful setup changed healthy live data or recovery snapshots: '
+            . json_encode(array_keys(array_diff_assoc($cleanAfterRestore,$cleanBeforeRestore))));
+        checkMigrationConflict($cleanQueueAfter===$cleanQueueBefore, 'Rejected candidate changed healthy pending work or queue metadata');
+        $stillNormal = $request([],$cleanHeaders,'GET','?page=panel');
+        checkMigrationConflict($stillNormal['http']===200 && strpos($stillNormal['body'],'id="network-recovery-state"')===false,
+            'Candidate conflict persisted a false read-only state on the clean live panel');
+        checkMigrationConflict(recoveryDiskSnapshot()===$before, 'Separate clean-live restore fixture changed the blocked original database');
     } finally {
         if (is_resource($process)) { proc_terminate($process); proc_close($process); }
         if ($priorConfig===null) { if (is_file('data/config.json')) unlink('data/config.json'); }
@@ -193,17 +372,26 @@ $directory = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'uisp-migration-conflict
 mkdir($directory, 0700);
 foreach (['lib','includes','data','vendor','public'] as $folder) mkdir($directory . '/' . $folder, 0700);
 mkdir($directory . '/public/panel_v2', 0700);
+mkdir($directory . '/includes/l10n', 0700);
 foreach (glob($source . '/lib/*.php') as $file) copy($file, $directory . '/lib/' . basename($file));
 foreach (glob($source . '/includes/*') as $file) if (is_file($file)) copy($file, $directory . '/includes/' . basename($file));
+foreach (glob($source . '/includes/l10n/*.json') as $file) copy($file,$directory . '/includes/l10n/' . basename($file));
 copy($source . '/manifest.json', $directory . '/manifest.json');
 copy($source . '/public.php', $directory . '/public.php');
-copy($source . '/public/panel_v2/network_conflicts.php', $directory . '/public/panel_v2/network_conflicts.php');
+copy($source . '/public/panel_v2/index.php', $directory . '/public/panel_v2/index.php');
 file_put_contents($directory . '/vendor/autoload.php', <<<'PHP'
 <?php
 namespace Ubnt\UcrmPluginSdk\Service;
 class UcrmApi {
     public static function create($token=null) { return new static(); }
-    public function __call($method, $arguments) { throw new \RuntimeException('Network prohibited in migration-conflict tests'); }
+    public function __call($method, $arguments) {
+        if ($method!=='get') throw new \RuntimeException('Network writes prohibited in migration-conflict tests');
+        $path = $arguments[0];
+        file_put_contents(__DIR__ . '/../sdk-reads.jsonl',json_encode($path) . "\n",FILE_APPEND);
+        if ($path==='clients/services/7') return ['id'=>7,'clientId'=>70,'status'=>2];
+        if ($path==='clients/70') return ['id'=>70,'companyName'=>'Archived fixture client','isArchived'=>true];
+        throw new \RuntimeException('Unexpected CRM read in migration-conflict tests');
+    }
 }
 class UnmsApi extends UcrmApi {}
 class UcrmSecurity {
@@ -338,6 +526,10 @@ try {
     $apiSqlite->saveConfig(['version'=>'2.3.1','backup_cursor'=>2,'active_list'=>'00123']);
     $apiSqlite->insert(['id'=>1,'name'=>'Live preserved plan','uploadOverride'=>2.5], 'plans');
     $apiSqlite->insert(['id'=>1,'name'=>'Live preserved router','ip'=>'192.0.2.1','password'=>'000123'], 'devices');
+    $apiSqlite->insert([['id'=>7,'clientId'=>70,'device'=>1,'planId'=>1,'status'=>2],
+        ['id'=>8,'clientId'=>80,'device'=>1,'planId'=>1,'status'=>1],
+        ['id'=>21,'clientId'=>210,'device'=>1,'planId'=>1,'status'=>8],
+        ['id'=>22,'clientId'=>220,'device'=>1,'planId'=>1,'status'=>3]], 'services');
     $apiSqlite->insert([['id'=>7,'address'=>'203.0.113.7'],['id'=>8,'address'=>'203.0.113.7']], 'network');
     $maliciousAddress = '<img src=x onerror=alert("fixture")>';
     $apiSqlite->insert([['id'=>21,'address'=>$maliciousAddress],['id'=>22,'address'=>$maliciousAddress]], 'network');
@@ -352,6 +544,13 @@ try {
         && migrationDatabaseSnapshot($apiSqlite)===$beforeQueueSetup
         && glob('data/.uisp-queue-locks-*')===[],
         'Rejected setup initialized/imported the queue before reporting address conflicts');
+    publicMigrationWebhookChecks($directory);
+    $cacheFixture = $fixtures[] = new ApiSqlite('data/cache.db');
+    $cacheFixture->exec(file_get_contents('includes/cache.sql'));
+    $cacheFixture->exec('ALTER TABLE clients ADD COLUMN isArchived INTEGER');
+    $cacheFixture->insert([['id'=>70,'company'=>'Cached archived client','isArchived'=>1],
+        ['id'=>80,'firstName'=>'Cached','lastName'=>'Active client','isArchived'=>0]],'clients');
+    $cacheFixture->insert([['id'=>7,'clientId'=>70,'status'=>2],['id'=>8,'clientId'=>80,'status'=>1]],'services');
     $pending = myJobQueue()->enqueue(['id'=>7,'device'=>1,'status'=>3,'username'=>'pending-fixture','password'=>'private-fixture']);
     checkMigrationConflict(isset(myJobQueue()->list()[$pending]), 'Pending-work preservation fixture was not queued');
     foreach (['2.3.1',MY_VERSION] as $version) {
@@ -366,17 +565,27 @@ try {
         checkMigrationConflict(migrationPersistentSnapshot()===$beforeSetup, 'Rejected direct migration changed live recovery state');
     }
 
-    // The authenticated panel renders escaped recovery HTML; other routes retain typed JSON.
+    // The normal panel shell bootstraps safe JSON and keeps administrative reads available.
     $apiSqlite->saveConfig(['version'=>'2.3.1']);
     $admin = ['isClient'=>false,'permissions'=>['system/plugins'=>'edit']];
     $beforePublic = publicMigrationSnapshot();
     $panel = publicMigrationRequest($directory, $admin, 'GET', ['page'=>'panel']);
-    checkMigrationConflict($panel['http']===400 && strpos($panel['body'], '<!DOCTYPE html>')!==false
-        && strpos($panel['body'], 'Hay direcciones IP duplicadas')!==false
-        && strpos($panel['body'], htmlspecialchars($maliciousAddress, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'))!==false
-        && strpos($panel['body'], $maliciousAddress)===false
-        && strpos($panel['body'], '#21')!==false && strpos($panel['body'], '#22')!==false,
-        'Authenticated recovery panel omitted conflict IDs, changed its status, or rendered unescaped address data');
+    checkMigrationConflict($panel['http']===200 && preg_match('~<script type="application/json" id="network-recovery-state">(.*?)</script>~s',
+        $panel['body'],$bootstrap)===1 && strpos($panel['body'],$maliciousAddress)===false,
+        'Authenticated recovery panel omitted safe JSON bootstrap or changed normal shell status');
+    checkMigrationConflict(str_replace($bootstrap[0],'',$panel['body'])===file_get_contents('public/panel_v2/index.php'),
+        'Recovery panel replaced or altered the normal static shell');
+    $panelState = json_decode($bootstrap[1],true,512,JSON_THROW_ON_ERROR);
+    checkMigrationConflict(($panelState['readOnly'] ?? null)===true && ($panelState['details']['duplicate_groups'] ?? null)===2,
+        'Recovery bootstrap did not enable read-only mode with current conflict totals');
+    $panelRawConflict = conflictByAddress($panelState['details'],'IPv4',$maliciousAddress);
+    checkMigrationConflict($panelRawConflict['service_ids']===[21,22], 'Safe panel bootstrap altered raw addresses or service IDs');
+    $cachedOwner = conflictByAddress($panelState['details'],'IPv4','203.0.113.7')['owners'][0];
+    checkMigrationConflict($cachedOwner['client_id']===70 && $cachedOwner['client_name']==='Cached archived client'
+        && $cachedOwner['client_archived']===true && $cachedOwner['service_status_code']===2
+        && $cachedOwner['source']==='database' && $cachedOwner['client_source']==='cache'
+        && $cachedOwner['client_url']==='/crm/client/70' && $cachedOwner['service_url']==='/crm/client/service/7',
+        'Local bootstrap omitted cached client names, archival state or usable client/service routes');
     checkMigrationConflict(publicMigrationSnapshot()===$beforePublic, 'Recovery panel changed persistent recovery or operational state');
     foreach ([null,['isClient'=>true,'permissions'=>['system/plugins'=>'edit']]] as $unauthorized) {
         $response = publicMigrationRequest($directory, $unauthorized, 'GET', ['page'=>'panel']);
@@ -387,20 +596,27 @@ try {
             'Unauthorized request disclosed address-conflict data');
         checkMigrationConflict(publicMigrationSnapshot()===$beforePublic, 'Unauthorized recovery request modified persistent state');
     }
-    foreach ([['GET',['download'=>'network-conflicts']],['GET',['download'=>'backup-0']],
-        ['GET',['page'=>'panel','download'=>'network-conflicts']],['POST',[]]] as $request) {
+    foreach ([['GET',['download'=>'network-conflicts']],['GET',['page'=>'panel','download'=>'network-conflicts']]] as $request) {
         $response = publicMigrationRequest($directory, $admin, $request[0], $request[1]);
         $body = json_decode($response['body'], true);
-        checkMigrationConflict($response['http']===400 && ($body['error'] ?? null)===true
-            && ($body['message'] ?? null)==='duplicate_network_addresses_resolve_before_upgrade'
+        checkMigrationConflict($response['http']===200 && ($body['error'] ?? null)===false
+            && ($body['message'] ?? null)==='network_diagnostics' && ($body['recovery']['readOnly'] ?? null)===true
             && ($body['data']['duplicate_groups'] ?? null)===2
             && is_bool($body['data']['conflicts_truncated'] ?? null),
-            'Authenticated non-panel request lost controlled typed JSON conflict details');
+            'Authenticated diagnostic download lost its enriched read-only JSON response');
         $rawConflict = conflictByAddress($body['data'], 'IPv4', $maliciousAddress);
         checkMigrationConflict($rawConflict['service_ids']===[21,22], 'JSON diagnostics altered raw addresses or typed service IDs');
         checkMigrationConflict(publicMigrationSnapshot()===$beforePublic, 'JSON recovery request changed persistent recovery or operational state');
     }
-    checkWebhookMigrationPrivacy($directory);
+    $backupDownload = publicMigrationRequest($directory,$admin,'GET',['download'=>'backup-0']);
+    checkMigrationConflict($backupDownload['http']===200 && $backupDownload['body']===file_get_contents('data/backup-0'),
+        'Recovery backup download did not return the existing SQLite snapshot unchanged');
+    $emptyPost = publicMigrationRequest($directory,$admin,'POST',[]);
+    $emptyPostBody = json_decode($emptyPost['body'],true);
+    checkMigrationConflict($emptyPost['http']===400 && ($emptyPostBody['message'] ?? null)==='duplicate_network_addresses_resolve_before_upgrade'
+        && ($emptyPostBody['recovery']['readOnly'] ?? null)===true,
+        'Non-read administrative POST lost the live-database conflict write guard');
+    checkMigrationConflict(publicMigrationSnapshot()===$beforePublic, 'Read-only diagnostic or backup download changed stored recovery state');
 
     // Restore rejects both explicit and projected collisions before replacing live data or backup-6.
     foreach (['existing','projected'] as $kind) {
@@ -426,7 +642,7 @@ try {
             && migrationDatabaseSnapshot($candidate)===$candidateBefore, 'Rejected restore modified the selected source');
         checkMigrationConflict(glob('data/restore-*.db')===[], 'Rejected restore left a staging database');
     }
-    echo "Migration conflict checks passed: typed bounded IPv4/IPv6 diagnostics, effective legacy projection, network precedence, null/empty addresses, clean migrations, unchanged repeated setup/rejected restores, authenticated escaped HTML/JSON recovery and loopback webhook privacy.\n";
+    echo "Migration conflict checks passed: bounded address diagnostics, effective legacy projection, preserved setup/restores, normal panel recovery, stored read-only tabs/downloads, explicit owner refresh, blocked writes/uploads and private webhooks.\n";
 } finally {
     foreach ($fixtures as $fixture) $fixture->close();
     if (isset($apiSqlite) && $apiSqlite instanceof ApiSqlite) $apiSqlite->close();

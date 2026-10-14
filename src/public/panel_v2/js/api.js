@@ -123,7 +123,8 @@ const PanelUtils = {
             'edit-2': '<path d="m16 3 5 5L8 21H3v-5zM14 5l5 5"/>',
             'refresh-cw': '<path d="M21 3v6h-6M3 21v-6h6M20 9a8 8 0 0 0-14-4M4 15a8 8 0 0 0 14 4"/>',
             'x-circle': '<circle cx="12" cy="12" r="10"/><path d="m8 8 8 8m-8 0 8-8"/>',
-            download: '<path d="M3 16v5h18v-5M12 3v12m-5-5 5 5 5-5"/>'
+            download: '<path d="M3 16v5h18v-5M12 3v12m-5-5 5 5 5-5"/>',
+            'alert-triangle': '<path d="m12 3 10 18H2zM12 9v5m0 3h.01"/>'
         };
         document.querySelectorAll('i[data-feather]').forEach(icon => {
             const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
@@ -144,6 +145,31 @@ class ApiService {
             current.href = new URL('../../public.php', document.baseURI).href;
         }
         this.endpoint = endpoint || current.pathname;
+        this.recovery = null;
+        this.recoveryListeners = new Set();
+        const bootstrap = document.querySelectorAll('#network-recovery-state')[0];
+        if (bootstrap) {
+            try { this.setRecovery(JSON.parse(bootstrap.textContent)); }
+            catch (_) { /* A malformed optional diagnostic must not break panel navigation. */ }
+        }
+    }
+    setRecovery(state) {
+        if (state?.readOnly !== true) return;
+        this.recovery = { ...this.recovery, ...state };
+        for (const listener of this.recoveryListeners) listener(this.recovery);
+    }
+    onRecovery(listener) {
+        this.recoveryListeners.add(listener);
+    }
+    blockedWrite() {
+        return Promise.resolve({ status: 'failed', error: true,
+            message: PanelUtils.t('Los cambios están pausados hasta corregir las IP duplicadas. Puedes seguir consultando el plugin.'),
+            recovery: this.recovery });
+    }
+    blockedRouterRead() {
+        return Promise.resolve({ status: 'failed', error: true,
+            message: PanelUtils.t('Las consultas al router estarán disponibles al completar la actualización.'),
+            recovery: this.recovery });
     }
     async request(options) {
         try {
@@ -152,6 +178,7 @@ class ApiService {
             try { result = await response.json(); }
             catch (_) { throw new Error(PanelUtils.t('Respuesta inválida del servidor (HTTP {status}).', { status: response.status })); }
             if (!result || typeof result !== 'object' || Array.isArray(result)) throw new Error(PanelUtils.t('Respuesta inválida del servidor.'));
+            if (result.recovery?.readOnly === true) this.setRecovery(result.recovery);
             if (!response.ok) {
                 // A valid failure envelope may contain the counts and service
                 // diagnostics for a partially applied batch, including HTTP 502.
@@ -168,16 +195,23 @@ class ApiService {
         }
     }
     send(changeType, target, action = 'list', data = {}) {
+        if (changeType === 'update' && this.recovery?.readOnly === true) return this.blockedWrite();
+        if (target === 'orphans' && this.recovery?.readOnly === true) return this.blockedRouterRead();
         return this.request({ method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ changeType, target, action, data }) });
+            body: JSON.stringify({ changeType, target, action, data }) }).then(response => {
+                if (target === 'network_conflicts' && !response.error && response.recovery?.readOnly === true)
+                    this.setRecovery({ ...response.recovery, details: response.data });
+                return response;
+            });
     }
     uploadBackup(file) {
+        if (this.recovery?.readOnly === true) return this.blockedWrite();
         const body = new FormData();
         body.append('backup', file);
         return this.request({ method: 'POST', body });
     }
     downloadUrl(name) {
-        if (!/^backup-[0-6]$/.test(name)) throw new Error(PanelUtils.t('Nombre de respaldo inválido.'));
+        if (name !== 'network-conflicts' && !/^backup-[0-6]$/.test(name)) throw new Error(PanelUtils.t('Nombre de respaldo inválido.'));
         const url = new URL(this.endpoint, window.location.href);
         url.search = '';
         url.searchParams.set('download', name);
@@ -192,6 +226,7 @@ class ApiService {
     saveConfig(data) { return this.send('update', 'config', 'edit', data); }
     getFields(language) { return this.send('list', 'messages', 'list', language ? { language } : {}); }
     getJobs() { return this.send('list', 'jobs'); }
+    getNetworkConflicts(data = {}) { return this.send('list', 'network_conflicts', 'list', data); }
     getBackups() { return this.send('list', 'backups'); }
     createBackup() { return this.send('update', 'system', 'backup'); }
     restoreBackup(name) { return this.send('update', 'system', 'restore', { name }); }
