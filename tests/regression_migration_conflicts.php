@@ -380,6 +380,22 @@ PHP
         checkMigrationConflict(!is_file($directory . '/sdk-reads.jsonl') && recoveryDiskSnapshot()===$before,
             'Default recovery reads called UISP or changed stored state');
 
+        // The CRM monitor is an independent administrative snapshot, even when
+        // legacy reservations keep the rest of the plugin in recovery mode.
+        $monitor = $request(['changeType'=>'list','target'=>'crm_network_conflicts','action'=>'list','data'=>new stdClass()],$reader);
+        checkMigrationConflict($monitor['http']===200 && ($monitor['response']['error'] ?? true)===false
+            && ($monitor['response']['data']['warning_only'] ?? false)===true
+            && ($monitor['response']['data']['available'] ?? true)===false
+            && !isset($monitor['response']['recovery'])
+            && !is_file($directory . '/data/crm-network-monitor.db')
+            && !is_file($directory . '/data/crm-network-monitor.db.lock')
+            && !is_file($directory . '/sdk-reads.jsonl') && recoveryDiskSnapshot()===$before,
+            'Polling CRM warnings read the API, created state, or activated a migration lock');
+        $invalidMonitor = $request(['changeType'=>'list','target'=>'crm_network_conflicts','action'=>'list','data'=>['refresh'=>true]],$reader);
+        checkMigrationConflict($invalidMonitor['http']===400
+            && ($invalidMonitor['response']['message'] ?? null)==='invalid_crm_monitor_request'
+            && recoveryDiskSnapshot()===$before, 'A monitor poll accepted a request to trigger CRM reads');
+
         // An explicit bounded refresh may consult CRM, retaining all local databases and queue files.
         $refreshed = $request(['changeType'=>'list','target'=>'network_conflicts','data'=>['refresh'=>true,'serviceIds'=>[7,999]]],$reader);
         $ownerGroup = conflictByAddress($refreshed['response']['data'],'IPv4','203.0.113.7');

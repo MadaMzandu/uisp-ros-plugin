@@ -49,6 +49,10 @@ try {
         ['device connect failed','router_connection_failed'],
         ['RouterOS connection failed','router_connection_failed'],
         ['invalid_provisioning_number: service=1 field=PRIVATE-FIELD-VALUE','invalid_provisioning_number'],
+        ['invalid_network_address: requested_service=421 blocking_service=799 source=reserved family=IPv4','invalid_network_address'],
+        ['invalid_network_address: requested_service=422 blocking_service=422 source=input family=IPv6','invalid_network_address'],
+        ['invalid_network_address: requested_service=423 blocking_service=798 source=applied family=IPv4','invalid_network_address'],
+        ['invalid_network_address: requested_service=424 blocking_service=PRIVATE-OWNER source=reserved family=IPv4','provisioning_failed'],
         ['ARBITRARY-EXCEPTION-VALUE username=PRIVATE-SERVICE-USER password=PRIVATE-SERVICE-PASSWORD https://fixture.invalid/?token=PRIVATE-TOKEN-VALUE','provisioning_failed'],
     ];
     $firstKey=null;
@@ -65,6 +69,13 @@ try {
         diagnosticsCheck($results[$key]['success']===false && $pending['state']==='pending' && $pending['error']===$message
             && $queue->appliedSnapshot(410+$index)===[], 'Failure logging altered the stored failure or applied state');
         $allowed=['event','jobId','serviceId','deviceId','operation','attempts','nextRetry','errorCode'];
+        if ($code==='invalid_network_address') {
+            preg_match('/requested_service=([0-9]+) blocking_service=([0-9]+) source=(input|reserved|applied) family=(IPv4|IPv6)$/D',$message,$context);
+            diagnosticsCheck($entry['requestedServiceId']===(int)$context[1] && $entry['blockingServiceId']===(int)$context[2]
+                && $entry['addressSource']===$context[3] && $entry['addressFamily']===$context[4],
+                'Reservation failure lost its blocking service, source or family');
+            $allowed=array_merge($allowed,['requestedServiceId','blockingServiceId','addressSource','addressFamily']);
+        }
         diagnosticsCheck(array_diff(array_keys($entry),$allowed)===[], 'A diagnostic included fields outside its safe allowlist');
     }
     // Listing, opening another queue and observing a future retry never constitute an attempt.

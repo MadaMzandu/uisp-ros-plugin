@@ -305,7 +305,7 @@ function jobsRefreshFixture(storage = new Map(), blockedStorage = false) {
         queueReply(reply) { jobReplies.push(typeof reply === 'function' ? reply : () => reply); },
         setState(value) { state = value; }, setUpdateReply(reply) { updateReply = reply; },
         listCalls() { return calls.filter(call => call.target === 'jobs' && call.changeType === 'list').length; },
-        autoTimers() { return [...clock.values()].filter(timer => [5000, 10000, 30000, 60000].includes(timer.delay)); },
+        autoTimers() { return [...clock.values()].filter(timer => [5000, 10000, 30000, 60000].includes(timer.delay) && timer.callback.name !== 'pollCrmMonitor'); },
         async hidden(value) { localDocument.hidden = value; for (const listener of events.get('visibilitychange') || []) listener(); await flush(); },
         async page(type) { for (const listener of windowEvents.get(type) || []) listener(); await flush(); },
         async tick(milliseconds) {
@@ -686,18 +686,25 @@ function recoveryPanelFixture({ bootstrap, details, storage, storageBlocked = fa
     const calls = [];
     const replies = new Map(initialReplies);
     const events = new Map();
+    const documentEvents = new Map();
     const frames = [];
     let onReady, reloads = 0;
+    let timerSequence = 0, now = 0;
+    const clock = new Map();
     const localDocument = {
         baseURI: document.baseURI, body: new Element(), hidden: false, scrollingElement: new Element(),
         getElementById(id) { return nodes.get(id) || null; },
-        addEventListener(type, listener) { if (type === 'DOMContentLoaded') onReady = listener; },
+        addEventListener(type, listener) {
+            if (type === 'DOMContentLoaded') onReady = listener;
+            else { if (!documentEvents.has(type)) documentEvents.set(type, []); documentEvents.get(type).push(listener); }
+        },
         removeEventListener() {},
         createElement(tag) {
             const element = new Element(); element.tagName = tag.toUpperCase();
             element.focus = options => { element.focusOptions = options; localDocument.activeElement = element; };
             element.getBoundingClientRect = () => {
-                const owners = nodes.get('network-conflicts-body').children.flatMap(row => row.children[1].children.filter(item => item.dataset.serviceId));
+                const owners = ['crm-network-conflicts-body', 'network-conflicts-body'].flatMap(id => nodes.get(id).children
+                    .flatMap(row => (row.children[1]?.children || []).filter(item => item.dataset.serviceId)));
                 const index = owners.indexOf(element);
                 const surface = mobile ? localDocument.scrollingElement : nodes.get('content-area');
                 const top = (mobile ? 0 : 100) + 30 + index * 140 - surface.scrollTop;
@@ -739,13 +746,17 @@ function recoveryPanelFixture({ bootstrap, details, storage, storageBlocked = fa
             setItem(key, value) { if (storageBlocked) throw new Error('blocked'); storage?.set(key, value); }
         } } : {}),
         ...(raf ? { requestAnimationFrame(callback) { frames.push(callback); return frames.length; } } : {}),
-        setTimeout() { return 1; }, clearTimeout() {},
+        setTimeout(callback, delay) { const id = ++timerSequence; clock.set(id, { callback, delay, due: now + delay }); return id; },
+        clearTimeout(id) { clock.delete(id); },
         fetch: async (endpoint, options) => {
             const payload = typeof options.body === 'string' ? JSON.parse(options.body) : { changeType: 'upload' };
             calls.push(payload);
             const key = payload.changeType + '/' + payload.target;
             let response;
-            if (replies.has(key)) response = await replies.get(key)(payload);
+            if (replies.has(key)) {
+                const reply = replies.get(key);
+                response = await (typeof reply === 'function' ? reply(payload) : reply);
+            }
             else {
                 const data = {
                     devices: [{ id: 1, name: 'Router de prueba', ip: '192.0.2.1', status: null }],
@@ -753,7 +764,8 @@ function recoveryPanelFixture({ bootstrap, details, storage, storageBlocked = fa
                     config: { disable_contention: false }, jobs: {},
                     messages: [{}, { config_disable_contention: { name: 'disable_contention', label: 'Desactivar contención', type: 1 } }],
                     sys: { app_version: '2.4.21', php_version: '8.5' }, backups: [{ name: 'backup-0', date: '2026-10-14' }],
-                    network_conflicts: details
+                    network_conflicts: details,
+                    crm_network_conflicts: { available: false, duplicate_groups: 0, conflicts: [], checked_at: null, scan_in_progress: false, last_error: null, stale: false, families: [] }
                 }[payload.target] ?? [];
                 response = { status: 'ok', error: false, data, ...(payload.target === 'network_conflicts' ? { recovery: { readOnly: true } } : {}) };
             }
@@ -769,10 +781,179 @@ function recoveryPanelFixture({ bootstrap, details, storage, storageBlocked = fa
         writes() { return calls.filter(call => call.changeType === 'update' || call.changeType === 'upload'); },
         diagnostics() { return calls.filter(call => call.target === 'network_conflicts'); },
         async event(type) { for (const listener of events.get(type) || []) listener(); await flush(); },
+        async hidden(value) { localDocument.hidden = value; for (const listener of documentEvents.get('visibilitychange') || []) listener(); await flush(); },
+        async tick(milliseconds) {
+            const end = now + milliseconds;
+            while (true) {
+                const next = [...clock].filter(([, timer]) => timer.due <= end).sort((a, b) => a[1].due - b[1].due)[0];
+                if (!next) break;
+                now = next[1].due; clock.delete(next[0]); next[1].callback(); await flush();
+            }
+            now = end;
+        },
+        monitorCalls() { return calls.filter(call => call.target === 'crm_network_conflicts'); },
+        monitorTimers() { return [...clock.values()].filter(timer => timer.callback.name === 'pollCrmMonitor'); },
         async runFrames() { for (const callback of frames.splice(0)) callback(); await flush(); },
         surface() { return mobile ? localDocument.scrollingElement : nodes.get('content-area'); },
         refresh(view) { return localContext.__fixtureRefresh[view](); }
     };
+}
+
+async function checkCrmNetworkMonitorPanel() {
+    const envelope = data => ({ status: 'ok', error: false, data });
+    const report = {
+        available: true, duplicate_groups: 1, conflicts_truncated: false, checked_at: '2026-10-14T13:00:00Z',
+        scan_started_at: null, scan_in_progress: false, last_error: null, stale: false, services_scanned: 2,
+        families: ['IPv4'], unavailable_families: ['IPv6'], coverage_complete: false, source: 'crm_snapshot', warning_only: true,
+        conflicts: [{ family: 'IPv4', address: '192.0.2.77', service_ids: [42, 43], service_count: 2, owners: [
+            { service_id: 42, client_id: 17, service_status: 'Activo', service_url: '/crm/client/service/42', client_url: '/crm/client/17', source: 'crm_snapshot' },
+            { service_id: 43, client_id: 18, service_status: 'Suspendido', service_url: '/crm/client/service/43', client_url: '/crm/client/18', source: 'crm_snapshot' }
+        ] }]
+    };
+    const initialReplies = new Map([['list/crm_network_conflicts', envelope(report)]]);
+    const fixture = recoveryPanelFixture({ initialReplies }); await flush();
+    assert.equal(fixture.monitorCalls().length, 1, 'Every panel boot reads the local monitor status once');
+    assert.deepEqual(plain(fixture.monitorCalls()[0]), { changeType: 'list', target: 'crm_network_conflicts', action: 'list', data: {} });
+    assert.equal(fixture.monitorTimers().length, 1); assert.equal(fixture.monitorTimers()[0].delay, 30000);
+    assert.equal(fixture.api.recovery, null, 'A CRM warning must never activate migration recovery');
+    assert.equal(fixture.nodes.get('crm-network-warning').style.display, 'flex');
+    assert.equal(fixture.nodes.get('network-warning').style.display, undefined, 'The stored-reservation warning remains independent');
+    assert.equal(fixture.nodes.get('crm-network-warning-title').textContent, 'IP duplicadas en CRM: 1 conflicto');
+    assert.match(fixture.nodes.get('crm-network-warning-note').textContent, /suspensiones y reactivaciones automáticas.*continúan/);
+    assert.match(fixture.nodes.get('crm-network-warning-freshness').textContent, /Familias revisadas: IPv4/);
+    assert.match(fixture.nodes.get('crm-network-warning-freshness').textContent, /Sin revisar.*IPv6/);
+    assert.equal(fixture.nodes.get('btn-run-jobs').disabled, false); assert.equal(fixture.nodes.get('save-device-btn').disabled, false);
+    const beforeWrites = fixture.writes().length;
+    await fixture.api.saveDevice('edit', { id: 1, name: 'Router de ejemplo', ip: '192.0.2.1', user: 'fixture' });
+    await fixture.api.send('update', 'jobs', 'run', ['Q1']);
+    assert.equal(fixture.writes().length, beforeWrites + 2, 'CRM warnings keep ordinary CRUD and automatic job envelopes available');
+    await fixture.nodes.get('btn-view-crm-conflicts').fire('click'); await flush();
+    assert.equal(fixture.nodes.get('view-network_conflicts').style.display, 'block');
+    assert.equal(fixture.diagnostics().length, 0, 'Healthy CRM monitoring never reads old recovery diagnostics');
+    assert.equal(fixture.nodes.get('stored-network-conflicts-pane').style.display, undefined);
+    const crmOwners = target => target.nodes.get('crm-network-conflicts-body').children.flatMap(row => row.children[1]?.children || []).filter(owner => owner.dataset.serviceId);
+    assert.equal(crmOwners(fixture).length, 2);
+    assert(crmOwners(fixture).every(owner => owner.children.length === 1), 'Live CRM duplicates offer only client/service links, never local cleanup actions');
+    assert.equal(crmOwners(fixture)[0].children[0].children[0].href, 'https://fixture.invalid/crm/client/17');
+    assert.equal(crmOwners(fixture)[0].children[0].children[1].children[0].href, 'https://fixture.invalid/crm/client/service/42');
+    const notices = fixture.nodes.get('notifications').children.length;
+    fixture.reply('list/crm_network_conflicts', { status: 'failed', error: true, message: attack });
+    await fixture.tick(30000);
+    assert.equal(fixture.nodes.get('notifications').children.length, notices, 'Monitor failures use an inline stale status without repeated toasts');
+    assert.equal(crmOwners(fixture).length, 2); assert.equal(fixture.nodes.get('crm-network-warning').style.display, 'flex');
+    assert.match(fixture.nodes.get('crm-network-warning-freshness').textContent, /desactualizado/);
+    assert.equal(fixture.monitorTimers().length, 1, 'Failures remain retryable');
+    const partial = { ...report, available: false, duplicate_groups: 0, conflicts: [], checked_at: null,
+        scan_in_progress: true, services_scanned: 50, last_error: 'mapping_changed', families: [] };
+    fixture.reply('list/crm_network_conflicts', envelope(partial)); await fixture.tick(30000);
+    assert.equal(crmOwners(fixture).length, 2, 'An incomplete/mapping-changed scan cannot falsely clear a previous completed conflict');
+    assert.match(fixture.nodes.get('crm-network-conflicts-status').textContent, /en curso: 50/);
+    fixture.reply('list/crm_network_conflicts', envelope({ ...report, duplicate_groups: 0 })); await fixture.tick(30000);
+    assert.equal(fixture.nodes.get('crm-network-warning').style.display, 'flex', 'Malformed contradictory reports must retain the last known warning');
+    const pending = deferred(); fixture.reply('list/crm_network_conflicts', () => pending.promise);
+    await fixture.tick(30000); const started = fixture.monitorCalls().length;
+    assert.equal(fixture.monitorTimers().length, 0);
+    await fixture.hidden(true); await fixture.hidden(false); await fixture.tick(60000);
+    assert.equal(fixture.monitorCalls().length, started, 'An unfinished status read must share its promise and prevent overlapping polls');
+    pending.resolve(envelope(report)); await flush(); assert.equal(fixture.monitorTimers().length, 1);
+    await fixture.hidden(true); const hiddenReads = fixture.monitorCalls().length; await fixture.tick(60000);
+    assert.equal(fixture.monitorCalls().length, hiddenReads); assert.equal(fixture.monitorTimers().length, 0);
+    await fixture.hidden(false); assert.equal(fixture.monitorCalls().length, hiddenReads + 1, 'Visible resume immediately checks the local snapshot');
+    await fixture.event('pagehide'); const stoppedReads = fixture.monitorCalls().length; await fixture.tick(60000);
+    assert.equal(fixture.monitorCalls().length, stoppedReads); assert.equal(fixture.monitorTimers().length, 0);
+    fixture.reply('list/crm_network_conflicts', envelope(report)); await fixture.event('pageshow');
+    assert.equal(fixture.monitorCalls().length, stoppedReads + 1);
+    const uncertain = plain(report);
+    uncertain.stale = true; uncertain.unknown_address_count = 1; uncertain.address_issues_truncated = false;
+    uncertain.address_issues = [{ service_id: 43, client_id: 18, family: 'IPv4', reason: 'invalid_address',
+        service_url: '/crm/client/service/43', client_url: '/crm/client/18' }];
+    uncertain.checked_at = '2026-10-14T13:04:00Z'; uncertain.conflicts[0].current_confirmed = false;
+    uncertain.conflicts[0].owners[1].current_address_known = false; uncertain.conflicts[0].owners[1].current_address = null;
+    fixture.reply('list/crm_network_conflicts', envelope(uncertain)); await fixture.tick(30000);
+    assert.equal(fixture.nodes.get('crm-network-address-issues').style.display, 'block');
+    assert.match(fixture.nodes.get('crm-network-conflicts-status').textContent, /1 dirección.*no se pudo comprobar/);
+    assert.equal(fixture.nodes.get('crm-network-address-issues-list').children[0].children[0].children[0].href, 'https://fixture.invalid/crm/client/service/43');
+    assert.equal(fixture.nodes.get('crm-network-conflicts-body').children[0].children[0].children[0].textContent, 'Pendiente de comprobar');
+    assert.equal(crmOwners(fixture)[1].children[0].children[1].children[2].textContent, 'IP actual sin comprobar');
+    const partialEvidence = { ...uncertain, duplicate_groups: 0, conflicts: [], checked_at: '2026-10-14T13:05:00Z' };
+    fixture.reply('list/crm_network_conflicts', envelope(partialEvidence)); await fixture.tick(30000);
+    assert.equal(crmOwners(fixture).length, 0, 'A newly completed collection may resolve prior known groups even if an unrelated address remains unverified');
+    assert.equal(fixture.nodes.get('crm-network-warning').style.display, 'flex');
+    assert.match(fixture.nodes.get('crm-network-warning-title').textContent, /IP sin comprobar en CRM: 1/);
+    assert(!fixture.nodes.get('crm-network-conflicts-status').textContent.includes('No se encontraron'), 'Unknown addresses must prevent a broad all-clear claim');
+    fixture.reply('list/crm_network_conflicts', envelope({ ...report, checked_at: '2026-10-14T13:00:00Z' })); await fixture.tick(30000);
+    assert.equal(crmOwners(fixture).length, 0, 'Older snapshots cannot resurrect resolved groups');
+    assert.match(fixture.nodes.get('crm-network-warning-title').textContent, /IP sin comprobar en CRM: 1/);
+    fixture.reply('list/crm_network_conflicts', { status: 'failed', error: true, message: 'offline' }); await fixture.tick(30000);
+    assert.equal(fixture.nodes.get('crm-network-address-issues-list').children.length, 1, 'A failed read retains previous unknown-address warnings and safe links');
+    const empty = { ...report, duplicate_groups: 0, conflicts: [], checked_at: '2026-10-14T13:05:00Z' };
+    fixture.reply('list/crm_network_conflicts', envelope(empty)); await fixture.tick(30000);
+    assert.equal(fixture.nodes.get('crm-network-warning').style.display, 'none', 'Only a completed successful snapshot can clear a resolved warning');
+    assert.match(fixture.nodes.get('crm-network-conflicts-status').textContent, /No se encontraron.*familias revisadas/);
+    assert.equal(fixture.nodes.get('network-conflicts-count').textContent, '');
+    assert.equal(fixture.api.recovery, null);
+    assert(fixture.monitorCalls().every(call => call.changeType === 'list' && call.action === 'list' && !Object.keys(call.data).length), 'Polling only reads local status; no CRM scan/provision/cleanup action is sent');
+    const old = { duplicate_groups: 1, conflicts: [] };
+    const both = recoveryPanelFixture({ bootstrap: { readOnly: true, details: old }, details: old, initialReplies }); await flush();
+    assert.equal(both.nodes.get('network-warning').style.display, 'flex'); assert.equal(both.nodes.get('crm-network-warning').style.display, 'flex');
+    assert.equal(both.nodes.get('network-warning-title').textContent, 'IP duplicadas: 1 conflicto');
+    assert.equal(both.nodes.get('btn-run-jobs').disabled, true, 'A genuine stored-reservation recovery must keep its existing safeguards');
+    assert.match(both.nodes.get('crm-network-warning-note').textContent, /pausa por reservas guardadas/);
+    assert.equal(both.nodes.get('network-conflicts-count').textContent, '2');
+    both.reply('list/crm_network_conflicts', envelope(empty)); await both.tick(30000);
+    assert.equal(both.nodes.get('crm-network-warning').style.display, 'none'); assert.equal(both.nodes.get('network-warning').style.display, 'flex');
+    assert.equal(both.nodes.get('btn-run-jobs').disabled, true, 'Resolving the CRM warning cannot unlock separate stored-reservation recovery');
+    const hostile = plain(report); hostile.conflicts[0].address = attack;
+    hostile.conflicts[0].owners[0].service_status = attack;
+    hostile.conflicts[0].owners[0].client_url = 'javascript:alert(1)';
+    hostile.conflicts[0].owners[0].service_url = 'https://attacker.invalid/crm/client/service/42';
+    const malicious = recoveryPanelFixture({ initialReplies: new Map([['list/crm_network_conflicts', envelope(hostile)]]) }); await malicious.navigate('network_conflicts');
+    assert(!renderedMarkup(malicious.nodes.get('crm-network-conflicts-body')).includes('<img'));
+    assert(!renderedMarkup(malicious.nodes.get('crm-network-conflicts-body')).includes('<script'));
+    const identity = crmOwners(malicious)[0].children[0];
+    assert.equal(identity.children[0].href, undefined); assert.equal(identity.children[1].children[0].href, undefined);
+    assert.equal(identity.children[1].children[1].textContent, 'Servicio: ' + attack, 'External service status remains literal text');
+    const storage = new Map();
+    const navigation = recoveryPanelFixture({ storage, initialReplies }); await navigation.navigate('network_conflicts');
+    navigation.surface().scrollTop = 30; await navigation.event('beforeunload');
+    const key = [...storage.keys()][0], serialized = storage.get(key), state = JSON.parse(serialized);
+    assert.deepEqual(state.positions.network_conflicts.anchor, { serviceId: 42, offset: 0, occurrence: 0, source: 'crm_snapshot' });
+    assert(!serialized.includes('192.0.2.77') && !serialized.includes('checked_at') && !serialized.includes('client_id'), 'CRM snapshot details must never be persisted with navigation');
+    const reordered = plain(report); reordered.conflicts[0].owners.reverse();
+    const reload = recoveryPanelFixture({ storage, initialReplies: new Map([['list/crm_network_conflicts', envelope(reordered)]]) }); await flush();
+    assert.equal(reload.nodes.get('view-network_conflicts').style.display, 'block');
+    assert.equal(reload.surface().scrollTop, 170, 'CRM source anchors restore the same service row after a snapshot reorder');
+    const sharedDetails = { duplicate_groups: 1, conflicts: [{ family: 'IPv4', address: '192.0.2.77', service_count: 2, service_ids: [42, 44],
+        owners: [{ service_id: 42, source: 'database' }, { service_id: 44, source: 'database' }] }] };
+    const legacyStorage = new Map([[key, JSON.stringify({ version: 1, scope: 'https://fixture.invalid/crm/_plugins/ros-plugin/public.php',
+        view: 'network_conflicts', positions: { network_conflicts: { scrollTop: 30,
+            anchor: { serviceId: 42, offset: 0, occurrence: 0 }, focus: { serviceId: 42, action: 'service' } } } })]]);
+    const shared = recoveryPanelFixture({ bootstrap: { readOnly: true, details: sharedDetails }, details: sharedDetails, storage: legacyStorage, initialReplies }); await flush();
+    assert.equal(shared.surface().scrollTop, 310, 'Pre-monitor navigation anchors stay on saved reservations even when the CRM pane contains the same service');
+    assert.equal(shared.document.activeElement, shared.nodes.get('network-conflicts-body').children[0].children[1].children[0].children[1], 'Stored verification focus must never jump to a CRM snapshot link');
+    const noSnapshot = recoveryPanelFixture(); await noSnapshot.navigate('network_conflicts');
+    assert.match(noSnapshot.nodes.get('crm-network-conflicts-status').textContent, /primera revisión/);
+    assert.equal(noSnapshot.nodes.get('crm-network-warning').style.display, 'none');
+    for (const source of ['input', 'reserved', 'applied']) {
+        const blocking = source === 'input' ? 501 : 509;
+        const jobs = recoveryPanelFixture({ initialReplies: new Map([['list/jobs', envelope({ Q1: { serviceId: 501, deviceId: 1, state: 'pending',
+            error: `invalid_network_address: requested_service=501 blocking_service=${blocking} source=${source} family=IPv4` } })]]) });
+        await jobs.navigate('jobs'); const jobHtml = jobs.tables.get('#jobs-table tbody').children[0].innerHTML;
+        assert(!jobHtml.includes('invalid_network_address:'), 'Recognized address diagnostics should explain the owner and family in plain language');
+        assert(jobHtml.includes('/crm/client/service/' + blocking));
+        assert(jobHtml.includes('noopener noreferrer')); assert(jobHtml.includes('IPv4'));
+    }
+    for (const error of [
+        'invalid_network_address: requested_service=501 blocking_service=509 source=input family=IPv4',
+        'invalid_network_address: requested_service=502 blocking_service=509 source=reserved family=IPv4',
+        'invalid_network_address: requested_service=501 blocking_service=9007199254740999 source=reserved family=IPv4',
+        'invalid_network_address: requested_service=501 blocking_service=509 source=' + attack + ' family=IPv4'
+    ]) {
+        const jobs = recoveryPanelFixture({ initialReplies: new Map([['list/jobs', envelope({ Q1: { serviceId: 501, state: 'pending', error } })]]) });
+        await jobs.navigate('jobs'); const jobHtml = jobs.tables.get('#jobs-table tbody').children[0].innerHTML;
+        assert(!jobHtml.includes('href='), 'Invalid or unrelated diagnostic metadata must never create an owner link');
+        assert(!jobHtml.includes('<img') && !jobHtml.includes('<script'));
+    }
 }
 
 async function checkNetworkRecoveryPanel() {
@@ -933,8 +1114,8 @@ async function checkNetworkRecoveryPanel() {
     assert.deepEqual(plain(healthy.diagnostics()[0].data), {}, 'Reactive recovery reads must not request live CRM verification');
     const malformed = recoveryPanelFixture({ bootstrap: '{', details }); await flush();
     assert.equal(malformed.nodes.get('btn-cache').disabled, false, 'An invalid optional bootstrap must not break normal navigation');
-    assert.equal((markup.match(/(?:src|href)="(?:js|css)\/[^"?]+\?v=2\.0\.39"/g) || []).length, 5, 'Every panel asset must use the new revision to invalidate UISP browser caches');
-    assert(!markup.includes('v=2.0.38'));
+    assert.equal((markup.match(/(?:src|href)="(?:js|css)\/[^"?]+\?v=2\.0\.40"/g) || []).length, 5, 'Every panel asset must use the new revision to invalidate UISP browser caches');
+    assert(!markup.includes('v=2.0.39'));
     assert(apiSource.includes("'alert-triangle':"), 'The conflict warning must have its own local warning icon');
 }
 
@@ -1211,7 +1392,7 @@ async function checkNavigationContinuity() {
     assert.equal(mobileReload.document.scrollingElement.scrollTop, 450, 'Responsive layouts must restore the document scroller');
     assert.equal(mobileReload.nodes.get('content-area').scrollTop, 0);
     const healthy = recoveryPanelFixture({ storage, details }); await flush();
-    assert.equal(healthy.nodes.get('view-devices').style.display, 'block', 'Healthy panels must fall back when the remembered conflicts view is unavailable');
+    assert.equal(healthy.nodes.get('view-network_conflicts').style.display, 'block', 'Healthy panels must restore the remembered conflicts view for automatic CRM monitoring');
     assert.equal(healthy.diagnostics().length, 0);
     for (const invalid of ['{', 'x'.repeat(4097), stored('unsafe_view', {}), JSON.stringify({ version: 2, scope, view: 'system', positions: {} }),
         JSON.stringify({ version: 1, scope: 'wrong-scope', view: 'system', positions: {} }), stored('system', { system: { scrollTop: -1 } }),
@@ -1219,7 +1400,7 @@ async function checkNavigationContinuity() {
         const invalidStorage = new Map([[key, invalid]]);
         const fixture = recoveryPanelFixture({ storage: invalidStorage, details }); await flush();
         assert.equal(fixture.nodes.get('view-devices').style.display, 'block');
-        assert.deepEqual(fixture.calls.map(call => call.target), ['devices'], 'Invalid navigation state must not trigger unexpected section or CRM loads');
+        assert.deepEqual(fixture.calls.map(call => call.target), ['crm_network_conflicts', 'devices'], 'Invalid navigation state allows only the local monitor status and default section reads');
     }
     const blocked = recoveryPanelFixture({ storageBlocked: true, details }); await flush(); await blocked.navigate('system');
     assert.equal(blocked.nodes.get('view-system').style.display, 'block');
@@ -2471,6 +2652,7 @@ async function checkLanguagePresentation() {
     await checkLanguagePresentation();
     await checkNumericPlanEditors();
     await checkJobsRefresh();
+    await checkCrmNetworkMonitorPanel();
     await checkNetworkRecoveryPanel();
     await checkNetworkCleanupPanel();
     await checkNetworkClientArchivePanel();

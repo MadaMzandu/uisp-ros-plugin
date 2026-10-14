@@ -56,6 +56,11 @@ document.addEventListener('DOMContentLoaded', () => {
     let cleanupBoxes = [];
     let cleanupRequiresReload = false;
     let cleanupRemainingCount = null;
+    let crmMonitorReport = null;
+    let crmMonitorFailure = false;
+    let crmMonitorInFlight = null;
+    let crmMonitorTimer;
+    let crmMonitorStopped = false;
     const navigationViews = new Set(['devices', 'plans', 'config', 'jobs', 'system', 'network_conflicts']);
     const navigationVersion = 1;
     const navigationScopeUrl = new URL(api.endpoint || window.location.href, window.location.href);
@@ -75,6 +80,10 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!Number.isSafeInteger(anchor.serviceId) || anchor.serviceId < 1 || !Number.isFinite(anchor.offset)
                 || Math.abs(anchor.offset) > 100000 || !Number.isSafeInteger(anchor.occurrence) || anchor.occurrence < 0 || anchor.occurrence > 1000) return null;
             safe.anchor = { serviceId: anchor.serviceId, offset: anchor.offset, occurrence: anchor.occurrence };
+            if (anchor.source !== undefined) {
+                if (anchor.source !== 'crm_snapshot') return null;
+                safe.anchor.source = anchor.source;
+            }
         }
         if (position.focus) {
             const focus = position.focus;
@@ -113,8 +122,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function conflictOwnerNodes() {
-        return Array.from(byId('network-conflicts-body')?.children || []).flatMap(row =>
-            Array.from(row.children[1]?.children || []).filter(node => Number.isSafeInteger(Number(node.dataset?.serviceId)) && Number(node.dataset.serviceId) > 0));
+        return ['crm-network-conflicts-body', 'network-conflicts-body'].flatMap(id =>
+            Array.from(byId(id)?.children || []).flatMap(row => Array.from(row.children[1]?.children || [])
+                .filter(node => Number.isSafeInteger(Number(node.dataset?.serviceId)) && Number(node.dataset.serviceId) > 0)));
     }
 
     function surfaceBounds(surface) {
@@ -151,7 +161,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 const nearest = visible[0];
                 const serviceId = Number(nearest.node.dataset.serviceId);
                 position.anchor = { serviceId, offset: nearest.rect.top - bounds.top,
-                    occurrence: nodes.slice(0, nearest.index).filter(node => Number(node.dataset.serviceId) === serviceId).length };
+                    occurrence: nodes.slice(0, nearest.index).filter(node => Number(node.dataset.serviceId) === serviceId
+                        && node.dataset.anchorSource === nearest.node.dataset.anchorSource).length };
+                if (nearest.node.dataset.anchorSource === 'crm_snapshot') position.anchor.source = 'crm_snapshot';
             }
             const focus = ownerFocus(nodes);
             if (focus) position.focus = focus;
@@ -167,14 +179,15 @@ document.addEventListener('DOMContentLoaded', () => {
         let top = position.scrollTop;
         const nodes = currentView === 'network_conflicts' ? conflictOwnerNodes() : [];
         if (position.anchor) {
-            const matching = nodes.filter(node => Number(node.dataset.serviceId) === position.anchor.serviceId);
+            const matching = nodes.filter(node => Number(node.dataset.serviceId) === position.anchor.serviceId
+                && node.dataset.anchorSource === position.anchor.source);
             const target = matching[position.anchor.occurrence] || matching[0];
             const rect = target?.getBoundingClientRect?.();
             if (rect) top = (Number(surface.scrollTop) || 0) + rect.top - surfaceBounds(surface).top - position.anchor.offset;
         }
         surface.scrollTop = Math.max(0, Math.min(max, top));
         if (position.focus) {
-            const target = nodes.find(node => Number(node.dataset.serviceId) === position.focus.serviceId);
+            const target = nodes.find(node => Number(node.dataset.serviceId) === position.focus.serviceId && node.dataset.anchorSource !== 'crm_snapshot');
             const className = { service: 'conflict-verify', client: 'conflict-client-verify', cleanup: 'conflict-cleanup' }[position.focus.action];
             const button = Array.from(target?.children || []).find(node => node.className?.split(' ').includes(className));
             if (button && !button.disabled) button.focus?.({ preventScroll: true });
@@ -244,11 +257,12 @@ document.addEventListener('DOMContentLoaded', () => {
         const total = Number(recoveryDetails?.duplicate_groups);
         const count = cleanupRemainingCount ?? (Number.isSafeInteger(total) && total >= 0 ? total : (Array.isArray(recoveryDetails?.conflicts) ? recoveryDetails.conflicts.length : 0));
         byId('network-warning').style.display = 'flex';
-        byId('network-conflicts-nav').style.display = 'flex';
-        byId('network-conflicts-count').textContent = String(count);
-        translatedText(byId('network-warning-title'), 'IP duplicadas: {count} conflictos', { count });
+        updateConflictNavigation();
+        byId('stored-network-conflicts-pane').style.display = 'block';
+        translatedText(byId('network-warning-title'), count === 1 ? 'IP duplicadas: {count} conflicto' : 'IP duplicadas: {count} conflictos', { count });
         if (cleanupRequiresReload) translatedText(byId('network-warning-note'), 'La limpieza terminó. Recarga el panel para comprobar las asignaciones y completar la actualización.');
         applyRecoveryControls();
+        renderCrmMonitor();
         if (currentView === 'network_conflicts') renderNetworkConflictsTable();
         if (!recoveryDetails && !recoveryLoading && typeof api.getNetworkConflicts === 'function') {
             recoveryLoading = true;
@@ -278,6 +292,185 @@ document.addEventListener('DOMContentLoaded', () => {
         if (url) { link.href = url; link.target = '_blank'; link.rel = 'noopener noreferrer'; }
         return link;
     }
+
+    function updateConflictNavigation() {
+        const total = Number(recoveryDetails?.duplicate_groups);
+        const stored = recoveryReadOnly ? (cleanupRemainingCount ?? (Number.isSafeInteger(total) && total >= 0 ? total
+            : Array.isArray(recoveryDetails?.conflicts) ? recoveryDetails.conflicts.length : 0)) : 0;
+        const current = crmMonitorReport?.available ? crmMonitorReport.duplicate_groups + monitorIssueCount(crmMonitorReport) : 0;
+        const count = (Number.isSafeInteger(stored) && stored > 0 ? stored : 0) + current;
+        byId('network-conflicts-nav').style.display = 'flex';
+        byId('network-conflicts-count').textContent = count > 0 || recoveryReadOnly ? String(count) : '';
+        byId('network-conflicts-count').style.display = count > 0 || recoveryReadOnly ? 'inline-block' : 'none';
+    }
+
+    function monitorDate(value) {
+        return typeof value === 'string' && value.length <= 40 && /^\d{4}-\d{2}-\d{2}T/.test(value)
+            && Number.isFinite(new Date(value).getTime()) ? value : null;
+    }
+
+    function monitorIssueCount(report) {
+        return Number.isSafeInteger(report?.unknown_address_count) && report.unknown_address_count >= 0 ? report.unknown_address_count : 0;
+    }
+
+    function normalizeCrmMonitor(report) {
+        if (!report || typeof report !== 'object' || Array.isArray(report) || typeof report.available !== 'boolean'
+            || !Number.isSafeInteger(report.duplicate_groups) || report.duplicate_groups < 0 || !Array.isArray(report.conflicts)
+            || (report.available && (!monitorDate(report.checked_at) || report.conflicts.length > report.duplicate_groups
+                || (report.duplicate_groups > 0 && !report.conflicts.length)))
+            || report.conflicts.some(group => !group || !['IPv4', 'IPv6'].includes(group.family)
+                || typeof group.address !== 'string' || group.address.length > 128 || !Array.isArray(group.owners))) throw new Error('invalid_crm_monitor_report');
+        // Render a bounded snapshot. Customer details never enter navigation storage.
+        return { ...report, checked_at: monitorDate(report.checked_at), scan_started_at: monitorDate(report.scan_started_at),
+            conflicts: report.conflicts.slice(0, 100) };
+    }
+
+    function renderCrmMonitor() {
+        const savedPosition = beforeTableUpdate('network_conflicts');
+        const report = crmMonitorReport;
+        const available = report?.available === true;
+        const count = available ? report.duplicate_groups : 0;
+        const issueCount = available ? monitorIssueCount(report) : 0;
+        const stale = crmMonitorFailure || (available && report?.stale === true) || Boolean(report?.last_error);
+        const checkedAt = available ? t('Última revisión completa: {time}', { time: formatDate(report.checked_at) }) : '';
+        const families = Array.isArray(report?.families) ? [...new Set(report.families.filter(family => ['IPv4', 'IPv6'].includes(family)))].join(', ') : '';
+        const uncovered = Array.isArray(report?.unavailable_families) ? [...new Set(report.unavailable_families.filter(family => ['IPv4', 'IPv6'].includes(family)))].join(', ') : '';
+        const freshness = [checkedAt, families ? t('Familias revisadas: {families}.', { families }) : '',
+            uncovered ? t('Sin revisar por configuración de atributos: {families}.', { families: uncovered }) : '',
+            stale ? t('El resultado guardado puede estar desactualizado.') : ''].filter(Boolean).join(' ');
+        byId('crm-network-warning').style.display = count > 0 || issueCount > 0 ? 'flex' : 'none';
+        translatedText(byId('crm-network-warning-title'), count > 0 ? (count === 1 ? 'IP duplicadas en CRM: {count} conflicto' : 'IP duplicadas en CRM: {count} conflictos')
+            : issueCount === 1 ? 'IP sin comprobar en CRM: {count} dirección' : 'IP sin comprobar en CRM: {count} direcciones', { count: count > 0 ? count : issueCount });
+        translatedText(byId('crm-network-warning-note'), recoveryReadOnly
+            ? 'Este aviso del CRM no pausa los trabajos. La pausa por reservas guardadas se indica por separado.'
+            : 'Las suspensiones y reactivaciones automáticas de los demás clientes continúan.');
+        byId('crm-network-warning-freshness').textContent = freshness;
+        const status = byId('crm-network-conflicts-status');
+        status.classList.toggle('is-stale', stale);
+        const messages = [];
+        if (stale) messages.push(t('La revisión no está actualizada. Se conserva el último resultado disponible.'));
+        if (report?.scan_in_progress === true) messages.push(t('Revisión en curso: {count} servicios consultados.', {
+            count: Number.isSafeInteger(report.services_scanned) && report.services_scanned >= 0 ? report.services_scanned : 0
+        }));
+        else if (available) messages.push(t(count > 0 ? (count === 1 ? '{count} conflicto encontrado en los servicios del CRM.' : '{count} conflictos encontrados en los servicios del CRM.') : issueCount > 0
+            ? (issueCount === 1 ? '{count} dirección del CRM no se pudo comprobar.' : '{count} direcciones del CRM no se pudieron comprobar.') : 'No se encontraron IP duplicadas en las familias revisadas.', { count: count > 0 ? count : issueCount }));
+        else messages.push(t(crmMonitorInFlight ? 'Cargando el estado del monitoreo...' : 'El monitoreo automático aún no ha completado su primera revisión.'));
+        if (issueCount > 0 && (count > 0 || report?.scan_in_progress === true))
+            messages.push(t(issueCount === 1 ? '{count} dirección del CRM no se pudo comprobar.' : '{count} direcciones del CRM no se pudieron comprobar.', { count: issueCount }));
+        status.textContent = messages.join(' ');
+        byId('crm-network-conflicts-freshness').textContent = freshness;
+        const issueList = byId('crm-network-address-issues-list'); issueList.replaceChildren();
+        const issues = available && Array.isArray(report.address_issues) ? report.address_issues.slice(0, 20).filter(issue => issue
+            && Number.isSafeInteger(issue.service_id) && issue.service_id > 0 && ['IPv4', 'IPv6'].includes(issue.family)) : [];
+        byId('crm-network-address-issues').style.display = issueCount > 0 ? 'block' : 'none';
+        for (const issue of issues) {
+            const item = document.createElement('div'); item.className = 'crm-address-issue';
+            const meta = document.createElement('div'); meta.className = 'conflict-owner-meta';
+            meta.appendChild(conflictLink(t('Servicio #{id}', { id: issue.service_id }), issue.service_url, 'service'));
+            if (Number.isSafeInteger(issue.client_id) && issue.client_id > 0)
+                meta.appendChild(conflictLink(t('Cliente #{id}', { id: issue.client_id }), issue.client_url, 'client'));
+            const badge = document.createElement('span'); badge.className = 'badge badge-warning'; badge.textContent = issue.family; meta.appendChild(badge);
+            const note = document.createElement('p'); translatedText(note, 'Revisa el atributo {family} de este servicio en el CRM.', { family: issue.family });
+            item.append(meta, note); issueList.appendChild(item);
+        }
+        const issueLimit = byId('crm-network-address-issues-limit');
+        issueLimit.style.display = issueCount > issues.length || report?.address_issues_truncated === true ? 'block' : 'none';
+        translatedText(issueLimit, 'Se muestran {shown} de {total} direcciones sin comprobar.', { shown: issues.length, total: issueCount });
+        const tbody = byId('crm-network-conflicts-body');
+        tbody.replaceChildren();
+        const groups = available ? report.conflicts : [];
+        if (!groups.length) {
+            const empty = available && count === 0 ? issueCount > 0 ? 'No hay conflictos confirmados entre las direcciones comprobadas.' : 'Sin IP duplicadas en las familias revisadas.' : available
+                ? 'No hay detalles disponibles de estos conflictos.' : 'Los resultados aparecerán al completar la revisión automática.';
+            tbody.innerHTML = `<tr><td colspan="2" class="empty-state">${html(t(empty))}</td></tr>`;
+        }
+        for (const group of groups) {
+            const row = document.createElement('tr');
+            const address = document.createElement('td'); address.className = 'conflict-address';
+            const owners = group.owners.slice(0, 50).filter(owner => owner && Number.isSafeInteger(owner.service_id) && owner.service_id > 0);
+            const total = Number.isSafeInteger(group.service_count) && group.service_count >= owners.length ? group.service_count : owners.length;
+            address.innerHTML = `<strong>${html(group.address)}</strong><span class="text-muted">${html(group.family)}</span><span class="badge badge-warning">${html(t('{count} servicios en CRM', { count: total }))}</span>`;
+            if (group.current_confirmed === false) {
+                const pending = document.createElement('span'); pending.className = 'badge badge-neutral';
+                translatedText(pending, 'Pendiente de comprobar'); address.appendChild(pending);
+                const prior = document.createElement('p'); prior.className = 'conflict-source';
+                translatedText(prior, 'IP observada en una revisión anterior.'); address.appendChild(prior);
+            }
+            const ownersCell = document.createElement('td'); ownersCell.className = 'conflict-owners';
+            for (const owner of owners) {
+                const item = document.createElement('div'); item.className = 'conflict-owner crm-conflict-owner';
+                item.dataset.serviceId = String(owner.service_id); item.dataset.anchorSource = 'crm_snapshot';
+                const identity = document.createElement('div'); identity.className = 'conflict-identity';
+                const clientId = Number.isSafeInteger(owner.client_id) && owner.client_id > 0 ? owner.client_id : null;
+                identity.appendChild(conflictLink(clientId ? t('Cliente #{id}', { id: clientId }) : t('Cliente sin identificar'), clientId ? owner.client_url : null, 'client'));
+                const meta = document.createElement('div'); meta.className = 'conflict-owner-meta';
+                meta.appendChild(conflictLink(t('Servicio #{id}', { id: owner.service_id }), owner.service_url, 'service'));
+                const badge = document.createElement('span'); badge.className = 'badge badge-neutral';
+                const state = typeof owner.service_status === 'string' && owner.service_status.length <= 80 ? t(owner.service_status) : t('Sin comprobar');
+                badge.textContent = t('Servicio: {state}', { state }); meta.appendChild(badge); identity.appendChild(meta);
+                if (owner.current_address_known === false) {
+                    const unknown = document.createElement('span'); unknown.className = 'badge badge-warning';
+                    translatedText(unknown, 'IP actual sin comprobar'); meta.appendChild(unknown);
+                }
+                const source = document.createElement('p'); source.className = 'conflict-source';
+                translatedText(source, 'Servicios consultados por el monitoreo del CRM'); identity.appendChild(source);
+                item.appendChild(identity); ownersCell.appendChild(item);
+            }
+            if (group.services_truncated || total > owners.length) {
+                const more = document.createElement('p'); more.className = 'form-note';
+                translatedText(more, 'Se muestran {shown} de {total} servicios en CRM.', { shown: owners.length, total }); ownersCell.appendChild(more);
+            }
+            row.append(address, ownersCell); tbody.appendChild(row);
+        }
+        const limit = byId('crm-network-conflicts-limit');
+        limit.style.display = available && (report.conflicts_truncated === true || count > groups.length) ? 'block' : 'none';
+        translatedText(limit, 'Se muestran {shown} de {total} conflictos. El diagnóstico conserva el total y una muestra acotada.', { shown: groups.length, total: count });
+        updateConflictNavigation();
+        afterTableUpdate('network_conflicts', savedPosition);
+    }
+
+    function clearCrmMonitorTimer() { clearTimeout(crmMonitorTimer); crmMonitorTimer = undefined; }
+    function scheduleCrmMonitor() {
+        clearCrmMonitorTimer();
+        if (document.hidden === true || crmMonitorStopped || crmMonitorInFlight) return;
+        crmMonitorTimer = setTimeout(function pollCrmMonitor() { crmMonitorTimer = undefined; refreshCrmMonitor(); }, 30000);
+    }
+
+    function refreshCrmMonitor() {
+        if (crmMonitorInFlight) return crmMonitorInFlight;
+        if (document.hidden === true || crmMonitorStopped) return Promise.resolve();
+        clearCrmMonitorTimer();
+        crmMonitorInFlight = (async () => {
+            try {
+                const incoming = normalizeCrmMonitor(checked(await api.getCrmNetworkConflicts()).data);
+                if (incoming.available && crmMonitorReport?.available
+                    && new Date(incoming.checked_at).getTime() < new Date(crmMonitorReport.checked_at).getTime()) throw new Error('old_crm_monitor_report');
+                // An incomplete scan cannot replace a completed report with a false zero.
+                if (crmMonitorReport?.available && (!incoming.available || incoming.last_error)) {
+                    crmMonitorReport = { ...crmMonitorReport, ...incoming, available: true, duplicate_groups: crmMonitorReport.duplicate_groups,
+                        conflicts: crmMonitorReport.conflicts, conflicts_truncated: crmMonitorReport.conflicts_truncated,
+                        checked_at: crmMonitorReport.checked_at, families: crmMonitorReport.families,
+                        unavailable_families: crmMonitorReport.unavailable_families, coverage_complete: crmMonitorReport.coverage_complete,
+                        unknown_address_count: crmMonitorReport.unknown_address_count, address_issues: crmMonitorReport.address_issues,
+                        address_issues_truncated: crmMonitorReport.address_issues_truncated, stale: true };
+                } else crmMonitorReport = incoming;
+                crmMonitorFailure = false;
+            } catch (_) { crmMonitorFailure = true; }
+            finally {
+                crmMonitorInFlight = null;
+                renderCrmMonitor();
+                scheduleCrmMonitor();
+            }
+        })();
+        return crmMonitorInFlight;
+    }
+
+    document.addEventListener('visibilitychange', () => {
+        clearCrmMonitorTimer();
+        if (document.hidden !== true) refreshCrmMonitor();
+    });
+    globalThis.window?.addEventListener?.('pagehide', () => { crmMonitorStopped = true; clearCrmMonitorTimer(); });
+    globalThis.window?.addEventListener?.('pageshow', () => { crmMonitorStopped = false; refreshCrmMonitor(); });
 
     function retainVerifiedOwners(previous, incoming, selectedService, selectedClient = null) {
         if (!incoming || !Array.isArray(incoming.conflicts)) return incoming;
@@ -593,11 +786,13 @@ document.addEventListener('DOMContentLoaded', () => {
     byId('reload-after-cleanup')?.addEventListener('click', reloadPanel);
 
     async function renderNetworkConflicts() {
-        if (!recoveryDetails) {
+        renderCrmMonitor();
+        if (!crmMonitorReport) await refreshCrmMonitor();
+        if (recoveryReadOnly && !recoveryDetails) {
             const response = checked(await api.getNetworkConflicts());
             recoveryDetails = response.data;
         }
-        renderNetworkConflictsTable();
+        if (recoveryReadOnly) renderNetworkConflictsTable();
     }
 
     function translatedText(node, source, params = {}) {
@@ -844,6 +1039,7 @@ document.addEventListener('DOMContentLoaded', () => {
         switchView(nav.dataset.view, nav.querySelector('span').textContent);
     }));
     byId('btn-view-conflicts')?.addEventListener('click', () => switchView('network_conflicts', 'Conflictos de IP'));
+    byId('btn-view-crm-conflicts')?.addEventListener('click', () => switchView('network_conflicts', 'Conflictos de IP'));
     byId('btn-recheck-conflicts')?.addEventListener('click', reloadPanel);
 
     async function renderDevices() {
@@ -1302,6 +1498,20 @@ document.addEventListener('DOMContentLoaded', () => {
             return 'Puerto accesible sólo comprueba que el puerto responde. Revisa usuario, contraseña, permisos de API y TLS del dispositivo.';
         return null;
     }
+    function jobNetworkErrorMarkup(error, serviceId) {
+        const match = /^invalid_network_address: requested_service=([1-9]\d{0,14}) blocking_service=([1-9]\d{0,14}) source=(input|reserved|applied) family=(IPv4|IPv6)$/.exec(error);
+        if (!match || !Number.isSafeInteger(Number(match[1])) || !Number.isSafeInteger(Number(match[2])) || Number(match[1]) !== Number(serviceId)) return null;
+        const own = match[3] === 'input';
+        if (own && match[1] !== match[2]) return null;
+        const source = own ? 'La dirección {family} de este servicio no es válida. Revisa el atributo IP en el CRM.'
+            : match[3] === 'reserved' ? 'Una reserva {family} inválida del servicio {id} impide asignar una IP a este trabajo.'
+            : 'Un recurso {family} guardado como aplicado para el servicio {id} tiene una dirección inválida.';
+        const params = { family: match[4], id: Number(match[2]) };
+        const url = safeCrmUrl('/crm/client/service/' + match[2], 'service');
+        const label = t('Servicio #{id}', { id: params.id });
+        return `<span data-i18n="${html(source)}" data-i18n-values="${html(JSON.stringify(params))}">${html(t(source, params))}</span>`
+            + (url ? ` <a class="conflict-link" href="${html(url)}" target="_blank" rel="noopener noreferrer">${html(label)}</a>` : '');
+    }
     function renderJobsTable(jobs) {
         const savedPosition = beforeTableUpdate('jobs');
         const selected = new Set(Array.from(document.querySelectorAll('.job-checkbox:checked'), checkbox => checkbox.value));
@@ -1318,6 +1528,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const descriptionValues = { action: t(job.action || 'update'), id: job.serviceId ?? job.id ?? '', device: job.deviceId ?? job.device ?? '', user: job.username || job.mac || '' };
             const description = t(descriptionKey, descriptionValues);
             const error = job.error ? typeof job.error === 'object' ? JSON.stringify(job.error) : String(job.error) : '';
+            const networkError = jobNetworkErrorMarkup(error, job.serviceId ?? job.id);
             const connectionHelp = jobConnectionHelp(error);
             const stateKey = job.state === 'pending' ? 'Pendiente' : job.state === 'running' ? 'En ejecución' : 'Estado desconocido';
             const attempts = Number.isSafeInteger(job.attempts) && job.attempts >= 0 ? job.attempts : 0;
@@ -1325,7 +1536,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 ? ` · <span data-i18n="Próximo intento">${html(t('Próximo intento'))}</span>: <span data-date="${html(job.nextRetry)}">${html(formatDate(job.nextRetry))}</span>` : '';
             row.innerHTML = `<td class="job-description"><span data-i18n="${html(descriptionKey)}" data-i18n-values="${html(JSON.stringify(descriptionValues))}">${html(description)}</span>
                 <br><small class="text-muted">${html(job.jobId || key)} · <span data-i18n="${html(stateKey)}">${html(t(stateKey))}</span> · <span data-i18n="Intentos: {count}" data-i18n-values="${html(JSON.stringify({ count: attempts }))}">${html(t('Intentos: {count}', { count: attempts }))}</span>${nextRetry}</small>
-                ${error ? `<br><span class="job-error"><span data-i18n="Último error">${html(t('Último error'))}</span>: ${html(error)}</span>` : ''}
+                ${error ? `<br><span class="job-error"><span data-i18n="Último error">${html(t('Último error'))}</span>: ${networkError ?? html(error)}</span>` : ''}
                 ${connectionHelp ? `<br><small class="text-muted" data-i18n="${html(connectionHelp)}">${html(t(connectionHelp))}</small>` : ''}
                 ${jobNoteMarkup(jobReason(job), 'Bloqueado')}
                 ${jobNoteMarkup(job.canDelete === false ? jobReason(job, true) : null, 'No se puede eliminar')}
@@ -1808,6 +2019,7 @@ document.addEventListener('DOMContentLoaded', () => {
         updateBurstPreview();
         updateJobsRefreshStatus();
         if (recoveryReadOnly) applyRecovery({ readOnly: true });
+        renderCrmMonitor();
         for (const direction of ['upload', 'download']) if (planNumericDraft.has(direction + 'Speed'))
             byId('plan-' + direction + 'Override').placeholder = t('UISP: valor inválido');
         byId('dev-port').placeholder = t('Predeterminado: {port}', { port: byId('dev-ssl').checked ? 8729 : 8728 });
@@ -1840,6 +2052,7 @@ document.addEventListener('DOMContentLoaded', () => {
     PanelUtils.replaceIcons();
     api.onRecovery?.(applyRecovery);
     if (api.recovery?.readOnly === true) applyRecovery(api.recovery);
-    if (initialView === 'network_conflicts' && !recoveryReadOnly) initialView = 'devices';
+    renderCrmMonitor();
+    refreshCrmMonitor();
     switchView(initialView, initialView);
 });

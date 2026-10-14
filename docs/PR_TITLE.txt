@@ -1,1 +1,1 @@
-Modernize the panel, make provisioning durable, and safely recover obsolete IP reservations
+Modernize the panel, make provisioning durable, and monitor CRM IP conflicts safely

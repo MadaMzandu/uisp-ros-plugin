@@ -172,6 +172,18 @@ th.sortable:hover, th.sortable.asc, th.sortable.desc { color: var(--link); }
 .network-warning strong { display: block; margin-bottom: 3px; font-size: 0.84rem; }
 .network-warning p { font-size: 0.77rem; line-height: 1.5; }
 .network-warning .btn { flex-shrink: 0; background: transparent; color: var(--warning-text); border-color: var(--warning-border); }
+.crm-network-warning small { display: block; margin-top: 5px; font-size: 0.7rem; line-height: 1.5; }
+.crm-conflicts-pane { margin-bottom: 24px; }
+.stored-conflicts-pane { padding-top: 20px; border-top: 1px solid var(--border); }
+.crm-monitor-status { margin-bottom: 7px; font-size: 0.8rem; line-height: 1.5; }
+.crm-monitor-status.is-stale { color: var(--warning-text); }
+.crm-monitor-freshness { margin-bottom: 12px; }
+.crm-conflict-owner { grid-template-columns: minmax(0, 1fr); }
+.crm-address-issues { margin-bottom: 18px; }
+.crm-address-issues h3 { font-size: 0.84rem; margin-bottom: 6px; }
+#crm-network-address-issues-list { display: grid; gap: 8px; margin-top: 10px; }
+.crm-address-issue { padding: 10px 12px; border: 1px solid var(--warning-border); border-radius: 7px; background: var(--warning-bg); font-size: 0.78rem; }
+.crm-address-issue p { margin-top: 5px; color: var(--text-muted); font-size: 0.73rem; line-height: 1.5; }
 [data-recovery-write]:disabled { cursor: not-allowed; }
 [data-recovery-router-read]:disabled { cursor: not-allowed; }
 .burst-preset-btn:disabled { opacity: 0.55; cursor: not-allowed; }

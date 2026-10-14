@@ -13,8 +13,8 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     
     <!-- Custom CSS -->
-    <script src="js/theme.js?v=2.0.39"></script>
-    <link rel="stylesheet" href="css/style.css?v=2.0.39">
+    <script src="js/theme.js?v=2.0.40"></script>
+    <link rel="stylesheet" href="css/style.css?v=2.0.40">
 </head>
 <body>
 
@@ -48,7 +48,7 @@
                     <i data-feather="cpu"></i>
                     <span data-i18n="Sistema">Sistema</span>
                 </a>
-                <a href="#" class="nav-item conflict-nav" data-view="network_conflicts" id="network-conflicts-nav" style="display: none;">
+                <a href="#" class="nav-item conflict-nav" data-view="network_conflicts" id="network-conflicts-nav">
                     <i data-feather="alert-triangle"></i>
                     <span data-i18n="Conflictos de IP">Conflictos de IP</span>
                     <span class="badge badge-warning conflict-nav-count" id="network-conflicts-count"></span>
@@ -91,6 +91,16 @@
                 </div>
                 <button type="button" class="btn btn-secondary" id="btn-view-conflicts" data-i18n="Revisar">Revisar</button>
             </aside>
+
+            <aside class="network-warning crm-network-warning" id="crm-network-warning" role="status" style="display: none;">
+                <i data-feather="alert-triangle"></i>
+                <div class="network-warning-copy">
+                    <strong id="crm-network-warning-title"></strong>
+                    <p id="crm-network-warning-note"></p>
+                    <small id="crm-network-warning-freshness"></small>
+                </div>
+                <button type="button" class="btn btn-secondary" id="btn-view-crm-conflicts" data-i18n="Revisar">Revisar</button>
+            </aside>
             
             <div class="content-area" id="content-area">
                 <!-- Loader -->
@@ -100,6 +110,34 @@
                 
                 <!-- Dynamic Content Views -->
                 <section id="view-network_conflicts" class="view-section" style="display: none;">
+                    <div class="crm-conflicts-pane" id="crm-network-conflicts-pane">
+                        <div class="conflicts-heading">
+                            <div>
+                                <h2 data-i18n="IP duplicadas en CRM">IP duplicadas en CRM</h2>
+                                <p data-i18n="Revisión automática de las IP de los servicios en CRM. Este aviso no pausa los trabajos de otros clientes.">Revisión automática de las IP de los servicios en CRM. Este aviso no pausa los trabajos de otros clientes.</p>
+                            </div>
+                            <span class="badge badge-neutral" data-i18n="Monitoreo automático">Monitoreo automático</span>
+                        </div>
+                        <p class="crm-monitor-status" id="crm-network-conflicts-status" role="status" aria-live="polite"></p>
+                        <p class="form-note crm-monitor-freshness" id="crm-network-conflicts-freshness"></p>
+                        <div class="crm-address-issues" id="crm-network-address-issues" style="display: none;">
+                            <h3 data-i18n="Direcciones del CRM sin comprobar">Direcciones del CRM sin comprobar</h3>
+                            <p class="form-note" data-i18n="La revisión incluye direcciones sin comprobar; pueden existir otros conflictos.">La revisión incluye direcciones sin comprobar; pueden existir otros conflictos.</p>
+                            <div id="crm-network-address-issues-list"></div>
+                            <p class="form-note conflicts-limit" id="crm-network-address-issues-limit" style="display: none;"></p>
+                        </div>
+                        <div class="table-container conflicts-table-container">
+                            <table class="data-table conflicts-table" id="crm-network-conflicts-table">
+                                <thead><tr>
+                                    <th data-i18n="IP / familia">IP / familia</th>
+                                    <th data-i18n="Cliente y servicio">Cliente y servicio</th>
+                                </tr></thead>
+                                <tbody id="crm-network-conflicts-body"></tbody>
+                            </table>
+                        </div>
+                        <p class="form-note conflicts-limit" id="crm-network-conflicts-limit" style="display: none;"></p>
+                    </div>
+                    <div id="stored-network-conflicts-pane" class="stored-conflicts-pane" style="display: none;">
                     <div class="conflicts-heading">
                         <div>
                             <h2 data-i18n="Asignaciones duplicadas">Asignaciones duplicadas</h2>
@@ -122,6 +160,7 @@
                         </table>
                     </div>
                     <p class="form-note conflicts-limit" id="network-conflicts-limit" style="display: none;"></p>
+                    </div>
                 </section>
                 <div id="view-devices" class="view-section" style="display: none;">
                     <div class="list-toolbar">
@@ -543,8 +582,8 @@
     </div>
 
     <!-- Scripts -->
-    <script src="js/i18n.js?v=2.0.39"></script>
-    <script src="js/api.js?v=2.0.39"></script>
-    <script src="js/app.js?v=2.0.39"></script>
+    <script src="js/i18n.js?v=2.0.40"></script>
+    <script src="js/api.js?v=2.0.40"></script>
+    <script src="js/app.js?v=2.0.40"></script>
 </body>
 </html>

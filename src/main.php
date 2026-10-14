@@ -19,6 +19,14 @@ try {
     $results = (new ApiJobs())->run();
     $pending = count(array_filter($results, fn(array $result): bool => ($result['success'] ?? false) !== true));
     if ($pending) { MyLog()->Append('Scheduled router operations remain pending: ' . $pending, LOG_WARNING); }
+    // Observe CRM only after automatic jobs and outside their maintenance gate.
+    // The monitor has its own bounded scan and lock; errors are informational.
+    try {
+        require_once __DIR__ . '/lib/api_crm_network_monitor.php';
+        (new ApiCrmNetworkMonitor())->tick();
+    } catch (Throwable $monitorError) {
+        MyLog()->Append(['event' => 'crm_network_monitor_failed', 'errorCode' => 'monitor_unavailable'], LOG_WARNING);
+    }
     myJobQueue()->withAdministrativeLock(function () { include_once __DIR__ . '/lib/api_ip_mgmt.php'; });
 } catch (Throwable $error) {
     MyLog()->Append('Scheduled operation failed: ' . $error->getMessage(), LOG_ERR);

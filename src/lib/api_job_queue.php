@@ -872,12 +872,13 @@ class ApiJobQueue
                 'serviceId'=>(int)$job['service_id'], 'deviceId'=>$device===false ? null : $device,
                 'operation'=>$operation, 'attempts'=>(int)$attempt['attempts'],
                 'nextRetry'=>date('c',(int)$attempt['nextRetry']), 'errorCode'=>$this->safeFailureCode($error),
-            ],LOG_ERR);
+            ] + $this->networkFailureContext($error),LOG_ERR);
         } catch (Throwable $ignored) {}
     }
 
     private function safeFailureCode(string $error): string
     {
+        if ($this->networkFailureContext($error)) return 'invalid_network_address';
         foreach (['router_session_profile_missing','router_session_profile_lookup_failed',
             'router_session_profile_ambiguous','router_session_profile_invalid_identity',
             'router_session_profile_bootstrap_failed','router_session_profile_bootstrap_invalid_configuration',
@@ -902,6 +903,16 @@ class ApiJobQueue
         if (isset($known[$error])) return $known[$error];
         if (strpos($error,'invalid_provisioning_number:')===0) return 'invalid_provisioning_number';
         return 'provisioning_failed';
+    }
+
+    private function networkFailureContext(string $error): array
+    {
+        if (!preg_match('/^invalid_network_address: requested_service=([0-9]+) blocking_service=([0-9]+) source=(input|reserved|applied) family=(IPv4|IPv6)$/D', $error, $match)) return [];
+        $requested = filter_var($match[1], FILTER_VALIDATE_INT, ['options'=>['min_range'=>0]]);
+        $blocking = filter_var($match[2], FILTER_VALIDATE_INT, ['options'=>['min_range'=>0]]);
+        if ($requested === false || $blocking === false) return [];
+        return ['requestedServiceId'=>$requested, 'blockingServiceId'=>$blocking,
+            'addressSource'=>$match[3], 'addressFamily'=>$match[4]];
     }
 
     private function releaseApplied(int $serviceId, string $identity): void

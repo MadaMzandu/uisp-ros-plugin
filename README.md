@@ -2,6 +2,20 @@
 
 [Complete English changelog](docs/CHANGELOG_EN.md) · [Texto completo para el PR](docs/PR_DESCRIPTION.md) · [Webhook setup and rationale](docs/WEBHOOK_SETUP_EN.md) · [Mejoras en español](docs/MEJORAS.md)
 
+## Candidato 2.4.25 — aviso automático de IP duplicadas en CRM
+
+El proceso programado revisa los servicios de CRM en un monitor independiente, después de procesar los trabajos y fuera de sus bloqueos. Inicia revisiones cada cinco minutos, lee como máximo un catálogo y dos páginas de 500 servicios por ejecución y continúa las colecciones mayores en ejecuciones posteriores. Los cinco minutos indican la frecuencia de inicio; completar un catálogo grande depende de la frecuencia del proceso programado. El presupuesto de 12 segundos impide iniciar lecturas adicionales; una petición iniciada utiliza el límite de 15 segundos del transporte existente.
+
+El panel consulta únicamente ese resultado local cada 30 segundos mientras está visible. Muestra **IP duplicadas en CRM**, fecha de revisión, familias comprobadas y enlaces a los servicios y clientes. Este aviso no activa el modo consulta ni desactiva controles, trabajos, suspensiones o reactivaciones. El aviso de reservas duplicadas que impiden migrar conserva su protección independiente. Conflictos de IP permanece disponible también durante la operación normal y conserva la navegación de 2.4.24.
+
+El monitor publica una colección completa de identidades válidas, con evidencia por familia y direcciones normalizadas. Un atributo inválido o incompleto no impide detectar otros duplicados válidos: se señala como sin comprobar, y sólo se conserva su dirección anterior del mismo servicio como evidencia pendiente. Una IP retirada explícitamente se vacía al completar la revisión. Los errores de transporte o páginas inválidas conservan el último resultado como desactualizado. Se informa de cobertura parcial sin afirmar que todas las IP están libres de conflictos. El monitor guarda únicamente IDs, estado y direcciones necesarias en una base privada; no modifica reservas, caché, cola ni routers.
+
+También se corrige el error repetido «Invalid address in a reserved network»: al volver a aplicar una IP manual exactamente igual a una reserva propia válida, no se adquiere propiedad nueva ni se revisan reservas ajenas. Esto permite suspender o reactivar ese servicio aunque otra fila heredada sea inválida. Crear o cambiar una dirección conserva las comprobaciones de asignación. Las reservas propias inválidas se rechazan antes de usarlas, incluso `"0"` o IPv6 sin longitud explícita. El trabajo y el registro identifican ahora el servicio bloqueante, origen y familia mediante `invalid_network_address`, sin revelar valores arbitrarios ni credenciales.
+
+El error independiente del plan 99 (`invalid_speed` en `uploadSpeed`) sigue indicando un valor de CRM que debe revisarse. El catálogo anterior se conserva; esta corrección no inventa velocidades ni cambia planes para ocultar ese error.
+
+Validación 2.4.25 aprobada: **34 suites aisladas**, sintaxis de **46 archivos PHP propios** y verificación del instalador de 358 entradas, 125 archivos propios y 13 dependencias fijadas. Informe: `dist/verification-2.4.25.json`. SHA-256: `e12899924c05f8c739deb30004d5430cd0ee6c4113683579285fd7cd1c9f60e6`. Se comprobó en navegador el aviso independiente, las operaciones habilitadas, los enlaces y las incidencias de dirección con datos sintéticos. Las regresiones verifican la continuidad de servicios ya asignados y la conservación segura de evidencia parcial. La integración de producción mantiene su comprobación específica.
+
 ## Candidato 2.4.24 — conservar la navegación y contrastar las IP actuales
 
 Recargar el panel conserva la sección abierta y la posición de la lista en la misma pestaña. En Conflictos de IP se guarda también un ID de servicio como referencia para volver al propietario visible, incluso si cambió la altura de una fila. La restauración funciona con el desplazamiento de escritorio y móvil, espera la carga de datos y evita que respuestas anteriores desplacen una sección distinta. Si Conflictos de IP dejó de estar disponible, vuelve a Dispositivos. Sólo se guarda navegación en la sesión del navegador; verificaciones, nombres, direcciones, credenciales y autorizaciones de limpieza no se conservan al recargar.
@@ -142,15 +156,15 @@ El [inventario completo de mejoras](docs/MEJORAS.md) reúne tus cambios del [PR 
 
 La comunicación con MikroTik utiliza la **API nativa de RouterOS**, con TLS opcional; los cambios de interfaz no alteran ese mecanismo. Los apartados siguientes conservan el detalle de las revisiones anteriores y la documentación original.
 
-La segunda revisión corrige además propiedad de cuentas/colas padre, hidratación de clientes fuera de caché, bajas con router desconectado y migración de trabajos terminales anteriores, reintentos de perfiles/padres compartidos, pools IPv6 por revisión, idiomas regionales y respuestas tardías al cambiar pestañas. El detalle de cada fallo y su resultado está en el inventario. La [guía de pruebas reales](docs/PRUEBAS_REALES.md) contiene 85 casos para comprobar en laboratorio.
+La segunda revisión corrige además propiedad de cuentas/colas padre, hidratación de clientes fuera de caché, bajas con router desconectado y migración de trabajos terminales anteriores, reintentos de perfiles/padres compartidos, pools IPv6 por revisión, idiomas regionales y respuestas tardías al cambiar pestañas. El detalle de cada fallo y su resultado está en el inventario. La [guía de pruebas reales](docs/PRUEBAS_REALES.md) contiene 101 casos para comprobar en laboratorio.
 
 Para verificar el candidato después de instalar dependencias y construir el ZIP:
 
 ```text
-python tools/verify_plugin.py --php RUTA_PHP --node RUTA_NODE --archive dist/ros-plugin-2.4.23-candidate.zip --output dist/verification-2.4.23.json
+python tools/verify_plugin.py --php RUTA_PHP --node RUTA_NODE --archive dist/ros-plugin-2.4.25-candidate.zip --output dist/verification-2.4.25.json
 ```
 
-En Windows sin configuración PHP, añadir `--extension-dir RUTA_EXT`. El verificador ejecuta las suites y comprueba sintaxis PHP, correspondencia del código/dependencias y exclusión de datos/fixtures del instalador. El estado de validación de 2.4.23 se indica al principio. Para construirlo: `python tools/build_plugin.py --vendor-dir src/vendor --output dist/ros-plugin-2.4.23-candidate.zip`.
+En Windows sin configuración PHP, añadir `--extension-dir RUTA_EXT`. El verificador ejecuta las suites y comprueba sintaxis PHP, correspondencia del código/dependencias y exclusión de datos/fixtures del instalador. El estado de validación de 2.4.25 se indica al principio. Para construirlo: `python tools/build_plugin.py --vendor-dir src/vendor --output dist/ros-plugin-2.4.25-candidate.zip`.
 
 Si una migración queda pendiente por IP duplicadas, usar **Conflictos de IP → Revisar limpieza** para comprobar las reservas obsoletas elegibles, revisar los motivos y confirmar únicamente la selección aprobada. Los trabajos pendientes, la recuperación pendiente y el estado aplicado de una cuenta protegen sus reservas; limpiar IP no retira recursos del router. Conservar el respaldo privado generado, que permanece descargable desde **Sistema** después de recargar. Tras resolver el último conflicto, recargar el panel para completar la migración antes de reanudar las demás escrituras.
 

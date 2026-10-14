@@ -229,6 +229,7 @@ class ApiService {
     getFields(language) { return this.send('list', 'messages', 'list', language ? { language } : {}); }
     getJobs() { return this.send('list', 'jobs'); }
     getNetworkConflicts(data = {}) { return this.send('list', 'network_conflicts', 'list', data); }
+    getCrmNetworkConflicts() { return this.send('list', 'crm_network_conflicts', 'list', {}); }
     previewNetworkCleanup(serviceIds) { return this.send('cleanup', 'network_conflicts', 'preview', { serviceIds }); }
     applyNetworkCleanup(previewToken, serviceIds) { return this.send('cleanup', 'network_conflicts', 'apply', { previewToken, serviceIds }); }
     getBackups() { return this.send('list', 'backups'); }

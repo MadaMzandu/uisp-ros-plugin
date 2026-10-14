@@ -64,6 +64,18 @@ try {
     require_once 'lib/api_cache.php';
     $setupComplete = false;
     if (!$webhook && empty($_FILES)) {
+        // The monitor endpoint only reads its independent completed snapshot.
+        // Polling never initializes jobs, refreshes CRM/cache, or gates writes.
+        if ($method === 'POST' && is_object($data) && ($data->changeType ?? '') === 'list'
+            && ($data->target ?? '') === 'crm_network_conflicts' && empty($data->entity)) {
+            if (($data->action ?? 'list') !== 'list' || (isset($data->data)
+                && (!is_object($data->data) || count(get_object_vars($data->data)) !== 0))) {
+                throw new InvalidArgumentException('invalid_crm_monitor_request');
+            }
+            require_once 'lib/api_crm_network_monitor.php';
+            respond('crm_network_conflicts', false, (new ApiCrmNetworkMonitor())->read());
+            exit;
+        }
         require_once 'lib/api_panel_recovery.php';
         if (ApiPanelRecovery::cleanupRequest($method, is_object($data) ? $data : null, $_GET)) exit;
         if (ApiPanelRecovery::diagnosticRequest($method, is_object($data) ? $data : null, $_GET)) exit;

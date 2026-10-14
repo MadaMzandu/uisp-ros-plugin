@@ -4,6 +4,26 @@ const IP_BASE16=16;
 const IP_BASE10=10;
 const IP_PWR2=2;
 const IP_PAD0='0';
+
+/** Address diagnostics identify ownership without exposing arbitrary imported values. */
+final class InvalidNetworkAddress extends InvalidArgumentException
+{
+    private array $details;
+
+    public function __construct(int $requestedServiceId, int $blockingServiceId, string $source, bool $ipv6)
+    {
+        $source = in_array($source, ['input', 'reserved', 'applied'], true) ? $source : 'reserved';
+        $this->details = ['requestedServiceId' => max(0, $requestedServiceId),
+            'blockingServiceId' => max(0, $blockingServiceId), 'addressSource' => $source,
+            'addressFamily' => $ipv6 ? 'IPv6' : 'IPv4'];
+        parent::__construct('invalid_network_address: requested_service=' . $this->details['requestedServiceId']
+            . ' blocking_service=' . $this->details['blockingServiceId'] . ' source=' . $source
+            . ' family=' . $this->details['addressFamily']);
+    }
+
+    public function context(): array { return $this->details; }
+}
+
 class ApiIP
 {
     private int $len6=64;
@@ -35,7 +55,7 @@ class ApiIP
         $reserved = $this->db()->transaction(function() use($sid,$prefixes,$ipv6){
             // Check again under the write lock; another worker may have reserved this service.
             $existing=$this->db()->selectAddress($sid,$ipv6);
-            if($existing) return $existing;
+            if($existing!==null && $existing!=='') return $this->validReservation($sid, $existing, $ipv6);
             $this->loadUsedRanges($sid,$ipv6);
             $this->blockedRanges=$this->mergeRanges(array_merge($this->usedRanges,$this->excludedRanges()));
             foreach($prefixes as $prefix){
@@ -86,11 +106,19 @@ class ApiIP
     public function set($sid,$address,$ip6=false,int $defaultLength=64): void
     {
         // Manual addresses belong to the current service, never to the preceding allocation.
-        if (!$ip6 && strpos((string)$address, '/') !== false) {
-            throw new InvalidArgumentException('Manual IPv4 must contain only the client IP, without a subnet mask');
+        try {
+            if (!$ip6 && strpos((string)$address, '/') !== false) {
+                throw new InvalidArgumentException('Manual IPv4 must contain only the client IP, without a subnet mask');
+            }
+            $address=self::normalize((string)$address,(bool)$ip6,$defaultLength);
+        } catch (InvalidArgumentException $error) {
+            throw new InvalidNetworkAddress((int)$sid, (int)$sid, 'input', (bool)$ip6);
         }
-        $address=self::normalize((string)$address,(bool)$ip6,$defaultLength);
         $this->db()->transaction(function() use($sid,$address,$ip6){
+            // Reusing this exact valid reservation does not acquire any new
+            // ownership. An unrelated corrupt legacy row must not interrupt
+            // suspension/reactivation of an already assigned service.
+            if ($this->db()->selectAddress($sid,(bool)$ip6) === $address) return;
             $this->loadUsedRanges($sid,$ip6);
             if($this->overlapsUsed($this->range($address,$ip6)))
                 throw new RuntimeException('The service address or IPv6 prefix is already reserved by another service');
@@ -123,8 +151,22 @@ class ApiIP
         $found=array_search($sid,$this->assigned[$type] ?? []);
         if($found!==false) return $found;
         $found=$this->db()->selectAddress($sid,$ipv6);
+        if($found!==null && $found!=='') $found=$this->validReservation($sid,$found,(bool)$ipv6);
         if($found) $this->remember($sid,$found,$ipv6);
         return $found;
+    }
+
+    private function validReservation($sid, $address, bool $ipv6): string
+    {
+        try {
+            // A persisted IPv6 prefix must carry its own length; current
+            // router settings cannot reinterpret historical ownership.
+            if (!is_string($address) || ($ipv6 && strpos($address, '/') === false))
+                throw new InvalidArgumentException('Invalid persisted reservation');
+            return self::normalize($address, $ipv6);
+        } catch (InvalidArgumentException $error) {
+            throw new InvalidNetworkAddress((int)$sid, (int)$sid, 'reserved', $ipv6);
+        }
     }
 
     public function flush(): void
@@ -161,7 +203,7 @@ class ApiIP
                     // Invalid imported attributes cannot reserve a real network. Keep the row
                     // intact so that provisioning that service fails rather than allocating anew.
                     // Durable/applied reservations remain strict and are never released here.
-                    if($source!=='cache') throw $error;
+                    if($source!=='cache') throw new InvalidNetworkAddress((int)$sid, (int)$row['id'], 'reserved', $ipv6);
                     MyLog()->Append(['invalid_cached_address','serviceId'=>(int)$row['id'],'family'=>$ipv6 ? 'IPv6' : 'IPv4'],LOG_WARNING);
                 }
             }
@@ -173,7 +215,12 @@ class ApiIP
             foreach (myJobQueue()->reservedAddresses($ipv6) as $row) {
                 if ((int)($row['id'] ?? 0) === (int)$sid) continue;
                 $address = $row[$field] ?? $row['address'] ?? null;
-                if ($address) $this->usedRanges[] = $this->range((string)$address, $ipv6);
+                if ($address) {
+                    try { $this->usedRanges[] = $this->range((string)$address, $ipv6); }
+                    catch (InvalidArgumentException $error) {
+                        throw new InvalidNetworkAddress((int)$sid, (int)($row['id'] ?? 0), 'applied', $ipv6);
+                    }
+                }
             }
         }
     }

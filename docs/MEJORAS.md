@@ -6,6 +6,20 @@ Esta revisión reúne las modificaciones de [dhanielsnieto en el PR #89](https:/
 
 El plugin comunica UISP CRM con los MikroTik mediante la **API nativa de RouterOS**. Los puertos habituales son `8728` para API y `8729` para API con TLS. El panel permite administrar esa integración; no cambia el transporte a SSH, WinBox o REST.
 
+## Candidato 2.4.25 — aviso automático de IP duplicadas en CRM
+
+El proceso programado revisa los servicios de CRM en un monitor independiente, después de procesar los trabajos y fuera de sus bloqueos. Inicia revisiones cada cinco minutos, lee como máximo un catálogo y dos páginas de 500 servicios por ejecución y continúa las colecciones mayores en ejecuciones posteriores. Los cinco minutos indican la frecuencia de inicio; completar un catálogo grande depende de la frecuencia del proceso programado. El presupuesto de 12 segundos impide iniciar lecturas adicionales; una petición iniciada utiliza el límite de 15 segundos del transporte existente.
+
+El panel consulta únicamente ese resultado local cada 30 segundos mientras está visible. Muestra **IP duplicadas en CRM**, fecha de revisión, familias comprobadas y enlaces a los servicios y clientes. Este aviso no activa el modo consulta ni desactiva controles, trabajos, suspensiones o reactivaciones. El aviso de reservas duplicadas que impiden migrar conserva su protección independiente. Conflictos de IP permanece disponible también durante la operación normal y conserva la navegación de 2.4.24.
+
+El monitor publica una colección completa de identidades válidas, con evidencia por familia y direcciones normalizadas. Un atributo inválido o incompleto no impide detectar otros duplicados válidos: se señala como sin comprobar, y sólo se conserva su dirección anterior del mismo servicio como evidencia pendiente. Una IP retirada explícitamente se vacía al completar la revisión. Los errores de transporte o páginas inválidas conservan el último resultado como desactualizado. Se informa de cobertura parcial sin afirmar que todas las IP están libres de conflictos. El monitor guarda únicamente IDs, estado y direcciones necesarias en una base privada; no modifica reservas, caché, cola ni routers.
+
+También se corrige el error repetido «Invalid address in a reserved network»: al volver a aplicar una IP manual exactamente igual a una reserva propia válida, no se adquiere propiedad nueva ni se revisan reservas ajenas. Esto permite suspender o reactivar ese servicio aunque otra fila heredada sea inválida. Crear o cambiar una dirección conserva las comprobaciones de asignación. Las reservas propias inválidas se rechazan antes de usarlas, incluso `"0"` o IPv6 sin longitud explícita. El trabajo y el registro identifican ahora el servicio bloqueante, origen y familia mediante `invalid_network_address`, sin revelar valores arbitrarios ni credenciales.
+
+El error independiente del plan 99 (`invalid_speed` en `uploadSpeed`) sigue indicando un valor de CRM que debe revisarse. El catálogo anterior se conserva; esta corrección no inventa velocidades ni cambia planes para ocultar ese error.
+
+Validación 2.4.25 aprobada: **34 suites aisladas**, sintaxis de **46 archivos PHP propios** y verificación del instalador de 358 entradas, 125 archivos propios y 13 dependencias fijadas. Informe: `dist/verification-2.4.25.json`. SHA-256: `e12899924c05f8c739deb30004d5430cd0ee6c4113683579285fd7cd1c9f60e6`. Se comprobó en navegador el aviso independiente, las operaciones habilitadas, los enlaces y las incidencias de dirección con datos sintéticos. Las regresiones verifican la continuidad de servicios ya asignados y la conservación segura de evidencia parcial. La integración de producción mantiene su comprobación específica.
+
 ## Candidato 2.4.24 — conservar la navegación y contrastar las IP actuales
 
 Recargar el panel conserva la sección abierta y la posición de la lista en la misma pestaña. En Conflictos de IP se guarda también un ID de servicio como referencia para volver al propietario visible, incluso si cambió la altura de una fila. La restauración funciona con el desplazamiento de escritorio y móvil, espera la carga de datos y evita que respuestas anteriores desplacen una sección distinta. Si Conflictos de IP dejó de estar disponible, vuelve a Dispositivos. Sólo se guarda navegación en la sesión del navegador; verificaciones, nombres, direcciones, credenciales y autorizaciones de limpieza no se conservan al recargar.
@@ -92,7 +106,7 @@ Validación 2.4.20 aprobada: **29 suites aisladas**, sintaxis de **41 archivos P
 - Se conserva la evidencia de una creación parcial del perfil de suspensión. La limpieza verifica un perfil existente antes de modificar cuentas/sesiones; si no coincide con los valores congelados, se mantiene el fallo. Un perfil ausente no se recrea durante esta limpieza, y el existente no se sobrescribe.
 - El ciclo de conexiones no cambia: cada lote de servicio abre y cierra su conexión API; las consultas y limpiezas pueden abrir otras. Los logs de login/logout de API no equivalen por sí solos a desconectar PPP. No se incorpora una conexión compartida entre lotes.
 
-La validación de 2.4.17 pasó 27 suites, 39 archivos PHP propios y un ZIP de 351 entradas, 118 archivos propios y 13 dependencias fijadas. Su informe y hash históricos se conservan más abajo; el estado de validación del candidato actual 2.4.24 se indica arriba.
+La validación de 2.4.17 pasó 27 suites, 39 archivos PHP propios y un ZIP de 351 entradas, 118 archivos propios y 13 dependencias fijadas. Su informe y hash históricos se conservan más abajo; el estado de validación del candidato actual 2.4.25 se indica arriba.
 
 ## Cambios aportados en el PR #89
 
@@ -319,7 +333,7 @@ La evidencia real posterior identificó tokens ausentes y una URL pegada como se
 
 ## Preparación para instalar y validar
 
-La versión actual es 2.4.24; su estado de validación se indica al principio. La confirmación de recuperación de planes archivados corresponde a 2.4.19 y conserva su alcance histórico. Ante IP duplicadas, consultar las seis vistas y revisar los propietarios. **Revisar limpieza** permite comprobar una selección de reservas obsoletas y confirmar sólo las elegibles con respaldo privado; un trabajo pendiente, una recuperación pendiente o el estado aplicado de una cuenta impiden retirar sus reservas. El respaldo generado permanece descargable desde **Sistema**, incluso después de recargar. Resolver los conflictos restantes y recargar permite completar la migración; las demás escrituras y el aprovisionamiento siguen pausados hasta entonces. La [guía de pruebas reales](PRUEBAS_REALES.md) contiene 93 escenarios para las comprobaciones restantes.
+La versión actual es 2.4.25; su estado de validación se indica al principio. La confirmación de recuperación de planes archivados corresponde a 2.4.19 y conserva su alcance histórico. Ante IP duplicadas, consultar las seis vistas y revisar los propietarios. **Revisar limpieza** permite comprobar una selección de reservas obsoletas y confirmar sólo las elegibles con respaldo privado; un trabajo pendiente, una recuperación pendiente o el estado aplicado de una cuenta impiden retirar sus reservas. El respaldo generado permanece descargable desde **Sistema**, incluso después de recargar. Resolver los conflictos restantes y recargar permite completar la migración; las demás escrituras y el aprovisionamiento siguen pausados hasta entonces. La [guía de pruebas reales](PRUEBAS_REALES.md) contiene 101 escenarios para las comprobaciones restantes.
 
 ### Resultado histórico de 2.4.17
 
