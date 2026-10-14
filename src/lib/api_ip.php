@@ -24,6 +24,22 @@ final class InvalidNetworkAddress extends InvalidArgumentException
     public function context(): array { return $this->details; }
 }
 
+/** Valid collisions report their real owner without exposing imported field values. */
+final class NetworkAddressConflict extends RuntimeException
+{
+    private array $details;
+    public function __construct(int $requestedServiceId, int $blockingServiceId, string $source, bool $ipv6)
+    {
+        $this->details = ['requestedServiceId'=>$requestedServiceId, 'blockingServiceId'=>$blockingServiceId,
+            'addressSource'=>in_array($source, ['reserved','cache','applied'], true) ? $source : 'reserved',
+            'addressFamily'=>$ipv6 ? 'IPv6' : 'IPv4'];
+        parent::__construct('network_address_conflict: requested_service=' . $requestedServiceId
+            . ' blocking_service=' . $blockingServiceId . ' source=' . $this->details['addressSource']
+            . ' family=' . $this->details['addressFamily']);
+    }
+    public function context(): array { return $this->details; }
+}
+
 class ApiIP
 {
     private int $len6=64;
@@ -31,7 +47,9 @@ class ApiIP
     private ?object $_conf=null;
     private array $assigned=[];
     private array $usedRanges=[];
+    private array $rangeOwners=[];
     private array $blockedRanges=[];
+    private array $allocationProofs=[];
     private bool $readOnly;
     private bool $ignoreCurrentReservation;
 
@@ -42,13 +60,14 @@ class ApiIP
         $this->ignoreCurrentReservation = $readOnly && $ignoreCurrentReservation;
     }
 
-    public function assign($sid,$device=[],$ipv6=false,?object $config=null): ?string
+    public function assign($sid,$device=[],$ipv6=false,?object $config=null,?array $reset=null): ?string
     {
         // A queued service carries its intended pools/exclusions with its other settings.
         // A caller without a snapshot must read current configuration, not the last job's.
         $this->_conf=$config;
         $this->ipv6=(bool)$ipv6;
         $this->len6=64;
+        // A global PPP pool can contain both families; each allocation uses its own CIDRs.
         $pool=$this->conf()->ppp_pool ?? null;
         if($device) $device=(object)(array)$device;
         if(is_object($device)){
@@ -59,19 +78,68 @@ class ApiIP
             $this->len6=(int)$length;
             $pool=$ipv6 ? ($device->pool6 ?? null) : ($device->pool ?? null);
         }
-        if(!$pool) return null;
-        $prefixes=preg_split('/\s*,\s*/',trim($pool));
-        $reserve = function() use($sid,$prefixes,$ipv6){
+        $prefixes=[];
+        foreach ($pool ? preg_split('/\s*,\s*/',trim((string)$pool)) : [] as $prefix) {
+            $parts=explode('/',$prefix);
+            $family6=filter_var($parts[0],FILTER_VALIDATE_IP,FILTER_FLAG_IPV6)!==false;
+            $family4=filter_var($parts[0],FILTER_VALIDATE_IP,FILTER_FLAG_IPV4)!==false;
+            if (count($parts)!==2 || !($family4 || $family6) || !ctype_digit($parts[1])
+                || (int)$parts[1]<1 || (int)$parts[1]>($family6 ? 128 : 32))
+                throw new InvalidArgumentException('Invalid address pool configuration');
+            if ($family6===(bool)$ipv6) $prefixes[]=$prefix;
+        }
+        $reset=$this->resetIntent($reset, (bool)$ipv6);
+        $reserve = function() use($sid,$prefixes,$ipv6,$reset,$pool,$device){
             // Check again under the write lock; another worker may have reserved this service.
-            $existing=$this->ignoreCurrentReservation ? null : $this->db()->selectAddress($sid,$ipv6);
-            if($existing!==null && $existing!=='') return $this->validReservation($sid, $existing, $ipv6);
+            $stored=$this->db()->selectAddress($sid,$ipv6);
+            $existing=$this->ignoreCurrentReservation ? null : $stored;
+            if ($existing!==null && $existing!=='') {
+                try { $existing=$this->validReservation($sid, $existing, $ipv6); }
+                catch (InvalidNetworkAddress $error) {
+                    if ($reset===null) throw $error;
+                    $existing=null;
+                }
+            }
+            $intent=$reset;
+            if ($intent===null && $existing && $prefixes && !$this->withinPools($existing,$prefixes)) {
+                // Moving an automatic account between pools must not carry its former router's IP.
+                $intent=['generation'=>substr(hash('sha256',json_encode([(int)$sid,(bool)$ipv6,$existing,
+                    $pool,(array)$device])),0,32),'previous'=>$existing];
+            }
+            if ($intent!==null) {
+                $receipt=$this->allocationReceipt((int)$sid,(bool)$ipv6,$intent);
+                $receiptCurrent=$existing;
+                if ($this->ignoreCurrentReservation && $receipt && $stored!==null && $stored!=='') {
+                    try { $receiptCurrent=$this->validReservation($sid,$stored,(bool)$ipv6); }
+                    catch (InvalidNetworkAddress $error) { $receiptCurrent=null; }
+                }
+                if ($receipt && $receiptCurrent===$receipt['value'] && $this->withinPools($receiptCurrent,$prefixes)) {
+                    $this->allocationProofs[(int)$sid][$ipv6 ? 'address6' : 'address']=$receipt;
+                    return $receiptCurrent;
+                }
+            } elseif ($existing) return $existing;
+            if (!$prefixes) return null;
             $this->loadUsedRanges($sid,$ipv6);
+            if ($intent!==null) {
+                // Own applied/prepared resources remain occupied until the queued change succeeds.
+                foreach ([$existing,$intent['previous']] as $previous) if ($previous)
+                    $this->usedRanges[]=$this->range($previous,$ipv6);
+                if (is_file('data/jobs.db')) foreach (myJobQueue()->reservedAddresses($ipv6) as $row) {
+                    if ((int)($row['id']??0)!==(int)$sid) continue;
+                    $previous=$row[$ipv6 ? 'address6' : 'address'] ?? $row['address'] ?? null;
+                    if ($previous) $this->usedRanges[]=$this->range((string)$previous,$ipv6);
+                }
+            }
             $this->blockedRanges=$this->mergeRanges(array_merge($this->usedRanges,$this->excludedRanges()));
             foreach($prefixes as $prefix){
                 $address=$this->find_unused($prefix);
                 if(!$address) continue;
                 if($ipv6) $address.='/'.$this->len6;
                 $this->persist($sid,$address,$ipv6);
+                $proof=['value'=>$address,'previous'=>$intent['previous']??null,
+                    'generation'=>$intent['generation']??bin2hex(random_bytes(16))];
+                if (!$this->readOnly) $this->persistAllocation((int)$sid,(bool)$ipv6,$proof);
+                if (!$this->readOnly) $this->allocationProofs[(int)$sid][$ipv6 ? 'address6' : 'address']=$proof;
                 return $address;
             }
             return null;
@@ -82,6 +150,54 @@ class ApiIP
             if (!$this->readOnly) MyLog()->Append(['ip_assigned', "address: $reserved"]);
         }
         return $reserved;
+    }
+
+    /** Receipts describe actual pool selections, never inferred/manual address reuse. */
+    public function allocationProofs(int $serviceId): array { return $this->allocationProofs[$serviceId] ?? []; }
+    public function beginService(int $serviceId): void
+    {
+        unset($this->allocationProofs[$serviceId]);
+        foreach (['v4','v6'] as $family) foreach ($this->assigned[$family]??[] as $address=>$sid)
+            if ((int)$sid===$serviceId) unset($this->assigned[$family][$address]);
+    }
+
+    private function resetIntent(?array $reset, bool $ipv6): ?array
+    {
+        if ($reset===null) return null;
+        if (!is_string($reset['generation']??null) || !preg_match('/^[a-f0-9]{32}$/D',$reset['generation']))
+            throw new InvalidArgumentException('Invalid address reset generation');
+        $previous=$reset['previous']??null;
+        if ($previous!==null && $previous!=='') {
+            try { $previous=self::normalize((string)$previous,$ipv6); }
+            catch (InvalidArgumentException $error) { $previous=null; }
+        } else $previous=null;
+        return ['generation'=>$reset['generation'],'previous'=>$previous];
+    }
+
+    private function withinPools(string $address,array $prefixes): bool
+    {
+        foreach ($prefixes as $prefix) if ($this->in_subnet($address,$prefix)) return true;
+        return false;
+    }
+
+    private function allocationReceipt(int $sid,bool $ipv6,array $intent): ?array
+    {
+        if (!$this->db()->singleQuery("SELECT 1 FROM sqlite_master WHERE type='table' AND name='pool_allocations'")) return null;
+        $rows=$this->db()->selectCustom('SELECT value,previous,generation FROM pool_allocations WHERE service_id=:id AND family=:family',
+            [':id'=>$sid,':family'=>$ipv6 ? 6 : 4]) ?? [];
+        $receipt=$rows[0]??null;
+        if (!$receipt || ($receipt['generation']??null)!==$intent['generation'] || ($receipt['previous']??null)!==$intent['previous']) return null;
+        try { $receipt['value']=self::normalize((string)$receipt['value'],$ipv6); }
+        catch (InvalidArgumentException $error) { return null; }
+        return $receipt['value']===$intent['previous'] ? null : $receipt;
+    }
+
+    private function persistAllocation(int $sid,bool $ipv6,array $proof): void
+    {
+        $this->db()->exec('CREATE TABLE IF NOT EXISTS pool_allocations (service_id INTEGER NOT NULL,family INTEGER NOT NULL,value TEXT NOT NULL,previous TEXT,generation TEXT NOT NULL,PRIMARY KEY(service_id,family))');
+        if (!$this->db()->execute('INSERT INTO pool_allocations(service_id,family,value,previous,generation) VALUES(:id,:family,:value,:previous,:generation) ON CONFLICT(service_id,family) DO UPDATE SET value=excluded.value,previous=excluded.previous,generation=excluded.generation',
+            [':id'=>$sid,':family'=>$ipv6 ? 6 : 4,':value'=>$proof['value'],':previous'=>$proof['previous'],':generation'=>$proof['generation']]))
+            throw new RuntimeException('Failed to retain pool allocation receipt');
     }
 
     public function local(): string
@@ -130,8 +246,8 @@ class ApiIP
             // suspension/reactivation of an already assigned service.
             if (!$this->ignoreCurrentReservation && $this->db()->selectAddress($sid,(bool)$ip6) === $address) return;
             $this->loadUsedRanges($sid,$ip6);
-            if($this->overlapsUsed($this->range($address,$ip6)))
-                throw new RuntimeException('The service address or IPv6 prefix is already reserved by another service');
+            $owner=$this->conflictingOwner($this->range($address,$ip6));
+            if($owner!==null) throw new NetworkAddressConflict((int)$sid,$owner['id'],$owner['source'],(bool)$ip6);
             $this->persist($sid,$address,$ip6);
         };
         if ($this->readOnly) $reserve(); else $this->db()->transaction($reserve);
@@ -186,12 +302,14 @@ class ApiIP
     {
         // Both families have already been reserved atomically, including IPv6-only services.
         $this->assigned=[];
+        $this->allocationProofs=[];
     }
 
     private function loadUsedRanges($sid,bool $ipv6): void
     {
         require_once __DIR__ . '/api_job_queue.php';
         $this->usedRanges=[];
+        $this->rangeOwners=[];
         $field=$ipv6 ? 'address6' : 'address';
         $devices=[];
         foreach ($this->db()->selectAllFromTable('devices') ?? [] as $device) $devices[(int)$device['id']]=$device;
@@ -211,7 +329,9 @@ class ApiIP
                         if ($length==='') $length=64;
                         $address=self::normalize((string)$address,$ipv6,(int)$length);
                     }
-                    $this->usedRanges[]=$this->range($address,$ipv6);
+                    $range=$this->range($address,$ipv6);
+                    $this->usedRanges[]=$range;
+                    $this->rangeOwners[]=['range'=>$range,'id'=>(int)$row['id'],'source'=>$source];
                 } catch (InvalidArgumentException $error) {
                     // A malformed peer string cannot occupy a numeric IP range.
                     // Preserve its row for review and reject it when that service
@@ -235,7 +355,11 @@ class ApiIP
                 if ((int)($row['id'] ?? 0) === (int)$sid) continue;
                 $address = $row[$field] ?? $row['address'] ?? null;
                 if ($address) {
-                    try { $this->usedRanges[] = $this->range((string)$address, $ipv6); }
+                    try {
+                        $range=$this->range((string)$address, $ipv6);
+                        $this->usedRanges[]=$range;
+                        $this->rangeOwners[]=['range'=>$range,'id'=>(int)($row['id']??0),'source'=>'applied'];
+                    }
                     catch (InvalidArgumentException $error) {
                         throw new InvalidNetworkAddress((int)$sid, (int)($row['id'] ?? 0), 'applied', $ipv6);
                     }
@@ -265,6 +389,15 @@ class ApiIP
             if(gmp_cmp($candidate[0],$used[1])<=0 && gmp_cmp($candidate[1],$used[0])>=0) return true;
         }
         return false;
+    }
+
+    private function conflictingOwner(array $candidate): ?array
+    {
+        foreach ($this->rangeOwners as $owner) {
+            $range=$owner['range'];
+            if (gmp_cmp($candidate[0],$range[1])<=0 && gmp_cmp($candidate[1],$range[0])>=0) return $owner;
+        }
+        return null;
     }
 
     public function in_subnet($address,$subnet): bool

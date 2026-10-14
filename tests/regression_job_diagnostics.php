@@ -53,6 +53,10 @@ try {
         ['invalid_network_address: requested_service=422 blocking_service=422 source=input family=IPv6','invalid_network_address'],
         ['invalid_network_address: requested_service=423 blocking_service=798 source=applied family=IPv4','invalid_network_address'],
         ['invalid_network_address: requested_service=424 blocking_service=PRIVATE-OWNER source=reserved family=IPv4','provisioning_failed'],
+        ['network_address_conflict: requested_service=425 blocking_service=799 source=reserved family=IPv4','network_address_conflict'],
+        ['network_address_conflict: requested_service=426 blocking_service=798 source=cache family=IPv6','network_address_conflict'],
+        ['network_address_conflict: requested_service=427 blocking_service=797 source=applied family=IPv4','network_address_conflict'],
+        ['network_address_conflict: requested_service=428 blocking_service=PRIVATE-OWNER source=reserved family=IPv4','provisioning_failed'],
         ['ARBITRARY-EXCEPTION-VALUE username=PRIVATE-SERVICE-USER password=PRIVATE-SERVICE-PASSWORD https://fixture.invalid/?token=PRIVATE-TOKEN-VALUE','provisioning_failed'],
     ];
     $firstKey=null;
@@ -69,8 +73,8 @@ try {
         diagnosticsCheck($results[$key]['success']===false && $pending['state']==='pending' && $pending['error']===$message
             && $queue->appliedSnapshot(410+$index)===[], 'Failure logging altered the stored failure or applied state');
         $allowed=['event','jobId','serviceId','deviceId','operation','attempts','nextRetry','errorCode'];
-        if ($code==='invalid_network_address') {
-            preg_match('/requested_service=([0-9]+) blocking_service=([0-9]+) source=(input|reserved|applied) family=(IPv4|IPv6)$/D',$message,$context);
+        if (in_array($code,['invalid_network_address','network_address_conflict'],true)) {
+            preg_match('/requested_service=([0-9]+) blocking_service=([0-9]+) source=(input|reserved|cache|applied) family=(IPv4|IPv6)$/D',$message,$context);
             diagnosticsCheck($entry['requestedServiceId']===(int)$context[1] && $entry['blockingServiceId']===(int)$context[2]
                 && $entry['addressSource']===$context[3] && $entry['addressFamily']===$context[4],
                 'Reservation failure lost its blocking service, source or family');

@@ -86,9 +86,17 @@ class ApiAttributes
         $fill = array_fill_keys(['address','address6'],'&^%#@');
         $net = array_intersect_key($values,$fill);
         $map = array_diff_key($values,$fill);
-        if(preg_grep("#[\d.:a-fA-F]+#",$net)){
-            $map['network'] = $net ;
+        $network = [];
+        foreach (['address'=>'ip_addr_attr','address6'=>'ip_addr6_attr'] as $field=>$setting) {
+            $key = $this->conf()->{$setting} ?? null;
+            // extract() receives a complete attributes collection. A configured
+            // family omitted or explicitly emptied in that collection is a real
+            // clear; it must survive the desired-state merge with an older cache.
+            // Keep malformed nonempty values too, so strict address validation
+            // rejects them instead of silently treating them as removal.
+            if (is_string($key) && trim($key) !== '') $network[$field] = $net[$field] ?? null;
         }
+        if ($network) $map['network'] = $network;
         return $map ;
     }
 

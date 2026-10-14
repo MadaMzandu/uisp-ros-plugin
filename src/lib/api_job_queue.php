@@ -761,6 +761,29 @@ class ApiJobQueue
         }
         unset($snapshot['error'], $snapshot['last'], $snapshot['batch'], $snapshot['jobId']);
         $snapshot['action'] = $operation;
+        if ($operation === 'update') {
+            // A thin follow-up event can supersede an unstarted address-reset
+            // intent. Carry that one-time generation until it is applied; a new
+            // explicit fixed address replaces it instead of reviving it later.
+            $pending = $this->query("SELECT payload FROM jobs WHERE service_id=:sid AND operation='update'
+                AND status IN ('pending','running') ORDER BY version DESC LIMIT 1", ['sid'=>$sid]);
+            $previous = $pending ? $this->payload($pending[0]) : [];
+            if ((int)($previous['clientId'] ?? 0) === (int)($snapshot['clientId'] ?? -1)) {
+                foreach (['address','address6'] as $field) {
+                    $desired = array_key_exists($field,$snapshot['network'] ?? []) ? $snapshot['network'][$field] : ($snapshot[$field] ?? null);
+                    $reset = $previous['_network_reset'][$field] ?? null;
+                    if ($desired !== null && $desired !== '') { unset($snapshot['_network_reset'][$field]); continue; }
+                    if (!is_array($reset) || !is_string($reset['generation'] ?? null) || preg_match('/^[a-f0-9]{32}$/D',$reset['generation']) !== 1
+                        || !is_string($reset['previous'] ?? null) || trim($reset['previous']) === '') continue;
+                    $incoming = $snapshot['_network_reset'][$field] ?? null;
+                    if ($incoming !== null && (!is_array($incoming) || ($incoming['previous'] ?? null) !== $reset['previous'])) continue;
+                    // UISP can deliver paired events for the same removal. The
+                    // same previous address shares one allocation generation.
+                    $snapshot['_network_reset'][$field] = $reset;
+                }
+            }
+            if (empty($snapshot['_network_reset'])) unset($snapshot['_network_reset']);
+        }
         if (isset($snapshot['_prior_network']) && !isset($snapshot['_prior_identity'])) {
             $applied = $this->query('SELECT applied_identity FROM service_versions WHERE service_id=:sid', ['sid' => $sid]);
             $snapshot['_prior_identity'] = $applied[0]['applied_identity'] ?? $this->identity($snapshot);
@@ -790,8 +813,15 @@ class ApiJobQueue
             ['sid' => $sid, 'version' => $version]);
         // The latest desired state supersedes an unstarted update; cleanup operations remain ordered barriers.
         if ($operation === 'update' && ($legacyKey === null || str_starts_with($legacyKey, 'event:'))) {
-            foreach ($this->query("SELECT id,payload FROM jobs WHERE service_id=:sid AND operation='update' AND status='pending'", ['sid' => $sid]) as $pending) {
-                if (!$this->prepared($this->payload($pending))) {
+            foreach ($this->query("SELECT id,payload,cleanup_done FROM jobs WHERE service_id=:sid AND operation='update' AND status='pending'", ['sid' => $sid]) as $pending) {
+                $previousSnapshot = $this->payload($pending);
+                // A completed old-account cleanup is already durably confirmed.
+                // If no replacement commands were frozen before a later failure,
+                // a newer desired state can replace this stale intent without
+                // replaying cleanup or bypassing any possible replacement writes.
+                $replaceable = !isset($previousSnapshot['_commands'])
+                    && (!isset($previousSnapshot['_cleanup']) || (int)$pending['cleanup_done'] === 1);
+                if ($replaceable) {
                     $this->execute("UPDATE jobs SET status='superseded',updated=:now WHERE id=:id AND status='pending'",
                         ['id' => $pending['id'], 'now' => date('c')]);
                 }
@@ -909,7 +939,7 @@ class ApiJobQueue
 
     private function safeFailureCode(string $error): string
     {
-        if ($this->networkFailureContext($error)) return 'invalid_network_address';
+        if ($this->networkFailureContext($error)) return strpos($error, 'network_address_conflict:') === 0 ? 'network_address_conflict' : 'invalid_network_address';
         foreach (['router_session_profile_missing','router_session_profile_lookup_failed',
             'router_session_profile_ambiguous','router_session_profile_invalid_identity',
             'router_session_profile_bootstrap_failed','router_session_profile_bootstrap_invalid_configuration',
@@ -938,12 +968,14 @@ class ApiJobQueue
 
     private function networkFailureContext(string $error): array
     {
-        if (!preg_match('/^invalid_network_address: requested_service=([0-9]+) blocking_service=([0-9]+) source=(input|reserved|applied) family=(IPv4|IPv6)$/D', $error, $match)) return [];
-        $requested = filter_var($match[1], FILTER_VALIDATE_INT, ['options'=>['min_range'=>0]]);
-        $blocking = filter_var($match[2], FILTER_VALIDATE_INT, ['options'=>['min_range'=>0]]);
+        if (!preg_match('/^(invalid_network_address|network_address_conflict): requested_service=([0-9]+) blocking_service=([0-9]+) source=(input|reserved|cache|applied) family=(IPv4|IPv6)$/D', $error, $match)) return [];
+        if ($match[1] === 'invalid_network_address' && $match[4] === 'cache'
+            || $match[1] === 'network_address_conflict' && $match[4] === 'input') return [];
+        $requested = filter_var($match[2], FILTER_VALIDATE_INT, ['options'=>['min_range'=>0]]);
+        $blocking = filter_var($match[3], FILTER_VALIDATE_INT, ['options'=>['min_range'=>0]]);
         if ($requested === false || $blocking === false) return [];
         return ['requestedServiceId'=>$requested, 'blockingServiceId'=>$blocking,
-            'addressSource'=>$match[3], 'addressFamily'=>$match[4]];
+            'addressSource'=>$match[4], 'addressFamily'=>$match[5]];
     }
 
     private function releaseApplied(int $serviceId, string $identity): void

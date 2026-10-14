@@ -74,6 +74,69 @@ try {
         return true;
     });
 
+    // A failed replacement may already have confirmed its old-account cleanup.
+    // A new desired state can replace it only before replacement commands exist.
+    $previousCleanup=['id'=>7,'clientId'=>7,'device'=>10,'username'=>'previous-cleanup'];
+    $previousCleanupKey=$queue->enqueue($previousCleanup); $queue->run([$previousCleanupKey],fn():bool=>true);
+    $staleReplacement=['id'=>7,'clientId'=>7,'device'=>20,'username'=>'stale-replacement'];
+    $staleReplacementKey=$queue->enqueue($staleReplacement); $cleanupExecutions=0;
+    $queue->run([$staleReplacementKey],function(array $snapshot,string $operation,array $job,ApiJobQueue $store) use($previousCleanup,&$cleanupExecutions):bool {
+        $snapshot['_cleanup']=$previousCleanup;
+        $store->freezePrepared($job,$snapshot);
+        $cleanupExecutions++;
+        $store->confirmCleanup($job,$previousCleanup);
+        throw new RuntimeException('Fixture address validation failed after confirmed cleanup');
+    });
+    checkJobs($queue->appliedSnapshot(7)===[],'Confirmed cleanup did not release the old applied identity');
+    $currentReplacementKey=$queue->enqueue(array_replace($staleReplacement,['username'=>'current-replacement']));
+    $replacementStates=$queue->selectionStatus([$staleReplacementKey,$currentReplacementKey]);
+    checkJobs($replacementStates[$staleReplacementKey]['state']==='superseded'
+        && $replacementStates[$currentReplacementKey]['blockedBy']===null,'Completed cleanup with no replacement commands blocked newer desired state');
+    $replacementExecutions=[];
+    $queue->runSelected([$currentReplacementKey],function(array $snapshot) use(&$replacementExecutions):bool {
+        checkJobs(!isset($snapshot['_cleanup']),'A superseded completed cleanup was replayed by the fresh intent');
+        $replacementExecutions[]=$snapshot['username']; return true;
+    });
+    checkJobs($cleanupExecutions===1 && $replacementExecutions===['current-replacement']
+        && $queue->appliedSnapshot(7)['username']==='current-replacement','Fresh replacement retried the obsolete intent or its completed cleanup');
+
+    // An unfinished cleanup is still an execution barrier.
+    $unfinished=['id'=>8,'clientId'=>8,'device'=>20,'username'=>'unfinished-replacement'];
+    $unfinishedKey=$queue->enqueue($unfinished);
+    $queue->run([$unfinishedKey],function(array $snapshot,string $operation,array $job,ApiJobQueue $store):bool {
+        $snapshot['_cleanup']=['id'=>8,'clientId'=>8,'device'=>10,'username'=>'unfinished-old-account'];
+        $store->freezePrepared($job,$snapshot); return false;
+    });
+    $afterUnfinished=$queue->enqueue(array_replace($unfinished,['username'=>'after-unfinished']));
+    $unfinishedStates=$queue->selectionStatus([$unfinishedKey,$afterUnfinished]);
+    checkJobs($unfinishedStates[$unfinishedKey]['state']==='pending' && $unfinishedStates[$afterUnfinished]['blockedBy']===$unfinishedKey,
+        'A newer intent bypassed old-account cleanup without confirmation');
+    $unfinishedExecutions=[];
+    $queue->runSelected([$afterUnfinished],function(array $snapshot) use(&$unfinishedExecutions):bool {
+        $unfinishedExecutions[]=$snapshot['username']; return true;
+    });
+    checkJobs($unfinishedExecutions===['unfinished-replacement','after-unfinished'],'Unfinished cleanup lost prerequisite ordering');
+
+    // Frozen replacement commands remain a barrier even after cleanup is done.
+    $preparedReplacement=['id'=>9,'clientId'=>9,'device'=>20,'username'=>'prepared-replacement'];
+    $preparedReplacementKey=$queue->enqueue($preparedReplacement);
+    $queue->run([$preparedReplacementKey],function(array $snapshot,string $operation,array $job,ApiJobQueue $store):bool {
+        $cleanup=['id'=>9,'clientId'=>9,'device'=>10,'username'=>'prepared-old-account'];
+        $snapshot['_cleanup']=$cleanup; $store->freezePrepared($job,$snapshot); $store->confirmCleanup($job,$cleanup);
+        $snapshot['_commands']=[['path'=>'/ppp/secret','name'=>'prepared-replacement','remote-address'=>'192.0.2.49']];
+        $store->freezePrepared($job,$snapshot); return false;
+    });
+    $afterPrepared=$queue->enqueue(array_replace($preparedReplacement,['username'=>'after-prepared']));
+    checkJobs($queue->selectionStatus([$afterPrepared])[$afterPrepared]['blockedBy']===$preparedReplacementKey,
+        'Confirmed cleanup allowed a newer intent to bypass possibly written replacement commands');
+    $preparedExecutions=[];
+    $queue->runSelected([$afterPrepared],function(array $snapshot,string $operation,array $job,ApiJobQueue $store) use(&$preparedExecutions):bool {
+        if ($snapshot['username']==='prepared-replacement') checkJobs($store->cleanupCompleted($job)
+            && $snapshot['_commands'][0]['remote-address']==='192.0.2.49','Retry lost frozen replacement commands or cleanup confirmation');
+        $preparedExecutions[]=$snapshot['username']; return true;
+    });
+    checkJobs($preparedExecutions===['prepared-replacement','after-prepared'],'Prepared replacement barrier lost its ordering');
+
     // A newer B intent prevents an older prepared A from absorbing a later request for A.
     $firstA=['id'=>5,'username'=>'intent-cycle','status'=>1,'password'=>'cycle-secret'];
     $firstAKey=$queue->enqueue($firstA);
@@ -307,6 +370,7 @@ PHP);
 <?php
 class MtData {
     private array $service = [];
+    public function poolAllocations(): array { return []; }
     public function validateBeforeCleanup(array $service,array $plan,bool $releasesReservation): void {}
     public static function safePreparedCommands(array $service,array $commands,string $operation): array { return $commands; }
     public function set_data($service,$plan): void { $this->service=$service; }

@@ -2,6 +2,18 @@
 
 [Complete English changelog](docs/CHANGELOG_EN.md) · [Texto completo para el PR](docs/PR_DESCRIPTION.md) · [Webhook setup and rationale](docs/WEBHOOK_SETUP_EN.md) · [Mejoras en español](docs/MEJORAS.md)
 
+## Candidato 2.4.33 — IP nueva al vaciar el atributo y al cambiar de Site
+
+Un atributo IP vaciado en UISP sustituye el valor anterior de la caché. El plugin solicita otra dirección del pool efectivo del Site; conserva esa elección en reintentos y eventos duplicados. Las familias IPv4/IPv6 se resuelven juntas antes de preparar cambios del router. Una sincronización posterior también detecta el vaciado aunque no haya llegado el webhook, usando el último valor fijo confirmado.
+
+Si una IP explícita está fuera del pool de destino y pertenece al pool de otro Site configurado, el plugin comprueba el servicio, cliente, Site, atributo e IP actuales en UISP. Antes de vaciar sólo ese atributo, valida que pueda preparar el reemplazo del pool de destino; confirma el vaciado mediante una nueva lectura. Una IP manual fuera de todos los pools no se cambia por esta regla. No se eliminan reservas de otros servicios. Si falta capacidad o la evidencia cambió, conserva la cuenta anterior y muestra el fallo para ese servicio.
+
+La exportación programada de IP ya no sobrescribe un valor distinto encontrado en UISP. Sólo publica en un campo vacío una asignación nueva del pool con prueba aplicada y vigente, una vez por generación; una respuesta incierta no permite repetir ciegamente la escritura. Las correcciones de CRM pendientes de confirmación conservan su protección. Un conflicto válido muestra el servicio que reserva la dirección y su origen, sin confundirlo con una reserva malformada.
+
+Una sincronización nueva sustituye una intención pendiente obsoleta si todavía no preparó comandos nuevos y su limpieza anterior ya está confirmada; no repite esa limpieza. Las limpiezas incompletas y los comandos preparados conservan su orden. Después de actualizar, volver a sincronizar el servicio o router crea la intención actual; reintentar un trabajo antiguo conserva su instantánea anterior.
+
+Validación 2.4.33 aprobada: **45 suites aisladas**, sintaxis de **54 archivos PHP propios** y verificación de 366 entradas, 133 archivos propios y 13 dependencias fijadas. Informe actual: `dist/verification-2.4.33.json`. SHA-256: `6aa920f75a8b03745711e9d2f07d294f03bbd4ff218fe022d4c6f177e4163384`. Las pruebas usan datos sintéticos, bases temporales y transportes simulados/locales; no se modificaron UISP ni routers de producción.
+
 ## Candidato 2.4.32 — revisión automática y salida explícita de recuperaciones
 
 El proceso programado comprueba reservas malformadas y recuperaciones antes de ejecutar la cola, fuera de sus bloqueos de trabajo. Revisa como máximo un servicio/familia y una recuperación por pasada, con presupuesto de 12 segundos y turnos persistentes para no atascarse en el primer caso. Sólo aplica correcciones locales demostrables contra UISP y consolida copias redundantes o recursos observados ausentes, con respaldo y revalidación. No fuerza descartes, no envía PATCH a CRM ni desconecta cuentas desde esa revisión. Los casos sin evidencia suficiente se conservan y los fallos de consulta no abortan la ejecución de otros trabajos.
@@ -258,7 +270,7 @@ Para verificar el candidato después de instalar dependencias y construir el ZIP
 python tools/verify_plugin.py --php RUTA_PHP --node RUTA_NODE --archive dist/ros-plugin-2.4.31-candidate.zip --output dist/verification-2.4.31.json
 ```
 
-En Windows sin configuración PHP, añadir `--extension-dir RUTA_EXT`. El verificador ejecuta las suites y comprueba sintaxis PHP, correspondencia del código/dependencias y exclusión de datos/fixtures del instalador. El estado de validación de 2.4.32 se indica al principio. Para construirlo: `python tools/build_plugin.py --vendor-dir src/vendor --output dist/ros-plugin-2.4.32-candidate.zip`.
+En Windows sin configuración PHP, añadir `--extension-dir RUTA_EXT`. El verificador ejecuta las suites y comprueba sintaxis PHP, correspondencia del código/dependencias y exclusión de datos/fixtures del instalador. El estado de validación de 2.4.33 se indica al principio. Para construirlo: `python tools/build_plugin.py --vendor-dir src/vendor --output dist/ros-plugin-2.4.33-candidate.zip`.
 
 Si una migración queda pendiente por IP duplicadas, usar **Conflictos de IP → Revisar limpieza** para comprobar las reservas obsoletas elegibles, revisar los motivos y confirmar únicamente la selección aprobada. Los trabajos pendientes, la recuperación pendiente y el estado aplicado de una cuenta protegen sus reservas; limpiar IP no retira recursos del router. Conservar el respaldo privado generado, que permanece descargable desde **Sistema** después de recargar. Tras resolver el último conflicto, recargar el panel para completar la migración antes de reanudar las demás escrituras.
 

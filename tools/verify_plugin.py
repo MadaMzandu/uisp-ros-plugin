@@ -30,7 +30,7 @@ def main() -> int:
     php_tests = php + ['-d', 'extension=sqlite3', '-d', 'extension=gmp', '-d', 'extension=zip']
     suites = [
         'backend', 'jobs', 'router', 'burst', 'runtime', 'stability', 'client_queue', 'automatic_reconciliation',
-        'locale', 'second_audit', 'ownership', 'shared_resources', 'shared_pool',
+        'locale', 'second_audit', 'ownership', 'shared_resources', 'shared_pool', 'pool_reset', 'ip_attribute_export', 'site_address_policy',
         'nonfinite', 'profile_names', 'unmanaged', 'reconnect', 'reconnect_router', 'webhook_auth', 'webhook_flow', 'billing_router', 'job_diagnostics', 'job_actions', 'jobs_status', 'job_recovery', 'job_recovery_observation', 'job_retained_resources', 'cancelled_recovery', 'archived_plans', 'migration_conflicts', 'recovery_reads', 'network_diagnostics', 'network_cleanup', 'network_repair', 'network_repair_batch', 'crm_network_monitor', 'crm_network_resolution', 'reserved_networks',
     ]
     commands = [('regression_' + name, php_tests + ['tests/regression_' + name + '.php']) for name in suites]

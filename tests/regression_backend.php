@@ -337,6 +337,83 @@ try {
     $resumed = end($apiJobQueue->submitted);
     checkBackend($resumed['status']===1 && $resumed['_plan']['id']===177 && (float)$resumed['_plan']['burstUpload']===5625000.0
         && $resumed['username']==='0' && $resumed['password']===' secret ', 'Thin reactivation changed plan, burst or literal credentials');
+
+    // A complete attributes collection can deliberately remove one family.
+    // Keep that NULL through normalization/cache/queue, rather than merging the
+    // previous fixed address back into the desired state.
+    $networkConfig = $apiSqlite->readConfig();
+    $apiSqlite->saveConfig(['ip_addr_attr'=>'fixtureIp','ip_addr6_attr'=>'fixturePrefix']); $apiAttributes=null;
+    $networkAttrs = static function (?string $address, ?string $prefix): array {
+        $attributes = [(object)['key'=>'device','value'=>'Literal router'],
+            (object)['key'=>'username','value'=>'clear-fixture'], (object)['key'=>'password','value'=>'fixture-private']];
+        if ($address !== null) $attributes[]=(object)['key'=>'fixtureIp','value'=>$address];
+        if ($prefix !== null) $attributes[]=(object)['key'=>'fixturePrefix','value'=>$prefix];
+        return $attributes;
+    };
+    $networkEvent = static function (string $uuid, ?array $attributes) use ($networkAttrs): object {
+        $entity=(object)['id'=>181,'clientId'=>178,'status'=>1,'servicePlanId'=>177];
+        if ($attributes !== null) $entity->attributes=$attributes;
+        return (object)['entity'=>'service','entityId'=>181,'changeType'=>'edit','uuid'=>$uuid,
+            'extraData'=>(object)['entity'=>$entity]];
+    };
+    $apiSqliteCache->insert(['id'=>181,'clientId'=>178,'planId'=>177,'device'=>178,'status'=>1,
+        'username'=>'clear-fixture','password'=>'fixture-private'], 'services');
+    $apiSqliteCache->insert(['id'=>181,'address'=>'192.0.2.181','address6'=>'2001:db8:181::/64'], 'network');
+    $thinBeforeClear=$networkEvent('thin-event-preserves-fixed-ip',null); $thinBeforeClear->extraData->entity->price=1;
+    (new ApiAction($thinBeforeClear))->exec(); $thinFixed=end($apiJobQueue->submitted);
+    checkBackend($thinFixed['network']['address']==='192.0.2.181' && !isset($thinFixed['_network_reset']),
+        'Omitted attributes were mistaken for an explicit address removal');
+    $clearEvent=$networkEvent('explicit-ipv4-removal',$networkAttrs(null,'2001:db8:181::/64'));
+    $clearEvent->extraData->entityBeforeEdit=(object)['id'=>181,'clientId'=>178,
+        'attributes'=>$networkAttrs('192.0.2.181','2001:db8:181::/64')];
+    (new ApiAction($clearEvent))->exec();
+    $cleared=end($apiJobQueue->submitted); $reset=$cleared['_network_reset']['address'] ?? [];
+    checkBackend($cleared['action']==='update' && array_key_exists('address',$cleared['network'])
+        && $cleared['network']['address']===null && $cleared['network']['address6']==='2001:db8:181::/64'
+        && ($reset['previous'] ?? null)==='192.0.2.181' && preg_match('/^[a-f0-9]{32}$/D',$reset['generation'] ?? '')===1
+        && !isset($cleared['_network_reset']['address6']), 'Explicit IP removal restored the old address or removed the other family/account');
+    checkBackend($apiSqliteCache->singleQuery('SELECT address,address6 FROM network WHERE id=181',true)
+        ===['address'=>null,'address6'=>'2001:db8:181::/64'], 'The desired cache forgot an explicit IP clear');
+    $pairedClear=unserialize(serialize($clearEvent)); $pairedClear->uuid='paired-ipv4-removal';
+    (new ApiAction($pairedClear))->exec(); $paired=end($apiJobQueue->submitted);
+    checkBackend($paired['_network_reset']['address']===$reset, 'Paired removal events requested two different fresh allocations');
+    $thinEvent=$networkEvent('thin-event-after-ipv4-removal',null); $thinEvent->extraData->entity->price=7;
+    (new ApiAction($thinEvent))->exec(); $thin=end($apiJobQueue->submitted);
+    checkBackend($thin['network']['address']===null && $thin['_network_reset']['address']===$reset
+        && !array_filter($apiJobQueue->list(),static fn($job): bool => ($job['id'] ?? 0)===181 && $job['action']==='delete'),
+        'A thin follow-up lost the pending reset generation or turned address removal into account deletion');
+    $fixedEvent=$networkEvent('fixed-address-replaces-reset',$networkAttrs('192.0.2.180','2001:db8:181::/64'));
+    (new ApiAction($fixedEvent))->exec(); $fixed=end($apiJobQueue->submitted);
+    checkBackend($fixed['network']['address']==='192.0.2.180' && !isset($fixed['_network_reset']['address']),
+        'A later explicit fixed address inherited an obsolete reset request');
+    (new ApiAction($networkEvent('explicit-ipv6-removal',$networkAttrs('192.0.2.180',null))))->exec();
+    $cleared6=end($apiJobQueue->submitted);
+    checkBackend($cleared6['network']===['address'=>'192.0.2.180','address6'=>null]
+        && $cleared6['_network_reset']['address6']['previous']==='2001:db8:181::/64'
+        && !isset($cleared6['_network_reset']['address']), 'IPv6 removal changed the valid IPv4 intent or lost its own reset');
+    $malformed=myTrimmer()->trim('service',$networkEvent('malformed-address-remains-invalid',$networkAttrs('xyz',null)))['entity'];
+    checkBackend($malformed['network']['address']==='xyz', 'Malformed nonempty IP was silently converted into a removal request');
+    $apiSqlite->saveConfig(['ip_addr6_attr'=>'']); $apiAttributes=null;
+    $ipv4Only=myTrimmer()->trim('service',$networkEvent('ipv4-only-clear',$networkAttrs(null,null)))['entity'];
+    checkBackend($ipv4Only['network']===['address'=>null], 'An unconfigured family was treated as an explicit clear');
+    $apiSqliteCache->insert(['id'=>181,'address'=>'192.0.2.180','address6'=>'2001:db8:181::/64'],'network',INSERT_REPLACE);
+    $cacheRead=$networkEvent('cache-ipv4-clear',$networkAttrs(null,null))->extraData->entity;
+    $testApi=static fn($method,$path,$params) => $path==='clients/services' && ($params['offset'] ?? 0)===0 ? [$cacheRead] : [];
+    (new ApiCache())->populate('services');
+    checkBackend($apiSqliteCache->singleQuery('SELECT address,address6 FROM network WHERE id=181',true)
+        ===['address'=>null,'address6'=>'2001:db8:181::/64'], 'A full cache update restored a removed IP or cleared an unconfigured family');
+    $allocatedSeed=$thin; $allocatedSeed['id']=182; $allocatedSeed['username']='allocated-fixture';
+    $allocatedSeed['network']=['address'=>null,'address6'=>null]; $allocatedSeed['address']='192.0.2.182';
+    $allocatedSeed['_event_id']='allocated-fixture-seed'; unset($allocatedSeed['_network_reset']);
+    $allocatedKey=$apiJobQueue->enqueue($allocatedSeed); $apiJobQueue->run([$allocatedKey],fn()=>true);
+    $fromAllocation=$networkEvent('thin-cache-rebuild-keeps-blank-ip',null);
+    $fromAllocation->entityId=182; $fromAllocation->extraData->entity->id=182; $fromAllocation->extraData->entity->price=8;
+    (new ApiAction($fromAllocation))->exec(); $rebuilt=end($apiJobQueue->submitted);
+    checkBackend($rebuilt['network']===['address'=>null,'address6'=>null] && !isset($rebuilt['_network_reset']),
+        'Rebuilding a missing desired cache turned an automatically allocated address into a fixed attribute');
+    $testApi=fn()=>[];
+    $apiSqlite->saveConfig(['ip_addr_attr'=>$networkConfig->ip_addr_attr ?? '', 'ip_addr6_attr'=>$networkConfig->ip_addr6_attr ?? '']); $apiAttributes=null;
+
     $nullPlan = myTrimmer()->trim('service',$lifecycle('edit','explicit-null-plan',['servicePlanId'=>null]));
     checkBackend(array_key_exists('planId',$nullPlan['entity']) && $nullPlan['entity']['planId']===null,
         'An explicitly cleared service plan was confused with an omitted property');
@@ -464,7 +541,9 @@ try {
     checkBackend($apiJobQueue->list()===$jobsBeforeUnavailable && !$apiSqliteCache->exists(180,'services'),
         'Failed hydration changed cached desired state or scheduled unsafe work');
     $apiJobQueue->close(); $apiJobQueue=$queueBeforeNormalization; unset($GLOBALS['backendQueueOverride']);
-    foreach (['services','network','clients'] as $table) { $apiSqliteCache->delete(178,$table); $apiSqliteCache->delete(179,$table); }
+    foreach (['services','network','clients'] as $table) {
+        foreach ([178,179,181,182] as $id) $apiSqliteCache->delete($id,$table);
+    }
     $apiSqlite->delete(177,'plans'); $apiSqlite->delete(178,'devices');
     $apiAttributes = null;
     $testApi = fn() => [];

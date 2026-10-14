@@ -7,6 +7,7 @@ include_once 'api_sites.php';
 require_once __DIR__ . '/api_job_queue.php';
 require_once __DIR__ . '/api_shared_resources.php';
 require_once __DIR__ . '/api_plan_catalog.php';
+require_once __DIR__ . '/api_site_address_policy.php';
 
 class Batch
 {
@@ -21,6 +22,13 @@ class Batch
 
     /** Safe per-service results for a bulk operation; credentials never enter the response. */
     public function outcomes(): array { return $this->submissionOutcomes; }
+
+    /** Validate every replacement family before an automatic wrong-site CRM clear. */
+    public function validateSiteAddressReplacement(array $cleared): void
+    {
+        $candidate=$this->snapshot($cleared,'update');
+        (new MtData())->validateBeforeCleanup($candidate,$candidate['_plan'],true);
+    }
 
     /** Validate the exact effective SQL rates while the caller's save transaction can still roll back. */
     public function validateStoredPlan(int $planId): void
@@ -90,7 +98,14 @@ class Batch
     /** Schedule configuration changes without blocking the UI on router I/O. */
     public function queue_accounts(array $ids): array
     {
-        return $this->enqueueEntries($ids, 'update');
+        $keys=[]; $queue=myJobQueue();
+        foreach ($ids as $item) {
+            $sid=(int)(is_array($item) ? ($item['id']??0) : $item);
+            if ($sid<1) throw new InvalidArgumentException('Invalid service ID');
+            $enqueue=fn(): array => $this->enqueueEntries([$item], 'update');
+            $keys=array_merge($keys,$queue->ownsServiceLock($sid) ? $enqueue() : $queue->withServiceLock($sid,$enqueue));
+        }
+        return $keys;
     }
 
     public function migrate(array $previous, array $replacement): bool
@@ -137,8 +152,10 @@ class Batch
                     $known = ['The service address or IPv6 prefix is already reserved by another service'=>'network_address_conflict',
                         'No IPv4 address is available for the PPP service'=>'ppp_ipv4_unavailable',
                         'No address is available for the DHCP service'=>'dhcp_address_unavailable'];
-                    $failure['errorCode'] = $known[$error->getMessage()] ?? 'provisioning_failed';
-                    $failure['message'] = isset($known[$error->getMessage()]) ? $error->getMessage()
+                    if ($error instanceof NetworkAddressConflict) $failure=array_merge($failure,$error->context());
+                    $failure['errorCode'] = $error instanceof NetworkAddressConflict ? 'network_address_conflict'
+                        : ($known[$error->getMessage()] ?? 'provisioning_failed');
+                    $failure['message'] = $error instanceof NetworkAddressConflict || isset($known[$error->getMessage()]) ? $error->getMessage()
                         : 'Provisioning could not be completed for this service';
                     MyLog()->Append(['event'=>'provisioning_service_failed','serviceId'=>$sid,
                         'errorCode'=>$failure['errorCode'],'exceptionType'=>get_class($error)], LOG_ERR);
@@ -182,6 +199,11 @@ class Batch
             foreach ($services as $service) {
                 if (in_array($operation, ['update','queues_set'], true)
                     && empty($service['_clear_terminal']) && myJobQueue()->isServiceBlocked((int)$service['id'])) continue;
+                if ($operation==='update' && !isset($service['_commands'])) {
+                    $service=ApiSiteAddressPolicy::reconcile($service,
+                        ($currentDevice=$this->find_device($service['device']??null)) ? (array)$currentDevice : null,
+                        null,'data/data.db',[$this,'validateSiteAddressReplacement']);
+                }
                 $snapshot = $this->snapshot($service, $operation);
                 if ($operation === 'update') {
                     $applied = myJobQueue()->appliedSnapshot((int) $service['id']);
@@ -203,6 +225,9 @@ class Batch
     {
         $hadFrozenDevice = isset($service['_device']);
         unset($service['batch']);
+        foreach (['address','address6'] as $field) {
+            if (array_key_exists($field,$service)) $service['network'][$field]=$service[$field];
+        }
         // An explicit synchronization/reconnection request is part of this job's
         // durable intent, including failures before RouterOS commands are prepared.
         if ($operation === 'update' && ($this->forceReconnect || ($service['_force_reconnect'] ?? null) === true)) {
@@ -216,6 +241,20 @@ class Batch
         $plans = $this->find_plans();
         $service['_plan'] ??= $plans[$service['planId'] ?? 0] ?? $this->make_plan($service);
         if ($operation === 'update') {
+            $applied=myJobQueue()->appliedSnapshot((int)$service['id']);
+            foreach (['address'=>false,'address6'=>true] as $field=>$ipv6) {
+                $current=array_key_exists($field,$service) ? $service[$field] : ($service['network'][$field]??null);
+                $previous=is_array($applied['network']??null) && array_key_exists($field,$applied['network'])
+                    ? $applied['network'][$field] : ($applied[$field]??null);
+                if (($current===null || $current==='') && is_string($previous) && $previous!==''
+                    && !isset($service['_network_reset'][$field])) {
+                    // A full synchronization also sees attribute removal when its webhook was missed.
+                    // Only a previously literal CRM address implies reset: an already automatic
+                    // account's frozen command address must continue to be reused.
+                    $service['_network_reset'][$field]=['previous'=>$previous,'generation'=>substr(hash('sha256',
+                        json_encode([(int)$service['id'],$field,$previous,$applied,$service['_device']??[]])),0,32)];
+                }
+            }
             $service['_prior_network'] = [
                 'address' => $this->db()->selectAddress((int) $service['id'], false),
                 'address6' => $this->db()->selectAddress((int) $service['id'], true)
@@ -262,6 +301,39 @@ class Batch
             if (($first['_device'][$field] ?? null) != ($second['_device'][$field] ?? null)) { return false; }
         }
         return true;
+    }
+
+    /** Keep an unapplied-to-CRM allocation receipt through later billing edits. */
+    private function retainPoolAllocationProofs(array $service,array $commands,array $allocations): array
+    {
+        $applied=myJobQueue()->appliedSnapshot((int)$service['id']);
+        if (!$applied || !$this->sameAccountIdentity($applied,$service)) return $allocations;
+        foreach (['address'=>false,'address6'=>true] as $field=>$ipv6) {
+            if (isset($allocations[$field])) continue;
+            $fixed=array_key_exists($field,$service) ? $service[$field] : ($service['network'][$field]??null);
+            if ($fixed!==null && $fixed!=='') continue;
+            $proof=$applied['_pool_allocations'][$field]??null;
+            if (!is_array($proof) || !is_string($proof['value']??null) || !array_key_exists('previous',$proof)
+                || (!is_string($proof['previous']) && $proof['previous']!==null)
+                || !is_string($proof['generation']??null) || !preg_match('/^[a-f0-9]{32}$/D',$proof['generation'])) continue;
+            try {
+                $value=ApiIP::normalize($proof['value'],$ipv6);
+                if ($value!==$proof['value'] || $this->db()->selectAddress((int)$service['id'],$ipv6)!==$value
+                    || ($proof['previous']!==null && ApiIP::normalize($proof['previous'],$ipv6)===$value)) continue;
+                $values=[];
+                foreach ($commands as $command) {
+                    if (($command['action']??'set')==='remove'
+                        || (int)($command['_service_id']??0)!==(int)$service['id']
+                        || (int)($command['_client_id']??0)!==(int)$service['clientId']) continue;
+                    $path=trim($command['path']??'','/');
+                    $key=$ipv6 ? ($path==='ppp/secret' ? 'remote-ipv6-prefix' : ($path==='ipv6/dhcp-server/binding' ? 'address' : null))
+                        : ($path==='ppp/secret' ? 'remote-address' : (in_array($path,['ip/hotspot/user','ip/dhcp-server/lease'],true) ? 'address' : null));
+                    if ($key!==null && is_string($command[$key]??null)) $values[ApiIP::normalize($command[$key],$ipv6)]=true;
+                }
+                if (count($values)===1 && isset($values[$value])) $allocations[$field]=$proof;
+            } catch (InvalidArgumentException $error) { continue; }
+        }
+        return $allocations;
     }
 
     /** Only settings consumed by a PPP/Hotspot session, independent of job timestamps/comments. */
@@ -460,7 +532,12 @@ class Batch
             $service['_device'] = (array) $device;
             $api = new MtData();
             $plan = $service['_plan'] ?? $this->make_plan($service);
-            $data = $api->get_data($service, $plan);
+            // A dual-stack build either acquires every requested family or leaves
+            // the previous reservations intact. No cleanup/write follows a failed build.
+            $data = $this->db()->transaction(fn(): array => $api->get_data($service, $plan));
+            unset($service['_pool_allocations']);
+            $allocations=$api->poolAllocations();
+            if ($allocations) $service['_pool_allocations']=$allocations;
             if (!$queuesOnly && !isset($data['accounts'])) {
                 if (!$delete) { throw new RuntimeException('No account could be prepared; verify its credentials and IP pool'); }
                 $account = $this->deleteIdentity($service);
@@ -478,6 +555,10 @@ class Batch
                 $service['_commands'][] = $command;
             }
             $service['_commands'] = MtData::safePreparedCommands($service, $service['_commands'], $operation);
+            if ($operation==='update') {
+                $allocations=$this->retainPoolAllocationProofs($service,$service['_commands'],$allocations);
+                if ($allocations) $service['_pool_allocations']=$allocations;
+            }
             // Address reservations are durable before any RouterOS command is sent.
             $this->ip_flush();
             if ($delete) { $service['_delete_frozen'] = true; }

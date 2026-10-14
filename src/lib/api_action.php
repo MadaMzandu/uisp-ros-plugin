@@ -101,11 +101,12 @@ class ApiAction
             }
             $cached = $this->cachedService($serviceId);
             $raw = $this->entity();
+            $attributeNetwork = property_exists($raw, 'attributes') ? ($data['entity']['network'] ?? []) : [];
             if (!property_exists($raw, 'attributes')) {
                 foreach (['device','username','password','mac','duid','iaid','hotspot','callerId','network'] as $field) { unset($data['entity'][$field]); }
             }
-            $known = array_replace($data['previous'] ?? [], $cached);
-            $data['entity'] = array_replace($known, $data['entity'], ['id' => $serviceId]);
+            $known = $this->mergeServiceState($data['previous'] ?? [], $cached);
+            $data['entity'] = $this->mergeServiceState($known, $data['entity'], ['id' => $serviceId]);
             $deleting = in_array($this->action(), ['delete','end'], true);
             $states = ['suspend' => 3, 'unsuspend' => 1, 'suspend_cancel' => 1, 'activate' => 1, 'end' => 2];
             $missingStatus = !array_key_exists('status', $data['entity']) && !isset($states[$this->action()]);
@@ -114,19 +115,45 @@ class ApiAction
             if (!isset($data['entity']['clientId']) || $missingPlan || $missingStatus || $missingIdentity) {
                 $hydrated = $this->completeService($serviceId);
                 $this->hydratedBillingState = $this->validBillingState($hydrated['status'] ?? null);
-                $data['entity'] = array_replace($hydrated, $data['entity']);
+                $data['entity'] = $this->mergeServiceState($hydrated, $data['entity']);
             }
             $clientId = filter_var($data['entity']['clientId'] ?? null, FILTER_VALIDATE_INT);
             if (!$clientId || $clientId < 1) { throw new InvalidArgumentException('Invalid client ID'); }
             $data['entity']['clientId'] = $clientId;
-            if (isset($data['previous'])) { $data['previous'] = array_replace($known, $data['previous']); }
+            if (isset($data['previous'])) { $data['previous'] = $this->mergeServiceState($known, $data['previous']); }
             if ($this->action() === 'edit' && !isset($data['previous']) && $cached) { $data['previous'] = $cached; }
+            if ($attributeNetwork && !in_array($this->action(), ['delete','end'], true)) {
+                $beforeNetwork = $data['previous']['network'] ?? $known['network'] ?? [];
+                $appliedNetwork = myJobQueue()->appliedSnapshot($serviceId)['network'] ?? [];
+                foreach (['address','address6'] as $field) {
+                    if (!array_key_exists($field,$attributeNetwork) || $attributeNetwork[$field] !== null) continue;
+                    $previousAddress = array_key_exists($field,$beforeNetwork) ? $beforeNetwork[$field] : ($appliedNetwork[$field] ?? null);
+                    if (!is_string($previousAddress) || trim($previousAddress) === '') continue;
+                    // The clear is a one-time allocation request, separate from
+                    // the nullable desired cache. It survives a deferred worker
+                    // without turning later partial edits into repeated resets.
+                    $data['entity']['_network_reset'][$field] = [
+                        'generation'=>bin2hex(random_bytes(16)), 'previous'=>$previousAddress,
+                    ];
+                }
+            }
             if (isset($states[$this->action()])) { $data['entity']['status'] = $states[$this->action()]; }
             if ($this->action() === 'delete') {
                 $data['entity'] = array_replace($cached, $data['previous'] ?? [], $data['entity']);
                 foreach (['device','username','mac','duid','iaid','hotspot','network'] as $field) {
                     if (($data['entity'][$field] ?? null) === null && isset($cached[$field])) { $data['entity'][$field] = $cached[$field]; }
                 }
+            }
+            if (!in_array($this->action(), ['delete','end'], true)
+                && in_array((int)($data['entity']['status'] ?? -1), [1,3,4,7], true)
+                && $this->managedIdentity($data['entity'])) {
+                // The policy returns immediately for ordinary addresses. An IP
+                // proven to belong to another configured Site is cleared only
+                // after fresh UISP identity checks, before saving desired state
+                // or preparing any router cleanup/replacement operation.
+                require_once __DIR__ . '/api_site_address_policy.php';
+                $data['entity'] = ApiSiteAddressPolicy::reconcile($data['entity'], null, null, 'data/data.db',
+                    fn(array $replacement) => $this->batch()->validateSiteAddressReplacement($replacement));
             }
             if ($eventId !== null) {
                 $data['entity']['_event_id'] = $eventId;
@@ -146,6 +173,21 @@ class ApiAction
             throw new RuntimeException('incomplete_service_event');
         }
         return myTrimmer()->trim('service', $service)['entity'];
+    }
+
+    /** Omitted families are partial state; explicit NULLs replace that family. */
+    private function mergeServiceState(array ...$parts): array
+    {
+        $merged = array_replace(...$parts);
+        $network = [];
+        $hasNetwork = false;
+        foreach ($parts as $part) {
+            if (!isset($part['network']) || !is_array($part['network'])) continue;
+            $hasNetwork = true;
+            $network = array_replace($network, $part['network']);
+        }
+        if ($hasNetwork) $merged['network'] = $network;
+        return $merged;
     }
 
     private function route($data): bool
@@ -210,7 +252,7 @@ class ApiAction
         $previous = $data['previous'] ?? [];
         $diff = $this->changes($entity,$previous);
         $changes = array_keys($diff);
-        $upgrade = array_intersect(['clientId','device','mac','username','hotspot','duid','iaid','netunset'],$changes);
+        $upgrade = array_intersect(['clientId','device','mac','username','hotspot','duid','iaid'],$changes);
         if ($changes === ['status'] && $this->completedBillingEdit($entity)) {
             // UISP can deliver suspend/unsuspend and its matching edit separately.
             // The first event already confirmed this exact state; preserve its cache
@@ -370,6 +412,7 @@ class ApiAction
 
     private function needsAppliedReconciliation(array $entity): bool
     {
+        if (!empty($entity['_network_reset'])) return true;
         $sid = (int) $entity['id'];
         $queue = myJobQueue();
         if ($queue->isServiceBlocked($sid)) return $this->hasExplicitBillingState();
@@ -607,7 +650,12 @@ class ApiAction
     private function safeErrorCode(Throwable $error): string
     {
         $known = ['service_credentials_missing','service_site_not_configured','incomplete_service_event',
-            'invalid_service_attribute_value','credential_attribute_missing','credential_update_failed'];
+            'invalid_service_attribute_value','credential_attribute_missing','credential_update_failed',
+            'site_address_device_changed','site_address_mapping_unknown','site_address_identity_changed',
+            'site_address_site_changed','site_address_evidence_unknown','site_address_changed',
+            'site_address_review_required','site_address_write_unconfirmed','site_address_write_rejected',
+            'site_address_preflight_unavailable','site_address_pool_unavailable',
+            'site_address_verification_unavailable','site_address_receipt_failed'];
         return in_array($error->getMessage(), $known, true) ? $error->getMessage() : 'webhook_processing_failed';
     }
 
@@ -706,16 +754,24 @@ class ApiAction
 
     private function cachedService(int $id): array
     {
-        $row = myCache()->singleQuery('SELECT services.*,network.address,network.address6 FROM services
+        $row = myCache()->singleQuery('SELECT services.*,network.address,network.address6,network.id AS _network_row_id FROM services
             LEFT JOIN network ON services.id=network.id WHERE services.id=:id', true, ['id' => $id]) ?: [];
+        $knownNetwork = isset($row['_network_row_id']);
+        unset($row['_network_row_id']);
         if (!$row) {
             $row = myJobQueue()->appliedSnapshot($id);
             foreach (array_keys($row) as $key) { if (str_starts_with($key, '_')) { unset($row[$key]); } }
             unset($row['action'], $row['batch'], $row['company'], $row['firstName'], $row['lastName']);
         }
-        $network = [];
+        $network = isset($row['network']) && is_array($row['network']) ? $row['network'] : [];
         foreach (['address','address6'] as $field) {
-            if (!empty($row[$field])) { $network[$field] = $row[$field]; }
+            // An applied snapshot can also hold an automatically allocated
+            // top-level address. Its explicit desired NULL remains authoritative
+            // when rebuilding a missing cache; do not turn that allocation into
+            // a fixed UISP attribute merely because the cache was removed.
+            if ($knownNetwork || (!array_key_exists($field,$network) && !empty($row[$field]))) {
+                $network[$field] = $row[$field] ?? null;
+            }
             unset($row[$field]);
         }
         if ($network) { $row['network'] = $network; }
@@ -740,6 +796,7 @@ class ApiAction
 
     private function changes($entity,$previous)
     {
+        unset($entity['_network_reset'], $previous['_network_reset']);
         $net0 = $entity['network'] ?? []; $net1 = $previous['network'] ?? [];
         $netdiff = '';
         if($net0 || $net1){

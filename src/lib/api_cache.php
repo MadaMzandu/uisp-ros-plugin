@@ -180,9 +180,13 @@ class ApiCache{
         $values = [];
         foreach($request as $item){
             $net = $item['network'] ?? null;
-            if(!$net){ continue; }
+            if(!is_array($net) || !$net){ continue; }
+            // A supplied NULL is an authoritative clear, while an omitted
+            // family (for example an unconfigured IPv6 attribute) stays intact.
+            $existing = $this->dbCache()->singleQuery('SELECT address,address6 FROM network WHERE id=?',true,[$item['id']]) ?: [];
+            $net = array_replace($existing,array_intersect_key($net,array_fill_keys(['address','address6'],true)));
             $net['id'] = $item['id'];
-            if(in_array($item['status'],[2,5,8])) { $deleted[] = $item['id']; }
+            if(in_array((int)($item['status'] ?? 1),[2,5,8],true)) { $deleted[] = $item['id']; }
             else {
                 $values[] = $net ;
             }

@@ -2811,6 +2811,14 @@ document.addEventListener('DOMContentLoaded', () => {
         return null;
     }
     function jobNetworkErrorMarkup(error, serviceId) {
+        const collision = /^network_address_conflict: requested_service=([1-9]\d{0,14}) blocking_service=([1-9]\d{0,14}) source=(reserved|cache|applied) family=(IPv4|IPv6)$/.exec(error);
+        if (collision && Number.isSafeInteger(Number(collision[1])) && Number.isSafeInteger(Number(collision[2])) && Number(collision[1]) === Number(serviceId)) {
+            const source = 'La IP o prefijo {family} solicitado ya está reservado por el servicio {id}. Revisa ambas asignaciones en UISP.';
+            const params = { family: collision[4], id: Number(collision[2]) };
+            const url = safeCrmUrl('/crm/client/service/' + collision[2], 'service');
+            return `<span data-i18n="${html(source)}" data-i18n-values="${html(JSON.stringify(params))}">${html(t(source, params))}</span>`
+                + (url ? ` <a class="conflict-link" href="${html(url)}" target="_blank" rel="noopener noreferrer">${html(t('Servicio #{id}', { id: params.id }))}</a>` : '');
+        }
         const match = /^invalid_network_address: requested_service=([1-9]\d{0,14}) blocking_service=([1-9]\d{0,14}) source=(input|reserved|applied) family=(IPv4|IPv6)$/.exec(error);
         if (!match || !Number.isSafeInteger(Number(match[1])) || !Number.isSafeInteger(Number(match[2])) || Number(match[1]) !== Number(serviceId)) return null;
         const own = match[3] === 'input';

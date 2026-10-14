@@ -84,6 +84,7 @@ class Data
         $plan = self::normalizePlanNumbers($plan);
         self::validatePlanNumbers($plan, (int) ($service['id'] ?? 0));
         $this->service = $service ;
+        $this->ipapi()->beginService((int)($service['id']??0));
         $this->plan = $plan ;
         $this->_conf = null;
     }
@@ -121,7 +122,8 @@ class Data
     {
         $type = $ip6 ? 'address6' : 'address';
         $service = $this->service['id'] ?? 0 ;
-        $fixed = $this->service[$type] ?? $this->service['network'][$type] ?? null;
+        // An explicit null is UISP's current intent, not permission to revive a nested cached value.
+        $fixed = array_key_exists($type,$this->service) ? $this->service[$type] : ($this->service['network'][$type] ?? null);
         if($fixed!==null && $fixed!==''){
             $length=$ip6 ? (int)($this->find_device()->pfxLength ?? 64) : 64;
             if ($this->deleting()) return ApiIP::normalize((string)$fixed, $ip6, $length);
@@ -129,7 +131,8 @@ class Data
             return $this->ipapi()->find_assigned($service, $ip6);
         }
 
-        return $this->ipapi()->find_assigned($service,$ip6);
+        if ($this->deleting()) return $this->ipapi()->find_assigned($service,$ip6);
+        return $this->assign_address($ip6);
     }
 
     protected function deleting(): bool
@@ -143,7 +146,18 @@ class Data
         $router_pool = filter_var($this->conf()->router_ppp_pool ?? true, FILTER_VALIDATE_BOOLEAN);
         if($this->type() == 'ppp' && !$router_pool){ $device = null; }
         $service = $this->service['id'] ?? 0 ;
-        return $this->ipapi()->assign($service,$device,$ip6,$this->conf());
+        $field=$ip6 ? 'address6' : 'address';
+        $reset=$this->service['_network_reset'][$field]??null;
+        $address=$this->ipapi()->assign($service,$device,$ip6,$this->conf(),is_array($reset) ? $reset : null);
+        if ($reset!==null && !$address) throw new RuntimeException($ip6
+            ? 'No IPv6 prefix is available for the service address reset'
+            : 'No IPv4 address is available for the service address reset');
+        return $address;
+    }
+
+    public function poolAllocations(): array
+    {
+        return $this->ipapi()->allocationProofs((int)($this->service['id']??0));
     }
 
     protected function type(): string

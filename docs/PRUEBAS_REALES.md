@@ -1,4 +1,4 @@
-# Pruebas reales del candidato 2.4.32
+# Pruebas reales del candidato 2.4.33
 
 Las pruebas automatizadas usan bases temporales, transportes simulados y sockets locales. Esta lista comprueba la integración **UISP → plugin → API nativa de RouterOS** en una copia de UISP y un CHR/router con clientes de prueba. Registrar versiones de UISP, PHP y RouterOS, así como ID del servicio, plan, trabajo, estado e IP/prefijo en cada caso.
 
@@ -368,6 +368,15 @@ Desde 2.4.13, **Sincronizar y reconectar cuentas** en Dispositivos reconecta sie
 | 160 | Actualizar una cuenta con limpieza previa o migrar su identidad con una dirección propia de reemplazo inválida. | La preparación de reemplazo falla antes de retirar o desconectar la cuenta; no queda una eliminación nueva ejecutada por ese error. |
 | 161 | Abrir Trabajos en escritorio y móvil con varios registros de recuperación. | La cola aparece primero y las tarjetas compactas debajo; controles, revisiones cerradas y resultados siguen accesibles. |
 | 162 | Sincronizar varios servicios dejando una reserva ajena malformada sin corregir. | Los demás continúan; conserva el valor como diagnóstico. La IP propia inválida falla sólo para su servicio y las IP válidas siguen exclusivas. |
+| 163 | Vaciar la IP fija del servicio en UISP y entregar los eventos de edición y estado dos veces. | Se asigna otra IP del pool, una sola elección estable; no se restaura la IP antigua de la caché. |
+| 164 | Cambiar Site conservando una IP perteneciente al pool del Site anterior. | Comprueba identidad y capacidad, vacía sólo ese atributo en UISP y prepara una IP del pool de destino. Otros servicios se conservan. |
+| 165 | Repetir el traslado con pool destino agotado o lectura UISP incierta. | No retira la cuenta anterior ni continúa con un vaciado sin confirmar; el fallo no aborta otros servicios del lote. |
+| 166 | Vaciar las familias IPv4/IPv6 y agotar la segunda familia durante la preparación. | No se persiste una asignación parcial ni se cambia el router; el reintento conserva la intención. |
+| 167 | Cambiar o quitar la IP en UISP antes de la exportación diaria y antes/después de un evento de estado. | Se respeta el valor actual; sólo se publica una prueba nueva aplicada en campo vacío una vez. No repone una asignación ya exportada y posteriormente borrada. |
+| 168 | Solicitar una IP válida ocupada por otro servicio. | El trabajo identifica servicio bloqueante y origen de la reserva; no borra ni sobrescribe al propietario. |
+| 169 | Sincronizar tras perder el webhook que vació una IP fija; repetir luego la sincronización. | La primera solicita otra dirección y la segunda reutiliza la nueva sin rotaciones sucesivas. |
+| 170 | Usar una IP manual fuera de todos los pools o un valor UISP cambiado durante la comprobación. | No la vacía por la regla de otro Site; una evidencia cambiante impide la escritura automática. |
+| 171 | Crear una intención nueva tras fallar un update cuya limpieza ya está confirmada y que no preparó comandos nuevos. Comparar con limpieza incompleta y con comandos congelados. | El primero se sustituye sin repetir limpieza; los otros mantienen su orden y no se sobrescriben. |
 
 ## Diagnosticar una conexión pendiente
 

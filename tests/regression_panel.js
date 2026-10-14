@@ -1485,6 +1485,20 @@ async function checkCrmNetworkMonitorPanel() {
         assert(!jobHtml.includes('href='), 'Invalid or unrelated diagnostic metadata must never create an owner link');
         assert(!jobHtml.includes('<img') && !jobHtml.includes('<script'));
     }
+    for (const source of ['reserved', 'cache', 'applied']) {
+        const jobs = recoveryPanelFixture({ initialReplies: new Map([['list/jobs', envelope({ Q1: { serviceId: 501, state: 'pending',
+            error: `network_address_conflict: requested_service=501 blocking_service=509 source=${source} family=IPv6` } })]]) });
+        await jobs.navigate('jobs'); const jobHtml = jobs.tables.get('#jobs-table tbody').children[0].innerHTML;
+        assert(!jobHtml.includes('network_address_conflict:') && jobHtml.includes('reservado por el servicio 509') && jobHtml.includes('IPv6'));
+        assert(jobHtml.includes('/crm/client/service/509') && jobHtml.includes('noopener noreferrer'));
+        assert.equal(jobs.calls.filter(call => call.changeType !== 'list').length, 0, 'A valid ownership conflict must never trigger an automatic repair or deletion from the panel');
+    }
+    for (const error of ['network_address_conflict: requested_service=502 blocking_service=509 source=reserved family=IPv4',
+        'network_address_conflict: requested_service=501 blocking_service=9007199254740999 source=cache family=IPv4',
+        'network_address_conflict: requested_service=501 blocking_service=509 source=input family=IPv4']) {
+        const jobs = recoveryPanelFixture({ initialReplies: new Map([['list/jobs', envelope({ Q1: { serviceId: 501, state: 'pending', error } })]]) });
+        await jobs.navigate('jobs'); assert(!jobs.tables.get('#jobs-table tbody').children[0].innerHTML.includes('href='));
+    }
 }
 
 async function checkCrmNetworkResolutionPanel() {
@@ -2269,7 +2283,7 @@ async function checkNetworkRecoveryPanel() {
     assert.deepEqual(plain(healthy.diagnostics()[0].data), {}, 'Reactive recovery reads must not request live CRM verification');
     const malformed = recoveryPanelFixture({ bootstrap: '{', details }); await flush();
     assert.equal(malformed.nodes.get('btn-cache').disabled, false, 'An invalid optional bootstrap must not break normal navigation');
-    assert.equal((markup.match(/(?:src|href)="(?:js|css)\/[^"?]+\?v=2\.0\.47"/g) || []).length, 5, 'Every panel asset must use the new revision to invalidate UISP browser caches');
+    assert.equal((markup.match(/(?:src|href)="(?:js|css)\/[^"?]+\?v=2\.0\.48"/g) || []).length, 5, 'Every panel asset must use the new revision to invalidate UISP browser caches');
     assert(!markup.includes('v=2.0.45'));
     assert(apiSource.includes("'alert-triangle':"), 'The conflict warning must have its own local warning icon');
 }
