@@ -1037,7 +1037,8 @@ async function checkJobRecoveryResolutionPanel() {
     assert.equal(item.children[0].children[0].href, 'https://fixture.invalid/crm/client/service/42');
     assert.equal(item.children[0].children[1].textContent, attack, 'Client names must remain literal text');
     assert(!renderedMarkup(item).includes('<img'));
-    assert.match(item.children[2].textContent, /no son trabajos ejecutables/);
+    assert.equal(item.children[2].textContent, 'Cancelado');
+    assert(markup.indexOf('id="jobs-table"') < markup.indexOf('id="job-recovery-section"'), 'The executable queue must precede compact recovery cards');
     await item.children[3].fire('click');
     assert.deepEqual(plain(fixture.calls.filter(call => call.target === 'job_recovery').at(-1)), { changeType: 'recover', target: 'job_recovery', action: 'preview', data: { sourceJobId: 8 } });
     assert.equal(fixture.nodes.get('apply-job-recovery').disabled, false);
@@ -1132,6 +1133,95 @@ async function checkRecoveryObservationPanel() {
         assert.equal(blocked.nodes.get('apply-job-recovery').disabled, true, 'Malformed/inconclusive router evidence must never enable recovery resolution');
         assert.match(blocked.nodes.get('job-recovery-status').textContent, /Respuesta inválida/);
     }
+}
+
+async function checkRetainedRecoveryPanel() {
+    const envelope = data => ({ status: 'ok', error: false, data });
+    const row = { source_job_id: 8, job_id: 'Q8', service_id: 42, client_id: 17, client_name: attack,
+        device_ids: [2], snapshot_count: 1, reason: 'cancelled_resources', created_at: null };
+    const listing = { available: true, groups: [row], total: 1, has_more: false, checked_at: '2026-10-14T13:00:00Z', reason: null,
+        reviewed_groups: [], reviewed_total: 0 };
+    const diagnostics = { stage: 'prior_reservations', issues: [{ code: 'uncovered_prior_address', family: 'IPv4', snapshot_slot: 'source' }] };
+    const blocked = { previewToken: null, expiresAt: null, candidate: null, blocked: [{ source_job_id: 8, service_id: 42,
+        reason: 'router_snapshot_incomplete', checks: [], diagnostics }], checked_at: '2026-10-14T13:00:00Z' };
+    const candidate = { ...row, crm_status: 1, client_archived: false, checked_at: '2026-10-14T13:00:00Z', resolution: 'retained_resources', checks: [], diagnostics };
+    const preview = { previewToken: 'e'.repeat(64), expiresAt: '2099-10-14T13:00:00Z', candidate, blocked: [], checked_at: '2026-10-14T13:00:00Z' };
+    const fixture = recoveryPanelFixture({ initialReplies: new Map([['list/job_recovery', envelope(listing)], ['recover/job_recovery', envelope(blocked)]]) }); await flush(); await fixture.navigate('jobs');
+    await fixture.nodes.get('job-recovery-list').children[0].children[3].fire('click');
+    assert.equal(fixture.nodes.get('apply-job-recovery').disabled, true);
+    assert.equal(fixture.nodes.get('preserve-job-recovery').style.display, 'inline-flex');
+    assert.match(fixture.nodes.get('job-recovery-comparison').children[2].children[0].textContent, /reserva anterior.*router.*IPv4/);
+    fixture.reply('recover/job_recovery', payload => envelope(payload.data.mode === 'preserve' ? preview : blocked));
+    await fixture.nodes.get('preserve-job-recovery').fire('click');
+    assert.deepEqual(plain(fixture.calls.filter(call => call.target === 'job_recovery').at(-1)), { changeType: 'recover', target: 'job_recovery', action: 'preview', data: { sourceJobId: 8, mode: 'preserve' } });
+    assert.equal(fixture.nodes.get('apply-job-recovery').disabled, false);
+    assert.equal(fixture.nodes.get('apply-job-recovery').textContent, 'Conservar recursos y cerrar revisión');
+    assert.match(fixture.nodes.get('job-recovery-comparison').children[3].textContent, /archivo protegido.*no confirma.*limpio ni sincronizado/);
+    await fixture.nodes.get('recheck-job-recovery').fire('click');
+    assert.equal(fixture.calls.filter(call => call.target === 'job_recovery').at(-1).data.mode, 'preserve', 'Read-only retry must retain the selected conservation mode');
+    const cancelled = fixture.nodes.get('apply-job-recovery').fire('click'); await flush();
+    let overlay = fixture.document.body.children.find(node => node.className === 'confirm-overlay');
+    assert.match(overlay.children[0].children[0].textContent, /Conservar.*cerrar.*No se eliminarán/);
+    await overlay.children[0].children[1].children[0].fire('click'); await cancelled;
+    assert.equal(fixture.calls.filter(call => call.action === 'apply').length, 0);
+    const backup = 'jobs-recovery-20261014T130000Z-' + 'e'.repeat(32) + '.sqlite';
+    fixture.reply('recover/job_recovery', envelope({ resolution: 'retained_resources', resolved: [], retained: [{ source_job_id: 8, service_id: 42, snapshot_count: 1 }],
+        backup_name: backup, checked_at: '2026-10-14T13:00:00Z', router_changes: false, crm_changes: false }));
+    fixture.reply('list/job_recovery', envelope({ ...listing, groups: [], total: 0, reviewed_groups: [{ ...row, reason: 'retained_resources', reviewed_at: '2026-10-14T13:00:00Z' }], reviewed_total: 1 }));
+    const applied = fixture.nodes.get('apply-job-recovery').fire('click'); await flush();
+    overlay = fixture.document.body.children.find(node => node.className === 'confirm-overlay');
+    await overlay.children[0].children[1].children[1].fire('click'); await applied; await flush();
+    assert.equal(fixture.nodes.get('job-recovery-result').children[0].textContent, 'Revisión cerrada; recursos conservados');
+    assert.match(fixture.nodes.get('job-recovery-result').children[2].textContent, /siguen protegidos.*No se cambió UISP ni el router/);
+    assert.equal(fixture.nodes.get('job-recovery-list').children.length, 0);
+    assert.equal(fixture.nodes.get('job-retained-section').style.display, 'block');
+    assert.equal(fixture.nodes.get('job-retained-list').children.length, 1);
+    assert(!renderedMarkup(fixture.nodes.get('job-retained-list')).includes('<img'));
+    assert.equal(fixture.nodes.get('preserve-job-recovery').style.display, 'none');
+    assert.equal(fixture.calls.filter(call => call.action === 'apply').length, 1);
+    assert(fixture.calls.every(call => ['list', 'recover'].includes(call.changeType)), 'Closing a review must not call router, CRM or job execution APIs');
+
+    const malformed = recoveryPanelFixture({ initialReplies: new Map([['list/job_recovery', envelope(listing)], ['recover/job_recovery', envelope({ ...blocked,
+        blocked: [{ ...blocked.blocked[0], diagnostics: { stage: attack, issues: [] } }] })]]) }); await flush(); await malformed.navigate('jobs');
+    await malformed.nodes.get('job-recovery-list').children[0].children[3].fire('click');
+    assert.equal(malformed.nodes.get('apply-job-recovery').disabled, true);
+    assert.equal(malformed.nodes.get('preserve-job-recovery').style.display, 'none');
+    assert.match(malformed.nodes.get('job-recovery-status').textContent, /Respuesta inválida/);
+}
+
+async function checkForcedRecoveryDiscardPanel() {
+    const envelope = data => ({ status: 'ok', error: false, data });
+    const row = { source_job_id: 8, job_id: 'Q8', service_id: 42, client_id: 17, client_name: 'Cliente de prueba',
+        device_ids: [2], snapshot_count: 1, reason: 'cancelled_resources', created_at: null };
+    const listing = { available: true, groups: [row, { ...row, source_job_id: 9, job_id: 'Q9', service_id: 43 }], total: 2, has_more: false,
+        reviewed_groups: [], reviewed_total: 0, checked_at: '2026-10-14T13:00:00Z', reason: null };
+    const candidate = { ...row, resolution: 'discarded_resources', checked_at: '2026-10-14T13:00:00Z', crm_status: null, client_archived: null, identity_origin: 'local' };
+    const preview = { previewToken: 'b'.repeat(64), expiresAt: '2099-10-14T13:00:00Z', candidate, blocked: [], checked_at: '2026-10-14T13:00:00Z' };
+    const blocked = { ...preview, previewToken: null, expiresAt: null, candidate: null, blocked: [{ source_job_id: 8, service_id: 42, reason: 'crm_unavailable' }] };
+    const fixture = recoveryPanelFixture({ initialReplies: new Map([['list/job_recovery', envelope(listing)], ['recover/job_recovery', envelope(blocked)]]) }); await flush(); await fixture.navigate('jobs');
+    assert.equal(fixture.nodes.get('job-recovery-list').children.length, 2, 'Every pending recovery must validate independently of its list index');
+    await fixture.nodes.get('job-recovery-list').children[0].children[3].fire('click');
+    assert.equal(fixture.nodes.get('discard-job-recovery').style.display, 'inline-flex', 'Unavailable UISP must not make explicit local discard unreachable');
+    fixture.reply('recover/job_recovery', envelope(preview)); await fixture.nodes.get('discard-job-recovery').fire('click');
+    assert.equal(fixture.calls.filter(call => call.target === 'job_recovery').at(-1).data.mode, 'discard');
+    assert.equal(fixture.nodes.get('apply-job-recovery').textContent, 'Descartar registro local');
+    assert.match(fixture.nodes.get('job-recovery-comparison').children[1].textContent, /no se comprobó.*UISP/);
+    assert.match(fixture.nodes.get('job-recovery-comparison').children[3].textContent, /IP históricas.*volver a asignarse/);
+    const applying = fixture.nodes.get('apply-job-recovery').fire('click'); await flush();
+    const overlay = fixture.document.body.children.find(node => node.className === 'confirm-overlay');
+    assert.match(overlay.children[0].children[0].textContent, /definitivamente.*Q8.*#42.*podrán reutilizarse/);
+    const backup = 'jobs-recovery-20261014T130000Z-' + 'b'.repeat(32) + '.sqlite';
+    const outcome = { source_job_id: 8, service_id: 42, snapshot_count: 1 };
+    fixture.reply('recover/job_recovery', envelope({ resolution: 'discarded_resources', resolved: [outcome], discarded: [outcome], backup_name: backup,
+        checked_at: '2026-10-14T13:00:00Z', router_changes: false, crm_changes: false }));
+    fixture.reply('list/job_recovery', envelope({ ...listing, groups: [listing.groups[1]], total: 1 }));
+    await overlay.children[0].children[1].children[1].fire('click'); await applying; await flush();
+    assert.equal(fixture.nodes.get('job-recovery-result').children[0].textContent, 'Registro local descartado');
+    assert.match(fixture.nodes.get('job-recovery-result').children[2].textContent, /no confirma.*retirados del equipo/);
+    assert.equal(fixture.nodes.get('job-recovery-list').children.length, 1);
+    assert.equal(fixture.calls.filter(call => call.action === 'apply').length, 1);
+    assert.equal(fixture.nodes.get('discard-job-recovery').style.display, 'none');
+    assert(fixture.calls.every(call => ['list', 'recover'].includes(call.changeType)), 'Forced local discard cannot call router, CRM PATCH or job execution APIs');
 }
 
 async function checkInvalidReservationRepairPanel() {
@@ -2179,7 +2269,7 @@ async function checkNetworkRecoveryPanel() {
     assert.deepEqual(plain(healthy.diagnostics()[0].data), {}, 'Reactive recovery reads must not request live CRM verification');
     const malformed = recoveryPanelFixture({ bootstrap: '{', details }); await flush();
     assert.equal(malformed.nodes.get('btn-cache').disabled, false, 'An invalid optional bootstrap must not break normal navigation');
-    assert.equal((markup.match(/(?:src|href)="(?:js|css)\/[^"?]+\?v=2\.0\.46"/g) || []).length, 5, 'Every panel asset must use the new revision to invalidate UISP browser caches');
+    assert.equal((markup.match(/(?:src|href)="(?:js|css)\/[^"?]+\?v=2\.0\.47"/g) || []).length, 5, 'Every panel asset must use the new revision to invalidate UISP browser caches');
     assert(!markup.includes('v=2.0.45'));
     assert(apiSource.includes("'alert-triangle':"), 'The conflict warning must have its own local warning icon');
 }
@@ -3722,6 +3812,8 @@ async function checkLanguagePresentation() {
     await checkWarningDismissals();
     await checkJobRecoveryResolutionPanel();
     await checkRecoveryObservationPanel();
+    await checkRetainedRecoveryPanel();
+    await checkForcedRecoveryDiscardPanel();
     await checkInvalidReservationRepairPanel();
     await checkCrmNetworkMonitorPanel();
     await checkCrmNetworkResolutionPanel();

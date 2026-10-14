@@ -170,7 +170,12 @@ try {
         && count($result['blocked'][0]['checks'])===2,'Legacy auxiliary uncertainty was hidden or certified absent');
     $seed(); $partial=$snapshot; $partial['_prior_network']=['address'=>'10.77.0.99']; $partial['_prior_identity']=$identity;
     $statement=$queue->prepare('UPDATE jobs SET payload=? WHERE id=17');$statement->bindValue(1,json_encode($partial));$statement->execute()->finalize();$statement->close();
-    $result=$api->preview(17); recoveryObservationCheck($result['previewToken']===null && $result['blocked'][0]['reason']==='router_snapshot_incomplete','Unobserved prior reservation was released');
+    $result=$api->preview(17); recoveryObservationCheck($result['previewToken']===null && $result['blocked'][0]['reason']==='router_snapshot_incomplete'
+        && $result['blocked'][0]['checks']===[] && $result['blocked'][0]['diagnostics']===['stage'=>'prior_reservations',
+            'issues'=>[['code'=>'uncovered_prior_address','snapshot_slot'=>'source','family'=>'IPv4']]],'Unobserved prior reservation was released or missing-history diagnostic remained opaque');
+    $calls=[]; $preserve=$api->preview(17,'preserve');
+    recoveryObservationCheck(is_string($preserve['previewToken']) && $preserve['candidate']['resolution']==='retained_resources'
+        && !$calls,'Missing prior history had no explicit non-mutating preservation path');
     $seed(); $partial=$snapshot; $partial['_prior_network']=['address'=>'10.77.0.11']; $partial['_prior_identity']='unmatched-old-identity';
     $statement=$queue->prepare('UPDATE jobs SET payload=? WHERE id=17');$statement->bindValue(1,json_encode($partial));$statement->execute()->finalize();$statement->close();
     recoveryObservationCheck($api->preview(17)['previewToken']===null,'Unobserved prior account identity was released');

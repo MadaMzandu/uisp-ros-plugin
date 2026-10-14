@@ -32,6 +32,15 @@ class ApiIP
     private array $assigned=[];
     private array $usedRanges=[];
     private array $blockedRanges=[];
+    private bool $readOnly;
+    private bool $ignoreCurrentReservation;
+
+    /** Read-only instances validate a prospective command build without acquiring ownership. */
+    public function __construct(bool $readOnly = false, bool $ignoreCurrentReservation = false)
+    {
+        $this->readOnly = $readOnly;
+        $this->ignoreCurrentReservation = $readOnly && $ignoreCurrentReservation;
+    }
 
     public function assign($sid,$device=[],$ipv6=false,?object $config=null): ?string
     {
@@ -52,9 +61,9 @@ class ApiIP
         }
         if(!$pool) return null;
         $prefixes=preg_split('/\s*,\s*/',trim($pool));
-        $reserved = $this->db()->transaction(function() use($sid,$prefixes,$ipv6){
+        $reserve = function() use($sid,$prefixes,$ipv6){
             // Check again under the write lock; another worker may have reserved this service.
-            $existing=$this->db()->selectAddress($sid,$ipv6);
+            $existing=$this->ignoreCurrentReservation ? null : $this->db()->selectAddress($sid,$ipv6);
             if($existing!==null && $existing!=='') return $this->validReservation($sid, $existing, $ipv6);
             $this->loadUsedRanges($sid,$ipv6);
             $this->blockedRanges=$this->mergeRanges(array_merge($this->usedRanges,$this->excludedRanges()));
@@ -66,10 +75,11 @@ class ApiIP
                 return $address;
             }
             return null;
-        });
+        };
+        $reserved = $this->readOnly ? $reserve() : $this->db()->transaction($reserve);
         if ($reserved) {
             $this->remember($sid, $reserved, $ipv6);
-            MyLog()->Append(['ip_assigned', "address: $reserved"]);
+            if (!$this->readOnly) MyLog()->Append(['ip_assigned', "address: $reserved"]);
         }
         return $reserved;
     }
@@ -114,22 +124,24 @@ class ApiIP
         } catch (InvalidArgumentException $error) {
             throw new InvalidNetworkAddress((int)$sid, (int)$sid, 'input', (bool)$ip6);
         }
-        $this->db()->transaction(function() use($sid,$address,$ip6){
+        $reserve = function() use($sid,$address,$ip6){
             // Reusing this exact valid reservation does not acquire any new
             // ownership. An unrelated corrupt legacy row must not interrupt
             // suspension/reactivation of an already assigned service.
-            if ($this->db()->selectAddress($sid,(bool)$ip6) === $address) return;
+            if (!$this->ignoreCurrentReservation && $this->db()->selectAddress($sid,(bool)$ip6) === $address) return;
             $this->loadUsedRanges($sid,$ip6);
             if($this->overlapsUsed($this->range($address,$ip6)))
                 throw new RuntimeException('The service address or IPv6 prefix is already reserved by another service');
             $this->persist($sid,$address,$ip6);
-        });
+        };
+        if ($this->readOnly) $reserve(); else $this->db()->transaction($reserve);
         $this->remember($sid,$address,$ip6);
     }
 
     private function persist($sid,string $address,bool $ipv6): void
     {
         if(!is_numeric($sid) || (int)$sid<1) throw new InvalidArgumentException('A valid service ID is required to reserve an address');
+        if ($this->readOnly) return;
         $field=$ipv6 ? 'address6' : 'address';
         $sql="INSERT INTO network(id,$field) VALUES (:id,:address) ON CONFLICT(id) DO UPDATE SET $field=excluded.$field";
         if(!$this->db()->execute($sql,[':id'=>(int)$sid,':address'=>$address]))
@@ -150,6 +162,7 @@ class ApiIP
         $type=$ipv6 ? 'v6' : 'v4';
         $found=array_search($sid,$this->assigned[$type] ?? []);
         if($found!==false) return $found;
+        if ($this->ignoreCurrentReservation) return null;
         $found=$this->db()->selectAddress($sid,$ipv6);
         if($found!==null && $found!=='') $found=$this->validReservation($sid,$found,(bool)$ipv6);
         if($found) $this->remember($sid,$found,$ipv6);
@@ -200,11 +213,17 @@ class ApiIP
                     }
                     $this->usedRanges[]=$this->range($address,$ipv6);
                 } catch (InvalidArgumentException $error) {
-                    // Invalid imported attributes cannot reserve a real network. Keep the row
-                    // intact so that provisioning that service fails rather than allocating anew.
-                    // Durable/applied reservations remain strict and are never released here.
-                    if($source!=='cache') throw new InvalidNetworkAddress((int)$sid, (int)$row['id'], 'reserved', $ipv6);
-                    MyLog()->Append(['invalid_cached_address','serviceId'=>(int)$row['id'],'family'=>$ipv6 ? 'IPv6' : 'IPv4'],LOG_WARNING);
+                    // A malformed peer string cannot occupy a numeric IP range.
+                    // Preserve its row for review and reject it when that service
+                    // is processed, without stopping another customer's work.
+                    // Valid cache/applied/prepared/retained ownership is still
+                    // collected below and remains globally exclusive.
+                    if (!$this->readOnly) {
+                        if ($source === 'reserved') MyLog()->Append(['event'=>'invalid_peer_reservation_ignored',
+                            'requestedServiceId'=>(int)$sid,'blockingServiceId'=>(int)$row['id'],
+                            'addressSource'=>'reserved','addressFamily'=>$ipv6 ? 'IPv6' : 'IPv4'],LOG_WARNING);
+                        else MyLog()->Append(['invalid_cached_address','serviceId'=>(int)$row['id'],'family'=>$ipv6 ? 'IPv6' : 'IPv4'],LOG_WARNING);
+                    }
                 }
             }
         }

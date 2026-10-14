@@ -6,6 +6,22 @@ Esta revisión reúne las modificaciones de [dhanielsnieto en el PR #89](https:/
 
 El plugin comunica UISP CRM con los MikroTik mediante la **API nativa de RouterOS**. Los puertos habituales son `8728` para API y `8729` para API con TLS. El panel permite administrar esa integración; no cambia el transporte a SSH, WinBox o REST.
 
+## Candidato 2.4.32 — revisión automática y salida explícita de recuperaciones
+
+El proceso programado comprueba reservas malformadas y recuperaciones antes de ejecutar la cola, fuera de sus bloqueos de trabajo. Revisa como máximo un servicio/familia y una recuperación por pasada, con presupuesto de 12 segundos y turnos persistentes para no atascarse en el primer caso. Sólo aplica correcciones locales demostrables contra UISP y consolida copias redundantes o recursos observados ausentes, con respaldo y revalidación. No fuerza descartes, no envía PATCH a CRM ni desconecta cuentas desde esa revisión. Los casos sin evidencia suficiente se conservan y los fallos de consulta no abortan la ejecución de otros trabajos.
+
+Una reserva malformada de otro servicio queda como diagnóstico informativo y no detiene la asignación del cliente actual. La fila sigue visible para corrección; las IP válidas de caché, recursos aplicados y registros históricos permanecen exclusivas. Una IP propia inválida falla sólo para ese servicio.
+
+La reparación de un campo local malformado ya no exige eliminar una recuperación compatible. Conserva sus registros y direcciones válidas byte por byte; una dirección válida distinta, una identidad contradictoria o un trabajo ejecutable incompatible siguen protegidos. El flujo muestra cuántos registros conserva. Las reservas se validan antes de las limpiezas de una actualización que necesite preparar su reemplazo, para evitar retirar una cuenta y fallar después por la IP inválida de su reemplazo.
+
+**Conservar recursos y cerrar revisión** ofrece una salida al historial antiguo incompleto. Comprueba de nuevo la identidad del servicio y cliente en UISP, respalda la cola y mueve sus registros exactos a un almacén protegido. Sus reservas válidas, referencias de equipos y recursos compartidos siguen protegidos, incluso después de reiniciar o compactar el trabajo original; no se ejecutan como limpiezas canceladas en una actualización posterior. El apartado de revisiones cerradas permanece visible. Conservar no confirma que el router esté limpio ni sincronizado, y no libera las IP históricas.
+
+**Descartar registro local** permite forzar la retirada definitiva del historial cancelado o conservado seleccionado, incluso sin conexión a UISP. Tiene revisión local, confirmación del trabajo/servicio, token de un solo uso, comprobación de concurrencia y respaldo privado previo. Mantiene los trabajos actuales, el estado aplicado, las reservas actuales, CRM y router. Advierte que los recursos históricos pueden seguir presentes y que sus IP podrán reutilizarse al perder esa protección; no es una limpieza física ni elimina conflictos actuales de propiedad. Nunca se ejecuta automáticamente.
+
+La cola de trabajos queda primero. Las recuperaciones aparecen justo debajo en tarjetas compactas de una, dos o tres columnas según el espacio; los textos repetidos se reducen y los controles siguen accesibles. Un resultado confirmado refresca la lista y el indicador. Los diagnósticos identifican las reservas anteriores sin cobertura, comandos antiguos ausentes y retiradas canceladas, sin publicar credenciales.
+
+Validación 2.4.32 aprobada: **42 suites aisladas**, sintaxis de **53 archivos PHP propios** y verificación de 365 entradas, 132 archivos propios y 13 dependencias fijadas. Informe actual: `dist/verification-2.4.32.json`. SHA-256: `2d679a68b6d77f3f11ca3d9006ebaa056f102f2b31c1e408b9733875e37fee0c`. Las pruebas de navegador usan datos ficticios; no se modificaron UISP ni routers de producción.
+
 ## Candidato 2.4.31 — cerrar avisos y corregir reservas retenidas por trabajos cancelados
 
 Los tres avisos superiores tienen **Cerrar aviso** y se pueden recuperar con **Mostrar avisos**. El cierre se conserva durante la pestaña mediante cantidades y estados generales; no guarda IP, clientes ni credenciales. No reaparece en cada sondeo ni al navegar. Cambios relevantes de cantidad/error o la desaparición y reaparición del problema vuelven a mostrarlo. Los contadores laterales, la consulta de detalles y las protecciones de una migración pausada siguen vigentes.
@@ -411,7 +427,7 @@ La evidencia real posterior identificó tokens ausentes y una URL pegada como se
 
 ## Preparación para instalar y validar
 
-La versión actual es 2.4.31; su estado de validación se indica al principio. La confirmación de recuperación de planes archivados corresponde a 2.4.19 y conserva su alcance histórico. Ante IP duplicadas, consultar las seis vistas y revisar los propietarios. **Revisar limpieza** permite comprobar una selección de reservas obsoletas y confirmar sólo las elegibles con respaldo privado; un trabajo pendiente, una recuperación pendiente o el estado aplicado de una cuenta impiden retirar sus reservas. El respaldo generado permanece descargable desde **Sistema**, incluso después de recargar. Resolver los conflictos restantes y recargar permite completar la migración; las demás escrituras y el aprovisionamiento siguen pausados hasta entonces. La [guía de pruebas reales](PRUEBAS_REALES.md) contiene 154 escenarios para las comprobaciones restantes.
+La versión actual es 2.4.32; su estado de validación se indica al principio. La confirmación de recuperación de planes archivados corresponde a 2.4.19 y conserva su alcance histórico. Ante IP duplicadas, consultar las seis vistas y revisar los propietarios. **Revisar limpieza** permite comprobar una selección de reservas obsoletas y confirmar sólo las elegibles con respaldo privado; un trabajo pendiente, una recuperación pendiente o el estado aplicado de una cuenta impiden retirar sus reservas. El respaldo generado permanece descargable desde **Sistema**, incluso después de recargar. Resolver los conflictos restantes y recargar permite completar la migración; las demás escrituras y el aprovisionamiento siguen pausados hasta entonces. La [guía de pruebas reales](PRUEBAS_REALES.md) contiene 162 escenarios para las comprobaciones restantes.
 
 ### Resultado histórico de 2.4.17
 

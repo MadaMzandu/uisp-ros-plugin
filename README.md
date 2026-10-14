@@ -2,6 +2,22 @@
 
 [Complete English changelog](docs/CHANGELOG_EN.md) · [Texto completo para el PR](docs/PR_DESCRIPTION.md) · [Webhook setup and rationale](docs/WEBHOOK_SETUP_EN.md) · [Mejoras en español](docs/MEJORAS.md)
 
+## Candidato 2.4.32 — revisión automática y salida explícita de recuperaciones
+
+El proceso programado comprueba reservas malformadas y recuperaciones antes de ejecutar la cola, fuera de sus bloqueos de trabajo. Revisa como máximo un servicio/familia y una recuperación por pasada, con presupuesto de 12 segundos y turnos persistentes para no atascarse en el primer caso. Sólo aplica correcciones locales demostrables contra UISP y consolida copias redundantes o recursos observados ausentes, con respaldo y revalidación. No fuerza descartes, no envía PATCH a CRM ni desconecta cuentas desde esa revisión. Los casos sin evidencia suficiente se conservan y los fallos de consulta no abortan la ejecución de otros trabajos.
+
+Una reserva malformada de otro servicio queda como diagnóstico informativo y no detiene la asignación del cliente actual. La fila sigue visible para corrección; las IP válidas de caché, recursos aplicados y registros históricos permanecen exclusivas. Una IP propia inválida falla sólo para ese servicio.
+
+La reparación de un campo local malformado ya no exige eliminar una recuperación compatible. Conserva sus registros y direcciones válidas byte por byte; una dirección válida distinta, una identidad contradictoria o un trabajo ejecutable incompatible siguen protegidos. El flujo muestra cuántos registros conserva. Las reservas se validan antes de las limpiezas de una actualización que necesite preparar su reemplazo, para evitar retirar una cuenta y fallar después por la IP inválida de su reemplazo.
+
+**Conservar recursos y cerrar revisión** ofrece una salida al historial antiguo incompleto. Comprueba de nuevo la identidad del servicio y cliente en UISP, respalda la cola y mueve sus registros exactos a un almacén protegido. Sus reservas válidas, referencias de equipos y recursos compartidos siguen protegidos, incluso después de reiniciar o compactar el trabajo original; no se ejecutan como limpiezas canceladas en una actualización posterior. El apartado de revisiones cerradas permanece visible. Conservar no confirma que el router esté limpio ni sincronizado, y no libera las IP históricas.
+
+**Descartar registro local** permite forzar la retirada definitiva del historial cancelado o conservado seleccionado, incluso sin conexión a UISP. Tiene revisión local, confirmación del trabajo/servicio, token de un solo uso, comprobación de concurrencia y respaldo privado previo. Mantiene los trabajos actuales, el estado aplicado, las reservas actuales, CRM y router. Advierte que los recursos históricos pueden seguir presentes y que sus IP podrán reutilizarse al perder esa protección; no es una limpieza física ni elimina conflictos actuales de propiedad. Nunca se ejecuta automáticamente.
+
+La cola de trabajos queda primero. Las recuperaciones aparecen justo debajo en tarjetas compactas de una, dos o tres columnas según el espacio; los textos repetidos se reducen y los controles siguen accesibles. Un resultado confirmado refresca la lista y el indicador. Los diagnósticos identifican las reservas anteriores sin cobertura, comandos antiguos ausentes y retiradas canceladas, sin publicar credenciales.
+
+Validación 2.4.32 aprobada: **42 suites aisladas**, sintaxis de **53 archivos PHP propios** y verificación de 365 entradas, 132 archivos propios y 13 dependencias fijadas. Informe actual: `dist/verification-2.4.32.json`. SHA-256: `2d679a68b6d77f3f11ca3d9006ebaa056f102f2b31c1e408b9733875e37fee0c`. Las pruebas de navegador usan datos ficticios; no se modificaron UISP ni routers de producción.
+
 ## Candidato 2.4.31 — cerrar avisos y corregir reservas retenidas por trabajos cancelados
 
 Los tres avisos superiores tienen **Cerrar aviso** y se pueden recuperar con **Mostrar avisos**. El cierre se conserva durante la pestaña mediante cantidades y estados generales; no guarda IP, clientes ni credenciales. No reaparece en cada sondeo ni al navegar. Cambios relevantes de cantidad/error o la desaparición y reaparición del problema vuelven a mostrarlo. Los contadores laterales, la consulta de detalles y las protecciones de una migración pausada siguen vigentes.
@@ -242,7 +258,7 @@ Para verificar el candidato después de instalar dependencias y construir el ZIP
 python tools/verify_plugin.py --php RUTA_PHP --node RUTA_NODE --archive dist/ros-plugin-2.4.31-candidate.zip --output dist/verification-2.4.31.json
 ```
 
-En Windows sin configuración PHP, añadir `--extension-dir RUTA_EXT`. El verificador ejecuta las suites y comprueba sintaxis PHP, correspondencia del código/dependencias y exclusión de datos/fixtures del instalador. El estado de validación de 2.4.31 se indica al principio. Para construirlo: `python tools/build_plugin.py --vendor-dir src/vendor --output dist/ros-plugin-2.4.31-candidate.zip`.
+En Windows sin configuración PHP, añadir `--extension-dir RUTA_EXT`. El verificador ejecuta las suites y comprueba sintaxis PHP, correspondencia del código/dependencias y exclusión de datos/fixtures del instalador. El estado de validación de 2.4.32 se indica al principio. Para construirlo: `python tools/build_plugin.py --vendor-dir src/vendor --output dist/ros-plugin-2.4.32-candidate.zip`.
 
 Si una migración queda pendiente por IP duplicadas, usar **Conflictos de IP → Revisar limpieza** para comprobar las reservas obsoletas elegibles, revisar los motivos y confirmar únicamente la selección aprobada. Los trabajos pendientes, la recuperación pendiente y el estado aplicado de una cuenta protegen sus reservas; limpiar IP no retira recursos del router. Conservar el respaldo privado generado, que permanece descargable desde **Sistema** después de recargar. Tras resolver el último conflicto, recargar el panel para completar la migración antes de reanudar las demás escrituras.
 

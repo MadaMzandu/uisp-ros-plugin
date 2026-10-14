@@ -84,9 +84,11 @@ try {
                 && count(get_object_vars($values)) === 0) {
                 $result = $recovery->listing();
             } elseif (($data->changeType ?? '') === 'recover' && ($data->action ?? '') === 'preview'
-                && array_keys(get_object_vars($values)) === ['sourceJobId'] && is_int($values->sourceJobId) && $values->sourceJobId > 0) {
+                && in_array(array_keys(get_object_vars($values)), [['sourceJobId'], ['sourceJobId', 'mode']], true)
+                && is_int($values->sourceJobId) && $values->sourceJobId > 0
+                && in_array($values->mode ?? 'resolve', ['resolve', 'preserve', 'discard'], true)) {
                 if (is_file('data/data.db')) (new ApiSetup())->assertCompatible();
-                $result = $recovery->preview($values->sourceJobId);
+                $result = $recovery->preview($values->sourceJobId, $values->mode ?? 'resolve');
             } elseif (($data->changeType ?? '') === 'recover' && ($data->action ?? '') === 'apply'
                 && array_keys(get_object_vars($values)) === ['previewToken'] && is_string($values->previewToken)) {
                 if (is_file('data/data.db')) (new ApiSetup())->assertCompatible();

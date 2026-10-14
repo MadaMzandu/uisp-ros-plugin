@@ -77,7 +77,13 @@ class ApiJobQueue
             id INTEGER PRIMARY KEY AUTOINCREMENT, source_job_id INTEGER NOT NULL,
             service_id INTEGER NOT NULL, source_version INTEGER NOT NULL, slot TEXT NOT NULL,
             payload TEXT NOT NULL, identity TEXT NOT NULL, UNIQUE(source_job_id,slot)
-        ); CREATE INDEX IF NOT EXISTS cancellation_service_order ON cancellation_cleanups(service_id,source_version,id)');
+        ); CREATE INDEX IF NOT EXISTS cancellation_service_order ON cancellation_cleanups(service_id,source_version,id);
+        CREATE TABLE IF NOT EXISTS retained_resources (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, source_job_id INTEGER NOT NULL,
+            service_id INTEGER NOT NULL, source_version INTEGER NOT NULL, slot TEXT NOT NULL,
+            payload TEXT NOT NULL, identity TEXT NOT NULL, retained_at TEXT NOT NULL,
+            UNIQUE(source_job_id,slot)
+        ); CREATE INDEX IF NOT EXISTS retained_service_order ON retained_resources(service_id,source_version,id)');
         $this->withAdministrativeLock(function () use ($newTerminalSchema): void {
             $this->importLegacy();
             $this->transaction(function () use ($newTerminalSchema): void {
@@ -260,6 +266,14 @@ class ApiJobQueue
         foreach ($this->query('SELECT payload FROM cancellation_cleanups WHERE 1=1' . $filter, $parameters) as $row) {
             $snapshots[] = $this->withoutCredentials($this->payload($row));
         }
+        // A reviewed cancellation can explicitly keep its resources. These are
+        // ownership evidence, never commands for a later job's cancellation cleanup.
+        foreach ($this->query('SELECT slot,payload FROM retained_resources WHERE 1=1' . $filter, $parameters) as $row) {
+            $snapshot = $this->payload($row);
+            if ($row['slot'] !== 'source' || isset($snapshot['_commands'])) $snapshots[] = $this->withoutCredentials($snapshot);
+            if ($row['slot'] === 'source' && isset($snapshot['_cleanup']) && is_array($snapshot['_cleanup']))
+                $snapshots[] = $this->withoutCredentials($snapshot['_cleanup']);
+        }
         return $snapshots;
     }
 
@@ -292,6 +306,20 @@ class ApiJobQueue
         }
         foreach ($this->query('SELECT service_id,payload FROM cancellation_cleanups') as $row) {
             $this->collectAddresses($rows, (int) $row['service_id'], $this->payload($row), $ipv6, true);
+        }
+        foreach ($this->query('SELECT service_id,slot,payload FROM retained_resources') as $row) {
+            $snapshot = $this->payload($row); $sid = (int) $row['service_id'];
+            if ($row['slot'] !== 'source') {
+                $this->collectAddresses($rows, $sid, $snapshot, $ipv6, true);
+                continue;
+            }
+            // An unprepared cancelled intent's desired IP was never an owned
+            // resource. Retain only frozen commands and its historical reservations.
+            if (isset($snapshot['_commands']) && is_array($snapshot['_commands']))
+                $this->collectAddresses($rows, $sid, $snapshot, $ipv6, false);
+            $this->collectAddresses($rows, $sid, ['_prior_network' => $snapshot['_prior_network'] ?? []], $ipv6, true);
+            if (isset($snapshot['_cleanup']) && is_array($snapshot['_cleanup']))
+                $this->collectAddresses($rows, $sid, $snapshot['_cleanup'], $ipv6, true);
         }
         return array_values($rows);
     }
@@ -674,6 +702,9 @@ class ApiJobQueue
             if ($references($this->payload($row))) { $references = null; return true; }
         }
         foreach ($this->query('SELECT payload FROM cancellation_cleanups') as $row) {
+            if ($references($this->payload($row))) { $references = null; return true; }
+        }
+        foreach ($this->query('SELECT payload FROM retained_resources') as $row) {
             if ($references($this->payload($row))) { $references = null; return true; }
         }
         foreach ($this->query('SELECT applied_payload FROM service_versions WHERE applied_payload IS NOT NULL') as $row) {

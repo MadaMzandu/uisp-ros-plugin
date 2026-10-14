@@ -60,6 +60,33 @@ function repairJob(array $fixture, int $sid, array $payload, string $operation =
         $statement->bindValue(3,json_encode($payload,JSON_THROW_ON_ERROR),SQLITE3_TEXT); $statement->execute()->finalize(); $statement->close();
     } finally { $database->close(); }
 }
+function repairDebt(array $fixture, int $sid, array $payload): void {
+    $database = new SQLite3($fixture['jobs']);
+    try {
+        $statement = $database->prepare('INSERT INTO cancellation_cleanups(service_id,payload) VALUES(?,?)');
+        $statement->bindValue(1,$sid,SQLITE3_INTEGER); $statement->bindValue(2,json_encode($payload,JSON_THROW_ON_ERROR),SQLITE3_TEXT);
+        $statement->execute()->finalize(); $statement->close();
+    } finally { $database->close(); }
+}
+function repairRetained(array $fixture, int $sid, array $payload, string $slot='commands'): void {
+    $device=$payload['_device']??[];
+    $identity=['device'=>$payload['device']??null,'ip'=>$device['ip']??null,'port'=>$device['port']??null,
+        'username'=>$payload['username']??null,'mac'=>$payload['mac']??null,'hotspot'=>$payload['hotspot']??null,
+        'duid'=>$payload['duid']??null,'iaid'=>$payload['iaid']??null]; ksort($identity);
+    $identity=hash('sha256',json_encode($identity,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR));
+    $database=new SQLite3($fixture['jobs']);
+    try {
+        $database->exec('CREATE TABLE IF NOT EXISTS retained_resources(id INTEGER PRIMARY KEY AUTOINCREMENT,
+            source_job_id INTEGER NOT NULL,service_id INTEGER NOT NULL,source_version INTEGER NOT NULL,slot TEXT NOT NULL,
+            payload TEXT NOT NULL,identity TEXT NOT NULL,retained_at TEXT NOT NULL,UNIQUE(source_job_id,slot))');
+        $statement=$database->prepare("INSERT INTO retained_resources(source_job_id,service_id,source_version,slot,payload,identity,retained_at)
+            VALUES(1,?,1,?,?,?,'2027-01-15T08:00:00Z')");
+        foreach ([$sid,$slot,json_encode($payload,JSON_THROW_ON_ERROR),$identity] as $index=>$value) {
+            $statement->bindValue($index+1,$value,is_int($value)?SQLITE3_INTEGER:SQLITE3_TEXT);
+        }
+        $statement->execute()->finalize(); $statement->close();
+    } finally { $database->close(); }
+}
 function repairBlocked(ApiNetworkRepair $api, array $selection, string $reason): void {
     $result = $api->preview($selection);
     repairCheck($result['candidates'] === [] && $result['previewToken'] === null && ($result['blocked'][0]['reason'] ?? '') === $reason,
@@ -175,7 +202,7 @@ try {
 
     // Cancelling a failed, unprepared update must not strand the malformed
     // reservation. Cancelled/superseded rows stay immutable and are not counted
-    // as executable jobs; frozen resources or any cancellation debt still block.
+    // as executable jobs. Unidentified or incompatible frozen evidence still blocks.
     foreach (['cancelled','superseded'] as $terminalState) {
         $reset(); $case=repairFixture($root,'unprepared-' . $terminalState); $caseApi=$factory($case);
         repairJob($case,11,['id'=>11,'clientId'=>111,'address'=>'192.0.2.11',
@@ -225,6 +252,74 @@ try {
             repairSql($protectedCase['jobs'],"UPDATE jobs SET status='" . $terminalState . "'");
             repairBlocked($factory($protectedCase),$choose11,'queue_recovery');
         }
+    }
+
+    // A compatible retained snapshot is ownership protection, not a request to
+    // execute the cancelled operation. Correct only the exact malformed local
+    // value, and leave frozen commands and recovery rows unchanged.
+    foreach (['cancelled','superseded'] as $terminalState) foreach (['update','delete','queues_set','queues_remove'] as $operation) {
+        $reset(); $case=repairFixture($root,'compatible-debt-'.$terminalState.'-'.$operation); $caseApi=$factory($case);
+        $snapshot=['id'=>11,'clientId'=>111,'action'=>$operation,'address'=>'PRIVATE-INVALID-ONE',
+            '_prior_network'=>['address'=>'PRIVATE-INVALID-ONE','address6'=>'2001:db8:11::/64'],
+            '_commands'=>[['path'=>'ppp/secret','action'=>'set','name'=>'fixture-account','remote-address'=>'192.0.2.11'],
+                ['path'=>'queue/simple','action'=>'set','name'=>'fixture-account','target'=>'192.0.2.11/32,2001:db8:11::/64']]];
+        if ($operation==='delete') $snapshot['_delete_frozen']=true;
+        repairJob($case,11,$snapshot,$operation); repairSql($case['jobs'],"UPDATE jobs SET status='".$terminalState."'");
+        repairDebt($case,11,$snapshot); $queueBefore=hash_file('sha256',$case['jobs']); $before=repairRows($case['data']);
+        $preview=$caseApi->preview($choose11);
+        repairCheck(count($preview['candidates'])===1 && $preview['candidates'][0]['pending_jobs']===0
+            && $preview['candidates'][0]['retained_recovery_records']===1,
+            'Compatible recovery stranded a malformed local reservation: '.json_encode($preview));
+        repairCheck(hash_file('sha256',$case['jobs'])===$queueBefore && repairRows($case['data'])===$before,
+            'Compatible recovery preview changed local or durable state');
+        $caseApi->apply($preview['previewToken']);
+        $after=repairRows($case['data']); $before['network'][0]['address']='192.0.2.11'; $before['services'][0]['address']='192.0.2.11';
+        repairCheck($after===$before && hash_file('sha256',$case['jobs'])===$queueBefore,
+            'Malformed-local correction changed frozen ownership, recovery, plan, status or another family');
+    }
+    foreach (['different-frozen','different-prior','unknown-value','different-client','different-service','unconfirmed-clear'] as $reason) {
+        $reset(); $case=repairFixture($root,'protected-debt-'.$reason); $snapshot=['id'=>11,'clientId'=>111,
+            'address'=>'PRIVATE-INVALID-ONE','_commands'=>[['path'=>'ppp/secret','action'=>'set','remote-address'=>'192.0.2.11']]];
+        $expectedReason='queue_recovery';
+        if ($reason==='different-frozen') $snapshot['_commands'][0]['remote-address']='192.0.2.99';
+        elseif ($reason==='different-prior') $snapshot['_prior_network']=['address'=>'192.0.2.99'];
+        elseif ($reason==='unknown-value') $snapshot['_commands'][0]['remote-address']='PRIVATE-UNKNOWN-FROZEN';
+        elseif ($reason==='different-client') { $snapshot['clientId']=999; $expectedReason='pending_identity_changed'; }
+        elseif ($reason==='different-service') { $snapshot['id']=99; $expectedReason='pending_identity_changed'; }
+        else { $responses['clients/services/11']=$service(11,null,'2001:db8:11::/64'); $collection[0]=$responses['clients/services/11']; }
+        repairDebt($case,11,$snapshot); $queueBefore=hash_file('sha256',$case['jobs']);
+        repairBlocked($factory($case),$choose11,$expectedReason);
+        repairCheck(hash_file('sha256',$case['jobs'])===$queueBefore,'Blocked recovery evidence was modified');
+    }
+    $reset(); $case=repairFixture($root,'recovery-changed-after-preview'); $caseApi=$factory($case);
+    repairDebt($case,11,['id'=>11,'clientId'=>111,'address'=>'192.0.2.11']);
+    $preview=$caseApi->preview($choose11);
+    repairDebt($case,11,['id'=>11,'clientId'=>111,'address'=>'192.0.2.99']);
+    repairReject(fn()=>$caseApi->apply($preview['previewToken']),'repair_verification_failed');
+    foreach (['commands','source'] as $slot) {
+        $reset(); $case=repairFixture($root,'retained-compatible-'.$slot); $caseApi=$factory($case);
+        $retained=['id'=>11,'clientId'=>111,'address'=>$slot==='source'?'PRIVATE-OBSOLETE-INTENT':'PRIVATE-INVALID-ONE',
+            '_prior_network'=>['address'=>'PRIVATE-INVALID-ONE']];
+        if ($slot==='commands') $retained['_commands']=[['path'=>'ppp/secret','remote-address'=>'192.0.2.11']];
+        repairRetained($case,11,$retained,$slot); $queueBefore=hash_file('sha256',$case['jobs']);
+        $preview=$caseApi->preview($choose11);
+        repairCheck(count($preview['candidates'])===1 && $preview['candidates'][0]['retained_recovery_records']===1,
+            'Reviewed retained ownership blocked compatible correction: '.json_encode($preview));
+        $caseApi->apply($preview['previewToken']);
+        repairCheck(hash_file('sha256',$case['jobs'])===$queueBefore,'Local correction changed reviewed retained ownership');
+    }
+    foreach (['collision','malformed','different-client','different-valid-own','bad-identity'] as $reason) {
+        $reset(); $case=repairFixture($root,'retained-guard-'.$reason); $owner=in_array($reason,['collision','malformed'],true)?91:11;
+        $retained=['id'=>$owner,'clientId'=>$owner===11?111:191,'address'=>$reason==='malformed'?'PRIVATE-OLD-CORRUPTION':'192.0.2.11'];
+        if ($reason==='different-client') $retained['clientId']=999;
+        if ($reason==='different-valid-own') $retained['address']='192.0.2.99';
+        repairRetained($case,$owner,$retained);
+        if ($reason==='bad-identity') repairSql($case['jobs'],"UPDATE retained_resources SET identity='invalid'");
+        $caseApi=$factory($case);
+        if ($reason==='malformed') {
+            repairCheck(count($caseApi->preview($choose11)['candidates'])===1,'Malformed retained peer was treated as an occupied IP');
+        } else repairBlocked($caseApi,$choose11,$reason==='collision'?'address_in_use':($reason==='different-client'?'pending_identity_changed':
+            ($reason==='bad-identity'?'queue_unknown':'queue_recovery')));
     }
 
     foreach (['address_in_use','valid_local_reservation','pending_address_changed','pending_identity_changed','queue_recovery','applied_ownership',

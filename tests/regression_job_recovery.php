@@ -44,6 +44,7 @@ $insert = function (string $table,array $values) use (&$database) {
 };
 $seed = function () use (&$database,$insert,$snapshot,$safeSnapshot,$identity) {
     $database->exec('DELETE FROM jobs; DELETE FROM cancellation_cleanups; DELETE FROM service_versions; DELETE FROM queue_meta; DELETE FROM service_event_locks');
+    if ($database->querySingle("SELECT count(*) FROM sqlite_master WHERE type='table' AND name='retained_resources'")) $database->exec('DELETE FROM retained_resources');
     $insert('jobs',['id'=>17,'service_id'=>701,'status'=>'cancelled','version'=>3,'payload'=>json_encode($snapshot),'updated'=>'2026-10-14T00:00:00Z','error'=>null]);
     $insert('jobs',['id'=>18,'service_id'=>702,'status'=>'pending','version'=>1,'payload'=>'{"id":702,"password":"OTHER_PRIVATE"}','updated'=>'2026-10-14T00:00:00Z','error'=>'fixture failure']);
     $insert('service_versions',['service_id'=>701,'version'=>3,'applied_identity'=>$identity,'applied_payload'=>json_encode($snapshot)]);
@@ -107,6 +108,13 @@ try {
     $seed(); file_put_contents($legacy,'[{"id":701,"password":"LEGACY_PRIVATE"}]'); $blocked('legacy_queue_present'); unlink($legacy);
     $seed(); $partial=$safeSnapshot; $partial['_prior_network']=['address'=>'10.77.0.90'];
     $statement=$database->prepare('UPDATE cancellation_cleanups SET payload=?'); $statement->bindValue(1,json_encode($partial)); $statement->execute()->finalize(); $statement->close(); $blocked('different_resources');
+    // Even identical applied/debt copies cannot release an old prior address:
+    // ordinary applied state reserves current addresses, not prior-network data.
+    $seed();$partial=$snapshot;$partial['_prior_network']=['address'=>'10.77.0.90'];
+    foreach(['UPDATE service_versions SET applied_payload=?','UPDATE jobs SET payload=? WHERE id=17','UPDATE cancellation_cleanups SET payload=?'] as $sql) {
+        $statement=$database->prepare($sql);$statement->bindValue(1,json_encode($partial));$statement->execute()->finalize();$statement->close();
+    }
+    $blocked('different_resources');
     $seed(); $partial=$safeSnapshot; $partial['_commands']=[];
     $statement=$database->prepare('UPDATE cancellation_cleanups SET payload=?'); $statement->bindValue(1,json_encode($partial)); $statement->execute()->finalize(); $statement->close(); $blocked('current_ownership_unknown');
     $seed(); $partial=$snapshot; $partial['_prior_network']=['address'=>'10.77.0.90'];
@@ -166,7 +174,7 @@ try {
     require_once __DIR__ . '/../src/lib/api_job_queue.php';
     $actualPath=$directory . '/actual-jobs.db'; $actualQueue=new ApiJobQueue($actualPath,null); $actualQueue->close();
     $actualDatabase=new SQLite3($actualPath); $actualDatabase->enableExceptions(true);
-    $actualInsert=static function(string $name,array $values) use($actualDatabase):void {
+    $actualInsert=static function(string $name,array $values) use(&$actualDatabase):void {
         $statement=$actualDatabase->prepare('INSERT INTO '.$name.'('.implode(',',array_keys($values)).') VALUES('.implode(',',array_fill(0,count($values),'?')).')');
         foreach(array_values($values) as $index=>$value)$statement->bindValue($index+1,$value,is_int($value)?SQLITE3_INTEGER:($value===null?SQLITE3_NULL:SQLITE3_TEXT));
         $statement->execute()->finalize();$statement->close();
@@ -186,6 +194,172 @@ try {
     $actualQueue=new ApiJobQueue($actualPath,null);
     jobRecoveryCheck(!$actualQueue->hasUnreconciled(701) && $actualQueue->reservedAddresses()===$occupied
         && $actualQueue->appliedSnapshot(701)===$appliedOwnership,'Real queue resurrected debt or lost occupied current ownership'); $actualQueue->close();
+    // The actual preserve API leaves every occupied address in the actual queue
+    // while making the cancelled source unavailable to Batch cleanup forever.
+    $actualDatabase=new SQLite3($actualPath);$actualDatabase->enableExceptions(true);
+    $cancelledDelete=$actualSnapshot;unset($cancelledDelete['_commands']);$cancelledDelete['action']='delete';
+    $cancelledDelete['_prior_network']=['address'=>'10.77.0.99'];$cancelledDelete['_prior_identity']='older incomplete identity';
+    // Legacy compaction can retain a historical job identity hash after some
+    // source selectors disappeared. A protected hold must not pretend this is
+    // current/applied proof, nor require reconstructing vanished selectors.
+    $oldSourceIdentity=hash('sha256','fixture historical source before compaction');
+    $actualInsert('jobs',['id'=>19,'service_id'=>701,'operation'=>'delete','identity'=>$oldSourceIdentity,'version'=>4,
+        'payload'=>json_encode($cancelledDelete),'fingerprint'=>'fixture delete hash','status'=>'cancelled','attempts'=>1,
+        'created'=>date('c'),'updated'=>date('c'),'history_scrubbed'=>1]);
+    $actualInsert('cancellation_cleanups',['id'=>32,'source_job_id'=>19,'service_id'=>701,'source_version'=>4,'slot'=>'applied',
+        'payload'=>json_encode($actualSafe),'identity'=>$identity]);$actualDatabase->close();
+    $actualQueue=new ApiJobQueue($actualPath,null);$occupied=$actualQueue->reservedAddresses();$appliedOwnership=$actualQueue->appliedSnapshot(701);$actualQueue->close();
+    $review=$actualApi->preview(19,'preserve');jobRecoveryCheck(is_string($review['previewToken']),'Actual cancelled delete cannot preserve incomplete history');
+    $actualApi->apply($review['previewToken']);$actualQueue=new ApiJobQueue($actualPath,null);
+    jobRecoveryCheck(!$actualQueue->hasUnreconciled(701) && $actualQueue->list()===[] && $actualQueue->reservedAddresses()===$occupied
+        && $actualQueue->appliedSnapshot(701)===$appliedOwnership,'Actual preserve API changed ownership, occupancy or kept a hidden executable job');$actualQueue->close();
+    $actualDatabase=new SQLite3($actualPath,SQLITE3_OPEN_READONLY);
+    $sourceHold=$actualDatabase->querySingle("SELECT * FROM retained_resources WHERE source_job_id=19 AND slot='source'",true);
+    jobRecoveryCheck($sourceHold['payload']===json_encode($cancelledDelete) && $sourceHold['identity']===jobRecoveryIdentity($cancelledDelete)
+        && $sourceHold['identity']!==$oldSourceIdentity,'Incomplete retained source was silently promoted to its old identity');$actualDatabase->close();
+
+    // Exact pre-command snapshots are still tracked by confirmed applied state.
+    // Their redundant copy can close without inventing any frozen resource list.
+    $seed(); $legacyApplied=$snapshot; unset($legacyApplied['_commands']);
+    $legacyDebt=$safeSnapshot; unset($legacyDebt['_commands']);
+    foreach(['UPDATE service_versions SET applied_payload=?','UPDATE jobs SET payload=? WHERE id=17'] as $sql) {
+        $statement=$database->prepare($sql);$statement->bindValue(1,json_encode($legacyApplied));$statement->execute()->finalize();$statement->close();
+    }
+    $statement=$database->prepare('UPDATE cancellation_cleanups SET payload=?');$statement->bindValue(1,json_encode($legacyDebt));$statement->execute()->finalize();$statement->close();
+    $review=$api->preview(17);
+    jobRecoveryCheck(is_string($review['previewToken']) && ($review['candidate']['evidence']??null)==='exact_legacy_applied_copy','Exact legacy copies remain stuck on missing frozen commands');
+    $legacyOwnership=$table('service_versions'); $api->apply($review['previewToken']);
+    jobRecoveryCheck($table('service_versions')===$legacyOwnership && !$table('cancellation_cleanups'),'Legacy consolidation changed confirmed applied ownership');
+
+    // Preserve is a separate, explicitly reviewed action. It can close an
+    // incomplete history without claiming the router is empty or deleting it.
+    $seed(); $partial=$snapshot; unset($partial['_commands']);
+    $partial['_prior_network']=['address'=>'10.77.0.99'];$partial['_prior_identity']='unconfirmed old identity';
+    $statement=$database->prepare('UPDATE jobs SET payload=? WHERE id=17');$statement->bindValue(1,json_encode($partial));$statement->execute()->finalize();$statement->close();
+    $database->exec('UPDATE service_versions SET applied_payload=NULL,applied_identity=NULL');
+    $protectedJobs=$table('jobs'); $protectedDebt=$table('cancellation_cleanups'); $protectedVersions=$table('service_versions');
+    $review=$api->preview(17,'preserve');
+    jobRecoveryCheck(is_string($review['previewToken']) && $review['candidate']['resolution']==='retained_resources'
+        && $table('cancellation_cleanups')===$protectedDebt,'Preservation preview mutated debt or remained blocked by missing history');
+    $result=$api->apply($review['previewToken']);
+    jobRecoveryCheck($result['resolved']===[] && $result['retained']===[['source_job_id'=>17,'service_id'=>701,'snapshot_count'=>1]]
+        && $result['router_changes']===false && $result['crm_changes']===false,'Preservation claimed physical resolution');
+    $held=$table('retained_resources'); $heldSlots=array_column($held,null,'slot');
+    jobRecoveryCheck(count($held)===2 && $heldSlots['applied']['payload']===$protectedDebt[0]['payload']
+        && $heldSlots['applied']['identity']===$protectedDebt[0]['identity'] && $heldSlots['source']['payload']===$protectedJobs[0]['payload']
+        && $table('service_versions')===$protectedVersions && !$table('cancellation_cleanups'),'Preservation discarded or altered protected ownership');
+    $jobsAfter=$table('jobs');$jobBefore=$protectedJobs[0];$jobAfter=$jobsAfter[0];unset($jobBefore['status'],$jobBefore['updated'],$jobAfter['status'],$jobAfter['updated']);
+    jobRecoveryCheck($jobsAfter[0]['status']==='cleaned' && $jobBefore===$jobAfter && $jobsAfter[1]===$protectedJobs[1],'Preservation altered unrelated or source resource state');
+    $listing=$api->listing(); $summary=(new ApiJobsStatus($jobs,$legacy))->read();
+    jobRecoveryCheck($listing['total']===0 && $listing['reviewed_total']===1 && count($listing['reviewed_groups'])===1
+        && $listing['reviewed_groups'][0]['reason']==='retained_resources' && $summary['recovery']===0,'Preserved ownership stayed pending or disappeared from reviewed list');
+    $text=json_encode($listing);foreach(['PRIVATE','_commands','username','password','rate-limit','10.77.0.99'] as $secret)jobRecoveryCheck(strpos($text,$secret)===false,'Retained list leaked private ownership');
+    $database->exec("UPDATE retained_resources SET identity='corrupted' WHERE slot='source'");
+    jobRecoveryCheck($api->listing()['available']===false,'Corrupt retained resource identity was labeled reviewed');
+    $statement=$database->prepare("UPDATE retained_resources SET identity=? WHERE slot='source'");$statement->bindValue(1,jobRecoveryIdentity($partial));$statement->execute()->finalize();$statement->close();
+    $holdBackup=new SQLite3($directory.'/'.$result['backup_name'],SQLITE3_OPEN_READONLY);
+    jobRecoveryCheck((int)$holdBackup->querySingle('SELECT count(*) FROM cancellation_cleanups')===1,'Preservation backup omitted exact pre-change debt');$holdBackup->close();
+    try {$api->apply($review['previewToken']);throw new RuntimeException('Preserve token reused');}
+    catch(InvalidArgumentException $expected){jobRecoveryCheck($expected->getMessage()==='invalid_recovery_token','Wrong preserve replay result');}
+
+    // Fresh identity and queue ownership are mandatory even when retaining.
+    $seed(); $service['clientId']=82; $review=$api->preview(17,'preserve');
+    jobRecoveryCheck($review['previewToken']===null && $review['blocked'][0]['reason']==='crm_identity_changed','Preserve accepted a different current customer');$service['clientId']=81;
+    $seed(); $review=$api->preview(17,'preserve');$database->exec("UPDATE jobs SET updated='changed' WHERE id=17");
+    try {$api->apply($review['previewToken']);throw new RuntimeException('Preserve accepted local drift');}
+    catch(InvalidArgumentException $expected){jobRecoveryCheck($expected->getMessage()==='recovery_state_changed','Wrong preserve local drift result');}
+    jobRecoveryCheck(count($table('cancellation_cleanups'))===1 && !$table('retained_resources'),'Stale preserve review moved ownership');
+    $seed(); $review=$api->preview(17,'preserve');$service['status']=3;
+    try {$api->apply($review['previewToken']);throw new RuntimeException('Preserve accepted CRM drift');}
+    catch(InvalidArgumentException $expected){jobRecoveryCheck($expected->getMessage()==='recovery_state_changed','Wrong preserve CRM drift result');}$service['status']=1;
+    $seed();$insert('jobs',['id'=>19,'service_id'=>701,'status'=>'pending','version'=>4,'payload'=>'{}']);
+    $review=$api->preview(17,'preserve');jobRecoveryCheck($review['previewToken']===null && $review['blocked'][0]['reason']==='queue_busy','Preserve ignored an executable job for same service');
+
+    // Final discard is an explicitly authorized local action. UISP may be
+    // offline; current applied resources and executable work are preserved.
+    $seed(); $mode='offline'; $localData=new SQLite3($data);
+    $localData->exec("CREATE TABLE network(id INTEGER PRIMARY KEY,address TEXT); INSERT INTO network VALUES(701,'10.77.0.11');
+        CREATE TABLE services(id INTEGER PRIMARY KEY,status INTEGER); INSERT INTO services VALUES(701,1)");$localData->close();
+    file_put_contents($directory.'/cache.db','SYNTHETIC PRIVATE CACHE UNCHANGED');
+    $dataHash=hash_file('sha256',$data);$cacheHash=hash_file('sha256',$directory.'/cache.db');
+    $insert('jobs',['id'=>19,'service_id'=>701,'status'=>'pending','version'=>4,'payload'=>'{"id":701,"clientId":81,"action":"update"}']);
+    $insert('jobs',['id'=>20,'service_id'=>703,'status'=>'cancelled','version'=>1,'payload'=>'{"id":703,"clientId":83}']);
+    $insert('jobs',['id'=>21,'service_id'=>701,'status'=>'cancelled','version'=>2,'payload'=>'{"id":701,"clientId":81}']);
+    $peer=$safeSnapshot;$peer['id']=703;$peer['clientId']=83;
+    $insert('cancellation_cleanups',['id'=>32,'source_job_id'=>20,'service_id'=>703,'source_version'=>1,'slot'=>'applied','payload'=>json_encode($peer),'identity'=>jobRecoveryIdentity($peer)]);
+    $insert('cancellation_cleanups',['id'=>33,'source_job_id'=>21,'service_id'=>701,'source_version'=>2,'slot'=>'applied','payload'=>json_encode($safeSnapshot),'identity'=>$identity]);
+    $jobsBefore=$table('jobs');$debtBefore=$table('cancellation_cleanups');$versionsBefore=$table('service_versions');$callsBefore=$calls;
+    $review=$api->preview(17,'discard');
+    jobRecoveryCheck(is_string($review['previewToken']) && $review['candidate']['resolution']==='discarded_resources'
+        && $review['candidate']['identity_origin']==='local' && $review['candidate']['crm_status']===null
+        && $review['candidate']['client_archived']===null && $review['candidate']['diagnostics']['pending_jobs']===1
+        && $calls===$callsBefore && $table('jobs')===$jobsBefore && $table('cancellation_cleanups')===$debtBefore,
+        'Final discard requested external proof, claimed fresh status, blocked valid pending work, or mutated preview');
+    $result=$api->apply($review['previewToken']);$expected=[['source_job_id'=>17,'service_id'=>701,'snapshot_count'=>1]];
+    jobRecoveryCheck($result['discarded']===$expected && $result['resolved']===$expected && $result['resolution']==='discarded_resources'
+        && $result['router_changes']===false && $result['crm_changes']===false && $calls===$callsBefore,
+        'Final discard changed external state or lost its explicit outcome');
+    $expectedJobs=$jobsBefore;$expectedJobs[0]['status']='cleaned';$expectedJobs[0]['updated']=gmdate('Y-m-d\TH:i:s\Z',$now);
+    jobRecoveryCheck($table('jobs')===$expectedJobs && $table('cancellation_cleanups')===array_slice($debtBefore,1)
+        && $table('service_versions')===$versionsBefore && hash_file('sha256',$data)===$dataHash
+        && hash_file('sha256',$directory.'/cache.db')===$cacheHash,'Final discard affected another source, current ownership, jobs, network or cache');
+    $discardBackup=new SQLite3($directory.'/'.$result['backup_name'],SQLITE3_OPEN_READONLY);
+    jobRecoveryCheck((int)$discardBackup->querySingle('SELECT count(*) FROM cancellation_cleanups')===3
+        && $discardBackup->querySingle('SELECT status FROM jobs WHERE id=17')==='cancelled'
+        && $discardBackup->querySingle('SELECT applied_payload FROM service_versions WHERE service_id=701')===$versionsBefore[0]['applied_payload'],
+        'Final discard backup omitted exact recoverable pre-change state');$discardBackup->close();
+    $public=json_encode([$review,$result]);foreach(['PRIVATE','_commands','username','password','10.77.0.11'] as $secret)
+        jobRecoveryCheck(strpos($public,$secret)===false,'Final discard leaked private history');
+    try{$api->apply($review['previewToken']);throw new RuntimeException('Discard token replayed');}
+    catch(InvalidArgumentException $expected){jobRecoveryCheck($expected->getMessage()==='invalid_recovery_token','Wrong discard replay result');}
+
+    foreach(['source','pending','applied','debt'] as $race) {
+        $seed();$insert('jobs',['id'=>19,'service_id'=>701,'status'=>'pending','version'=>4,'payload'=>'{"id":701,"clientId":81}']);
+        $review=$api->preview(17,'discard');$debtBefore=$table('cancellation_cleanups');
+        if($race==='source')$database->exec("UPDATE jobs SET updated='changed' WHERE id=17");
+        elseif($race==='pending')$database->exec("UPDATE jobs SET updated='changed' WHERE id=19");
+        elseif($race==='applied')$database->exec('UPDATE service_versions SET version=999');
+        else $database->exec("UPDATE cancellation_cleanups SET slot='commands' WHERE id=31");
+        try{$api->apply($review['previewToken']);throw new RuntimeException('Discard accepted changed '.$race);}
+        catch(InvalidArgumentException $expected){jobRecoveryCheck($expected->getMessage()==='recovery_state_changed','Wrong discard race result: '.$expected->getMessage());}
+        jobRecoveryCheck(count($table('cancellation_cleanups'))===1,'Stale discard removed historical ownership');
+    }
+    $seed();$database->exec("UPDATE jobs SET status='running' WHERE id=18");$review=$api->preview(17,'discard');
+    jobRecoveryCheck($review['previewToken']===null && $review['blocked'][0]['reason']==='queue_busy','Discard ignored an active router operation');
+    $seed();$insert('jobs',['id'=>19,'service_id'=>701,'status'=>'pending','version'=>4,'payload'=>'{}']);$review=$api->preview(17,'discard');
+    jobRecoveryCheck($review['previewToken']===null && $review['blocked'][0]['reason']==='source_state_changed','Discard accepted malformed pending identity');
+    $seed();$review=$failureApi->preview(17,'discard');
+    try{$failureApi->apply($review['previewToken']);throw new RuntimeException('Discard proceeded without backup');}
+    catch(InvalidArgumentException $expected){jobRecoveryCheck($expected->getMessage()==='recovery_backup_failed','Wrong final discard backup failure');}
+    jobRecoveryCheck(count($table('cancellation_cleanups'))===1 && $table('jobs')[0]['status']==='cancelled','Backup failure partially discarded history');
+    $seed();$review=$api->preview(17,'discard');$now+=601;
+    try{$api->apply($review['previewToken']);throw new RuntimeException('Expired discard accepted');}
+    catch(InvalidArgumentException $expected){jobRecoveryCheck($expected->getMessage()==='recovery_preview_expired','Wrong discard expiry result');}$now-=601;
+
+    // Protected history can also be explicitly discarded after review. Every
+    // selected slot, including the preserved source, belongs to the backup.
+    foreach([false,true] as $sourceCompacted) {
+        $seed();$mode=null;$review=$api->preview(17,'preserve');$api->apply($review['previewToken']);
+        if($sourceCompacted)$database->exec('DELETE FROM jobs WHERE id=17');
+        $mode='offline';$heldBefore=$table('retained_resources');$versionsBefore=$table('service_versions');$callsBefore=$calls;
+        $review=$api->preview(17,'discard');
+        jobRecoveryCheck(is_string($review['previewToken']) && $review['candidate']['reason']==='retained_resources'
+            && isset($review['candidate']['reviewed_at']) && $review['candidate']['snapshot_count']===1
+            && $review['candidate']['diagnostics']['local_record_count']===2 && $calls===$callsBefore,
+            'Protected history remained permanently undiscardable or claimed fresh external evidence');
+        $result=$api->apply($review['previewToken']);
+        jobRecoveryCheck(!$table('retained_resources') && $table('service_versions')===$versionsBefore
+            && $result['discarded']===[['source_job_id'=>17,'service_id'=>701,'snapshot_count'=>1]]
+            && $calls===$callsBefore && $api->listing()['reviewed_total']===0,'Final protected-history discard lost current applied ownership or stale indicator');
+        $discardBackup=new SQLite3($directory.'/'.$result['backup_name'],SQLITE3_OPEN_READONLY);
+        jobRecoveryCheck((int)$discardBackup->querySingle('SELECT count(*) FROM retained_resources')===count($heldBefore),
+            'Discard backup omitted the protected source or its resource slots');$discardBackup->close();
+    }
+    $seed();$mode=null;$review=$api->preview(17,'discard');
+    $tokenPath=$directory.'/jobs-recovery-preview-'.$review['previewToken'].'.json';$state=json_decode(file_get_contents($tokenPath),true);
+    $state['mode']='preserve';file_put_contents($tokenPath,json_encode($state));
+    try{$api->apply($review['previewToken']);throw new RuntimeException('Discard token changed modes');}
+    catch(InvalidArgumentException $expected){jobRecoveryCheck($expected->getMessage()==='recovery_state_changed','Mode change bypassed fingerprint binding');}
 
     $seed(); $database->exec("CREATE TRIGGER recovery_bad_trigger AFTER DELETE ON cancellation_cleanups BEGIN DELETE FROM jobs; END");
     jobRecoveryCheck($api->listing()['available']===false,'Unexpected triggers were accepted');

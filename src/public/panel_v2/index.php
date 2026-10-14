@@ -13,8 +13,8 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     
     <!-- Custom CSS -->
-    <script src="js/theme.js?v=2.0.46"></script>
-    <link rel="stylesheet" href="css/style.css?v=2.0.46">
+    <script src="js/theme.js?v=2.0.47"></script>
+    <link rel="stylesheet" href="css/style.css?v=2.0.47">
 </head>
 <body>
 
@@ -279,14 +279,6 @@
 
                 <!-- View Jobs -->
         <section id="view-jobs" class="view-section" style="display: none;">
-            <section class="job-recovery-section" id="job-recovery-section" aria-labelledby="job-recovery-heading" tabindex="-1">
-                <div class="conflicts-heading">
-                    <div><h3 id="job-recovery-heading" data-i18n="Servicios en recuperación">Servicios en recuperación</h3><p data-i18n="Son registros conservados de trabajos cancelados. No se ejecutan automáticamente. Revisa cada servicio antes de resolver su recuperación.">Son registros conservados de trabajos cancelados. No se ejecutan automáticamente. Revisa cada servicio antes de resolver su recuperación.</p></div>
-                    <button type="button" class="btn btn-secondary" id="refresh-job-recoveries" data-i18n="Refrescar recuperaciones">Refrescar recuperaciones</button>
-                </div>
-                <p class="form-note" id="job-recovery-list-status" role="status" aria-live="polite" data-i18n="Sin actualizar.">Sin actualizar.</p>
-                <div class="repair-list" id="job-recovery-list"></div>
-            </section>
             <div class="panel">
                 <div class="jobs-toolbar">
                     <div class="toolbar-summary">
@@ -319,6 +311,19 @@
                     </table>
                 </div>
             </div>
+            <section class="job-recovery-section" id="job-recovery-section" aria-labelledby="job-recovery-heading" tabindex="-1">
+                <div class="conflicts-heading">
+                    <div><h3 id="job-recovery-heading" data-i18n="Servicios en recuperación">Servicios en recuperación</h3><p data-i18n="Son registros conservados de trabajos cancelados. No se ejecutan automáticamente. Revisa cada servicio antes de resolver su recuperación.">Son registros conservados de trabajos cancelados. No se ejecutan automáticamente. Revisa cada servicio antes de resolver su recuperación.</p></div>
+                    <button type="button" class="btn btn-secondary" id="refresh-job-recoveries" data-i18n="Refrescar recuperaciones">Refrescar recuperaciones</button>
+                </div>
+                <p class="form-note" id="job-recovery-list-status" role="status" aria-live="polite" data-i18n="Sin actualizar.">Sin actualizar.</p>
+                <div class="repair-list" id="job-recovery-list"></div>
+                <div id="job-retained-section" style="display: none;">
+                    <h4 data-i18n="Revisiones cerradas con recursos conservados">Revisiones cerradas con recursos conservados</h4>
+                    <p class="form-note" data-i18n="Estos registros siguen protegiendo sus recursos e IP. No son trabajos pendientes ni se ejecutarán como limpiezas canceladas.">Estos registros siguen protegiendo sus recursos e IP. No son trabajos pendientes ni se ejecutarán como limpiezas canceladas.</p>
+                    <div class="repair-list" id="job-retained-list"></div>
+                </div>
+            </section>
         </section>
 
         <!-- View System -->
@@ -392,7 +397,7 @@
         <div class="modal crm-ip-edit-dialog">
             <div class="modal-header"><h3 id="job-recovery-title" data-i18n="Revisar recuperación">Revisar recuperación</h3><button type="button" class="close-modal" aria-label="Cerrar" data-i18n-aria-label="Cerrar"><i data-feather="x"></i></button></div>
             <div class="modal-body">
-                <p class="form-note" data-i18n="Se comprobarán UISP y los registros actuales. Si hace falta, se consultará el router sin modificarlo. Sólo se retirarán registros locales redundantes o cuyos recursos ya no existan; los servicios actuales se conservarán.">Se comprobarán UISP y los registros actuales. Si hace falta, se consultará el router sin modificarlo. Sólo se retirarán registros locales redundantes o cuyos recursos ya no existan; los servicios actuales se conservarán.</p>
+                <p id="job-recovery-intro" class="form-note" data-i18n="Se comprobarán UISP y los registros actuales. Si hace falta, se consultará el router sin modificarlo. Sólo se retirarán registros locales redundantes o cuyos recursos ya no existan; los servicios actuales se conservarán.">Se comprobarán UISP y los registros actuales. Si hace falta, se consultará el router sin modificarlo. Sólo se retirarán registros locales redundantes o cuyos recursos ya no existan; los servicios actuales se conservarán.</p>
                 <p id="job-recovery-status" class="form-note" role="status" aria-live="polite"></p>
                 <div id="job-recovery-comparison" class="repair-list"></div>
                 <section id="job-recovery-result" class="crm-ip-result" role="status" aria-live="polite" tabindex="-1" style="display: none;"></section>
@@ -400,6 +405,8 @@
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary close-modal" data-i18n="Cerrar">Cerrar</button>
                 <button type="button" class="btn btn-secondary" id="recheck-job-recovery" data-i18n="Verificar de nuevo">Verificar de nuevo</button>
+                <button type="button" class="btn btn-secondary" id="preserve-job-recovery" style="display: none;" data-i18n="Conservar recursos y cerrar revisión">Conservar recursos y cerrar revisión</button>
+                <button type="button" class="btn btn-danger" id="discard-job-recovery" style="display: none;" data-i18n="Descartar registro local">Descartar registro local</button>
                 <button type="button" class="btn btn-primary" id="apply-job-recovery" disabled data-i18n="Resolver recuperación">Resolver recuperación</button>
             </div>
         </div>
@@ -711,8 +718,8 @@
     </div>
 
     <!-- Scripts -->
-    <script src="js/i18n.js?v=2.0.46"></script>
-    <script src="js/api.js?v=2.0.46"></script>
-    <script src="js/app.js?v=2.0.46"></script>
+    <script src="js/i18n.js?v=2.0.47"></script>
+    <script src="js/api.js?v=2.0.47"></script>
+    <script src="js/app.js?v=2.0.47"></script>
 </body>
 </html>

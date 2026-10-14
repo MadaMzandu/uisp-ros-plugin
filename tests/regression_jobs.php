@@ -307,6 +307,7 @@ PHP);
 <?php
 class MtData {
     private array $service = [];
+    public function validateBeforeCleanup(array $service,array $plan,bool $releasesReservation): void {}
     public static function safePreparedCommands(array $service,array $commands,string $operation): array { return $commands; }
     public function set_data($service,$plan): void { $this->service=$service; }
     public function queue(): array { return ['path'=>'/queue/simple','name'=>'queue-'.$this->service['id']]; }

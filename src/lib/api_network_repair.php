@@ -33,8 +33,9 @@ final class ApiNetworkRepair
     }
 
     /** Purely local bounded inventory; it does not initialize any schema or perform a CRM request. */
-    public function listing(): array
+    public function listing(int $fromServiceId = 0): array
     {
+        if ($fromServiceId < 0) throw new InvalidArgumentException('invalid_repair_selection');
         $database = $this->open(false);
         try {
             $database->exec('BEGIN');
@@ -47,6 +48,7 @@ final class ApiNetworkRepair
                 if (!isset($seen[$id])) {
                     $seen[$id] = true;
                     $total++;
+                    if ($id < $fromServiceId) continue;
                     if (count($rows) >= 50) continue;
                     $service = $this->row($database, 'services', $id);
                     $rows[$id] = ['service_id' => $id, 'client_id' => self::id($service['clientId'] ?? null),
@@ -241,7 +243,8 @@ final class ApiNetworkRepair
                     $this->crmOwnership($id, $clientId, $status, $entry, $mapping, $collection);
                 }
                 $candidate = ['service_id' => $id, 'client_id' => $clientId, 'status' => $status,
-                    'fields' => $fields, 'pending_jobs' => $pending, 'identity_source' => $diagnostics['identity_source']];
+                    'fields' => $fields, 'pending_jobs' => $pending, 'identity_source' => $diagnostics['identity_source'],
+                    'retained_recovery_records' => $diagnostics['retained_recovery_records'] ?? 0];
                 $record = ['candidate' => $candidate, 'fingerprint' => $snapshot['fingerprint'],
                     'cache_identity_fingerprint' => $cachedIdentity['fingerprint'],
                     'config_fingerprint' => ApiNetworkAddressEvidence::mappingFingerprint($rawMapping),
@@ -354,7 +357,7 @@ final class ApiNetworkRepair
         }
     }
 
-    /** Unprepared update evidence is safe only without resource preparation or ownership debt. */
+    /** Local correction never retires applied ownership, cancelled snapshots or recovery debt. */
     private function queue(int $id, int $clientId, array $fields, ?array &$diagnostics = null): int
     {
         if (is_link($this->jobsPath) || is_link($this->legacyPath)) throw new InvalidArgumentException('queue_unknown');
@@ -397,14 +400,23 @@ final class ApiNetworkRepair
                     $payload = $this->payload($job['payload']);
                     if ($owner === $id && $job['status'] !== 'cleaned') {
                         if (!in_array($job['status'], ['pending','cancelled','superseded'], true)
-                            || $job['operation'] !== 'update') throw new InvalidArgumentException('queue_recovery');
+                            || !in_array($job['operation'], ['update','delete','queues_set','queues_remove'], true)) {
+                            throw new InvalidArgumentException('queue_recovery');
+                        }
                         // A cancelled/superseded intent never executes again.
                         // Its requested IP may be obsolete or malformed; it is
                         // not current resource ownership. Keep those bytes and
                         // still protect identity, prior valid reservations,
                         // prepared resources and cancellation debt below.
                         try {
-                            $this->pending($payload, $id, $clientId, $fields, $job['status'] === 'pending');
+                            if ($job['status'] !== 'pending' && (array_key_exists('_commands', $payload)
+                                || array_key_exists('_cleanup', $payload) || array_key_exists('_delete_frozen', $payload))) {
+                                $this->retainedOwnership($payload, $id, $clientId, $fields,
+                                    !(int) $job['prior_cleared'], !(int) $job['cleanup_done']);
+                            } else {
+                                if ($job['operation'] !== 'update') throw new InvalidArgumentException('queue_recovery');
+                                $this->pending($payload, $id, $clientId, $fields, $job['status'] === 'pending');
+                            }
                         } catch (InvalidArgumentException $error) {
                             if ($diagnostics !== null) $diagnostics['queue_jobs'] = [[
                                 'job_id' => self::id($job['id']) === null ? null : 'Q' . (int) $job['id'],
@@ -428,10 +440,47 @@ final class ApiNetworkRepair
                 foreach ($cleanups as $cleanup) {
                     $owner = self::id($cleanup['service_id']);
                     if ($owner === null) throw new InvalidArgumentException('queue_unknown');
-                    if ($owner === $id) throw new InvalidArgumentException('queue_recovery');
                     $debt = $this->payload($cleanup['payload']);
+                    if ($owner === $id) {
+                        // A recovery record is durable ownership, not executable
+                        // intent. Keep it byte-for-byte while restoring only a
+                        // malformed local field to the same confirmed address.
+                        $this->retainedOwnership($debt, $id, $clientId, $fields);
+                        if ($diagnostics !== null) $diagnostics['retained_recovery_records'] =
+                            ($diagnostics['retained_recovery_records'] ?? 0) + 1;
+                        continue;
+                    }
                     $this->payloadOwnership($owner, $debt, $id, $fields);
                     if (isset($debt['_prior_network'])) $this->payloadOwnership($owner, ['network' => $debt['_prior_network']], $id, $fields);
+                }
+                if ($this->columns($database, 'retained_resources')) {
+                    if (array_diff(['source_job_id','service_id','source_version','slot','payload','identity','retained_at'],
+                        array_keys($this->columns($database, 'retained_resources')))) throw new InvalidArgumentException('queue_unknown');
+                    $retained = $this->query($database, 'SELECT service_id,slot,payload,identity FROM retained_resources LIMIT ' . (self::MAX_ROWS + 1));
+                    if (count($retained) > self::MAX_ROWS) throw new InvalidArgumentException('queue_unknown');
+                    foreach ($retained as $row) {
+                        $owner = self::id($row['service_id']);
+                        if ($owner === null || !in_array($row['slot'], ['source','commands','cleanup','applied'], true)) {
+                            throw new InvalidArgumentException('queue_unknown');
+                        }
+                        $payload = $this->payload($row['payload']);
+                        if (!is_string($row['identity']) || !hash_equals($this->jobIdentity($payload), $row['identity'])) {
+                            throw new InvalidArgumentException('queue_unknown');
+                        }
+                        // A reviewed cancelled source retains actual commands,
+                        // cleanup and prior reservations, never its obsolete
+                        // unprepared desired IP. These rows remain immutable.
+                        if ($row['slot'] === 'source' && !array_key_exists('_commands', $payload)) {
+                            unset($payload['address'], $payload['address6'], $payload['network']);
+                        }
+                        if ($owner === $id) {
+                            $this->retainedOwnership($payload, $id, $clientId, $fields);
+                            if ($diagnostics !== null) $diagnostics['retained_recovery_records'] =
+                                ($diagnostics['retained_recovery_records'] ?? 0) + 1;
+                        } else {
+                            $this->retainedPeerOwnership($owner, $payload, $id, $fields);
+                        }
+                    }
                 }
             } catch (Throwable $error) {
                 if ($error instanceof InvalidArgumentException) throw $error;
@@ -450,6 +499,86 @@ final class ApiNetworkRepair
             }
         }
         return $pending;
+    }
+
+    private function retainedPeerOwnership(int $owner, array $payload, int $id, array $fields, int $depth = 0): void
+    {
+        if ($depth > 2 || self::id($payload['id'] ?? null) !== $owner || self::id($payload['clientId'] ?? null) === null) {
+            throw new InvalidArgumentException('queue_unknown');
+        }
+        $this->payloadOwnership($owner, $payload, $id, $fields, true);
+        if (isset($payload['_prior_network'])) $this->payloadOwnership($owner,
+            ['network' => $payload['_prior_network']], $id, $fields, true);
+        if (isset($payload['_cleanup'])) {
+            if (!is_array($payload['_cleanup'])) throw new InvalidArgumentException('queue_unknown');
+            $this->retainedPeerOwnership($owner, $payload['_cleanup'], $id, $fields, $depth + 1);
+        }
+    }
+
+    /** Validate retained evidence without releasing it or treating it as a pending request. */
+    private function retainedOwnership(array $payload, int $id, int $clientId, array $fields,
+        bool $includePrior = true, bool $includeCleanup = true, int $depth = 0): void
+    {
+        if ($depth > 2 || self::id($payload['id'] ?? null) === null || self::id($payload['clientId'] ?? null) === null) {
+            throw new InvalidArgumentException('queue_recovery');
+        }
+        if (self::id($payload['id']) !== $id || self::id($payload['clientId']) !== $clientId) {
+            throw new InvalidArgumentException('pending_identity_changed');
+        }
+        foreach (['network','_prior_network','_cleanup'] as $key) {
+            if (array_key_exists($key, $payload) && !is_array($payload[$key])) throw new InvalidArgumentException('queue_recovery');
+        }
+        if (array_key_exists('_delete_frozen', $payload) && $payload['_delete_frozen'] !== true) {
+            throw new InvalidArgumentException('queue_recovery');
+        }
+        if ($includePrior && array_key_exists('_prior_identity', $payload)) {
+            $priorIdentity = $payload['_prior_identity'];
+            if (!is_string($priorIdentity) || (!hash_equals($this->jobIdentity($payload), $priorIdentity)
+                && !(isset($payload['_cleanup']) && hash_equals($this->jobIdentity($payload['_cleanup']), $priorIdentity)))) {
+                throw new InvalidArgumentException('queue_recovery');
+            }
+        }
+        $values = ['address' => [$payload['address'] ?? null, $payload['network']['address'] ?? null],
+            'address6' => [$payload['address6'] ?? null, $payload['network']['address6'] ?? null]];
+        if ($includePrior) foreach (['address','address6'] as $field) $values[$field][] = $payload['_prior_network'][$field] ?? null;
+        if (array_key_exists('_commands', $payload)) {
+            if (!is_array($payload['_commands']) || !$payload['_commands']) throw new InvalidArgumentException('queue_recovery');
+            foreach ($payload['_commands'] as $command) {
+                if (!is_array($command) || !is_string($command['path'] ?? null)) throw new InvalidArgumentException('queue_recovery');
+                $path = trim($command['path'], '/');
+                $values['address'][] = $command['remote-address'] ?? null;
+                $values['address6'][] = $command['remote-ipv6-prefix'] ?? null;
+                if (in_array($path, ['ip/dhcp-server/lease','ip/hotspot/user'], true)) $values['address'][] = $command['address'] ?? null;
+                if ($path === 'ipv6/dhcp-server/binding') $values['address6'][] = $command['address'] ?? null;
+                if ($path === 'queue/simple' && ($command['comment'] ?? '') !== 'do not delete'
+                    && !str_ends_with($command['name'] ?? '', '-parent')) {
+                    $target = $command['target'] ?? null;
+                    if ($target !== null && !is_string($target)) throw new InvalidArgumentException('queue_recovery');
+                    foreach (explode(',', $target ?? '') as $address) {
+                        $field = strpos($address, ':') === false ? 'address' : 'address6';
+                        $values[$field][] = trim($address);
+                    }
+                }
+            }
+        } elseif (array_key_exists('_delete_frozen', $payload)) throw new InvalidArgumentException('queue_recovery');
+        foreach ($fields as $entry) {
+            $field = $entry['field'];
+            $candidate = $entry['current_address'] === null ? null : $this->range($entry['current_address'], $field);
+            foreach ($values[$field] as $value) {
+                if ($value === null || $value === '') continue;
+                $range = $this->range($value, $field);
+                // This is the same invalid value explicitly reviewed in the
+                // local store. It remains in the recovery, where it cannot
+                // describe an occupied address; unrelated unknown values block.
+                if ($range === null && in_array($value, array_column($entry['saved'], 'value'), true)) continue;
+                if ($range === null || $candidate === null || $range !== $candidate) {
+                    throw new InvalidArgumentException('queue_recovery');
+                }
+            }
+        }
+        if ($includeCleanup && isset($payload['_cleanup'])) {
+            $this->retainedOwnership($payload['_cleanup'], $id, $clientId, $fields, true, true, $depth + 1);
+        }
     }
 
     private function pending(array $payload, int $id, int $clientId, array $fields, bool $requireCurrentDesired = true): void

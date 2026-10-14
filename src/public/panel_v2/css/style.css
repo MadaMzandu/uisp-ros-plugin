@@ -184,9 +184,23 @@ th.sortable:hover, th.sortable.asc, th.sortable.desc { color: var(--link); }
 .jobs-warning small { display: block; margin-top: 5px; font-size: 0.7rem; line-height: 1.5; }
 .invalid-reservations-pane { margin-bottom: 28px; }
 .repair-list { display: grid; gap: 10px; }
-.job-recovery-section { margin-bottom: 22px; padding: 16px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-subtle); }
+.job-recovery-section { container: recoveries / inline-size; margin-top: 18px; padding: 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-subtle); }
 .job-recovery-section .conflicts-heading h3 { font-size: 0.95rem; }
-.job-recovery-section .repair-list-item { background: var(--bg-card); }
+.job-recovery-section > .conflicts-heading { gap: 10px; margin-bottom: 8px; }
+.job-recovery-section .repair-list { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+.job-recovery-section .repair-list-item { display: grid; align-content: start; gap: 6px; min-width: 0; padding: 10px; background: var(--bg-card); overflow-wrap: anywhere; }
+.job-recovery-section .repair-list-item .conflict-owner-meta { gap: 5px; margin-top: 0; }
+.job-recovery-section .repair-list-item .job-recovery-meta { gap: 6px; margin: 0; font-size: 0.75rem; }
+.job-recovery-section .repair-list-item .form-note { margin: 0; font-size: 0.75rem; line-height: 1.45; }
+.job-recovery-section .job-repair-button { justify-self: start; max-width: 100%; margin-top: 2px; min-height: 32px; padding: 6px 9px; }
+#job-retained-section { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border); }
+#job-retained-section > h4 { margin-bottom: 5px; font-size: 0.85rem; }
+@container recoveries (min-width: 620px) {
+    .job-recovery-section .repair-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@container recoveries (min-width: 950px) {
+    .job-recovery-section .repair-list { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
 .job-recovery-meta { display: flex; gap: 8px; flex-wrap: wrap; margin: 10px 0; font-size: 0.78rem; color: var(--text-muted); }
 .recovery-resource-checks { padding: 12px; border: 1px solid var(--border); border-radius: 6px; overflow-wrap: anywhere; }
 .recovery-resource-checks strong { font-size: 0.8rem; }

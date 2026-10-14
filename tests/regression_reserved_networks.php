@@ -70,15 +70,18 @@ try {
     $ip->set(501,'192.0.2.51'); $ip->set(501,'2001:db8:1::/64',true);
     reservedCheck($apiSqlite->singleQuery('SELECT total_changes()')===$beforeChanges,
         'Unchanged reservation reuse rewrote ownership');
-    reservedReject(fn()=>$ip->set(501,'192.0.2.99'),501,599,'reserved','IPv4');
-    reservedReject(fn()=>$ip->set(504,'192.0.2.99'),504,599,'reserved','IPv4');
-    reservedReject(fn()=>$ip->assign(504,(object)['pool'=>'198.51.100.0/24']),504,599,'reserved','IPv4');
-    reservedReject(fn()=>$ip->set(501,'2001:db8:2::/64',true),501,599,'reserved','IPv6');
+    $ip->set(510,'192.0.2.99');
+    reservedCheck($ip->assign(511,(object)['pool'=>'198.51.100.0/24'])==='198.51.100.1',
+        'Malformed peer history blocked allocation from a valid pool');
+    $ip->set(512,'2001:db8:2::/64',true);
+    reservedCheck($apiSqlite->selectAddress(599)==='PRIVATE-RESERVATION-PASSWORD'
+        && $apiSqlite->selectAddress(599,true)==='PRIVATE-IPV6-PASSWORD',
+        'Peer isolation silently changed the malformed row instead of leaving it reviewable');
     reservedReject(fn()=>$ip->set(501,'PRIVATE-CRM-PASSWORD'),501,501,'input','IPv4');
     reservedReject(fn()=>$ip->set(501,'192.0.2.51/32'),501,501,'input','IPv4');
     reservedCheck($apiSqlite->selectAddress(501)==='192.0.2.51'
         && $apiSqlite->selectAddress(501,true)==='2001:db8:1::/64'
-        && $apiSqlite->selectAddress(504)===null, 'A failed acquisition changed retained reservations');
+        && $apiSqlite->selectAddress(510)==='192.0.2.99', 'A failed own-input acquisition changed retained reservations');
     reservedReject(fn()=>(new ApiIP())->find_assigned(599),599,599,'reserved','IPv4');
     reservedReject(fn()=>(new ApiIP())->assign(599,(object)['pool'=>'198.51.100.0/24']),599,599,'reserved','IPv4');
     reservedReject(fn()=>(new ApiIP())->find_assigned(599,true),599,599,'reserved','IPv6');
@@ -107,23 +110,24 @@ try {
             && $accounts[0]['command']['remote-address']==='192.0.2.' . ($sid-450),
             'Billing transition did not prepare its exact account on the intended router');
     }
-    foreach ([504=>'192.0.2.99',505=>'PRIVATE-CRM-ADDRESS-PASSWORD'] as $sid=>$address) {
+    foreach ([504=>'192.0.2.101',505=>'PRIVATE-CRM-ADDRESS-PASSWORD'] as $sid=>$address) {
         $apiSqliteCache->insert(['id'=>$sid,'clientId'=>71,'device'=>22,'planId'=>1,'status'=>3,
             'username'=>'fixture-' . $sid,'password'=>'fixture','uploadSpeed'=>7,'downloadSpeed'=>21], 'services');
         $apiSqliteCache->insert(['id'=>$sid,'address'=>$address], 'network');
     }
     $start=count(MT::$writes); $bulk=new Batch();
-    reservedCheck(!$bulk->set_accounts([504,502]) && $bulk->outcomes()['failed']===1
-        && $bulk->outcomes()['completed']===1 && $apiJobQueue->appliedSnapshot(502)['status']===1,
-        'A blocked acquisition prevented the following unrelated account from completing');
+    reservedCheck($bulk->set_accounts([504,502]) && $bulk->outcomes()['failed']===0
+        && $bulk->outcomes()['completed']===2 && $apiJobQueue->appliedSnapshot(502)['status']===1
+        && $apiSqlite->selectAddress(599)==='PRIVATE-RESERVATION-PASSWORD',
+        'Malformed peer state blocked an acquisition or another billing transition');
     reservedCheck(!(new Batch())->set_accounts([505]) && $apiSqlite->selectAddress(505)===null,
         'A corrupt current-service address fell back to an allocation');
     $pending=$apiJobQueue->list();
     $blocked=array_values(array_filter($pending,static fn($row)=>(int)$row['id']===504));
     $invalid=array_values(array_filter($pending,static fn($row)=>(int)$row['id']===505));
-    reservedCheck(count($blocked)===1 && $blocked[0]['error']==='invalid_network_address: requested_service=504 blocking_service=599 source=reserved family=IPv4'
-        && count($invalid)===1 && $invalid[0]['error']==='invalid_network_address: requested_service=505 blocking_service=505 source=input family=IPv4',
-        'Actual failed jobs did not distinguish a blocking reservation from their own invalid input');
+    reservedCheck($blocked===[] && count($invalid)===1
+        && $invalid[0]['error']==='invalid_network_address: requested_service=505 blocking_service=505 source=input family=IPv4',
+        'Peer isolation suppressed an own-input error or left an unrelated job blocked');
     // Acquisition remains global across routers; clearing corrupt fixtures does
     // not allow the new duplicate to claim the incumbent's valid address.
     $apiSqlite->delete(599,'network'); $apiSqlite->delete(598,'network');
@@ -135,7 +139,7 @@ try {
         'A failed duplicate prevented a following unrelated suspension');
     $logs=is_file('data/plugin.log') ? file_get_contents('data/plugin.log') : '';
     reservedCheck(strpos($logs,'PRIVATE-')===false, 'Reservation diagnostics disclosed credential-like corrupt values');
-    echo "Reserved networks passed: unchanged IPv4/IPv6 billing reuse, strict new/change ownership, cross-router duplicate isolation, invalid own reservation rejection and safe diagnostics.\n";
+    echo "Reserved networks passed: malformed peer history is isolated and retained, unchanged IPv4/IPv6 billing reuse, strict valid ownership, cross-router duplicate isolation, invalid own reservation rejection and safe diagnostics.\n";
 } finally {
     if (isset($apiJobQueue)) $apiJobQueue->close();
     if (isset($apiSqlite)) $apiSqlite->close();

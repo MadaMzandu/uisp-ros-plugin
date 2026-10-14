@@ -14,6 +14,14 @@ try {
     run_setup();
     try { cache_setup(); cache_sync(); }
     catch (Throwable $error) { MyLog()->Append('Scheduled cache setup deferred: ' . $error->getMessage(), LOG_ERR); }
+    // Repair proven malformed local reservations before any worker owns a job.
+    // The bounded pass takes its own review/backup guards and cannot abort jobs.
+    try {
+        require_once __DIR__ . '/lib/api_automatic_reconciliation.php';
+        $automatic = (new ApiAutomaticReconciliation())->tick();
+        if ($automatic['repaired'] || $automatic['resolved']) MyLog()->Append([
+            'event'=>'automatic_reconciliation_result','repaired'=>$automatic['repaired'],'resolved'=>$automatic['resolved']], LOG_INFO);
+    } catch (Throwable $ignored) { MyLog()->Append(['event'=>'automatic_reconciliation_failed','errorCode'=>'check_unavailable'],LOG_WARNING); }
     require_once __DIR__ . '/lib/api_configuration_apply.php';
     myJobQueue()->withAdministrativeLock(fn() => ApiConfigurationApply::drain());
     $results = (new ApiJobs())->run();

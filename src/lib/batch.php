@@ -95,9 +95,13 @@ class Batch
 
     public function migrate(array $previous, array $replacement): bool
     {
+        $replacement = $this->snapshot($replacement, 'update');
+        // A migration's delete is a separate prerequisite job. Validate the
+        // replacement before that prerequisite can be queued or touch its account.
+        if (!isset($replacement['_commands'])) (new MtData())->validateBeforeCleanup($replacement, $replacement['_plan'], true);
         $entries = [
             ['snapshot' => $this->snapshot($previous, 'delete'), 'operation' => 'delete'],
-            ['snapshot' => $this->snapshot($replacement, 'update'), 'operation' => 'update']
+            ['snapshot' => $replacement, 'operation' => 'update']
         ];
         $queue = myJobQueue();
         $keys = $queue->enqueueBatch($entries);
@@ -125,6 +129,19 @@ class Batch
                     $failure = $error instanceof InvalidProvisioningNumber ? $error->context() : $failure;
                     $failure['message'] = $error->getMessage();
                     MyLog()->Append([$event] + $failure, LOG_ERR);
+                    $ok = false;
+                } catch (Throwable $error) {
+                    // A replacement can fail its read-only preflight before any
+                    // job exists (for example a genuine address collision).
+                    // Keep that failure local to this service in a bulk sync.
+                    $known = ['The service address or IPv6 prefix is already reserved by another service'=>'network_address_conflict',
+                        'No IPv4 address is available for the PPP service'=>'ppp_ipv4_unavailable',
+                        'No address is available for the DHCP service'=>'dhcp_address_unavailable'];
+                    $failure['errorCode'] = $known[$error->getMessage()] ?? 'provisioning_failed';
+                    $failure['message'] = isset($known[$error->getMessage()]) ? $error->getMessage()
+                        : 'Provisioning could not be completed for this service';
+                    MyLog()->Append(['event'=>'provisioning_service_failed','serviceId'=>$sid,
+                        'errorCode'=>$failure['errorCode'],'exceptionType'=>get_class($error)], LOG_ERR);
                     $ok = false;
                 }
                 $this->submissionOutcomes[$ok ? 'completed' : 'failed']++;
@@ -169,6 +186,7 @@ class Batch
                 if ($operation === 'update') {
                     $applied = myJobQueue()->appliedSnapshot((int) $service['id']);
                     if ($applied && !$this->sameAccountIdentity($applied, $snapshot)) {
+                        if (!isset($snapshot['_commands'])) (new MtData())->validateBeforeCleanup($snapshot, $snapshot['_plan'], true);
                         $applied['_event_id'] = $snapshot['_event_id'] ?? null;
                         $entries[] = ['snapshot' => $this->snapshot($applied, 'delete'), 'operation' => 'delete'];
                     }
@@ -341,6 +359,21 @@ class Batch
         $queuesOnly = in_array($operation, ['queues_remove', 'queues_set'], true);
         if (in_array($operation, ['update','delete'], true)) {
             $debts = $queue->cancellationCleanups($job);
+            if ($operation === 'update' && !isset($service['_commands'])) {
+                $applied = $queue->appliedSnapshot((int) $service['id']);
+                $newCleanup = $applied && !$this->sameAccountIdentity($applied, $service);
+                if ($debts || isset($service['_cleanup']) || $newCleanup) {
+                    // Cleanup can disconnect an existing account. Validate the
+                    // replacement's actual address paths first, without writing
+                    // reservations or freezing/replaying its old resources. The
+                    // real builder still acquires and revalidates ownership later.
+                    $releasesReservation = (bool) $newCleanup;
+                    foreach ($debts as $debt) if ($queue->canClearApplied($debt['snapshot'])) $releasesReservation = true;
+                    if (isset($service['_cleanup']) && is_array($service['_cleanup']) && !$queue->cleanupCompleted($job)
+                        && $queue->canClearApplied($service['_cleanup'])) $releasesReservation = true;
+                    (new MtData())->validateBeforeCleanup($service, $service['_plan'] ?? $this->make_plan($service), $releasesReservation);
+                }
+            }
             if ($debts && $operation === 'update') {
                 // Cleanup can retire a live session even when this job already has
                 // prepared commands. Persist its reconnect before the first cleanup write.

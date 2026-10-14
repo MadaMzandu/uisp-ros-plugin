@@ -56,12 +56,15 @@ try {
     $apiSqliteCache->edit(['id'=>601,'planId'=>2,'status'=>3,'uploadSpeed'=>11,'downloadSpeed'=>33],'services');
     $apiSqliteCache->edit(['id'=>601,'address'=>'192.0.2.62'],'network');
     $writeCount=count(MT::$writes);
-    repairBatchCheck(!(new Batch())->set_accounts([601,599,596]),'Corrupt reservation unexpectedly allowed acquisition');
-    repairBatchCheck(count(MT::$writes)===$writeCount && $apiJobQueue->appliedSnapshot(601)===$appliedBefore
-        && $apiSqlite->selectAddress(601)==='192.0.2.61' && $apiSqlite->selectAllFromTable('plans')===$plansBefore,
-        'Blocked update changed RouterOS/current applied status or rates');
+    repairBatchCheck((new Batch())->set_accounts([601]),'Malformed peer history blocked a valid service address/plan change');
+    repairBatchCheck(count(MT::$writes)>$writeCount && $apiSqlite->selectAddress(601)==='192.0.2.62'
+        && $apiSqlite->selectAddress(599)==='PRIVATE-MALFORMED-599' && $apiSqlite->selectAddress(596)==='PRIVATE-MALFORMED-596'
+        && $apiSqlite->selectAllFromTable('plans')===$plansBefore,
+        'Unrelated provisioning changed the malformed peer rows or configured plans');
+    $appliedBefore=$apiJobQueue->appliedSnapshot(601);
+    (new Batch())->queue_accounts([599,596]);
     $pending=$apiJobQueue->list(); $keys=array_column($pending,'jobId');
-    repairBatchCheck(count($pending)===3,'Expected three retained updates');
+    repairBatchCheck(count($pending)===2,'Expected two independently queued repairable updates');
     $services=[];
     foreach ([601=>['192.0.2.62',3],599=>['192.0.2.199',1],596=>['192.0.2.196',1]] as $id=>$data) {
         $services[$id]=['id'=>$id,'clientId'=>71,'status'=>$data[1],'attributes'=>[
@@ -85,7 +88,7 @@ try {
             'Repair itself wrote RouterOS, rewrote pending intent or changed current service');
     }
     $retries=$apiJobQueue->runSelected($keys);
-    repairBatchCheck(count($retries)===3 && array_reduce($retries,static fn($good,$row)=>$good && $row['success'],true),
+    repairBatchCheck(count($retries)===2 && array_reduce($retries,static fn($good,$row)=>$good && $row['success'],true),
         'Normal selected retry did not complete after safe repair');
     $after=$apiJobQueue->appliedSnapshot(601);
     repairBatchCheck($after['status']===3 && $after['_plan']['id']===2 && $after['_plan']['uploadSpeed']===11
@@ -148,9 +151,10 @@ try {
     $apiSqliteCache->insert(['id'=>603,'clientId'=>71,'device'=>21,'planId'=>1,'status'=>1,'username'=>'fixture-603',
         'password'=>'fixture','uploadSpeed'=>7,'downloadSpeed'=>21],'services');
     $apiSqliteCache->insert(['id'=>603,'address'=>'192.0.2.203'],'network');
-    $cancelledWriteCount=count(MT::$writes);
-    repairBatchCheck(!(new Batch())->set_accounts([603]),'Unrelated new service bypassed remaining malformed local rows');
-    $unrelatedKeys=array_column($apiJobQueue->list(),'jobId'); $cancelledBefore=repairBatchState();
+    repairBatchCheck((new Batch())->set_accounts([603]) && $apiSqlite->selectAddress(595)==='PRIVATE-MALFORMED-595'
+        && $apiSqlite->selectAddress(594)==='PRIVATE-MALFORMED-594',
+        'Malformed cancelled history blocked another service or was silently deleted');
+    $cancelledWriteCount=count(MT::$writes); $cancelledBefore=repairBatchState();
     foreach ([595,594] as $id) {
         $preview=$repair->preview([['serviceId'=>$id,'fields'=>['address']]]);
         repairBatchCheck(count($preview['candidates'])===1 && $preview['candidates'][0]['pending_jobs']===0,
@@ -160,15 +164,151 @@ try {
             && count(MT::$writes)===$cancelledWriteCount && $apiJobQueue->reservedAddresses(true)===$reserved6Before,
             'Cancelled-intent repair modified job history, router, or a valid other-family prior');
     }
-    $unrelatedRun=$apiJobQueue->runSelected($unrelatedKeys);
-    repairBatchCheck(count($unrelatedRun)===1 && reset($unrelatedRun)['success']===true,
-        'Malformed cancelled prior kept blocking an unrelated service after exact local correction');
     $cancelledRun=$apiJobQueue->runSelected($cancelledKeys);
     repairBatchCheck(!array_filter($cancelledRun,static fn($row)=>$row['attempted']??false),
         'Repair made a cancelled stale intent executable');
     repairBatchCheck(!array_filter(array_slice(MT::$writes,$cancelledWriteCount),static fn($row)=>in_array(
         $row['command']['name']??null,['fixture-594','fixture-595'],true)), 'Cancelled accounts were provisioned by recovery');
-    echo "Network repair Batch passed: malformed pending and cancelled stale-intent repairs preserve queue/RouterOS and valid sibling reservations; ordinary unrelated retry resumes without reviving cancelled jobs; current applied ownership and configured plan/status remain protected.\n";
+    // Cancellation of a prepared operation retains both its frozen commands
+    // and the already applied account. A local repair to that same account IP
+    // must leave every durable snapshot and allocator reservation protected.
+    $frozen=$apiJobQueue->appliedSnapshot(599);
+    $frozenKey=$apiJobQueue->enqueue($frozen);
+    repairBatchCheck($apiJobQueue->delete([$frozenKey])[$frozenKey]===true,'Prepared fixture did not cancel');
+    $database=new SQLite3('data/jobs.db',SQLITE3_OPEN_READONLY);
+    $debtCount=$database->querySingle('SELECT count(*) FROM cancellation_cleanups WHERE service_id=599'); $database->close();
+    repairBatchCheck($debtCount>=1,'Prepared cancellation did not retain its actual resources');
+    require_once 'lib/api_job_recovery.php';
+    $recovery=new ApiJobRecovery(static fn(string $path) => $request($path, []));
+    $preserve=$recovery->preview((int)substr($frozenKey,1),'preserve');
+    repairBatchCheck($preserve['previewToken']!==null,'Compatible cancellation could not be explicitly retained');
+    $recovery->apply($preserve['previewToken']);
+    $database=new SQLite3('data/jobs.db',SQLITE3_OPEN_READONLY);
+    $retainedCount=$database->querySingle('SELECT count(*) FROM retained_resources WHERE service_id=599'); $database->close();
+    repairBatchCheck($retainedCount===$debtCount+1,'Retained ownership lost a source or resource snapshot');
+    $apiSqlite->edit(['id'=>599,'address'=>'PRIVATE-CORRUPTION-WITH-RECOVERY'],'network');
+    $apiSqliteCache->insert(['id'=>604,'clientId'=>71,'device'=>21,'planId'=>1,'status'=>1,'username'=>'fixture-604',
+        'password'=>'fixture','uploadSpeed'=>7,'downloadSpeed'=>21],'services');
+    $apiSqliteCache->insert(['id'=>604,'address'=>'192.0.2.204'],'network');
+    $services[604]=['id'=>604,'clientId'=>71,'status'=>1,'attributes'=>[
+        ['key'=>'fixture_ip','customAttributeId'=>1,'value'=>'192.0.2.204'],
+        ['key'=>'fixture_ip6','customAttributeId'=>2,'value'=>null]]];
+    $beforeBlocked=count(MT::$writes);
+    repairBatchCheck((new Batch())->set_accounts([604]) && $apiSqlite->selectAddress(604)==='192.0.2.204'
+        && $apiSqlite->selectAddress(599)==='PRIVATE-CORRUPTION-WITH-RECOVERY',
+        'A malformed retained peer row blocked unrelated allocation or was silently changed');
+    $frozenBefore=repairBatchState(); $reservedBefore=$apiJobQueue->reservedAddresses(); $appliedBefore=$apiJobQueue->appliedSnapshot(599);
+    $preview=$repair->preview([['serviceId'=>599,'fields'=>['address']]]);
+    repairBatchCheck(count($preview['candidates'])===1 && $preview['candidates'][0]['retained_recovery_records']===$retainedCount,
+        'Compatible prepared recovery stranded an exact local repair: '.json_encode($preview));
+    require_once 'lib/api_automatic_reconciliation.php';
+    $automatic=new ApiAutomaticReconciliation($request);
+    $automatic->tick();
+    repairBatchCheck($apiSqlite->selectAddress(599)==='192.0.2.199' && $apiJobQueue->appliedSnapshot(599)===$appliedBefore
+        && hash_file('sha256','data/jobs.db')===$frozenBefore['queue_hash'] && MT::$writes===$frozenBefore['writes']
+        && $apiJobQueue->reservedAddresses()===$reservedBefore,
+        'Compatible recovery repair released ownership, revived intent, or modified RouterOS');
+    $afterAutomatic=repairBatchState(); $backupCount=count(glob('data/network-cleanup-*.sqlite'));
+    $automatic->tick();
+    repairBatchCheck(repairBatchState()===$afterAutomatic && count(glob('data/network-cleanup-*.sqlite'))===$backupCount,
+        'Repeated automatic reconciliation rewrote a valid reservation or created another backup');
+    $cancelledFrozen=$apiJobQueue->runSelected([$frozenKey]);
+    repairBatchCheck(!($cancelledFrozen[$frozenKey]['attempted']??false),'Local correction made a cancelled prepared operation executable');
+    repairBatchCheck(!array_filter(array_slice(MT::$writes,$beforeBlocked),static fn($row)=>
+        ($row['command']['name']??null)==='fixture-599'
+        || in_array(trim($row['command']['path']??'','/'),['ppp/active','ip/hotspot/active'],true)
+            && ($row['command']['name']??$row['command']['user']??null)==='fixture-599'),
+        'Repair or unrelated retry changed/reconnected the existing retained account');
+    // A cancelled prepared operation can require real cleanup before an update.
+    // Validate the replacement first: invalid replacement input must not
+    // disconnect/remove the already working account or freeze reconnect intent.
+    foreach([605=>'192.0.2.205',606=>'192.0.2.216'] as $id=>$address) {
+        $apiSqliteCache->insert(['id'=>$id,'clientId'=>71,'device'=>21,'planId'=>1,'status'=>1,'username'=>'fixture-'.$id,
+            'password'=>'fixture','uploadSpeed'=>7,'downloadSpeed'=>21],'services');
+        $apiSqliteCache->insert(['id'=>$id,'address'=>$address],'network');
+        $apiSqlite->insert(['id'=>$id,'address'=>$address],'network');
+        repairBatchCheck((new Batch())->set_accounts([$id]),'Cleanup preflight fixture did not start');
+    }
+    $old605=$apiJobQueue->appliedSnapshot(605);$old605Key=$apiJobQueue->enqueue($old605);
+    repairBatchCheck($apiJobQueue->delete([$old605Key])[$old605Key]===true,'Cleanup preflight source did not cancel');
+    $apiSqlite->insert(['id'=>590,'address'=>'PRIVATE-BLOCKING-PREFLIGHT','address6'=>'PRIVATE-UNUSED-IPV6'],'network');
+    $apiSqliteCache->edit(['id'=>605,'address'=>'PRIVATE-INVALID-REPLACEMENT'],'network');
+    $beforePreflight=repairBatchState();
+    $database=new SQLite3('data/jobs.db',SQLITE3_OPEN_READONLY);
+    $cleanupBefore=$database->querySingle('SELECT group_concat(payload) FROM cancellation_cleanups WHERE service_id=605');$database->close();
+    repairBatchCheck(!(new Batch())->set_accounts([605]),'Invalid replacement reservation bypassed cleanup preflight');
+    $database=new SQLite3('data/jobs.db',SQLITE3_OPEN_READONLY);
+    $cleanupAfter=$database->querySingle('SELECT group_concat(payload) FROM cancellation_cleanups WHERE service_id=605');
+    $pending605=json_decode($database->querySingle("SELECT payload FROM jobs WHERE service_id=605 AND status='pending' ORDER BY id DESC LIMIT 1"),true);$database->close();
+    repairBatchCheck($cleanupAfter===$cleanupBefore && $apiSqlite->selectAllFromTable('network')===$beforePreflight['network']
+        && MT::$writes===$beforePreflight['writes'] && $apiJobQueue->appliedSnapshot(605)===$old605
+        && !isset($pending605['_commands']) && !isset($pending605['_force_reconnect']),
+        'Failed preflight wrote/disconnected RouterOS, changed reservations/debt/applied ownership or froze reconnect work');
+    // Correcting the replacement allows ordinary cleanup/rebuild while malformed
+    // historical peer rows remain visible and harmless to this service.
+    $apiSqliteCache->edit(['id'=>605,'address'=>'192.0.2.205'],'network');
+    repairBatchCheck((new Batch())->set_accounts([605]) && !$apiJobQueue->hasUnreconciled(605)
+        && $apiSqlite->selectAddress(605)==='192.0.2.205' && $apiSqlite->selectAddress(590)==='PRIVATE-BLOCKING-PREFLIGHT',
+        'Malformed peer history blocked normal cleanup after the replacement itself was corrected');
+    // Ordinary known-IP suspension has no cleanup and still works while the
+    // unrelated malformed rows remain. Its unused IPv6 family is not scanned.
+    $apiSqliteCache->edit(['id'=>606,'status'=>3],'services');
+    repairBatchCheck((new Batch())->set_accounts([606]) && $apiJobQueue->appliedSnapshot(606)['status']===3,
+        'Cleanup guard spread into unrelated known-address billing work');
+    // Identity migrations queue an explicit delete prerequisite. The same
+    // validation must happen before that delete is even enqueued, rather than
+    // only when its replacement update eventually reaches the worker.
+    $apiSqlite->edit(['id'=>590,'address'=>'PRIVATE-BLOCKING-MIGRATION'],'network');
+    $apiSqliteCache->edit(['id'=>606,'username'=>'fixture-606-replacement'],'services');
+    $apiSqliteCache->edit(['id'=>606,'address'=>'PRIVATE-INVALID-MIGRATION'],'network');
+    $migrationBefore=repairBatchState();$applied606=$apiJobQueue->appliedSnapshot(606);
+    $database=new SQLite3('data/jobs.db',SQLITE3_OPEN_READONLY);
+    $migrationJobsBefore=$database->querySingle('SELECT count(*) FROM jobs WHERE service_id=606');$database->close();
+    repairBatchCheck(!(new Batch())->set_accounts([606]),'Migration queued a delete despite an invalid replacement context');
+    $database=new SQLite3('data/jobs.db',SQLITE3_OPEN_READONLY);
+    $migrationJobsAfter=$database->querySingle('SELECT count(*) FROM jobs WHERE service_id=606');$database->close();
+    repairBatchCheck($migrationJobsAfter===$migrationJobsBefore && MT::$writes===$migrationBefore['writes']
+        && $apiSqlite->selectAllFromTable('network')===$migrationBefore['network'] && $apiJobQueue->appliedSnapshot(606)===$applied606,
+        'Migration validation left a runnable delete, changed reservations, or touched the current account');
+    $explicitReplacement=$applied606;unset($explicitReplacement['_commands'],$explicitReplacement['_cleanup'],$explicitReplacement['_delete_frozen']);
+    $explicitReplacement['username']='fixture-606-explicit-replacement';
+    $explicitReplacement['address']='PRIVATE-INVALID-EXPLICIT-REPLACEMENT';
+    try {(new Batch())->migrate($applied606,$explicitReplacement);throw new RuntimeException('Explicit migration bypassed validation');}
+    catch(InvalidNetworkAddress $expected){repairBatchCheck($expected->context()['blockingServiceId']===606
+        && $expected->context()['addressSource']==='input','Explicit migration lost its invalid replacement context');}
+    $database=new SQLite3('data/jobs.db',SQLITE3_OPEN_READONLY);
+    repairBatchCheck($database->querySingle('SELECT count(*) FROM jobs WHERE service_id=606')===$migrationJobsBefore
+        && MT::$writes===$migrationBefore['writes'] && $apiJobQueue->appliedSnapshot(606)===$applied606,
+        'Explicit migration queued or applied its old-account deletion before validation');$database->close();
+    $apiSqliteCache->edit(['id'=>606,'address'=>'192.0.2.216'],'network');
+    repairBatchCheck((new Batch())->set_accounts([606])
+        && $apiJobQueue->appliedSnapshot(606)['username']==='fixture-606-replacement'
+        && $apiSqlite->selectAddress(606)==='192.0.2.216',
+        'Malformed peer history blocked normal ordered identity migration after valid replacement input');
+    // Own malformed state remains an error when no valid desired IP replaces it.
+    $apiSqliteCache->insert(['id'=>607,'clientId'=>71,'device'=>21,'planId'=>1,'status'=>1,'username'=>'fixture-607',
+        'password'=>'fixture','uploadSpeed'=>7,'downloadSpeed'=>21],'services');
+    $apiSqlite->insert(['id'=>607,'address'=>'PRIVATE-OWN-MALFORMED'],'network');
+    $ownStart=count(MT::$writes);
+    repairBatchCheck(!(new Batch())->set_accounts([607]) && count(MT::$writes)===$ownStart
+        && $apiSqlite->selectAddress(607)==='PRIVATE-OWN-MALFORMED','Own invalid reservation was silently discarded or written to RouterOS');
+    $ownJobs=array_values(array_filter($apiJobQueue->list(),static fn($row)=>(int)$row['id']===607));
+    repairBatchCheck(count($ownJobs)===1 && $ownJobs[0]['error']==='invalid_network_address: requested_service=607 blocking_service=607 source=reserved family=IPv4',
+        'Own invalid reservation lost its actionable service-local failure');
+    // A real collision throws RuntimeException before migration jobs exist.
+    // Its service must fail locally while the next customer still synchronizes.
+    $safe606=$apiJobQueue->appliedSnapshot(606);$mixedStart=count(MT::$writes);
+    $apiSqliteCache->edit(['id'=>606,'username'=>'fixture-606-conflicting-replacement'],'services');
+    $apiSqliteCache->edit(['id'=>606,'address'=>'192.0.2.62'],'network');
+    $apiSqliteCache->edit(['id'=>601,'status'=>3],'services');
+    $mixed=new Batch();
+    repairBatchCheck(!$mixed->set_accounts([606,601]) && $mixed->outcomes()['failed']===1 && $mixed->outcomes()['completed']===1
+        && $mixed->outcomes()['failures'][0]['errorCode']==='network_address_conflict'
+        && $apiJobQueue->appliedSnapshot(606)===$safe606 && $apiJobQueue->appliedSnapshot(601)['status']===3
+        && !array_filter(array_slice(MT::$writes,$mixedStart),static fn($row)=>
+            in_array($row['command']['name']??null,['fixture-606-conflicting-replacement','fixture-606-replacement'],true)),
+        'One failed migration aborted the following service or changed the protected existing account');
+    echo "Network repair Batch passed: malformed peer history stays reviewable without blocking unrelated sync; explicit and automatic local correction preserve queue/RouterOS ownership; own invalid state and invalid migration replacement stop before cleanup writes; valid historical reservations remain protected.\n";
 } finally {
     if(isset($apiJobQueue)) $apiJobQueue->close(); if(isset($apiSqlite)) $apiSqlite->close(); if(isset($apiSqliteCache)) $apiSqliteCache->close();
     chdir($original); set_include_path($originalInclude);

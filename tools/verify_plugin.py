@@ -29,9 +29,9 @@ def main() -> int:
         php += ['-d', 'extension_dir=' + args.extension_dir]
     php_tests = php + ['-d', 'extension=sqlite3', '-d', 'extension=gmp', '-d', 'extension=zip']
     suites = [
-        'backend', 'jobs', 'router', 'burst', 'runtime', 'stability', 'client_queue',
+        'backend', 'jobs', 'router', 'burst', 'runtime', 'stability', 'client_queue', 'automatic_reconciliation',
         'locale', 'second_audit', 'ownership', 'shared_resources', 'shared_pool',
-        'nonfinite', 'profile_names', 'unmanaged', 'reconnect', 'reconnect_router', 'webhook_auth', 'webhook_flow', 'billing_router', 'job_diagnostics', 'job_actions', 'jobs_status', 'job_recovery', 'job_recovery_observation', 'cancelled_recovery', 'archived_plans', 'migration_conflicts', 'recovery_reads', 'network_diagnostics', 'network_cleanup', 'network_repair', 'network_repair_batch', 'crm_network_monitor', 'crm_network_resolution', 'reserved_networks',
+        'nonfinite', 'profile_names', 'unmanaged', 'reconnect', 'reconnect_router', 'webhook_auth', 'webhook_flow', 'billing_router', 'job_diagnostics', 'job_actions', 'jobs_status', 'job_recovery', 'job_recovery_observation', 'job_retained_resources', 'cancelled_recovery', 'archived_plans', 'migration_conflicts', 'recovery_reads', 'network_diagnostics', 'network_cleanup', 'network_repair', 'network_repair_batch', 'crm_network_monitor', 'crm_network_resolution', 'reserved_networks',
     ]
     commands = [('regression_' + name, php_tests + ['tests/regression_' + name + '.php']) for name in suites]
     commands += [('regression_' + name, [args.node, 'tests/regression_' + name + '.js']) for name in ['panel', 'theme', 'i18n']]

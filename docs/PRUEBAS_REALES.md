@@ -1,4 +1,4 @@
-# Pruebas reales del candidato 2.4.29
+# Pruebas reales del candidato 2.4.32
 
 Las pruebas automatizadas usan bases temporales, transportes simulados y sockets locales. Esta lista comprueba la integración **UISP → plugin → API nativa de RouterOS** en una copia de UISP y un CHR/router con clientes de prueba. Registrar versiones de UISP, PHP y RouterOS, así como ID del servicio, plan, trabajo, estado e IP/prefijo en cada caso.
 
@@ -360,6 +360,14 @@ Desde 2.4.13, **Sincronizar y reconectar cuentas** en Dispositivos reconecta sie
 | 152 | Mantener una intención pendiente diferente, preparación, propiedad aplicada o reserva válida anterior. | Identifica el estado/ID de trabajo y conserva la protección; revisar no cancela, modifica ni ejecuta automáticamente. |
 | 153 | Comparar una recuperación sin estado aplicado con sus recursos presentes, ausentes, compartidos, destino distinto o historial incompleto. | Muestra la observación exacta de sólo lectura; sólo permite resolver ausencia completa y comprobable. No altera ni desconecta servicios actuales. |
 | 154 | Cambiar recursos entre revisión y confirmación o devolver trap, fatal, datos incompletos, duplicados, palabras desconocidas o timeout. | Rechaza la confirmación y conserva la recuperación. Una resolución comprobada respalda la cola y retira sólo el registro cancelado seleccionado, refrescando contador/lista. |
+| 155 | Mantener una recuperación compatible al corregir una reserva local malformada. | Corrige sólo la fuente inválida; conserva filas de cola, propiedad y recursos, y deja continuar al trabajo ajeno. |
+| 156 | Conservar una recuperación con historial incompleto y reiniciar o compactar el origen. | Cierra la revisión, mantiene reservas y equipos protegidos, muestra el registro conservado y no entrega esa historia a limpiezas posteriores. |
+| 157 | Descartar explícitamente una recuperación pendiente o ya conservada con UISP inaccesible. | Revisión local y confirmación identificadas, respaldo previo, retirada sólo del historial seleccionado; cuenta actual, propiedad aplicada y otros servicios intactos. |
+| 158 | Cambiar filas o trabajos entre revisión y descarte, repetir un token o impedir el respaldo. | No confirma el descarte ni modifica parcialmente la cola; exige una revisión nueva. |
+| 159 | Dejar varios candidatos automáticos, uno bloqueado, y repetir el proceso programado. | Avanza por servicio/familia y origen, respeta el presupuesto, corrige sólo lo demostrable con respaldo y nunca descarta ni conserva por decisión automática. |
+| 160 | Actualizar una cuenta con limpieza previa o migrar su identidad con una dirección propia de reemplazo inválida. | La preparación de reemplazo falla antes de retirar o desconectar la cuenta; no queda una eliminación nueva ejecutada por ese error. |
+| 161 | Abrir Trabajos en escritorio y móvil con varios registros de recuperación. | La cola aparece primero y las tarjetas compactas debajo; controles, revisiones cerradas y resultados siguen accesibles. |
+| 162 | Sincronizar varios servicios dejando una reserva ajena malformada sin corregir. | Los demás continúan; conserva el valor como diagnóstico. La IP propia inválida falla sólo para su servicio y las IP válidas siguen exclusivas. |
 
 ## Diagnosticar una conexión pendiente
 

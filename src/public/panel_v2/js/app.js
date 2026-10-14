@@ -52,6 +52,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let jobRecoveryTarget = null;
     let jobRecoveryPreview = null;
     let jobRecoveryBusy = false;
+    let jobRecoveryMode = 'resolve';
     let jobRecoveryGeneration = 0;
     let jobRecoveryFocusRequested = false;
     let planContentionDisabled = null;
@@ -1614,6 +1615,11 @@ document.addEventListener('DOMContentLoaded', () => {
                         ? 'Este servicio tiene 1 trabajo pendiente. La corrección no lo ejecutará; los reintentos continuarán según su programación.'
                         : 'Este servicio tiene {count} trabajos pendientes. La corrección no los ejecutará; los reintentos continuarán según su programación.', { count: candidate.pending_jobs }); item.appendChild(jobs);
                 }
+                if (Number.isSafeInteger(candidate.retained_recovery_records) && candidate.retained_recovery_records > 0) {
+                    const retained = document.createElement('p'); retained.className = 'form-note';
+                    translatedText(retained, 'La corrección conserva {count} registros de recuperación y sus recursos protegidos. No es necesario eliminarlos para reparar este campo local.', { count: candidate.retained_recovery_records });
+                    item.appendChild(retained);
+                }
                 byId('network-repair-comparison').appendChild(item);
             }
             for (const blocked of data.blocked.slice(0, 3)) {
@@ -2312,13 +2318,14 @@ document.addEventListener('DOMContentLoaded', () => {
         await renderConfig();
     });
 
-    function validJobRecoveryGroup(row) {
+    function validJobRecoveryGroup(row, reviewed = false) {
         return row && Number.isSafeInteger(row.source_job_id) && row.source_job_id > 0 && row.job_id === 'Q' + row.source_job_id
             && Number.isSafeInteger(row.service_id) && row.service_id > 0 && (row.client_id === null || Number.isSafeInteger(row.client_id) && row.client_id > 0)
             && (row.client_name === null || typeof row.client_name === 'string' && row.client_name.length <= 500)
             && Array.isArray(row.device_ids) && row.device_ids.length <= 100 && row.device_ids.every(id => Number.isSafeInteger(id) && id > 0)
             && Number.isSafeInteger(row.snapshot_count) && row.snapshot_count > 0 && row.snapshot_count <= 100
-            && row.reason === 'cancelled_resources' && (row.created_at === null || monitorDate(row.created_at));
+            && row.reason === (reviewed ? 'retained_resources' : 'cancelled_resources')
+            && (reviewed ? monitorDate(row.reviewed_at) : row.created_at === null || monitorDate(row.created_at));
     }
     function jobRecoveryIdentity(row) {
         const identity = document.createElement('div'); identity.className = 'conflict-owner-meta';
@@ -2358,6 +2365,30 @@ document.addEventListener('DOMContentLoaded', () => {
             && typeof check.identity_hint === 'string' && /^sha256:[a-f0-9]{12}$/.test(check.identity_hint)
             && (check.selector_label === undefined || typeof check.selector_label === 'string' && check.selector_label.length > 0 && check.selector_label.length <= 160 && !/[\u0000-\u001f\u007f]/.test(check.selector_label)));
     }
+    function validRecoveryDiagnostics(value) {
+        return value === undefined || value && ['source', 'prior_reservations', 'snapshot', 'router', 'applied'].includes(value.stage)
+            && Array.isArray(value.issues) && value.issues.length <= 20 && value.issues.every(issue => issue
+                && ['cancelled_delete', 'missing_frozen_commands', 'uncovered_prior_address', 'missing_prior_identity', 'incomplete_source_identity', 'different_applied_resources'].includes(issue.code)
+                && (issue.snapshot_slot === undefined || ['source', 'applied', 'commands', 'cleanup'].includes(issue.snapshot_slot))
+                && (issue.family === undefined || ['IPv4', 'IPv6'].includes(issue.family)));
+    }
+    function recoveryDiagnostics(value) {
+        const list = document.createElement('div'); list.className = 'repair-list';
+        for (const issue of value?.issues || []) {
+            const line = document.createElement('p'); line.className = 'form-note';
+            translatedText(line, {
+                cancelled_delete: 'El trabajo cancelado era una retirada de recursos; cancelarlo no confirma que se retiraran.',
+                missing_frozen_commands: 'El registro antiguo no contiene la lista completa de recursos preparados.',
+                uncovered_prior_address: 'Hay una reserva anterior sin una comprobación completa de su recurso en el router.',
+                missing_prior_identity: 'La reserva anterior no tiene una identidad de recurso comprobable.',
+                incomplete_source_identity: 'Faltan datos de identidad en el registro original.',
+                different_applied_resources: 'Los recursos anteriores difieren del último estado aplicado guardado.'
+            }[issue.code]);
+            if (issue.family) line.textContent += ' · ' + issue.family;
+            list.appendChild(line);
+        }
+        return list;
+    }
     function recoveryCheckList(checks) {
         const list = document.createElement('div'); list.className = 'recovery-resource-checks';
         const heading = document.createElement('strong'); translatedText(heading, 'Comprobación de recursos en el router'); list.appendChild(heading);
@@ -2380,12 +2411,24 @@ document.addEventListener('DOMContentLoaded', () => {
             const item = document.createElement('article'); item.className = 'repair-list-item'; item.dataset.sourceJobId = row.source_job_id;
             const meta = document.createElement('p'); meta.className = 'job-recovery-meta';
             translatedText(meta, '{count} registros conservados · Equipos: {devices}', { count: row.snapshot_count, devices: row.device_ids.join(', ') || t('Sin comprobar') });
-            const note = document.createElement('p'); note.className = 'form-note';
-            translatedText(note, 'El trabajo fue cancelado. Estos registros no son trabajos ejecutables; se conservan hasta comprobar que los recursos actuales están protegidos.');
+            const note = document.createElement('span'); note.className = 'badge badge-neutral';
+            translatedText(note, 'Cancelado');
             const review = document.createElement('button'); review.type = 'button'; review.className = 'btn btn-secondary job-repair-button'; translatedText(review, 'Comparar con UISP y router');
             review.disabled = jobRecoveryBusy; review.addEventListener('click', () => previewJobRecovery(row));
             item.append(jobRecoveryIdentity(row), meta, note, review); list.appendChild(item);
         }
+        const retained = byId('job-retained-list');
+        retained?.replaceChildren();
+        for (const row of jobRecoveryReport?.reviewed_groups || []) {
+            const item = document.createElement('article'); item.className = 'repair-list-item';
+            const note = document.createElement('p'); note.className = 'form-note';
+            translatedText(note, 'Revisión cerrada. Los recursos y sus reservas se conservan protegidos.');
+            const discard = document.createElement('button'); discard.type = 'button'; discard.className = 'btn btn-danger';
+            translatedText(discard, 'Descartar registro local'); discard.disabled = jobRecoveryBusy;
+            discard.addEventListener('click', () => previewJobRecovery(row, 'discard'));
+            item.append(jobRecoveryIdentity(row), note, discard); retained?.appendChild(item);
+        }
+        if (byId('job-retained-section')) byId('job-retained-section').style.display = jobRecoveryReport?.reviewed_total > 0 ? 'block' : 'none';
         translatedText(byId('job-recovery-list-status'), jobRecoveryListInFlight ? 'Consultando recuperaciones...'
             : jobRecoveryListFailure ? jobRecoveryReport ? 'No se pudo refrescar. Se conserva la última lista de recuperaciones.' : 'No se pudo consultar la lista de recuperaciones. Puedes volver a refrescar.'
             : !jobRecoveryReport ? 'Sin actualizar.' : jobRecoveryReport.has_more ? 'Se muestran {shown} de {count} recuperaciones. Resuelve y refresca para ver las siguientes.'
@@ -2401,9 +2444,12 @@ document.addEventListener('DOMContentLoaded', () => {
             try {
                 const data = checked(await api.getJobRecoveries()).data;
                 if (!jobsVisible() || generation !== jobsViewGeneration || epoch !== jobsStatusEpoch) return;
-                if (!data || data.available !== true || !Array.isArray(data.groups) || data.groups.length > 100 || !data.groups.every(validJobRecoveryGroup)
+                if (!data || data.available !== true || !Array.isArray(data.groups) || data.groups.length > 100 || !data.groups.every(row => validJobRecoveryGroup(row))
                     || new Set(data.groups.map(row => row.source_job_id)).size !== data.groups.length || !Number.isSafeInteger(data.total) || data.total < data.groups.length
                     || data.has_more !== (data.total > data.groups.length) || data.reason !== null || !monitorDate(data.checked_at)) throw new Error('invalid_recoveries');
+                if (data.reviewed_groups !== undefined && (!Array.isArray(data.reviewed_groups) || data.reviewed_groups.length > 100
+                    || !data.reviewed_groups.every(row => validJobRecoveryGroup(row, true)) || !Number.isSafeInteger(data.reviewed_total)
+                    || data.reviewed_total < data.reviewed_groups.length || new Set(data.reviewed_groups.map(row => row.source_job_id)).size !== data.reviewed_groups.length)) throw new Error('invalid_recoveries');
                 jobRecoveryReport = data; jobRecoveryListFailure = false;
             } catch (_) { if (generation === jobsViewGeneration && epoch === jobsStatusEpoch) jobRecoveryListFailure = true; }
             finally {
@@ -2422,82 +2468,122 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!jobRecoveryModal) return;
         byId('apply-job-recovery').disabled = jobRecoveryBusy || !jobRecoveryPreview?.previewToken;
         byId('recheck-job-recovery').disabled = jobRecoveryBusy || !jobRecoveryTarget;
+        byId('preserve-job-recovery').disabled = jobRecoveryBusy || !jobRecoveryTarget;
+        byId('discard-job-recovery').disabled = jobRecoveryBusy || !jobRecoveryTarget;
     }
-    async function previewJobRecovery(row) {
-        if (jobRecoveryBusy || !jobRecoveryModal || !validJobRecoveryGroup(row)) return;
-        const generation = ++jobRecoveryGeneration; jobRecoveryTarget = row; jobRecoveryPreview = null; jobRecoveryBusy = true;
+    async function previewJobRecovery(row, mode = 'resolve') {
+        if (jobRecoveryBusy || !jobRecoveryModal || !validJobRecoveryGroup(row, row?.reason === 'retained_resources')) return;
+        const generation = ++jobRecoveryGeneration; jobRecoveryTarget = row; jobRecoveryPreview = null; jobRecoveryBusy = true; jobRecoveryMode = mode;
         jobRecoveryModal.style.display = 'flex'; translatedText(byId('job-recovery-title'), 'Revisar recuperación');
+        translatedText(byId('job-recovery-intro'), mode === 'discard' ? 'Revisión local; no se comprobó el estado en UISP.'
+            : 'Se comprobarán UISP y los registros actuales. Si hace falta, se consultará el router sin modificarlo. Sólo se retirarán registros locales redundantes o cuyos recursos ya no existan; los servicios actuales se conservarán.');
         byId('job-recovery-result').style.display = 'none'; byId('job-recovery-result').replaceChildren();
         byId('job-recovery-comparison').style.display = 'grid'; byId('job-recovery-comparison').replaceChildren(jobRecoveryIdentity(row));
         byId('apply-job-recovery').style.display = 'inline-flex'; byId('recheck-job-recovery').style.display = 'inline-flex';
+        byId('preserve-job-recovery').style.display = 'none';
+        byId('discard-job-recovery').style.display = 'none';
+        translatedText(byId('apply-job-recovery'), mode === 'discard' ? 'Descartar registro local' : mode === 'preserve' ? 'Conservar recursos y cerrar revisión' : 'Resolver recuperación');
         translatedText(byId('job-recovery-status'), 'Comprobando UISP y los registros guardados; si hace falta, se consultará el router sin modificarlo...'); updateJobRecoveryControls(); renderJobRecoveries();
         try {
-            const data = checked(await api.previewJobRecovery(row.source_job_id)).data;
+            const data = checked(await api.previewJobRecovery(row.source_job_id, mode)).data;
             if (generation !== jobRecoveryGeneration) return;
             if (!data || !Array.isArray(data.blocked) || data.blocked.length > 1 || !monitorDate(data.checked_at)
-                || (data.candidate ? !validJobRecoveryGroup(data.candidate) || data.candidate.source_job_id !== row.source_job_id || data.candidate.service_id !== row.service_id
-                    || !['redundant_current_resources', 'observed_absent_resources'].includes(data.candidate.resolution) || !monitorDate(data.candidate.checked_at)
+                || (data.candidate ? !validJobRecoveryGroup(data.candidate, data.candidate.reason === 'retained_resources') || data.candidate.source_job_id !== row.source_job_id || data.candidate.service_id !== row.service_id
+                    || !(mode === 'discard' ? ['discarded_resources'] : mode === 'preserve' ? ['retained_resources'] : ['redundant_current_resources', 'observed_absent_resources']).includes(data.candidate.resolution) || !monitorDate(data.candidate.checked_at)
+                    || !validRecoveryDiagnostics(data.candidate.diagnostics)
                     || data.candidate.resolution === 'observed_absent_resources' && (!validRecoveryChecks(data.candidate.checks) || data.candidate.checks.some(check => check.state !== 'absent'))
-                    || !Number.isInteger(data.candidate.crm_status) || data.candidate.crm_status < 0 || data.candidate.crm_status > 8
+                    || (mode === 'discard' ? data.candidate.crm_status !== null || data.candidate.client_archived !== null || data.candidate.identity_origin !== 'local'
+                        : !Number.isInteger(data.candidate.crm_status) || data.candidate.crm_status < 0 || data.candidate.crm_status > 8)
                     || (data.candidate.client_archived !== null && typeof data.candidate.client_archived !== 'boolean')
                     || data.blocked.length !== 0 || typeof data.previewToken !== 'string' || !/^[a-f0-9]{64}$/.test(data.previewToken) || !monitorDate(data.expiresAt)
                     : data.previewToken !== null || data.blocked.length !== 1)
                 || data.blocked.some(entry => entry.source_job_id !== row.source_job_id || entry.service_id !== null && entry.service_id !== row.service_id || typeof entry.reason !== 'string'
+                    || !validRecoveryDiagnostics(entry.diagnostics)
                     || entry.checks !== undefined && (!Array.isArray(entry.checks) || entry.checks.length > 0 && !validRecoveryChecks(entry.checks)))) throw new Error(t('Respuesta inválida del servidor.'));
             jobRecoveryPreview = data;
             if (data.candidate) {
                 jobRecoveryTarget = data.candidate;
                 const state = document.createElement('p'); state.className = 'form-note';
-                translatedText(state, 'Servicio: {state}', { state: repairServiceStatus(data.candidate.crm_status) }); byId('job-recovery-comparison').appendChild(state);
+                translatedText(state, mode === 'discard' ? 'Revisión local; no se comprobó el estado en UISP.' : 'Servicio: {state}', { state: repairServiceStatus(data.candidate.crm_status) }); byId('job-recovery-comparison').appendChild(state);
                 const checked = document.createElement('p'); checked.className = 'form-note';
                 translatedText(checked, 'Verificado: {time}', { time: formatDate(data.candidate.checked_at) }); byId('job-recovery-comparison').appendChild(checked);
-                const note = document.createElement('p'); note.className = 'form-note'; translatedText(note, data.candidate.resolution === 'observed_absent_resources'
+                const note = document.createElement('p'); note.className = 'form-note'; translatedText(note, mode === 'discard'
+                    ? 'Se descartará este historial local con respaldo. Sus recursos pueden seguir en el router y sus IP históricas podrán volver a asignarse. La cuenta y las reservas actuales confirmadas se conservarán.'
+                    : data.candidate.resolution === 'retained_resources'
+                    ? 'Se conservarán los registros de recursos y sus reservas en un archivo protegido, con respaldo. Se cerrará esta revisión y no se ejecutarán como una limpieza cancelada. Esto no confirma que el router esté limpio ni sincronizado.'
+                    : data.candidate.resolution === 'observed_absent_resources'
                     ? 'La identidad se comprobó en UISP y los recursos anteriores ya no están en el router. Sólo se retirarán sus registros locales, con respaldo; el router se consultará de nuevo antes de confirmar.'
                     : 'La identidad y el estado se comprobaron en UISP. Los registros conservados son copias del estado aplicado guardado; sólo se retirarán esas copias, con un respaldo previo.');
                 byId('job-recovery-comparison').appendChild(note);
+                if (data.candidate.diagnostics?.issues.length) byId('job-recovery-comparison').appendChild(recoveryDiagnostics(data.candidate.diagnostics));
                 if (data.candidate.resolution === 'observed_absent_resources') byId('job-recovery-comparison').appendChild(recoveryCheckList(data.candidate.checks));
                 translatedText(byId('job-recovery-status'), 'Recuperación revisada. Vence: {time}.', { time: formatDate(data.expiresAt) });
             } else {
                 const blocked = document.createElement('div'); blocked.className = 'cleanup-blocked-item';
                 blocked.textContent = jobRecoveryReason(data.blocked[0].reason); byId('job-recovery-comparison').appendChild(blocked);
                 if (data.blocked[0].checks?.length) byId('job-recovery-comparison').appendChild(recoveryCheckList(data.blocked[0].checks));
+                if (data.blocked[0].diagnostics?.issues.length) byId('job-recovery-comparison').appendChild(recoveryDiagnostics(data.blocked[0].diagnostics));
                 const review = document.createElement('p'); review.className = 'form-note';
                 translatedText(review, 'Puedes comprobar el servicio en UISP y el equipo indicado. No se borrarán recursos del router desde esta revisión.');
                 byId('job-recovery-comparison').appendChild(review);
                 translatedText(byId('job-recovery-status'), 'La recuperación se conserva. No se cambiaron los servicios ni el router.');
+                if (mode !== 'discard' && !['source_state_changed', 'legacy_queue_present'].includes(data.blocked[0].reason)) byId('discard-job-recovery').style.display = 'inline-flex';
+                if (mode === 'resolve' && ['current_ownership_unknown', 'different_resources', 'router_resources_present', 'router_observation_unavailable', 'router_snapshot_incomplete', 'router_authority_changed', 'router_observation_limit'].includes(data.blocked[0].reason)) {
+                    byId('preserve-job-recovery').style.display = 'inline-flex';
+                    const alternative = document.createElement('p'); alternative.className = 'form-note';
+                    translatedText(alternative, 'Si deseas mantener los recursos actuales, puedes revisar su conservación y cerrar este registro sin eliminarlos del router.');
+                    byId('job-recovery-comparison').appendChild(alternative);
+                }
             }
         } catch (error) { translatedText(byId('job-recovery-status'), 'Error: {message}', { message: t(error.message) }); }
         finally { if (generation === jobRecoveryGeneration) { jobRecoveryBusy = false; updateJobRecoveryControls(); renderJobRecoveries(); } }
     }
     byId('refresh-job-recoveries')?.addEventListener('click', async () => { await refreshJobRecoveries(); await refreshJobsStatus(); });
-    byId('recheck-job-recovery')?.addEventListener('click', () => jobRecoveryTarget && previewJobRecovery(jobRecoveryTarget));
+    byId('recheck-job-recovery')?.addEventListener('click', () => jobRecoveryTarget && previewJobRecovery(jobRecoveryTarget, jobRecoveryMode));
+    byId('preserve-job-recovery')?.addEventListener('click', () => jobRecoveryTarget && previewJobRecovery(jobRecoveryTarget, 'preserve'));
+    byId('discard-job-recovery')?.addEventListener('click', () => jobRecoveryTarget && previewJobRecovery(jobRecoveryTarget, 'discard'));
     byId('apply-job-recovery')?.addEventListener('click', async () => {
         if (jobRecoveryBusy || !jobRecoveryTarget || !jobRecoveryPreview?.previewToken) return;
         const row = jobRecoveryTarget, token = jobRecoveryPreview.previewToken;
         jobRecoveryBusy = true; updateJobRecoveryControls(); renderJobRecoveries();
         try {
-            if (!await confirmAction(t(row.resolution === 'observed_absent_resources'
+            const preserving = row.resolution === 'retained_resources';
+            const discarding = row.resolution === 'discarded_resources';
+            if (!await confirmAction(t(discarding
+                ? '¿Descartar definitivamente el registro local {job} del servicio #{id}? Sus recursos pueden seguir en el router y sus IP históricas podrán reutilizarse. Se creará un respaldo; la cuenta actual se conservará.'
+                : preserving
+                ? '¿Conservar los recursos de {job} del servicio #{id} y cerrar la revisión? Se guardarán sus registros y reservas protegidos, con respaldo. No se eliminarán recursos del router ni se confirmará una sincronización.'
+                : row.resolution === 'observed_absent_resources'
                 ? '¿Resolver la recuperación {job} del servicio #{id}? Se comprobará de nuevo que los recursos anteriores no estén en el router y se retirarán sólo sus registros locales con respaldo.'
                 : '¿Resolver la recuperación {job} del servicio #{id}? Se respaldarán y retirarán sólo las copias redundantes verificadas; los servicios y routers se conservarán.', { job: row.job_id, id: row.service_id }))) return;
             jobRecoveryPreview = null;
             const data = checked(await api.applyJobRecovery(token)).data;
-            if (!data || !Array.isArray(data.resolved) || data.resolved.length !== 1 || data.resolved[0].source_job_id !== row.source_job_id || data.resolved[0].service_id !== row.service_id
-                || data.resolved[0].snapshot_count !== row.snapshot_count || data.router_changes !== false || data.crm_changes !== false || !monitorDate(data.checked_at)
+            const outcomes = preserving ? data?.retained : data?.resolved;
+            if (!data || !Array.isArray(outcomes) || outcomes.length !== 1 || outcomes[0].source_job_id !== row.source_job_id || outcomes[0].service_id !== row.service_id
+                || outcomes[0].snapshot_count !== row.snapshot_count || preserving && (data.resolution !== 'retained_resources' || !Array.isArray(data.resolved) || data.resolved.length !== 0)
+                || discarding && (data.resolution !== 'discarded_resources' || !Array.isArray(data.discarded) || data.discarded.length !== 1 || data.discarded[0].source_job_id !== row.source_job_id)
+                || data.router_changes !== false || data.crm_changes !== false || !monitorDate(data.checked_at)
                 || typeof data.backup_name !== 'string' || !/^jobs-recovery-\d{8}T\d{6}Z-[a-f0-9]{32}\.sqlite$/.test(data.backup_name)) throw new Error(t('Respuesta inválida del servidor.'));
-            translatedText(byId('job-recovery-title'), 'Recuperación resuelta');
+            translatedText(byId('job-recovery-title'), discarding ? 'Registro local descartado' : preserving ? 'Revisión cerrada; recursos conservados' : 'Recuperación resuelta');
             byId('job-recovery-comparison').replaceChildren(); byId('job-recovery-comparison').style.display = 'none';
             const result = byId('job-recovery-result'); result.className = 'crm-ip-result is-confirmed';
-            const title = document.createElement('h4'); translatedText(title, 'Recuperación resuelta');
-            const note = document.createElement('p'); translatedText(note, row.resolution === 'observed_absent_resources'
+            const title = document.createElement('h4'); translatedText(title, discarding ? 'Registro local descartado' : preserving ? 'Revisión cerrada; recursos conservados' : 'Recuperación resuelta');
+            const note = document.createElement('p'); translatedText(note, discarding
+                ? 'Se descartó el registro local de {job}, con respaldo. No se modificó UISP ni el router. Este resultado no confirma que los recursos históricos hayan sido retirados del equipo.'
+                : preserving
+                ? 'Se cerró la revisión de {job}. Sus recursos y reservas siguen protegidos y no se ejecutarán como una limpieza cancelada. No se cambió UISP ni el router.'
+                : row.resolution === 'observed_absent_resources'
                 ? 'Se confirmó que los recursos anteriores ya no estaban en el router y se retiraron sus registros locales de {job}. Los servicios actuales, las IP, las velocidades y los routers se conservaron.'
                 : 'Se retiraron los registros redundantes de {job}. Los servicios actuales, las IP, las velocidades y los routers se conservaron.', { job: row.job_id });
             const when = document.createElement('p'); translatedText(when, 'Verificado: {time}', { time: formatDate(data.checked_at) });
             const backup = document.createElement('a'); backup.className = 'btn btn-secondary'; backup.href = api.downloadUrl(data.backup_name); backup.download = data.backup_name; translatedText(backup, 'Descargar respaldo');
             result.replaceChildren(title, jobRecoveryIdentity(row), note, when, backup); result.style.display = 'block'; result.focus?.({ preventScroll: true });
             byId('apply-job-recovery').style.display = 'none'; byId('recheck-job-recovery').style.display = 'none';
+            byId('preserve-job-recovery').style.display = 'none';
+            byId('discard-job-recovery').style.display = 'none';
             translatedText(byId('job-recovery-status'), 'La lista y el indicador se están actualizando.');
             await Promise.all([refreshJobRecoveries(), refreshJobsStatus()]);
-            translatedText(byId('job-recovery-status'), 'Resolución confirmada. La lista y el indicador se consultaron de nuevo.');
+            translatedText(byId('job-recovery-status'), discarding ? 'Registro local descartado' : preserving ? 'Revisión cerrada; recursos conservados' : 'Resolución confirmada. La lista y el indicador se consultaron de nuevo.');
         } catch (error) {
             translatedText(byId('job-recovery-status'), 'No se confirmó la resolución. Refresca la lista y verifica de nuevo antes de intentar otro cambio. {message}', { message: jobRecoveryReason(error.message) });
             await Promise.all([refreshJobRecoveries(), refreshJobsStatus()]);

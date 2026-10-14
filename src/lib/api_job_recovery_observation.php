@@ -10,17 +10,20 @@ final class ApiJobRecoveryObservation
     private string $dataPath;
     private $reader;
     private $clock;
+    private ?float $deadline;
     private array $connections = [];
 
-    public function __construct(string $dataPath = 'data/data.db', ?callable $reader = null, ?callable $clock = null)
+    public function __construct(string $dataPath = 'data/data.db', ?callable $reader = null, ?callable $clock = null, ?float $deadline = null)
     {
         $this->dataPath = $dataPath; $this->reader = $reader; $this->clock = $clock;
+        $this->deadline = $deadline;
     }
 
     /** All targets must be absent. A same-name foreign or shared object remains protected. */
     public function inspect(array $snapshots): array
     {
         $checks = []; $targets = []; $devices = []; $started = $this->now(); $safe = false; $complete = true;
+        $deadline = $this->deadline === null ? $started + self::BUDGET : min($started + self::BUDGET, $this->deadline);
         $reason = 'router_snapshot_incomplete';
         try {
             if (!$snapshots || count($snapshots) > self::MAX_SNAPSHOTS) throw new InvalidArgumentException('router_observation_limit');
@@ -64,9 +67,9 @@ final class ApiJobRecoveryObservation
                     'selector_label' => $this->label((string) reset($target['filter'])),
                     'state' => 'unknown'];
                 try {
-                    if ($this->now() - $started >= self::BUDGET) throw new InvalidArgumentException('router_observation_limit');
+                    if ($this->now() >= $deadline) throw new InvalidArgumentException('router_observation_limit');
                     $records = $this->read($devices[$target['device_id']], $target['path'], $target['filter']);
-                    if ($this->now() - $started >= self::BUDGET) throw new InvalidArgumentException('router_observation_limit');
+                    if ($this->now() >= $deadline) throw new InvalidArgumentException('router_observation_limit');
                     if (!is_array($records) || !self::isList($records) || count($records) > 100) {
                         throw new InvalidArgumentException('router_observation_unavailable');
                     }

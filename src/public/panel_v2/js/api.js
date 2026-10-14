@@ -241,7 +241,7 @@ class ApiService {
     getJobs() { return this.send('list', 'jobs'); }
     getJobsStatus() { return this.send('list', 'jobs_status'); }
     getJobRecoveries() { return this.send('list', 'job_recovery'); }
-    previewJobRecovery(sourceJobId) { return this.send('recover', 'job_recovery', 'preview', { sourceJobId }); }
+    previewJobRecovery(sourceJobId, mode = 'resolve') { return this.send('recover', 'job_recovery', 'preview', mode === 'resolve' ? { sourceJobId } : { sourceJobId, mode }); }
     applyJobRecovery(previewToken) { return this.send('recover', 'job_recovery', 'apply', { previewToken }); }
     getInvalidNetworkReservations() { return this.send('list', 'network_repair'); }
     previewNetworkRepair(selection) { return this.send('repair', 'network_repair', 'preview', { selection }); }

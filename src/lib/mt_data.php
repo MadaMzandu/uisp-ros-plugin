@@ -3,6 +3,21 @@ include_once 'data.php';
 
 class MtData extends Data
 {
+    private ?ApiIP $validationAddresses = null;
+
+    /** Exercise the exact command-builder address paths before retiring a live account. */
+    public function validateBeforeCleanup(array $service, array $plan, bool $releasesReservation): void
+    {
+        $validator = new self();
+        $validator->validationAddresses = new ApiIP(true, $releasesReservation);
+        $validator->get_data($service, $plan);
+    }
+
+    protected function ipapi(): ApiIP
+    {
+        return $this->validationAddresses ?? parent::ipapi();
+    }
+
     public function get_orphans($device): array
     { //find orphans
 
