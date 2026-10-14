@@ -9,6 +9,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const deviceModal = byId('device-modal');
     const planModal = byId('plan-modal');
     const orphanModal = byId('orphan-modal');
+    const cleanupModal = byId('network-cleanup-modal');
     let notificationRegion = byId('notifications');
     let currentView = 'devices';
     let devicesCache = [];
@@ -49,6 +50,11 @@ document.addEventListener('DOMContentLoaded', () => {
     let recoveryDetails = null;
     let recoveryLoading = false;
     let verifyingService = null;
+    let cleanupBusy = false;
+    let cleanupPreview = null;
+    let cleanupBoxes = [];
+    let cleanupRequiresReload = false;
+    let cleanupRemainingCount = null;
     const recoveryWriteIds = new Set(['save-config-btn', 'sync-attrs-btn', 'save-device-btn', 'save-plan-btn',
         'btn-run-jobs', 'btn-delete-jobs', 'btn-backup', 'btn-rebuild', 'btn-cache', 'btn-upload', 'btn-log-clear', 'plan-reset-invalid']);
 
@@ -85,11 +91,13 @@ document.addEventListener('DOMContentLoaded', () => {
         if (state?.readOnly !== true) return;
         recoveryReadOnly = true;
         if (state.details && typeof state.details === 'object') recoveryDetails = retainVerifiedOwners(recoveryDetails, state.details, verifyingService);
-        const count = Number(recoveryDetails?.duplicate_groups) || (Array.isArray(recoveryDetails?.conflicts) ? recoveryDetails.conflicts.length : 0);
+        const total = Number(recoveryDetails?.duplicate_groups);
+        const count = cleanupRemainingCount ?? (Number.isSafeInteger(total) && total >= 0 ? total : (Array.isArray(recoveryDetails?.conflicts) ? recoveryDetails.conflicts.length : 0));
         byId('network-warning').style.display = 'flex';
         byId('network-conflicts-nav').style.display = 'flex';
         byId('network-conflicts-count').textContent = String(count);
         translatedText(byId('network-warning-title'), 'IP duplicadas: {count} conflictos', { count });
+        if (cleanupRequiresReload) translatedText(byId('network-warning-note'), 'La limpieza terminó. Recarga el panel para comprobar las asignaciones y completar la actualización.');
         applyRecoveryControls();
         if (currentView === 'network_conflicts') renderNetworkConflictsTable();
         if (!recoveryDetails && !recoveryLoading && typeof api.getNetworkConflicts === 'function') {
@@ -141,6 +149,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (prior.client_source === 'crm' && owner.client_source !== 'crm') {
                     for (const field of ['client_name', 'client_archived', 'client_deleted', 'client_source']) retained[field] = prior[field];
                 }
+                if (prior.refresh_error && !owner.refresh_error && (owner.source !== 'crm' || owner.client_source !== 'crm')) retained.refresh_error = prior.refresh_error;
                 return retained;
             }) };
         }) };
@@ -157,7 +166,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const row = document.createElement('tr');
             const address = document.createElement('td');
             address.className = 'conflict-address';
-            address.innerHTML = `<strong>${html(conflict.address)}</strong><span class="text-muted">${html(conflict.family)}</span><span class="badge badge-warning">${html(t('{count} servicios', { count: Number(conflict.service_count) || (conflict.service_ids || []).length }))}</span>`;
+            address.innerHTML = `<strong>${html(conflict.address)}</strong><span class="text-muted">${html(conflict.family)}</span><span class="badge badge-warning">${html(t('{count} asignaciones guardadas', { count: Number(conflict.service_count) || (conflict.service_ids || []).length }))}</span>`;
             const ownersCell = document.createElement('td');
             ownersCell.className = 'conflict-owners';
             const known = new Set();
@@ -177,7 +186,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 const meta = document.createElement('div');
                 meta.className = 'conflict-owner-meta';
                 meta.appendChild(conflictLink(t('Servicio #{id}', { id: owner.service_id }), owner.service_url, 'service'));
-                const states = [owner.service_status && owner.service_status !== 'Sin verificar' ? owner.service_status : t('Sin comprobar')];
+                const knownState = owner.service_status && owner.service_status !== 'Sin verificar';
+                const state = knownState ? t(String(owner.service_status)) : t('Sin comprobar');
+                const states = [knownState && owner.source !== 'crm' ? t('{state} (dato guardado)', { state }) : state];
                 if (owner.client_archived === true || owner.client_archived === 1) states.push(t(owner.client_source === 'crm' ? 'Cliente archivado' : 'Cliente archivado (dato guardado)'));
                 if (owner.client_deleted === true || owner.client_deleted === 1) states.push(t('Cliente eliminado'));
                 for (const label of states) {
@@ -189,8 +200,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 identity.appendChild(meta);
                 const source = document.createElement('p');
                 source.className = 'conflict-source';
-                const sourceLabel = { database: 'Base del plugin', cache: 'Caché del plugin', crm: 'Servicio verificado en UISP', missing: 'Sin datos guardados' };
-                translatedText(source, sourceLabel[owner.source] || 'Sin datos guardados');
+                const sourceLabel = { database: 'Base del plugin', cache: 'Caché del plugin', crm: 'Servicio verificado en UISP', missing: 'Registro de IP sin ficha local de servicio' };
+                translatedText(source, sourceLabel[owner.source] || 'Registro de IP sin ficha local de servicio');
                 identity.appendChild(source);
                 if (owner.client_source === 'crm' || owner.source === 'crm') {
                     const clientSource = document.createElement('p');
@@ -213,9 +224,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     const verify = document.createElement('button');
                     verify.type = 'button'; verify.className = 'btn btn-secondary conflict-verify';
                     translatedText(verify, verifyingService === id ? 'Verificando...' : 'Verificar en UISP');
-                    verify.disabled = verifyingService !== null;
+                    verify.disabled = verifyingService !== null || cleanupBusy || cleanupRequiresReload;
                     verify.addEventListener('click', async () => {
-                        if (verifyingService !== null) return;
+                        if (verifyingService !== null || cleanupBusy || cleanupRequiresReload) return;
                         const previous = recoveryDetails;
                         verifyingService = id;
                         renderNetworkConflictsTable();
@@ -229,14 +240,21 @@ document.addEventListener('DOMContentLoaded', () => {
                             if (currentView === 'network_conflicts') renderNetworkConflictsTable();
                         }
                     });
+                    // Keep verification first for keyboard users and cached panel layouts.
                     item.appendChild(verify);
+                    const cleanup = document.createElement('button');
+                    cleanup.type = 'button'; cleanup.className = 'btn btn-secondary conflict-cleanup';
+                    translatedText(cleanup, 'Revisar limpieza');
+                    cleanup.disabled = verifyingService !== null || cleanupBusy || cleanupRequiresReload;
+                    cleanup.addEventListener('click', () => previewCleanup([id]));
+                    item.appendChild(cleanup);
                 }
                 ownersCell.appendChild(item);
             }
             if (conflict.services_truncated) {
                 const more = document.createElement('p');
                 more.className = 'form-note';
-                translatedText(more, 'Se muestran los primeros {shown} de {total} servicios.', { shown: Math.min(owners.length, 50), total: Number(conflict.service_count) || 0 });
+                translatedText(more, 'Se muestran las primeras {shown} de {total} asignaciones guardadas.', { shown: Math.min(owners.length, 50), total: Number(conflict.service_count) || 0 });
                 ownersCell.appendChild(more);
             }
             row.append(address, ownersCell);
@@ -248,6 +266,98 @@ document.addEventListener('DOMContentLoaded', () => {
         byId('download-network-conflicts').href = api.downloadUrl('network-conflicts');
         byId('download-network-conflicts').download = 'network-conflicts.json';
     }
+
+    function cleanupReason(reason) {
+        return t({
+            service_exists: 'El servicio existe en UISP. Se conservan sus asignaciones, cualquiera que sea su estado.',
+            crm_unavailable: 'No se pudo comprobar el servicio en UISP. Se conserva la asignación.',
+            deadline: 'La consulta a UISP agotó el tiempo disponible. Se conserva la asignación.',
+            no_live_peer: 'No se confirmó otro servicio existente que comparta esta IP. Se conserva la asignación.',
+            not_in_conflict: 'La asignación ya no forma parte de un conflicto.',
+            local_changed: 'Los datos locales cambiaron. Revisa la limpieza nuevamente.',
+            queue_busy: 'Revisa los trabajos y sus recursos guardados antes de limpiar esta asignación.'
+        }[reason] || 'No se pudo confirmar que esta asignación pueda limpiarse.');
+    }
+
+    function updateCleanupButton() {
+        const selected = cleanupBoxes.filter(box => box.checked).length;
+        byId('apply-network-cleanup').disabled = cleanupBusy || !cleanupPreview || selected === 0 || selected > 3;
+    }
+
+    async function previewCleanup(serviceIds) {
+        if (cleanupBusy || verifyingService !== null || cleanupRequiresReload || !cleanupModal) return;
+        const ids = [...new Set(serviceIds.map(Number))].filter(id => Number.isSafeInteger(id) && id > 0).slice(0, 3);
+        if (!ids.length) return;
+        cleanupBusy = true; cleanupPreview = null; cleanupBoxes = [];
+        cleanupModal.style.display = 'flex';
+        byId('network-cleanup-candidates').replaceChildren();
+        byId('network-cleanup-blocked').replaceChildren();
+        byId('network-cleanup-result').replaceChildren();
+        byId('network-cleanup-result').style.display = 'none';
+        byId('reload-after-cleanup').style.display = 'none';
+        byId('apply-network-cleanup').style.display = 'inline-flex';
+        translatedText(byId('network-cleanup-status'), 'Comprobando qué asignaciones pueden limpiarse...');
+        updateCleanupButton();
+        renderNetworkConflictsTable();
+        try {
+            const data = checked(await api.previewNetworkCleanup(ids)).data;
+            if (!data || !Array.isArray(data.candidates) || !Array.isArray(data.blocked)
+                || (data.candidates.length && (typeof data.previewToken !== 'string' || !/^[a-f0-9]{64}$/.test(data.previewToken)))) throw new Error(t('Respuesta inválida del servidor.'));
+            cleanupPreview = data;
+            for (const candidate of data.candidates.slice(0, 3)) {
+                const id = Number(candidate?.service_id);
+                if (!ids.includes(id) || candidate.reason !== 'crm_not_found') continue;
+                const row = document.createElement('label'); row.className = 'cleanup-candidate';
+                const checkbox = document.createElement('input'); checkbox.type = 'checkbox'; checkbox.value = String(id);
+                checkbox.addEventListener('change', updateCleanupButton); cleanupBoxes.push(checkbox);
+                const copy = document.createElement('span');
+                copy.innerHTML = `<strong>${html(t('Asignaciones del servicio #{id}', { id }))}</strong><span class="cleanup-address">${html([candidate.address, candidate.address6].filter(Boolean).join(' · '))}</span>`;
+                const explanation = document.createElement('small');
+                translatedText(explanation, 'UISP confirmó que el servicio no existe. Otro servicio del conflicto está verificado en UISP y se conservará.');
+                copy.appendChild(explanation);
+                const peers = (Array.isArray(candidate.witness_service_ids) ? candidate.witness_service_ids : []).map(Number).filter(peer => Number.isSafeInteger(peer) && peer > 0);
+                if (peers.length) {
+                    const witnesses = document.createElement('div'); witnesses.className = 'cleanup-witnesses';
+                    for (const peer of peers) witnesses.appendChild(conflictLink(t('Servicio conservado #{id}', { id: peer }), '/crm/client/service/' + peer, 'service'));
+                    copy.appendChild(witnesses);
+                }
+                row.append(checkbox, copy); byId('network-cleanup-candidates').appendChild(row);
+            }
+            for (const blocked of data.blocked) {
+                const row = document.createElement('div'); row.className = 'cleanup-blocked-item';
+                row.innerHTML = `<strong>${html(t('Servicio #{id}', { id: blocked.service_id }))}</strong><p>${html(cleanupReason(blocked.reason))}</p>`;
+                byId('network-cleanup-blocked').appendChild(row);
+            }
+            translatedText(byId('network-cleanup-status'), cleanupBoxes.length ? 'Selecciona las asignaciones que deseas limpiar. La revisión vence: {time}.' : 'No hay asignaciones que puedan limpiarse con seguridad en esta revisión.', { time: formatDate(data.expiresAt) });
+        } catch (error) { translatedText(byId('network-cleanup-status'), 'Error: {message}', { message: t(error.message) }); }
+        finally { cleanupBusy = false; updateCleanupButton(); if (currentView === 'network_conflicts') renderNetworkConflictsTable(); }
+    }
+
+    byId('apply-network-cleanup')?.addEventListener('click', async () => {
+        if (cleanupBusy || !cleanupPreview) return;
+        const ids = cleanupBoxes.filter(box => box.checked).map(box => Number(box.value));
+        if (!ids.length || ids.length > 3) return;
+        cleanupBusy = true; updateCleanupButton();
+        try {
+            if (!await confirmAction(t('¿Limpiar las asignaciones locales de {count} servicios seleccionados? Se creará un respaldo. UISP y los routers no se modificarán.', { count: ids.length }))) return;
+            translatedText(byId('network-cleanup-status'), 'Creando respaldo y limpiando asignaciones locales...');
+            const result = checked(await api.applyNetworkCleanup(cleanupPreview.previewToken, ids)).data;
+            if (!result || !Array.isArray(result.removed_service_ids) || !Number.isSafeInteger(result.duplicate_groups) || result.duplicate_groups < 0 || result.requires_reload !== true) throw new Error(t('Respuesta inválida del servidor.'));
+            const backupUrl = api.downloadUrl(result.backup_name);
+            cleanupRequiresReload = true; cleanupRemainingCount = result.duplicate_groups; cleanupPreview = null;
+            cleanupBoxes.forEach(box => { box.disabled = true; });
+            const summary = document.createElement('p');
+            translatedText(summary, 'Se retiraron las asignaciones de {count} servicios. Quedan {remaining} conflictos de IP.', { count: result.removed_service_ids.length, remaining: result.duplicate_groups });
+            const backup = document.createElement('a'); backup.className = 'btn btn-secondary'; backup.href = backupUrl; backup.download = result.backup_name;
+            translatedText(backup, 'Descargar respaldo de la limpieza');
+            byId('network-cleanup-result').append(summary, backup); byId('network-cleanup-result').style.display = 'block';
+            translatedText(byId('network-cleanup-status'), 'La limpieza terminó. Recarga el panel para comprobar las asignaciones y completar la actualización.');
+            byId('apply-network-cleanup').style.display = 'none'; byId('reload-after-cleanup').style.display = 'inline-flex';
+            applyRecovery({ readOnly: true });
+        } catch (error) { translatedText(byId('network-cleanup-status'), 'Error: {message}', { message: t(error.message) }); }
+        finally { cleanupBusy = false; updateCleanupButton(); if (currentView === 'network_conflicts') renderNetworkConflictsTable(); }
+    });
+    byId('reload-after-cleanup')?.addEventListener('click', () => window.location.reload());
 
     async function renderNetworkConflicts() {
         if (!recoveryDetails) {
@@ -449,7 +559,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function closeModals() {
-        for (const modal of [deviceModal, planModal, orphanModal]) modal.style.display = 'none';
+        for (const modal of [deviceModal, planModal, orphanModal, cleanupModal]) if (modal) modal.style.display = 'none';
         byId('dev-password').value = '';
     }
 
@@ -1117,14 +1227,15 @@ document.addEventListener('DOMContentLoaded', () => {
         grid.replaceChildren();
         if (!backups.length) grid.innerHTML = `<div class="empty-state" data-i18n="No hay respaldos.">${html(t('No hay respaldos.'))}</div>`;
         backups.forEach(backup => {
-            if (!/^backup-[0-6]$/.test(backup.name)) return;
+            const cleanupBackup = /^network-cleanup-\d{8}T\d{6}Z-[a-f0-9]{32}\.sqlite$/.test(backup.name);
+            if (!cleanupBackup && !/^backup-[0-6]$/.test(backup.name)) return;
             const card = document.createElement('div');
             card.className = 'backup-card';
             const date = document.createElement('span');
             date.textContent = formatDate(backup.date); date.dataset.date = backup.date || '';
             const controls = document.createElement('div');
             controls.className = 'row-actions';
-            controls.appendChild(actionButton('Restaurar respaldo', 'refresh-cw', async () => {
+            if (!cleanupBackup) controls.appendChild(actionButton('Restaurar respaldo', 'refresh-cw', async () => {
                 if (!await confirmAction(t('¿Restaurar {name}?', { name: backup.name }))) return;
                 completed(await api.restoreBackup(backup.name), t('Copia de seguridad restaurada.'));
                 await renderSystem();
@@ -1132,14 +1243,19 @@ document.addEventListener('DOMContentLoaded', () => {
             const download = document.createElement('a');
             download.className = 'btn btn-secondary row-action';
             download.href = api.downloadUrl(backup.name);
-            download.download = backup.name + '.db';
+            download.download = cleanupBackup ? backup.name : backup.name + '.db';
             download.title = t('Descargar respaldo');
             download.setAttribute('aria-label', t('Descargar respaldo'));
             download.setAttribute('data-i18n-title', 'Descargar respaldo');
             download.setAttribute('data-i18n-aria-label', 'Descargar respaldo');
             download.innerHTML = '<i data-feather="download"></i>';
             controls.appendChild(download);
-            card.append(date, controls);
+            if (cleanupBackup) {
+                const copy = document.createElement('div');
+                const label = document.createElement('strong'); label.className = 'backup-label';
+                translatedText(label, 'Respaldo de limpieza'); copy.append(label, date);
+                card.append(copy, controls);
+            } else card.append(date, controls);
             grid.appendChild(card);
         });
         PanelUtils.replaceIcons();

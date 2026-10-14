@@ -202,7 +202,8 @@ class ApiList
             }
 
         }
-        return $files;
+        require_once __DIR__ . '/api_network_cleanup.php';
+        return array_merge($files, ApiNetworkCleanup::listBackups($dir));
     }
 
     private function find_disabled(): array

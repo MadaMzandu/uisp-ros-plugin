@@ -110,6 +110,9 @@ SQL
     file_put_contents($directory . '/backup-0', 'Existing recovery snapshot');
     file_put_contents($directory . '/backup-6', 'Existing final recovery snapshot');
     file_put_contents($directory . '/backup-7', 'Outside the public backup allowlist');
+    $cleanupBackup = 'network-cleanup-20261014T120000Z-' . str_repeat('a', 32) . '.sqlite';
+    copy($mainPath, $directory . '/' . $cleanupBackup);
+    file_put_contents($directory . '/network-cleanup-20261014T120000Z-' . str_repeat('b', 32) . '.sqlite', 'Invalid SQLite snapshot');
     $before = recoveryTreeSnapshot($directory);
     $reader = new ApiRecoveryReads($mainPath, $cachePath, $jobsPath);
 
@@ -142,7 +145,7 @@ SQL
         checkRecoveryRead(is_string($system['app_version']) && is_string($system['php_version'])
             && isset($system['last_cache'],$system['next_cache']), 'Recovery system information lost its contract');
         $backups = $reader->list(recoveryRequest('backups'));
-        checkRecoveryRead(array_column($backups,'name')===['backup-0','backup-6'] && is_string($backups[0]['date']),
+        checkRecoveryRead(array_column($backups,'name')===['backup-0','backup-6',$cleanupBackup] && is_string($backups[0]['date']),
             'Recovery exposed unsupported backup filenames or did not list existing snapshots');
         $queue = $reader->list(recoveryRequest('jobs'));
         checkRecoveryRead(array_keys($queue)===['Q1','Q2'] && $queue['Q1']['serviceId']===100

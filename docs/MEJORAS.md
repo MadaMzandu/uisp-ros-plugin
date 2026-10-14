@@ -6,6 +6,18 @@ Esta revisión reúne las modificaciones de [dhanielsnieto en el PR #89](https:/
 
 El plugin comunica UISP CRM con los MikroTik mediante la **API nativa de RouterOS**. Los puertos habituales son `8728` para API y `8729` para API con TLS. El panel permite administrar esa integración; no cambia el transporte a SSH, WinBox o REST.
 
+## Candidato 2.4.22 — limpiar asignaciones antiguas con revisión y respaldo
+
+El indicador cuenta **asignaciones guardadas**, no paquetes actuales del cliente. Un servicio eliminado del CRM puede conservar su reserva en la base del plugin. Los estados locales llevan «dato guardado» y una IP sin ficha local se identifica como un registro de IP; verificar otro propietario conserva el resultado anterior de cada consulta.
+
+**Conflictos de IP → Revisar limpieza** presenta una selección acotada y sus motivos. Sólo propone una reserva cuando UISP devuelve un HTTP 404 explícito para ese servicio y otro propietario del mismo conflicto responde con un servicio válido. Un servicio existente se conserva en cualquier estado, incluido Terminado o un cliente archivado. Fallos de transporte, permisos, respuestas incompletas, falta de un propietario verificable, trabajos pendientes, recuperación pendiente o propiedad aplicada registrada en la cola impiden la limpieza.
+
+Al confirmar, el servidor repite las consultas y comprueba que la asignación local no cambió. Antes de modificarla guarda un respaldo SQLite privado y descargable. La operación retira únicamente las reservas seleccionadas y vacía sus campos heredados de dirección para evitar que la migración las importe de nuevo. Conserva las fichas locales de servicio, los demás propietarios y la configuración; no modifica el CRM, routers, caché ni trabajos. Usa la exclusión de mantenimiento y una transacción, sin inicializar o importar la cola. Si falla una comprobación o el respaldo, no limpia ninguna selección.
+
+Después se muestra el resultado, enlace al respaldo y conflictos restantes. El respaldo permanece descargable desde **Sistema** después de recargar, con permiso administrativo de edición. Recargar el panel permite completar la migración si ya no hay duplicados. Las demás escrituras siguen pausadas mientras persista un conflicto. Un 404 aislado no desencadena cambios: la acción requiere vista previa y confirmación administrativa explícitas.
+
+Validación 2.4.22 aprobada: **32 suites aisladas**, sintaxis de **44 archivos PHP propios** y verificación del instalador de 356 entradas, 123 archivos propios y 13 dependencias fijadas. Informe: `dist/verification-2.4.22.json`. SHA-256: `0c92a93035807b0c8306971820353ac7d1f1631600f6713fb621d52a04480c90`. Se comprobó también en navegador la revisión, la protección del servicio actual y la confirmación con datos sintéticos. La instalación y limpieza en UISP real quedan a cargo del operador; estas pruebas no ejecutan limpiezas en producción.
+
 ## Candidato 2.4.21: panel disponible en modo consulta
 
 - El aviso independiente de 2.4.20 se integra en el panel habitual. Si las IP duplicadas impiden migrar, las seis vistas —Dispositivos, Planes, Configuración, Trabajos, Sistema y Conflictos de IP— siguen accesibles, con indicador ámbar, contador y aviso persistentes de modo consulta. La unicidad global y la pausa del aprovisionamiento se mantienen.
@@ -58,7 +70,7 @@ Validación 2.4.20 aprobada: **29 suites aisladas**, sintaxis de **41 archivos P
 - Se conserva la evidencia de una creación parcial del perfil de suspensión. La limpieza verifica un perfil existente antes de modificar cuentas/sesiones; si no coincide con los valores congelados, se mantiene el fallo. Un perfil ausente no se recrea durante esta limpieza, y el existente no se sobrescribe.
 - El ciclo de conexiones no cambia: cada lote de servicio abre y cierra su conexión API; las consultas y limpiezas pueden abrir otras. Los logs de login/logout de API no equivalen por sí solos a desconectar PPP. No se incorpora una conexión compartida entre lotes.
 
-La validación de 2.4.17 pasó 27 suites, 39 archivos PHP propios y un ZIP de 351 entradas, 118 archivos propios y 13 dependencias fijadas. Su informe y hash históricos se conservan más abajo; el estado de validación del candidato actual 2.4.21 se indica arriba.
+La validación de 2.4.17 pasó 27 suites, 39 archivos PHP propios y un ZIP de 351 entradas, 118 archivos propios y 13 dependencias fijadas. Su informe y hash históricos se conservan más abajo; el estado de validación del candidato actual 2.4.22 se indica arriba.
 
 ## Cambios aportados en el PR #89
 
@@ -285,7 +297,7 @@ La evidencia real posterior identificó tokens ausentes y una URL pegada como se
 
 ## Preparación para instalar y validar
 
-La versión actual es 2.4.21; su estado de validación se indica al principio. La confirmación de recuperación de planes archivados corresponde a 2.4.19 y conserva su alcance histórico. Ante IP duplicadas, consultar las seis vistas, revisar el diagnóstico y verificar explícitamente los propietarios en UISP. Las escrituras y el aprovisionamiento siguen pausados hasta resolver las asignaciones y completar la migración; consultar el panel no libera reservas. La [guía de pruebas reales](PRUEBAS_REALES.md) contiene 75 escenarios para las comprobaciones restantes.
+La versión actual es 2.4.22; su estado de validación se indica al principio. La confirmación de recuperación de planes archivados corresponde a 2.4.19 y conserva su alcance histórico. Ante IP duplicadas, consultar las seis vistas y revisar los propietarios. **Revisar limpieza** permite comprobar una selección de reservas obsoletas y confirmar sólo las elegibles con respaldo privado; un trabajo pendiente, una recuperación pendiente o el estado aplicado de una cuenta impiden retirar sus reservas. El respaldo generado permanece descargable desde **Sistema**, incluso después de recargar. Resolver los conflictos restantes y recargar permite completar la migración; las demás escrituras y el aprovisionamiento siguen pausados hasta entonces. La [guía de pruebas reales](PRUEBAS_REALES.md) contiene 81 escenarios para las comprobaciones restantes.
 
 ### Resultado histórico de 2.4.17
 

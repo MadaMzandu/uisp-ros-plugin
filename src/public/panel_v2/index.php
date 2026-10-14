@@ -13,8 +13,8 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     
     <!-- Custom CSS -->
-    <script src="js/theme.js?v=2.0.36"></script>
-    <link rel="stylesheet" href="css/style.css?v=2.0.36">
+    <script src="js/theme.js?v=2.0.37"></script>
+    <link rel="stylesheet" href="css/style.css?v=2.0.37">
 </head>
 <body>
 
@@ -87,7 +87,7 @@
                 <i data-feather="alert-triangle"></i>
                 <div class="network-warning-copy">
                     <strong id="network-warning-title"></strong>
-                    <p data-i18n="Puedes consultar el plugin. Los cambios y la sincronización están pausados hasta corregir las IP duplicadas.">Puedes consultar el plugin. Los cambios y la sincronización están pausados hasta corregir las IP duplicadas.</p>
+                    <p id="network-warning-note" data-i18n="Puedes consultar el plugin. Los cambios y la sincronización están pausados hasta corregir las IP duplicadas.">Puedes consultar el plugin. Los cambios y la sincronización están pausados hasta corregir las IP duplicadas.</p>
                 </div>
                 <button type="button" class="btn btn-secondary" id="btn-view-conflicts" data-i18n="Revisar">Revisar</button>
             </aside>
@@ -103,7 +103,7 @@
                     <div class="conflicts-heading">
                         <div>
                             <h2 data-i18n="Asignaciones duplicadas">Asignaciones duplicadas</h2>
-                            <p data-i18n="Comprueba cada servicio en UISP. Un cliente archivado o un servicio terminado puede conservar una IP en la caché del plugin.">Comprueba cada servicio en UISP. Un cliente archivado o un servicio terminado puede conservar una IP en la caché del plugin.</p>
+                            <p data-i18n="Las asignaciones guardadas pueden incluir servicios antiguos que ya no aparecen en UISP.">Las asignaciones guardadas pueden incluir servicios antiguos que ya no aparecen en UISP.</p>
                         </div>
                         <div class="conflicts-toolbar">
                             <a class="btn btn-secondary" id="download-network-conflicts" data-i18n="Descargar diagnóstico">Descargar diagnóstico</a>
@@ -297,6 +297,26 @@
     </div>
 
     <!-- Modals -->
+    <div id="network-cleanup-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="network-cleanup-title" style="display: none;">
+        <div class="modal network-cleanup-dialog">
+            <div class="modal-header">
+                <h3 id="network-cleanup-title" data-i18n="Revisar limpieza">Revisar limpieza</h3>
+                <button type="button" class="close-modal" aria-label="Cerrar" data-i18n-aria-label="Cerrar"><i data-feather="x"></i></button>
+            </div>
+            <div class="modal-body">
+                <p class="form-note" data-i18n="Se creará un respaldo antes de eliminar sólo las asignaciones locales seleccionadas. UISP y los routers no se modificarán.">Se creará un respaldo antes de eliminar sólo las asignaciones locales seleccionadas. UISP y los routers no se modificarán.</p>
+                <p id="network-cleanup-status" class="form-note" role="status" aria-live="polite"></p>
+                <div id="network-cleanup-candidates" class="cleanup-assignments"></div>
+                <div id="network-cleanup-blocked" class="cleanup-protected"></div>
+                <div id="network-cleanup-result" class="cleanup-result" style="display: none;"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary close-modal" data-i18n="Cerrar">Cerrar</button>
+                <button type="button" class="btn btn-primary" id="apply-network-cleanup" disabled data-i18n="Limpiar asignaciones seleccionadas">Limpiar asignaciones seleccionadas</button>
+                <button type="button" class="btn btn-primary" id="reload-after-cleanup" style="display: none;" data-i18n="Recargar panel">Recargar panel</button>
+            </div>
+        </div>
+    </div>
     <div id="device-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="modal-title" style="display: none;">
         <div class="modal">
             <div class="modal-header">
@@ -522,8 +542,8 @@
     </div>
 
     <!-- Scripts -->
-    <script src="js/i18n.js?v=2.0.36"></script>
-    <script src="js/api.js?v=2.0.36"></script>
-    <script src="js/app.js?v=2.0.36"></script>
+    <script src="js/i18n.js?v=2.0.37"></script>
+    <script src="js/api.js?v=2.0.37"></script>
+    <script src="js/app.js?v=2.0.37"></script>
 </body>
 </html>

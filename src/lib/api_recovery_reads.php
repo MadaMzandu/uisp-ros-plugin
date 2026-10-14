@@ -306,7 +306,8 @@ final class ApiRecoveryReads
             $date = filemtime($path);
             $backups[] = ['id'=>$match[1],'name'=>$name,'date'=>$date === false ? null : date('c', $date)];
         }
-        return $backups;
+        require_once __DIR__ . '/api_network_cleanup.php';
+        return array_merge($backups, ApiNetworkCleanup::listBackups($directory));
     }
 
     private function jobs(): array

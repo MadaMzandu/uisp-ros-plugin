@@ -1,1 +1,1 @@
-Modernize the panel and improve provisioning, job recovery, archived plans, and migration consultation
+Modernize the panel, make provisioning durable, and safely recover obsolete IP reservations

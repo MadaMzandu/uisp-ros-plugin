@@ -5,6 +5,40 @@ require_once __DIR__ . '/api_network_diagnostics.php';
 /** Administrative consultation while the live database cannot complete migration. */
 final class ApiPanelRecovery
 {
+    public static function cleanupRequest(string $method, ?object $request, array $query): bool
+    {
+        $download = $method === 'GET' && is_string($query['download'] ?? null)
+            && strpos($query['download'], 'network-cleanup-') === 0;
+        $cleanup = $method === 'POST' && ($request->changeType ?? '') === 'cleanup';
+        if (!$download && !$cleanup) return false;
+        require_once __DIR__ . '/api_network_cleanup.php';
+        if ($download) {
+            http_response_code(200);
+            ApiNetworkCleanup::download($query['download']);
+            return true;
+        }
+        if (($request->target ?? '') !== 'network_conflicts' || !empty($request->entity)) {
+            throw new InvalidArgumentException('invalid_cleanup_target');
+        }
+        $action = $request->action ?? null;
+        if (!in_array($action, ['preview', 'apply'], true)) throw new InvalidArgumentException('invalid_cleanup_action');
+        $data = $request->data ?? null;
+        if (!is_object($data) || !is_array($data->serviceIds ?? null)) throw new InvalidArgumentException('invalid_cleanup_service_ids');
+        if (is_file('data/data.db')) (new ApiSetup())->assertCompatible();
+        $api = new ApiNetworkCleanup();
+        if ($action === 'preview') $result = $api->preview($data->serviceIds);
+        else {
+            if (!is_string($data->previewToken ?? null)) throw new InvalidArgumentException('invalid_cleanup_token');
+            $result = $api->apply($data->previewToken, $data->serviceIds);
+        }
+        http_response_code(200);
+        // The current recovery page stays in consultation until a deliberate
+        // reload lets normal setup validate the repaired database from scratch.
+        respond($action === 'preview' ? 'network_cleanup_preview' : 'network_cleanup_applied', false, $result,
+            ['recovery' => ['readOnly' => true]]);
+        return true;
+    }
+
     public static function diagnosticRequest(string $method, ?object $request, array $query): bool
     {
         $download = $method === 'GET' && ($query['download'] ?? '') === 'network-conflicts';

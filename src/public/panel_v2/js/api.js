@@ -195,11 +195,12 @@ class ApiService {
         }
     }
     send(changeType, target, action = 'list', data = {}) {
-        if (changeType === 'update' && this.recovery?.readOnly === true) return this.blockedWrite();
+        const cleanup = changeType === 'cleanup' && target === 'network_conflicts' && ['preview', 'apply'].includes(action);
+        if (changeType !== 'list' && !cleanup && this.recovery?.readOnly === true) return this.blockedWrite();
         if (target === 'orphans' && this.recovery?.readOnly === true) return this.blockedRouterRead();
         return this.request({ method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ changeType, target, action, data }) }).then(response => {
-                if (target === 'network_conflicts' && !response.error && response.recovery?.readOnly === true)
+                if (changeType === 'list' && target === 'network_conflicts' && !response.error && response.recovery?.readOnly === true)
                     this.setRecovery({ ...response.recovery, details: response.data });
                 return response;
             });
@@ -211,7 +212,8 @@ class ApiService {
         return this.request({ method: 'POST', body });
     }
     downloadUrl(name) {
-        if (name !== 'network-conflicts' && !/^backup-[0-6]$/.test(name)) throw new Error(PanelUtils.t('Nombre de respaldo inválido.'));
+        if (name !== 'network-conflicts' && !/^backup-[0-6]$/.test(name)
+            && !/^network-cleanup-\d{8}T\d{6}Z-[a-f0-9]{32}\.sqlite$/.test(name)) throw new Error(PanelUtils.t('Nombre de respaldo inválido.'));
         const url = new URL(this.endpoint, window.location.href);
         url.search = '';
         url.searchParams.set('download', name);
@@ -227,6 +229,8 @@ class ApiService {
     getFields(language) { return this.send('list', 'messages', 'list', language ? { language } : {}); }
     getJobs() { return this.send('list', 'jobs'); }
     getNetworkConflicts(data = {}) { return this.send('list', 'network_conflicts', 'list', data); }
+    previewNetworkCleanup(serviceIds) { return this.send('cleanup', 'network_conflicts', 'preview', { serviceIds }); }
+    applyNetworkCleanup(previewToken, serviceIds) { return this.send('cleanup', 'network_conflicts', 'apply', { previewToken, serviceIds }); }
     getBackups() { return this.send('list', 'backups'); }
     createBackup() { return this.send('update', 'system', 'backup'); }
     restoreBackup(name) { return this.send('update', 'system', 'restore', { name }); }

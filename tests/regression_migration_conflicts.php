@@ -131,6 +131,156 @@ function recoveryDiskSnapshot(string $dataDirectory = 'data'): array {
     ksort($snapshot);
     return $snapshot;
 }
+function publicMigrationCleanupChecks(string $directory, callable $request): void {
+    // Keep the original recovery fixture intact for the remaining setup/restore checks.
+    $isolated = $directory . '/cleanup-recovery';
+    mkdir($isolated,0700);
+    foreach (['lib','includes','includes/l10n','data','vendor','public','public/panel_v2'] as $folder) {
+        mkdir($isolated . '/' . $folder,0700);
+    }
+    foreach (glob($directory . '/lib/*.php') as $file) copy($file,$isolated . '/lib/' . basename($file));
+    foreach (glob($directory . '/includes/*') as $file) if (is_file($file)) copy($file,$isolated . '/includes/' . basename($file));
+    foreach (glob($directory . '/includes/l10n/*.json') as $file) copy($file,$isolated . '/includes/l10n/' . basename($file));
+    foreach (['public.php','manifest.json','vendor/autoload.php','public/panel_v2/index.php'] as $file) {
+        copy($directory . '/' . $file,$isolated . '/' . $file);
+    }
+    checkMigrationConflict(mySqlite()->backupTo($isolated . '/data/data.db'), 'Could not isolate cleanup HTTP database');
+    foreach (['state.json','queue.json','backup-0'] as $file) copy($directory . '/data/' . $file,$isolated . '/data/' . $file);
+    $mode = ['X-Fixture-Mode'=>'cleanup-recovery'];
+    $admin = $mode + ['X-Fixture-Admin'=>'edit'];
+    $reader = $mode + ['X-Fixture-Admin'=>'view'];
+    $database = new ApiSqlite($isolated . '/data/data.db');
+    try {
+        $stored = migrationDatabaseSnapshot($database);
+        $storedBytes = hash_file('sha256',$isolated . '/data/data.db');
+        $operational = static function () use ($isolated): array {
+            $result = [];
+            foreach (['data.db','state.json','queue.json','backup-0','jobs.db','cache.db'] as $name) {
+                $path = $isolated . '/data/' . $name;
+                $result[$name] = is_file($path) ? hash_file('sha256',$path) : null;
+            }
+            return $result;
+        };
+        $before = $operational();
+        $preview = ['changeType'=>'cleanup','target'=>'network_conflicts','action'=>'preview','data'=>['serviceIds'=>[8]]];
+        $apply = ['changeType'=>'cleanup','target'=>'network_conflicts','action'=>'apply',
+            'data'=>['previewToken'=>str_repeat('a',64),'serviceIds'=>[8]]];
+        foreach ([$preview,$apply] as $payload) {
+            foreach ([$mode,$reader] as $headers) {
+                $rejected = $request($payload,$headers);
+                checkMigrationConflict($rejected['http']===403 && ($rejected['response']['message'] ?? null)==='unauthorized'
+                    && ($rejected['response']['data'] ?? null)===[], 'Cleanup bypassed full edit permission');
+            }
+            $originRejected = $request($payload,$admin + ['Origin'=>'https://untrusted-fixture.example']);
+            checkMigrationConflict($originRejected['http']===403
+                && ($originRejected['response']['message'] ?? null)==='invalid_origin', 'Cleanup bypassed same-origin protection');
+        }
+        checkMigrationConflict(!is_file($isolated . '/sdk-reads.jsonl') && $operational()===$before,
+            'Rejected cleanup called CRM or changed a persistent operational file');
+        foreach ([['changeType'=>'cleanup','target'=>'network_conflicts','action'=>'unexpected','data'=>['serviceIds'=>[8]]],
+            ['changeType'=>'cleanup','target'=>'network_conflicts','action'=>'preview','data'=>['serviceIds'=>'8']],
+            ['changeType'=>'cleanup','target'=>'network_conflicts','action'=>'preview','data'=>['serviceIds'=>[8,7,21,22]]],
+            ['changeType'=>'list','target'=>'network_conflicts','action'=>'apply','data'=>['serviceIds'=>[8]]],
+            ['changeType'=>'cleanup','target'=>'network_conflicts','action'=>'apply','data'=>['serviceIds'=>[8]]]] as $invalid) {
+            $rejected = $request($invalid,$admin);
+            checkMigrationConflict($rejected['http']===400 && ($rejected['response']['error'] ?? null)===true,
+                'Cleanup accepted an invalid action, selection or unconfirmed application');
+            checkMigrationConflict($operational()===$before, 'Invalid cleanup modified operational state');
+        }
+
+        // An accepted billing webhook still cannot turn its secret into an administrator cleanup grant.
+        file_put_contents($isolated . '/data/config.json','{"webhookAllowWithoutSecret":true}');
+        $event = ['entity'=>'service','entityId'=>8,'changeType'=>'edit','uuid'=>'CLEANUP-HTTP-WEBHOOK-FIXTURE-0001',
+            'target'=>'network_conflicts','action'=>'apply','data'=>['previewToken'=>str_repeat('a',64),'serviceIds'=>[8]]];
+        $webhook = $request($event,$mode);
+        checkMigrationConflict($webhook['http']===400
+            && ($webhook['response']['data'] ?? null)===['duplicate_groups'=>2]
+            && strpos($webhook['body'],'203.0.113.7')===false && strpos($webhook['body'],'candidates')===false,
+            'Webhook metadata bypassed cleanup routing or disclosed private reservations');
+        checkMigrationConflict($operational()===$before, 'Webhook cleanup attempt changed operational state');
+
+        $result = $request($preview,$admin);
+        $details = $result['response']['data'] ?? [];
+        checkMigrationConflict($result['http']===200 && ($result['response']['message'] ?? null)==='network_cleanup_preview'
+            && array_column($details['candidates'] ?? [],'service_id')===[8]
+            && preg_match('/^[a-f0-9]{64}$/D',$details['previewToken'] ?? '')===1,
+            'Authorized cleanup preview failed to identify the confirmed absent reservation: ' . $result['body']);
+        checkMigrationConflict($operational()===$before && migrationDatabaseSnapshot($database)===$stored
+            && hash_file('sha256',$isolated . '/data/data.db')===$storedBytes,
+            'Cleanup preview migrated, changed assignments, initialized jobs/cache or rotated a backup');
+        $livePreview = $request(['changeType'=>'cleanup','target'=>'network_conflicts','action'=>'preview','data'=>['serviceIds'=>[7]]],$admin);
+        checkMigrationConflict($livePreview['http']===200 && ($livePreview['response']['data']['candidates'] ?? null)===[]
+            && array_column($livePreview['response']['data']['blocked'] ?? [],'service_id')===[7]
+            && $operational()===$before, 'Cleanup offered a currently existing ended service for deletion');
+
+        $token = $details['previewToken'];
+        $forged = $request(['changeType'=>'cleanup','target'=>'network_conflicts','action'=>'apply',
+            'data'=>['previewToken'=>$token,'serviceIds'=>[7]]],$admin);
+        checkMigrationConflict($forged['http']===400 && ($forged['response']['error'] ?? null)===true && $operational()===$before,
+            'A preview token could be changed to remove a current service reservation');
+        $applied = $request(['changeType'=>'cleanup','target'=>'network_conflicts','action'=>'apply',
+            'data'=>['previewToken'=>$token,'serviceIds'=>[8]]],$admin);
+        $appliedData = $applied['response']['data'] ?? [];
+        checkMigrationConflict($applied['http']===200 && ($applied['response']['message'] ?? null)==='network_cleanup_applied'
+            && ($appliedData['removed_service_ids'] ?? null)===[8] && ($appliedData['duplicate_groups'] ?? null)===1
+            && ($appliedData['requires_reload'] ?? null)===true, 'Cleanup application did not return its exact result: ' . $applied['body']);
+        $after = migrationDatabaseSnapshot($database);
+        $expected = $stored;
+        $expected['data']['network'] = array_values(array_filter($expected['data']['network'],static fn($row)=>(int)$row['id']!==8));
+        checkMigrationConflict($after===$expected, 'HTTP cleanup altered anything beyond the selected obsolete network reservation');
+        $afterFiles = $operational();
+        foreach (['state.json','queue.json','backup-0','jobs.db','cache.db'] as $name) {
+            checkMigrationConflict($afterFiles[$name]===$before[$name], 'HTTP cleanup changed unrelated operational file: ' . $name);
+        }
+        $backupName = $appliedData['backup_name'] ?? '';
+        checkMigrationConflict(is_string($backupName) && preg_match('/^network-cleanup-\d{8}T\d{6}Z-[a-f0-9]{32}\.sqlite$/D',$backupName)===1,
+            'Cleanup did not return an allowlisted private recovery backup name');
+        foreach ([$mode,$reader] as $headers) {
+            $download = $request([],$headers,'GET','?download=' . rawurlencode($backupName));
+            checkMigrationConflict($download['http']===403 && ($download['response']['data'] ?? null)===[],
+                'Cleanup recovery backup bypassed administrator edit permission');
+        }
+        $download = $request([],$admin,'GET','?download=' . rawurlencode($backupName));
+        checkMigrationConflict($download['http']===200 && hash('sha256',$download['body'])===$storedBytes,
+            'Cleanup backup download was unavailable during recovery or differed from the pre-cleanup SQLite snapshot');
+        $privateBackupPath = null;
+        $backups = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($isolated . '/data',FilesystemIterator::SKIP_DOTS));
+        foreach ($backups as $file) if ($file->getFilename()===$backupName) $privateBackupPath = $file->getPathname();
+        checkMigrationConflict(is_string($privateBackupPath) && is_file($privateBackupPath), 'Cleanup backup was not stored privately under data');
+        $invalidSchemaName = 'network-cleanup-20261014T000000Z-' . str_repeat('c',32) . '.sqlite';
+        $invalidSchema = new SQLite3(dirname($privateBackupPath) . '/' . $invalidSchemaName);
+        $invalidSchema->exec('CREATE TABLE unrelated(value TEXT)');
+        $invalidSchema->close();
+        $badSchema = $request([],$admin,'GET','?download=' . rawurlencode($invalidSchemaName));
+        checkMigrationConflict($badSchema['http']===400 && ($badSchema['response']['error'] ?? null)===true,
+            'Cleanup backup download accepted an unrelated SQLite database');
+        $linkName = 'network-cleanup-20261014T000000Z-' . str_repeat('d',32) . '.sqlite';
+        $linkPath = dirname($privateBackupPath) . '/' . $linkName;
+        // Windows installations without symlink privilege still run every other path check.
+        if (@symlink($privateBackupPath,$linkPath)) {
+            $linked = $request([],$admin,'GET','?download=' . rawurlencode($linkName));
+            checkMigrationConflict($linked['http']===400 && ($linked['response']['error'] ?? null)===true,
+                'Cleanup backup download followed a symlink');
+            unlink($linkPath);
+        }
+        $beforeDownload = $operational();
+        $listedBackups = $request(['changeType'=>'list','target'=>'backups','action'=>'list','data'=>new stdClass()],$reader);
+        $listedNames = array_column($listedBackups['response']['data'] ?? [],'name');
+        checkMigrationConflict($listedBackups['http']===200 && in_array($backupName,$listedNames,true)
+            && !in_array($invalidSchemaName,$listedNames,true) && $operational()===$beforeDownload,
+            'Read-only recovery backup list omitted the cleanup snapshot, included a foreign schema or changed stored data');
+        foreach (['../' . $backupName,'network-cleanup-..sqlite','network-cleanup-20261014T000000Z-' . str_repeat('b',32) . '.sqlite'] as $invalidName) {
+            $download = $request([],$admin,'GET','?download=' . rawurlencode($invalidName));
+            checkMigrationConflict($download['http']===400 && ($download['response']['error'] ?? null)===true,
+                'Cleanup backup download accepted traversal, malformed or missing files');
+        }
+        checkMigrationConflict($operational()===$beforeDownload, 'Backup access initialized jobs/cache or changed an operational file');
+        $replay = $request(['changeType'=>'cleanup','target'=>'network_conflicts','action'=>'apply',
+            'data'=>['previewToken'=>$token,'serviceIds'=>[8]]],$admin);
+        checkMigrationConflict($replay['http']===400 && ($replay['response']['error'] ?? null)===true
+            && $operational()===$beforeDownload, 'Cleanup application replay changed stored data');
+    } finally { $database->close(); }
+}
 function publicMigrationWebhookChecks(string $directory): void {
     $process = null;
     $priorConfig = is_file('data/config.json') ? file_get_contents('data/config.json') : null;
@@ -145,6 +295,11 @@ if (in_array($fixturePermission, ['edit','view'], true)) {
 if (($_SERVER['HTTP_X_FIXTURE_MODE'] ?? '')==='restore-after-setup') {
     set_include_path(__DIR__ . '/clean-restore/lib' . PATH_SEPARATOR . get_include_path());
     require __DIR__ . '/clean-restore/public.php';
+    exit;
+}
+if (($_SERVER['HTTP_X_FIXTURE_MODE'] ?? '')==='cleanup-recovery') {
+    set_include_path(__DIR__ . '/cleanup-recovery/lib' . PATH_SEPARATOR . get_include_path());
+    require __DIR__ . '/cleanup-recovery/public.php';
     exit;
 }
 require __DIR__ . '/public.php';
@@ -171,8 +326,10 @@ PHP
             . file_get_contents($directory . '/webhook-server-error.log'));
         $request = static function ($event, array $headers = [], string $method = 'POST', string $query = '',
             string $contentType = 'application/json') use ($address): array {
-            $httpHeaders = ['Content-Type: ' . $contentType,'Origin: http://' . $address];
-            foreach ($headers as $name=>$value) $httpHeaders[] = $name . ': ' . $value;
+            $headerValues = ['Content-Type'=>$contentType,'Origin'=>'http://' . $address];
+            foreach ($headers as $name=>$value) $headerValues[$name] = $value;
+            $httpHeaders = [];
+            foreach ($headerValues as $name=>$value) $httpHeaders[] = $name . ': ' . $value;
             $payload = $method==='GET' ? '' : (is_string($event) ? $event : json_encode($event,JSON_THROW_ON_ERROR));
             $context = stream_context_create(['http'=>['method'=>$method,'header'=>implode("\r\n",$httpHeaders),
                 'content'=>$payload,'ignore_errors'=>true,'timeout'=>3]]);
@@ -308,6 +465,9 @@ PHP
             && ($unauthorized['response']['data'] ?? null)===[], 'Unauthenticated webhook exposed conflict totals or assignments');
         checkMigrationConflict(recoveryDiskSnapshot()===$before, 'Unauthorized webhook changed persistent recovery state');
 
+        publicMigrationCleanupChecks($directory,$request);
+        checkMigrationConflict(recoveryDiskSnapshot()===$before, 'Isolated cleanup changed the original blocked database');
+
         // A rejected candidate backup after successful setup must not lock a clean live panel.
         $cleanDirectory = $directory . '/clean-restore';
         mkdir($cleanDirectory,0700);
@@ -381,6 +541,20 @@ copy($source . '/public.php', $directory . '/public.php');
 copy($source . '/public/panel_v2/index.php', $directory . '/public/panel_v2/index.php');
 file_put_contents($directory . '/vendor/autoload.php', <<<'PHP'
 <?php
+namespace GuzzleHttp\Exception;
+class RequestException extends \RuntimeException {
+    private $response;
+    public function __construct(int $status) {
+        parent::__construct('Synthetic CRM response', $status);
+        $this->response = new class($status) {
+            private int $status;
+            public function __construct(int $status) { $this->status = $status; }
+            public function getStatusCode(): int { return $this->status; }
+        };
+    }
+    public function hasResponse(): bool { return true; }
+    public function getResponse() { return $this->response; }
+}
 namespace Ubnt\UcrmPluginSdk\Service;
 class UcrmApi {
     public static function create($token=null) { return new static(); }
@@ -389,6 +563,7 @@ class UcrmApi {
         $path = $arguments[0];
         file_put_contents(__DIR__ . '/../sdk-reads.jsonl',json_encode($path) . "\n",FILE_APPEND);
         if ($path==='clients/services/7') return ['id'=>7,'clientId'=>70,'status'=>2];
+        if ($path==='clients/services/8') throw new \GuzzleHttp\Exception\RequestException(404);
         if ($path==='clients/70') return ['id'=>70,'companyName'=>'Archived fixture client','isArchived'=>true];
         throw new \RuntimeException('Unexpected CRM read in migration-conflict tests');
     }
@@ -642,7 +817,7 @@ try {
             && migrationDatabaseSnapshot($candidate)===$candidateBefore, 'Rejected restore modified the selected source');
         checkMigrationConflict(glob('data/restore-*.db')===[], 'Rejected restore left a staging database');
     }
-    echo "Migration conflict checks passed: bounded address diagnostics, effective legacy projection, preserved setup/restores, normal panel recovery, stored read-only tabs/downloads, explicit owner refresh, blocked writes/uploads and private webhooks.\n";
+    echo "Migration conflict checks passed: bounded diagnostics, preserved setup/restores, read-only panel recovery, explicit owner refresh, authenticated obsolete-reservation preview/apply and private backups, blocked writes/uploads and private webhooks.\n";
 } finally {
     foreach ($fixtures as $fixture) $fixture->close();
     if (isset($apiSqlite) && $apiSqlite instanceof ApiSqlite) $apiSqlite->close();

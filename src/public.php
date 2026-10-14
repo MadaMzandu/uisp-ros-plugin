@@ -65,6 +65,7 @@ try {
     $setupComplete = false;
     if (!$webhook && empty($_FILES)) {
         require_once 'lib/api_panel_recovery.php';
+        if (ApiPanelRecovery::cleanupRequest($method, is_object($data) ? $data : null, $_GET)) exit;
         if (ApiPanelRecovery::diagnosticRequest($method, is_object($data) ? $data : null, $_GET)) exit;
     }
     run_setup();

@@ -729,7 +729,7 @@ function recoveryPanelFixture({ bootstrap, details } = {}) {
         }
     });
     vm.runInContext(apiSource, localContext); vm.runInContext(appSource, localContext); onReady();
-    return { nodes, calls, tables: localTables, deviceControls, api: vm.runInContext('api', localContext),
+    return { nodes, calls, document: localDocument, tables: localTables, deviceControls, api: vm.runInContext('api', localContext),
         async navigate(view) { await nav[views.indexOf(view)].fire('click'); await flush(); },
         reply(key, response) { replies.set(key, typeof response === 'function' ? response : () => response); },
         reloads() { return reloads; },
@@ -793,17 +793,17 @@ async function checkNetworkRecoveryPanel() {
     assert.equal(identity.children[0].target, '_blank');
     assert.equal(identity.children[0].rel, 'noopener noreferrer');
     assert.equal(identity.children[1].children[0].href, 'https://fixture.invalid/crm/client/service/5347');
-    assert.deepEqual(identity.children[1].children.slice(1).map(node => node.textContent), ['Terminado', 'Cliente archivado (dato guardado)']);
+    assert.deepEqual(identity.children[1].children.slice(1).map(node => node.textContent), ['Terminado (dato guardado)', 'Cliente archivado (dato guardado)']);
     assert.equal(identity.children[2].textContent, 'Base del plugin', 'Saved service status must identify its source');
     assert.equal(owners[1].children[0].children[0].tagName, 'SPAN', 'Cross-origin client links must never be clickable');
     assert.equal(owners[1].children[0].children[1].children[0].tagName, 'SPAN', 'Executable service URLs must never be clickable');
-    assert.equal(owners[1].children[0].children[1].children[1].textContent, attack);
+    assert.equal(owners[1].children[0].children[1].children[1].textContent, attack + ' (dato guardado)');
     const missing = body.children[1].children[1].children[0].children[0];
     assert.equal(missing.children[0].textContent, 'Cliente sin identificar');
     assert.equal(missing.children[1].children[1].textContent, 'Sin comprobar');
-    assert.equal(missing.children[2].textContent, 'Sin datos guardados');
+    assert.equal(missing.children[2].textContent, 'Registro de IP sin ficha local de servicio');
     assert.equal(missing.children[3].textContent, 'Cliente verificado en UISP', 'Fresh client facts must not imply a fresh service status');
-    assert.equal(owners[2].textContent, 'Se muestran los primeros 2 de 4 servicios.');
+    assert.equal(owners[2].textContent, 'Se muestran las primeras 2 de 4 asignaciones guardadas.');
     assert.match(fixture.nodes.get('network-conflicts-limit').textContent, /2 de 3 conflictos.*muestra acotada/);
     assert.equal(fixture.nodes.get('download-network-conflicts').href, 'https://fixture.invalid/crm/_plugins/ros-plugin/public.php?download=network-conflicts');
     const waiting = deferred();
@@ -853,7 +853,7 @@ async function checkNetworkRecoveryPanel() {
     Object.assign(failedService.conflicts[0].owners[0], { refresh_error: 'unavailable', client_source: 'cache' });
     await verifyOwner(fixture, 5347, failedService);
     assert.deepEqual(sourceTexts(ownerItem(fixture, 5347)), ['Base del plugin'], 'A selected failed check must not reuse its prior successful verification');
-    assert.equal(ownerItem(fixture, 5347).children[0].children[1].children[1].textContent, 'Terminado');
+    assert.equal(ownerItem(fixture, 5347).children[0].children[1].children[1].textContent, 'Terminado (dato guardado)');
     assert.match(ownerItem(fixture, 5347).children[0].lastElementChild.textContent, /UISP no devolvió este servicio/);
     assert.equal(ownerItem(fixture, 11506).children[0].children[1].children[1].textContent, 'Suspendido', 'Failure of a different selected service must preserve unrelated verified facts');
     const failedClient = plain(details);
@@ -863,6 +863,9 @@ async function checkNetworkRecoveryPanel() {
     assert.deepEqual(sourceTexts(ownerItem(fixture, 5347)), ['Servicio verificado en UISP', 'Cliente: datos guardados']);
     assert.equal(ownerItem(fixture, 5347).children[0].children[1].children[2].textContent, 'Cliente archivado (dato guardado)');
     assert.equal(ownerItem(fixture, 5347).children[0].lastElementChild.textContent, 'No se pudo verificar el cliente en UISP. Se conservan los datos guardados.', 'A client-only failure must never report that a successfully fetched service was unavailable');
+    await verifyOwner(fixture, 11506, verifiedSecond);
+    await fixture.navigate('system'); await fixture.navigate('network_conflicts');
+    assert.equal(ownerItem(fixture, 5347).children[0].lastElementChild.textContent, 'No se pudo verificar el cliente en UISP. Se conservan los datos guardados.', 'An unchanged owner verification failure must survive other checks and navigation');
     const reassigned = recoveryPanelFixture({ bootstrap: { readOnly: true, details }, details }); await flush();
     await verifyOwner(reassigned, 5347, refreshed);
     const changedIdentity = plain(verifiedSecond);
@@ -893,9 +896,91 @@ async function checkNetworkRecoveryPanel() {
     assert.deepEqual(plain(healthy.diagnostics()[0].data), {}, 'Reactive recovery reads must not request live CRM verification');
     const malformed = recoveryPanelFixture({ bootstrap: '{', details }); await flush();
     assert.equal(malformed.nodes.get('btn-cache').disabled, false, 'An invalid optional bootstrap must not break normal navigation');
-    assert.equal((markup.match(/(?:src|href)="(?:js|css)\/[^"?]+\?v=2\.0\.36"/g) || []).length, 5, 'Every panel asset must use the new revision to invalidate UISP browser caches');
-    assert(!markup.includes('v=2.0.35'));
+    assert.equal((markup.match(/(?:src|href)="(?:js|css)\/[^"?]+\?v=2\.0\.37"/g) || []).length, 5, 'Every panel asset must use the new revision to invalidate UISP browser caches');
+    assert(!markup.includes('v=2.0.36'));
     assert(apiSource.includes("'alert-triangle':"), 'The conflict warning must have its own local warning icon');
+}
+
+async function checkNetworkCleanupPanel() {
+    const details = { duplicate_groups: 1, conflicts_truncated: false, conflicts: [
+        { family: 'IPv4', address: '192.0.2.77', service_ids: [42, 43], service_count: 2, owners: [
+            { service_id: 42, client_id: 17, client_name: 'Cliente de ejemplo A', service_status: 'Activo', source: 'cache', client_source: 'cache' },
+            { service_id: 43, client_id: 18, client_name: 'Cliente de ejemplo B', service_status: null, source: 'missing', client_source: 'missing' }
+        ] }
+    ] };
+    const fixture = recoveryPanelFixture({ bootstrap: { readOnly: true, details }, details });
+    await fixture.navigate('network_conflicts');
+    const owner = id => fixture.nodes.get('network-conflicts-body').children[0].children[1].children.find(item => item.children[0]?.children[1]?.children[0]?.textContent === 'Servicio #' + id);
+    assert.match(fixture.nodes.get('network-conflicts-body').children[0].children[0].innerHTML, /2 asignaciones guardadas/);
+    assert.equal(owner(42).children[0].children[1].children[1].textContent, 'Activo (dato guardado)');
+    assert.equal(owner(43).children[0].children[2].textContent, 'Registro de IP sin ficha local de servicio');
+    const token = 'a'.repeat(64);
+    const preview = { previewToken: token, expiresAt: '2099-10-14T13:00:00Z', candidates: [
+        { service_id: 42, client_id: 17, address: '192.0.2.77', address6: '2001:db8::42', reason: 'crm_not_found', witness_service_ids: [43] }
+    ], blocked: [{ service_id: 43, reason: 'service_exists' }] };
+    fixture.reply('cleanup/network_conflicts', previewPayload => ({ status: 'ok', error: false, data: preview, recovery: { readOnly: true } }));
+    await owner(42).children[2].fire('click');
+    assert.equal(fixture.nodes.get('network-cleanup-modal').style.display, 'flex');
+    assert.deepEqual(plain(fixture.calls.at(-1)), { changeType: 'cleanup', target: 'network_conflicts', action: 'preview', data: { serviceIds: [42] } });
+    assert.equal(fixture.nodes.get('network-conflicts-count').textContent, '1', 'Preview payloads must not replace conflict diagnostics with token/candidate data');
+    const candidate = fixture.nodes.get('network-cleanup-candidates').children[0];
+    assert(candidate.children[1].innerHTML.includes('192.0.2.77') && candidate.children[1].innerHTML.includes('2001:db8::42'), 'Cleanup review must show every local IP assignment being removed');
+    const peer = candidate.children[1].children[1].children[0];
+    assert.equal(peer.textContent, 'Servicio conservado #43');
+    assert.equal(peer.href, 'https://fixture.invalid/crm/client/service/43');
+    assert.equal(peer.rel, 'noopener noreferrer');
+    assert(fixture.nodes.get('network-cleanup-blocked').children[0].innerHTML.includes('cualquiera que sea su estado'), 'Existing UISP services must be protected irrespective of status');
+    assert.equal(fixture.nodes.get('apply-network-cleanup').disabled, true, 'Cleanup candidates must require explicit checkbox selection');
+    await fixture.nodes.get('apply-network-cleanup').fire('click');
+    assert.equal(fixture.calls.filter(call => call.changeType === 'cleanup').length, 1, 'Review and an empty selection must never apply cleanup');
+    candidate.children[0].checked = true; await candidate.children[0].fire('change');
+    assert.equal(fixture.nodes.get('apply-network-cleanup').disabled, false);
+    const cancelled = fixture.nodes.get('apply-network-cleanup').fire('click'); await flush();
+    let confirmation = fixture.document.body.children.find(node => node.className === 'confirm-overlay');
+    assert(confirmation);
+    assert.match(confirmation.children[0].children[0].textContent, /asignaciones locales de 1 servicios.*respaldo.*UISP y los routers no se modificarán/);
+    await confirmation.children[0].children[1].children[0].fire('click'); await cancelled;
+    assert.equal(fixture.calls.filter(call => call.changeType === 'cleanup').length, 1, 'Cancelling the final confirmation must send no apply request');
+    const forbidden = await fixture.api.send('cleanup', 'system', 'apply', { previewToken: token, serviceIds: [42] });
+    const unsupported = await fixture.api.send('cleanup', 'network_conflicts', 'delete', { serviceIds: [42] });
+    assert.equal(forbidden.error, true); assert.equal(unsupported.error, true);
+    assert.equal(fixture.calls.filter(call => call.changeType === 'cleanup').length, 1, 'Recovery bypass must only permit the exact preview/apply cleanup envelopes');
+    const backupName = 'network-cleanup-20261014T130000Z-' + 'a'.repeat(32) + '.sqlite';
+    fixture.reply('cleanup/network_conflicts', payload => ({ status: 'ok', error: false, data: {
+        removed_service_ids: [42], backup_name: backupName, duplicate_groups: 0, requires_reload: true
+    }, recovery: { readOnly: true } }));
+    const readsBeforeApply = fixture.calls.filter(call => call.changeType === 'list').length;
+    const applying = fixture.nodes.get('apply-network-cleanup').fire('click'); await flush();
+    confirmation = fixture.document.body.children.find(node => node.className === 'confirm-overlay');
+    await confirmation.children[0].children[1].children[1].fire('click'); await applying;
+    assert.deepEqual(plain(fixture.calls.at(-1)), { changeType: 'cleanup', target: 'network_conflicts', action: 'apply', data: { previewToken: token, serviceIds: [42] } });
+    assert.equal(fixture.calls.filter(call => call.changeType === 'list').length, readsBeforeApply, 'Cleanup must not automatically issue setup/list/synchronization requests');
+    assert.equal(fixture.writes().length, 0, 'Cleanup must leave all ordinary update and upload operations paused');
+    assert.equal(fixture.nodes.get('network-conflicts-count').textContent, '0', 'Zero remaining conflicts must be shown without falling back to an old table count');
+    assert.equal(fixture.nodes.get('network-cleanup-result').children[0].textContent, 'Se retiraron las asignaciones de 1 servicios. Quedan 0 conflictos de IP.');
+    assert.equal(fixture.nodes.get('network-cleanup-result').children[1].href, 'https://fixture.invalid/crm/_plugins/ros-plugin/public.php?download=' + backupName);
+    assert.equal(fixture.nodes.get('reload-after-cleanup').style.display, 'inline-flex');
+    assert.equal(fixture.reloads(), 0, 'Completing cleanup must require an explicit reload rather than performing one');
+    assert.equal(owner(42).children[1].disabled, true); assert.equal(owner(42).children[2].disabled, true);
+    assert.match(fixture.nodes.get('network-warning-note').textContent, /Recarga el panel/);
+    fixture.reply('list/backups', { status: 'ok', error: false, data: [{ name: 'backup-0', date: '2026-10-14' }, { name: backupName, date: '2026-10-14T13:00:00Z' }], recovery: { readOnly: true } });
+    await fixture.navigate('system');
+    const cards = fixture.nodes.get('backups-grid').children;
+    assert.equal(cards.length, 2);
+    assert.equal(cards[1].children[0].children[0].textContent, 'Respaldo de limpieza');
+    assert.equal(cards[1].children[1].children.length, 1, 'Cleanup backups must expose download without an unsupported restore action');
+    assert.equal(cards[1].children[1].children[0].href, 'https://fixture.invalid/crm/_plugins/ros-plugin/public.php?download=' + backupName);
+    assert.equal(cards[1].children[1].children[0].download, backupName, 'Cleanup downloads must preserve their SQLite filename');
+    for (const invalid of ['../' + backupName, backupName.replace('.sqlite', '.db'), backupName + '.php', backupName.replace('aaaa', 'gggg')])
+        assert.throws(() => fixture.api.downloadUrl(invalid), /Nombre de respaldo inválido/);
+    await fixture.nodes.get('reload-after-cleanup').fire('click'); assert.equal(fixture.reloads(), 1);
+    const protectedFixture = recoveryPanelFixture({ bootstrap: { readOnly: true, details }, details }); await protectedFixture.navigate('network_conflicts');
+    protectedFixture.reply('cleanup/network_conflicts', { status: 'ok', error: false, data: { previewToken: null, expiresAt: null, candidates: [], blocked: [{ service_id: 42, reason: 'service_exists' }, { service_id: 43, reason: 'queue_busy' }] }, recovery: { readOnly: true } });
+    await protectedFixture.nodes.get('network-conflicts-body').children[0].children[1].children[0].children[2].fire('click');
+    assert.equal(protectedFixture.nodes.get('network-cleanup-candidates').children.length, 0);
+    assert.equal(protectedFixture.nodes.get('network-cleanup-blocked').children.length, 2, 'A null preview token with no candidates must still render protected reasons');
+    assert.equal(protectedFixture.nodes.get('network-cleanup-status').textContent, 'No hay asignaciones que puedan limpiarse con seguridad en esta revisión.');
+    assert.equal(protectedFixture.nodes.get('apply-network-cleanup').disabled, true);
 }
 
 async function checkNumericPlanEditors() {
@@ -2075,5 +2160,6 @@ async function checkLanguagePresentation() {
     await checkNumericPlanEditors();
     await checkJobsRefresh();
     await checkNetworkRecoveryPanel();
+    await checkNetworkCleanupPanel();
     console.log('Panel regression checks passed: recovery navigation, escaped owner/status diagnostics, same-origin CRM links, explicit single-service verification without blocking navigation, update/upload guards and diagnostic downloads; partial provisioning counts/diagnostics/persistence and full totals, API contracts, old HTML/API manual editors, saved global contention flags and drafts, legacy zero ratios, configuration keyboard drafts during pending saves/reloads, language changes preserving open modal/custom values/scroll and asynchronous settings drafts, stale language response rejection, legacy global language preservation, inactive control omission, configuration failure recovery, stable local editor visibility, deferred plan saves and failure drafts, burst templates and math, custom plans, legacy sentinels, drafts, one-click saves, nonblocking notifications, safe text, numeric types, overrides, TLS, backup routes and failure cleanup.');
 })().catch(error => { console.error(error); process.exitCode = 1; });

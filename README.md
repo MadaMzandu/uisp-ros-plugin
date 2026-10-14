@@ -2,6 +2,18 @@
 
 [Complete English changelog](docs/CHANGELOG_EN.md) · [Texto completo para el PR](docs/PR_DESCRIPTION.md) · [Webhook setup and rationale](docs/WEBHOOK_SETUP_EN.md) · [Mejoras en español](docs/MEJORAS.md)
 
+## Candidato 2.4.22 — limpiar asignaciones antiguas con revisión y respaldo
+
+El indicador cuenta **asignaciones guardadas**, no paquetes actuales del cliente. Un servicio eliminado del CRM puede conservar su reserva en la base del plugin. Los estados locales llevan «dato guardado» y una IP sin ficha local se identifica como un registro de IP; verificar otro propietario conserva el resultado anterior de cada consulta.
+
+**Conflictos de IP → Revisar limpieza** presenta una selección acotada y sus motivos. Sólo propone una reserva cuando UISP devuelve un HTTP 404 explícito para ese servicio y otro propietario del mismo conflicto responde con un servicio válido. Un servicio existente se conserva en cualquier estado, incluido Terminado o un cliente archivado. Fallos de transporte, permisos, respuestas incompletas, falta de un propietario verificable, trabajos pendientes, recuperación pendiente o propiedad aplicada registrada en la cola impiden la limpieza.
+
+Al confirmar, el servidor repite las consultas y comprueba que la asignación local no cambió. Antes de modificarla guarda un respaldo SQLite privado y descargable. La operación retira únicamente las reservas seleccionadas y vacía sus campos heredados de dirección para evitar que la migración las importe de nuevo. Conserva las fichas locales de servicio, los demás propietarios y la configuración; no modifica el CRM, routers, caché ni trabajos. Usa la exclusión de mantenimiento y una transacción, sin inicializar o importar la cola. Si falla una comprobación o el respaldo, no limpia ninguna selección.
+
+Después se muestra el resultado, enlace al respaldo y conflictos restantes. El respaldo permanece descargable desde **Sistema** después de recargar, con permiso administrativo de edición. Recargar el panel permite completar la migración si ya no hay duplicados. Las demás escrituras siguen pausadas mientras persista un conflicto. Un 404 aislado no desencadena cambios: la acción requiere vista previa y confirmación administrativa explícitas.
+
+Validación 2.4.22 aprobada: **32 suites aisladas**, sintaxis de **44 archivos PHP propios** y verificación del instalador de 356 entradas, 123 archivos propios y 13 dependencias fijadas. Informe: `dist/verification-2.4.22.json`. SHA-256: `0c92a93035807b0c8306971820353ac7d1f1631600f6713fb621d52a04480c90`. Se comprobó también en navegador la revisión, la protección del servicio actual y la confirmación con datos sintéticos. La instalación y limpieza en UISP real quedan a cargo del operador; estas pruebas no ejecutan limpiezas en producción.
+
 ## Candidato 2.4.21 — consultar el panel durante una migración pendiente
 
 Cuando las IP duplicadas impiden migrar una base anterior, el panel habitual permanece disponible en **modo consulta**. Sus seis vistas —Dispositivos, Planes, Configuración, Trabajos, Sistema y Conflictos de IP— conservan la navegación, con un aviso ámbar y contador persistentes. La vista de conflictos permite descargar el diagnóstico, abrir los clientes y servicios afectados en el CRM y volver a comprobar las asignaciones.
@@ -108,15 +120,17 @@ El [inventario completo de mejoras](docs/MEJORAS.md) reúne tus cambios del [PR 
 
 La comunicación con MikroTik utiliza la **API nativa de RouterOS**, con TLS opcional; los cambios de interfaz no alteran ese mecanismo. Los apartados siguientes conservan el detalle de las revisiones anteriores y la documentación original.
 
-La segunda revisión corrige además propiedad de cuentas/colas padre, hidratación de clientes fuera de caché, bajas con router desconectado y migración de trabajos terminales anteriores, reintentos de perfiles/padres compartidos, pools IPv6 por revisión, idiomas regionales y respuestas tardías al cambiar pestañas. El detalle de cada fallo y su resultado está en el inventario. La [guía de pruebas reales](docs/PRUEBAS_REALES.md) contiene 75 casos para comprobar en laboratorio.
+La segunda revisión corrige además propiedad de cuentas/colas padre, hidratación de clientes fuera de caché, bajas con router desconectado y migración de trabajos terminales anteriores, reintentos de perfiles/padres compartidos, pools IPv6 por revisión, idiomas regionales y respuestas tardías al cambiar pestañas. El detalle de cada fallo y su resultado está en el inventario. La [guía de pruebas reales](docs/PRUEBAS_REALES.md) contiene 81 casos para comprobar en laboratorio.
 
 Para verificar el candidato después de instalar dependencias y construir el ZIP:
 
 ```text
-python tools/verify_plugin.py --php RUTA_PHP --node RUTA_NODE --archive dist/ros-plugin-2.4.21-candidate.zip --output dist/verification-2.4.21.json
+python tools/verify_plugin.py --php RUTA_PHP --node RUTA_NODE --archive dist/ros-plugin-2.4.22-candidate.zip --output dist/verification-2.4.22.json
 ```
 
-En Windows sin configuración PHP, añadir `--extension-dir RUTA_EXT`. El verificador ejecuta las suites y comprueba sintaxis PHP, correspondencia del código/dependencias y exclusión de datos/fixtures del instalador. Validación 2.4.21 aprobada: **31 suites aisladas**, sintaxis de **43 archivos PHP propios** y comprobación del instalador de 355 entradas, 122 archivos propios y 13 dependencias. Informe: `dist/verification-2.4.21.json`. SHA-256: `ecc819f6f6d247ae28b1b181292a75fe836e79c06596cc09c0727068cde8786a`. Se verificó también la navegación y el aviso con datos ficticios en navegador. La integración de esta versión en UISP y la corrección explícita de las reservas requieren comprobación en la instalación afectada. Para construirlo: `python tools/build_plugin.py --vendor-dir src/vendor --output dist/ros-plugin-2.4.21-candidate.zip`.
+En Windows sin configuración PHP, añadir `--extension-dir RUTA_EXT`. El verificador ejecuta las suites y comprueba sintaxis PHP, correspondencia del código/dependencias y exclusión de datos/fixtures del instalador. El estado de validación de 2.4.22 se indica al principio. Para construirlo: `python tools/build_plugin.py --vendor-dir src/vendor --output dist/ros-plugin-2.4.22-candidate.zip`.
+
+Si una migración queda pendiente por IP duplicadas, usar **Conflictos de IP → Revisar limpieza** para comprobar las reservas obsoletas elegibles, revisar los motivos y confirmar únicamente la selección aprobada. Los trabajos pendientes, la recuperación pendiente y el estado aplicado de una cuenta protegen sus reservas; limpiar IP no retira recursos del router. Conservar el respaldo privado generado, que permanece descargable desde **Sistema** después de recargar. Tras resolver el último conflicto, recargar el panel para completar la migración antes de reanudar las demás escrituras.
 
 ## Implementación de estabilización 2.4.7 — candidato para laboratorio
 

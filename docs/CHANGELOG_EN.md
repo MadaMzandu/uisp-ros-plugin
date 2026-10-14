@@ -2,9 +2,21 @@
 
 [Español](MEJORAS.md) · [PR description](PR_DESCRIPTION.md) · [Webhook setup and rationale](WEBHOOK_SETUP_EN.md)
 
-This revision combines [dhanielsnieto's changes in PR #89](https://github.com/MadaMzandu/uisp-ros-plugin/pull/89) with the subsequent fixes prepared in this repository. The comparison starts at `7ca8dc8`; the original PR ends at `056b89f`. The current candidate is **2.4.21**. The operator confirmed archived-plan speed recovery in their 2.4.19 installation. That confirmation covers this historical scenario; the remaining UISP and RouterOS integration scenarios still require their own checks before production readiness can be established.
+This revision combines [dhanielsnieto's changes in PR #89](https://github.com/MadaMzandu/uisp-ros-plugin/pull/89) with the subsequent fixes prepared in this repository. The comparison starts at `7ca8dc8`; the original PR ends at `056b89f`. The current candidate is **2.4.22**. The operator confirmed archived-plan speed recovery in their 2.4.19 installation. That confirmation covers this historical scenario; the remaining UISP and RouterOS integration scenarios still require their own checks before production readiness can be established.
 
 The plugin connects UISP CRM to MikroTik through the **native RouterOS API**, normally on port `8728`, or `8729` with TLS. The panel manages that integration; it does not switch the transport to SSH, WinBox, or REST.
+
+## Candidate 2.4.22: reviewed cleanup of obsolete IP reservations
+
+The warning counts **saved assignments**, rather than asserting that a customer has multiple current packages. A service removed from CRM can retain a local reservation. Stored service states explicitly say “saved data”, records without a local service are identified as IP records, and checking another owner preserves earlier verification results.
+
+**IP conflicts → Review cleanup** previews a bounded selection and explains protected entries. A candidate requires an explicit HTTP 404 for its CRM service and a valid current peer service in the same conflict. Every existing service is preserved, including ended services and services belonging to archived clients. Transport/authentication failures, malformed responses, missing verified peers, pending work, unresolved recovery, and applied ownership recorded in the queue block removal.
+
+Confirmation repeats the CRM checks, rejects changed local assignments, and creates a separate private, downloadable SQLite backup before editing. The transaction removes only selected obsolete reservations and clears their legacy address fields to prevent reimport. Local service records, other owners, configuration, CRM, routers, cache, and jobs remain intact. Existing maintenance exclusion is acquired without initializing or importing the queue. Any failed prerequisite or backup aborts the whole selection.
+
+The result provides the backup and remaining conflict count. The backup remains downloadable from **System** after a reload, with administrative edit permission. Reload completes migration when no duplicate assignments remain; other writes stay paused while conflicts persist. A standalone 404 never triggers automatic cleanup: an administrative preview and explicit confirmation are required.
+
+**2.4.22 validation passed:** 32 isolated suites, syntax checks for 44 first-party PHP files, and installer verification covering 356 entries, 123 first-party files, and 13 locked dependencies. Report: `dist/verification-2.4.22.json`. SHA-256: `0c92a93035807b0c8306971820353ac7d1f1631600f6713fb621d52a04480c90`. Browser checks also covered preview, current-service protection, and confirmation with synthetic data. Installation and cleanup in the real UISP instance remain operator actions; these checks perform no production cleanup.
 
 ## Candidate 2.4.21: panel consultation during a paused upgrade
 
@@ -58,7 +70,7 @@ This revision's standalone warning is superseded by 2.4.21 view mode. Its report
 - Evidence of partially creating a suspension profile is preserved. Cleanup verifies an existing profile before changing accounts or sessions; mismatched frozen values remain an error. A missing profile is not recreated during cleanup, and an existing profile is not overwritten.
 - Connection handling is unchanged: each service batch opens and closes its own API connection; queries and cleanup can open additional connections. API login/logout messages alone do not mean PPP sessions were disconnected. No connection sharing between batches was introduced.
 
-The historical 2.4.17 validation passed 27 suites, checks for 39 first-party PHP files, and verification of a ZIP containing 351 entries, 118 first-party files, and 13 pinned dependencies. Its report and hash are retained later in this changelog; the validation status of current candidate 2.4.21 is recorded above.
+The historical 2.4.17 validation passed 27 suites, checks for 39 first-party PHP files, and verification of a ZIP containing 351 entries, 118 first-party files, and 13 pinned dependencies. Its report and hash are retained later in this changelog; the validation status of current candidate 2.4.22 is recorded above.
 
 ## Changes contributed in PR #89
 
@@ -285,7 +297,7 @@ Later production evidence identified missing tokens and a URL pasted as the secr
 
 ## Installation and validation readiness
 
-The current version is 2.4.21. Its validation status appears at the beginning of this changelog. Archived-plan recovery confirmation belongs to 2.4.19 and retains its historical scope. When duplicate IPs are reported, inspect all six views, review the diagnostic, and explicitly verify owners in UISP. Writes and provisioning remain paused until assignments are resolved and migration completes; viewing the panel does not release reservations. The [real-environment test guide](PRUEBAS_REALES.md) contains 75 scenarios for the remaining checks.
+The current version is 2.4.22. Its validation status appears at the beginning of this changelog. Archived-plan recovery confirmation belongs to 2.4.19 and retains its historical scope. When duplicate IPs are reported, inspect all six views and review their owners. **Review cleanup** previews a selection of obsolete reservations and allows explicit confirmation of eligible entries with a private backup. Pending work, unresolved recovery, and an account's applied state block removal of its reservations. The generated backup remains downloadable from **System**, including after a reload. Resolve any remaining conflicts and reload to complete migration; other writes and provisioning stay paused until then. The [real-environment test guide](PRUEBAS_REALES.md) contains 81 scenarios for the remaining checks.
 
 ### Historical 2.4.17 result
 
