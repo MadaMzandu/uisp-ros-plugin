@@ -234,7 +234,7 @@ final class ApiNetworkRepair
                 $diagnostics['stage'] = 'local_ownership';
                 $this->ownership($database, $id, $fields);
                 $diagnostics['stage'] = 'queue_ownership';
-                $pending = $this->queue($id, $clientId, $fields);
+                $pending = $this->queue($id, $clientId, $fields, $diagnostics);
                 $diagnostics['stage'] = 'crm_ownership';
                 foreach ($fields as $entry) if ($entry['current_address'] !== null) {
                     if ($collection === null) $collection = $this->collection();
@@ -355,7 +355,7 @@ final class ApiNetworkRepair
     }
 
     /** Unprepared update evidence is safe only without resource preparation or ownership debt. */
-    private function queue(int $id, int $clientId, array $fields): int
+    private function queue(int $id, int $clientId, array $fields, ?array &$diagnostics = null): int
     {
         if (is_link($this->jobsPath) || is_link($this->legacyPath)) throw new InvalidArgumentException('queue_unknown');
         $pending = 0;
@@ -385,7 +385,7 @@ final class ApiNetworkRepair
                     if ($version['applied_payload'] !== null || $version['applied_identity'] !== null) $appliedOwners[$owner] = true;
                     if ($version['applied_payload'] !== null) $this->payloadOwnership($owner, $this->payload($version['applied_payload']), $id, $fields);
                 }
-                $jobs = $this->query($database, 'SELECT service_id,status,operation,payload,prior_cleared,cleanup_done FROM jobs WHERE status IS NULL OR status<>\'succeeded\' LIMIT ' . (self::MAX_ROWS + 1));
+                $jobs = $this->query($database, 'SELECT id,service_id,status,operation,payload,prior_cleared,cleanup_done FROM jobs WHERE status IS NULL OR status<>\'succeeded\' LIMIT ' . (self::MAX_ROWS + 1));
                 if (count($jobs) > self::MAX_ROWS) throw new InvalidArgumentException('queue_unknown');
                 foreach ($jobs as $job) {
                     $owner = self::id($job['service_id']);
@@ -398,19 +398,26 @@ final class ApiNetworkRepair
                     if ($owner === $id && $job['status'] !== 'cleaned') {
                         if (!in_array($job['status'], ['pending','cancelled','superseded'], true)
                             || $job['operation'] !== 'update') throw new InvalidArgumentException('queue_recovery');
-                        // Cancellation after preparation failed can leave an
-                        // immutable unprepared row. It never wrote resources;
-                        // require the same fresh identity/address proof as an
-                        // unprepared pending update, and preserve its bytes.
-                        // Actual cancellation debt remains a barrier below.
-                        $this->pending($payload, $id, $clientId, $fields);
+                        // A cancelled/superseded intent never executes again.
+                        // Its requested IP may be obsolete or malformed; it is
+                        // not current resource ownership. Keep those bytes and
+                        // still protect identity, prior valid reservations,
+                        // prepared resources and cancellation debt below.
+                        try {
+                            $this->pending($payload, $id, $clientId, $fields, $job['status'] === 'pending');
+                        } catch (InvalidArgumentException $error) {
+                            if ($diagnostics !== null) $diagnostics['queue_jobs'] = [[
+                                'job_id' => self::id($job['id']) === null ? null : 'Q' . (int) $job['id'],
+                                'status' => $job['status'], 'reason' => $error->getMessage()]];
+                            throw $error;
+                        }
                         if ($job['status'] === 'pending') $pending++;
                     } elseif (in_array($job['status'], ['pending','cancelled','superseded'], true)) {
                         // Prepared commands and uncleared snapshots retain their ownership.
                         if (array_key_exists('_commands', $payload)) $this->payloadOwnership($owner, $payload, $id, $fields);
                         if (!(int) $job['prior_cleared'] && isset($payload['_prior_network'])) $this->payloadOwnership($owner,
                             ['network' => $payload['_prior_network']], $id, $fields,
-                            $job['status'] === 'pending' && $job['operation'] === 'update' && !isset($appliedOwners[$owner])
+                            $job['operation'] === 'update' && !isset($appliedOwners[$owner])
                                 && !array_key_exists('_commands', $payload) && !array_key_exists('_cleanup', $payload)
                                 && !array_key_exists('_delete_frozen', $payload));
                         if (!(int) $job['cleanup_done'] && isset($payload['_cleanup'])) $this->payloadOwnership($owner, $payload['_cleanup'], $id, $fields);
@@ -445,7 +452,7 @@ final class ApiNetworkRepair
         return $pending;
     }
 
-    private function pending(array $payload, int $id, int $clientId, array $fields): void
+    private function pending(array $payload, int $id, int $clientId, array $fields, bool $requireCurrentDesired = true): void
     {
         if (self::id($payload['id'] ?? null) !== $id || self::id($payload['clientId'] ?? null) !== $clientId) {
             throw new InvalidArgumentException('pending_identity_changed');
@@ -457,7 +464,7 @@ final class ApiNetworkRepair
         if (isset($payload['network']) && !is_array($payload['network'])) throw new InvalidArgumentException('queue_unknown');
         foreach ($fields as $entry) {
             $field = $entry['field'];
-            foreach ([$payload[$field] ?? null, $payload['network'][$field] ?? null] as $desired) {
+            foreach ($requireCurrentDesired ? [$payload[$field] ?? null, $payload['network'][$field] ?? null] : [] as $desired) {
                 if ($desired === null || $desired === '') continue;
                 try { $desired = ApiNetworkAddressEvidence::normalize($desired, $field); }
                 catch (Throwable $error) { throw new InvalidArgumentException('pending_address_changed'); }

@@ -1,8 +1,20 @@
 ## Summary
 
-This PR brings the panel improvements from [PR #89](https://github.com/MadaMzandu/uisp-ros-plugin/pull/89) together with a durable provisioning queue, explicit webhook authentication modes, reliable suspension/reactivation handling, archived-plan recovery, and panel consultation during paused migrations, reviewed cleanup of obsolete IP reservations, and independent client archival diagnostics, retained navigation on reload, and comparison of current CRM IPs, automatic nonblocking CRM duplicate warnings, safe reuse of unchanged reservations, reviewed CRM IP corrections, and simultaneous device synchronization with row progress. Candidate **2.4.30** uses the native RouterOS API with optional TLS.
+This PR brings the panel improvements from [PR #89](https://github.com/MadaMzandu/uisp-ros-plugin/pull/89) together with a durable provisioning queue, explicit webhook authentication modes, reliable suspension/reactivation handling, archived-plan recovery, and panel consultation during paused migrations, reviewed cleanup of obsolete IP reservations, and independent client archival diagnostics, retained navigation on reload, and comparison of current CRM IPs, automatic nonblocking CRM duplicate warnings, safe reuse of unchanged reservations, reviewed CRM IP corrections, and simultaneous device synchronization with row progress. Candidate **2.4.31** uses the native RouterOS API with optional TLS.
 
 **The full English changelog and webhook setup guide are included below, not only linked.** Historical entries identify behavior superseded by later revisions; the summary describes the current implementation.
+
+## Candidate 2.4.31: dismiss warnings and repair reservations retained by cancelled jobs
+
+All three top warnings can be dismissed and restored with **Show warnings**. Dismissal lasts within the tab using only coarse counts/state, without storing client identities, IPs or credentials. Poll timestamps and navigation do not reopen it; relevant count/error changes or clearing and recurrence do. Sidebar badges, detail views and paused-migration write protections remain active.
+
+Malformed-reservation repair distinguishes pending work from cancelled/superseded intent. A cancelled unprepared update without recovery debt no longer blocks solely because its requested IP is obsolete or malformed. Its bytes and valid reservations stay intact, while identity, prior ownership, applied resources and the selected address family remain guarded. A different active pending intent is still protected and exposes its job ID/state with navigation to review it. Repair never revives, rewrites or runs cancelled jobs. A real-queue regression verifies that an unrelated service resumes after local corrections while cancelled operations remain unattempted.
+
+**Compare with UISP and router** retains exact redundant-copy consolidation and adds read-only observation when recorded applied ownership is insufficient. Router queries use only exact filtered `print` requests with limited properties, following the [RouterOS API documentation](https://help.mikrotik.com/docs/spaces/ROS/pages/47579160/API). They never provision, adopt, remove or disconnect resources. The recorded endpoint must still match the configured device; current credentials are used. Review shows device/path/selector and present/absent/unknown evidence. Absence resolution requires every retained resource and prior reservation to be represented and observed absent, repeats observation under the concurrency guards, backs up `jobs.db` and marks only that cancelled source job cleaned. Applied ownership, CRM and routers remain unchanged. Present/shared resources, changed authority, incomplete history and failed reads remain protected; partial observation never establishes absence. Deleted operations do not run in a hidden queue.
+
+Old generated previews, helper scripts, screenshots and reports are removed from the working folder. The repository's historical installer is replaced with the verified current one. Reproducible tools, tests, source, documentation and runtime dependencies remain; `dist` contains only current delivery/verification files and a separate screenshot directory.
+
+**2.4.31 validation passed:** 40 isolated suites, syntax checks for 52 first-party PHP files, and installer verification of 364 entries, 131 first-party files and 13 locked dependencies. Current report: `dist/verification-2.4.31.json`. SHA-256: `48da9d4bd968068f1e85323ae63c39409f98e85ce1b7bad78fefb34306824cab`. Browser checks use synthetic fixtures; no production CRM or RouterOS changes were performed.
 
 ## Candidate 2.4.30: review retained recoveries and explain rejected UISP edits
 
@@ -155,7 +167,7 @@ An explicit **Allow webhooks without a secret (compatibility)** checkbox preserv
 
 1. Preserve the previous ZIP and private copies of `data.db`, `jobs.db`, and configuration. Panel backups cover `data.db` only.
 2. Pause old workers/deliveries while replacing the package and wait for active requests to finish.
-3. Install 2.4.30 and open the panel. If duplicate addresses pause migration, use all six views in consultation mode, review the diagnostic, and explicitly verify affected owners in UISP. Use Review cleanup to preview eligible obsolete reservations, confirm the selection, preserve its backup, and reload. Resolve remaining assignments and complete migration before resuming workers or deliveries. IPs must be globally unique across services and routers; the panel does not release stale reservations automatically.
+3. Install 2.4.31 and open the panel. If duplicate addresses pause migration, use all six views in consultation mode, review the diagnostic, and explicitly verify affected owners in UISP. Use Review cleanup to preview eligible obsolete reservations, confirm the selection, preserve its backup, and reload. Resolve remaining assignments and complete migration before resuming workers or deliveries. IPs must be globally unique across services and routers; the panel does not release stale reservations automatically.
 4. Configure a matching webhook secret at both ends, or explicitly select compatibility mode. Installing the package does not update an existing UISP endpoint URL.
 5. Verify a fresh event and its provisioning outcome. A successful HTTP response or empty pending-jobs list alone does not establish the final RouterOS traffic policy.
 6. Apply service jobs or synchronize the selected router to migrate profiles. **Manual per-router synchronization reconnects its managed PPP/Hotspot sessions.** Existing suspension-profile firewall behavior remains the operator's configuration.
@@ -183,7 +195,7 @@ An explicit **Allow webhooks without a secret (compatibility)** checkbox preserv
 - Historical **2.4.19** validation passed **28 isolated suites**, plus syntax checks for **40 owned PHP files**.
 - Historical **2.4.19** installer verification passed: **352 entries**, **119 owned source files**, **13 locked dependencies**, source/dependency correspondence, CRC, and exclusion of operational/test data.
 - On **2026-10-11**, the operator confirmed that **2.4.19 recovers speeds correctly for archived plans in a real installation**.
-- The **149-case integration checklist** is not marked complete. Hardware/runtime combinations, traffic measurements, firewall/FastTrack behavior, migration conflicts, consultation/CRM diagnosis, reviewed reservation cleanup, and remaining failure scenarios retain their own checks.
+- The **154-case integration checklist** is not marked complete. Hardware/runtime combinations, traffic measurements, firewall/FastTrack behavior, migration conflicts, consultation/CRM diagnosis, reviewed reservation cleanup, and remaining failure scenarios retain their own checks.
 - Historical **2.4.19** report: `dist/verification-2.4.19.json`. Installer: `dist/ros-plugin-2.4.19-candidate.zip`.
 
 ```text
@@ -314,7 +326,7 @@ Check the relevant RouterOS logging topics and the actual profile/session state.
 
 [Español](docs/MEJORAS.md) · [PR description](docs/PR_DESCRIPTION.md) · [Webhook setup and rationale](docs/WEBHOOK_SETUP_EN.md)
 
-This revision combines [dhanielsnieto's changes in PR #89](https://github.com/MadaMzandu/uisp-ros-plugin/pull/89) with the subsequent fixes prepared in this repository. The comparison starts at `7ca8dc8`; the original PR ends at `056b89f`. The current candidate is **2.4.30**. The operator confirmed archived-plan speed recovery in their 2.4.19 installation. That confirmation covers this historical scenario; the remaining UISP and RouterOS integration scenarios still require their own checks before production readiness can be established.
+This revision combines [dhanielsnieto's changes in PR #89](https://github.com/MadaMzandu/uisp-ros-plugin/pull/89) with the subsequent fixes prepared in this repository. The comparison starts at `7ca8dc8`; the original PR ends at `056b89f`. The current candidate is **2.4.31**. The operator confirmed archived-plan speed recovery in their 2.4.19 installation. That confirmation covers this historical scenario; the remaining UISP and RouterOS integration scenarios still require their own checks before production readiness can be established.
 
 The plugin connects UISP CRM to MikroTik through the **native RouterOS API**, normally on port `8728`, or `8729` with TLS. The panel manages that integration; it does not switch the transport to SSH, WinBox, or REST.
 
@@ -472,7 +484,7 @@ This revision's standalone warning is superseded by 2.4.21 view mode. Its report
 - Evidence of partially creating a suspension profile is preserved. Cleanup verifies an existing profile before changing accounts or sessions; mismatched frozen values remain an error. A missing profile is not recreated during cleanup, and an existing profile is not overwritten.
 - Connection handling is unchanged: each service batch opens and closes its own API connection; queries and cleanup can open additional connections. API login/logout messages alone do not mean PPP sessions were disconnected. No connection sharing between batches was introduced.
 
-The historical 2.4.17 validation passed 27 suites, checks for 39 first-party PHP files, and verification of a ZIP containing 351 entries, 118 first-party files, and 13 pinned dependencies. Its report and hash are retained later in this changelog; the validation status of current candidate 2.4.30 is recorded above.
+The historical 2.4.17 validation passed 27 suites, checks for 39 first-party PHP files, and verification of a ZIP containing 351 entries, 118 first-party files, and 13 pinned dependencies. Its report and hash are retained later in this changelog; the validation status of current candidate 2.4.31 is recorded above.
 
 ## Changes contributed in PR #89
 
@@ -699,7 +711,7 @@ Later production evidence identified missing tokens and a URL pasted as the secr
 
 ## Installation and validation readiness
 
-The current version is 2.4.30. Its validation status appears at the beginning of this changelog. Archived-plan recovery confirmation belongs to 2.4.19 and retains its historical scope. CRM warnings keep other jobs available: current duplicate addresses can be corrected explicitly, and a freshly verified ended service can have its exact historical assignment reviewed without editing its CRM history. **Review cleanup** separately previews eligible obsolete local reservations with a private backup; pending work, unresolved recovery, and recorded applied ownership still protect their reservations. Backups remain downloadable from **System** after reload. Only the separate duplicate-reservation preflight that prevents safe migration pauses other writes and provisioning; it requires resolving those stored conflicts and reloading. The [real-environment test guide](docs/PRUEBAS_REALES.md) contains 149 scenarios for the remaining checks.
+The current version is 2.4.31. Its validation status appears at the beginning of this changelog. Archived-plan recovery confirmation belongs to 2.4.19 and retains its historical scope. CRM warnings keep other jobs available: current duplicate addresses can be corrected explicitly, and a freshly verified ended service can have its exact historical assignment reviewed without editing its CRM history. **Review cleanup** separately previews eligible obsolete local reservations with a private backup; pending work, unresolved recovery, and recorded applied ownership still protect their reservations. Backups remain downloadable from **System** after reload. Only the separate duplicate-reservation preflight that prevents safe migration pauses other writes and provisioning; it requires resolving those stored conflicts and reloading. The [real-environment test guide](docs/PRUEBAS_REALES.md) contains 154 scenarios for the remaining checks.
 
 ### Historical 2.4.17 result
 

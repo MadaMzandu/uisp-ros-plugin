@@ -20,6 +20,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let devicesRequestSequence = 0;
     let plansCache = [];
     let jobsCache = {};
+    let jobReviewRequested = null;
     const jobsRefreshPreference = 'ros-panel-jobs-refresh-v1';
     const jobsRefreshIntervals = new Set(['0', '5', '10', '30', '60']);
     let jobsRefreshSeconds = '0';
@@ -140,6 +141,55 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function navigationStorage() { return globalThis.sessionStorage || globalThis.window?.sessionStorage; }
+    // Dismissals are presentation preferences only. Persist coarse counts and
+    // flags for this tab, never customer identities, addresses or poll times.
+    const warningIds = ['network-warning', 'crm-network-warning', 'jobs-pending-warning'];
+    const warningStorageKey = 'ros-panel-warning-dismissals-v1:' + navigationScope;
+    const dismissedWarnings = new Map();
+    const warningStates = new Map();
+    try {
+        const saved = navigationStorage()?.getItem(warningStorageKey);
+        if (typeof saved === 'string' && saved.length <= 1024) {
+            const value = JSON.parse(saved);
+            if (value?.version === 1 && value.dismissed && typeof value.dismissed === 'object' && !Array.isArray(value.dismissed)) {
+                for (const [id, signature] of Object.entries(value.dismissed))
+                    if (warningIds.includes(id) && typeof signature === 'string' && /^[0-9,[\]a-z-]{1,180}$/.test(signature)) dismissedWarnings.set(id, signature);
+            }
+        }
+    } catch (_) { /* Dismissing warnings also works without session storage. */ }
+    function saveWarningDismissals() {
+        try { navigationStorage()?.setItem(warningStorageKey, JSON.stringify({ version: 1, dismissed: Object.fromEntries(dismissedWarnings) })); }
+        catch (_) { /* Keep the current page preference when storage is blocked. */ }
+    }
+    function renderWarningVisibility() {
+        let hidden = 0;
+        for (const [id, state] of warningStates) {
+            const dismissed = dismissedWarnings.has(id);
+            byId(id).style.display = state.active && !dismissed ? 'flex' : 'none';
+            if (state.active && dismissed) hidden++;
+        }
+        if (byId('warning-controls')) byId('warning-controls').style.display = hidden ? 'block' : 'none';
+        translatedText(byId('restore-warnings'), 'Mostrar avisos ({count})', { count: hidden });
+    }
+    function setTopWarning(id, active, values, observed = true) {
+        const signature = values.join(',');
+        const prior = dismissedWarnings.get(id);
+        if (observed && prior !== undefined && (!active || prior !== signature)) {
+            dismissedWarnings.delete(id); saveWarningDismissals();
+        }
+        warningStates.set(id, { active, signature }); renderWarningVisibility();
+    }
+    for (const id of warningIds) byId('dismiss-' + id)?.addEventListener('click', () => {
+        const state = warningStates.get(id);
+        if (!state?.active) return;
+        dismissedWarnings.set(id, state.signature); saveWarningDismissals(); renderWarningVisibility();
+        byId('restore-warnings')?.focus({ preventScroll: true });
+    });
+    byId('restore-warnings')?.addEventListener('click', () => {
+        dismissedWarnings.clear(); saveWarningDismissals(); renderWarningVisibility();
+        const visible = warningIds.find(id => warningStates.get(id)?.active);
+        if (visible) byId('dismiss-' + visible)?.focus({ preventScroll: true });
+    });
     try {
         const serialized = navigationStorage()?.getItem(navigationStorageKey);
         if (typeof serialized === 'string' && serialized.length <= 4096) {
@@ -305,7 +355,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (state.details && typeof state.details === 'object') recoveryDetails = retainVerifiedOwners(recoveryDetails, state.details, verifyingService, verifyingClient);
         const total = Number(recoveryDetails?.duplicate_groups);
         const count = cleanupRemainingCount ?? (Number.isSafeInteger(total) && total >= 0 ? total : (Array.isArray(recoveryDetails?.conflicts) ? recoveryDetails.conflicts.length : 0));
-        byId('network-warning').style.display = 'flex';
+        setTopWarning('network-warning', true, [count, cleanupRequiresReload ? 1 : 0]);
         updateConflictNavigation();
         byId('stored-network-conflicts-pane').style.display = 'block';
         translatedText(byId('network-warning-title'), count === 1 ? 'IP duplicadas: {count} conflicto' : 'IP duplicadas: {count} conflictos', { count });
@@ -447,7 +497,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const freshness = [checkedAt, families ? t('Familias revisadas: {families}.', { families }) : '',
             uncovered ? t('Sin revisar por configuración de atributos: {families}.', { families: uncovered }) : '',
             stale ? t('El resultado guardado puede estar desactualizado.') : ''].filter(Boolean).join(' ');
-        byId('crm-network-warning').style.display = count > 0 || issueCount > 0 ? 'flex' : 'none';
+        setTopWarning('crm-network-warning', count > 0 || issueCount > 0,
+            [count, issueCount, stale ? 1 : 0, families.replace(/[^46]/g, ''), uncovered.replace(/[^46]/g, '')], available);
         translatedText(byId('crm-network-warning-title'), count > 0 ? (count === 1 ? 'IP duplicadas en CRM: {count} conflicto' : 'IP duplicadas en CRM: {count} conflictos')
             : issueCount === 1 ? 'IP sin comprobar en CRM: {count} dirección' : 'IP sin comprobar en CRM: {count} direcciones', { count: count > 0 ? count : issueCount });
         translatedText(byId('crm-network-warning-note'), recoveryReadOnly
@@ -1580,7 +1631,30 @@ document.addEventListener('DOMContentLoaded', () => {
                         comparison.appendChild(entry);
                     }
                     item.appendChild(comparison);
-                    const action = document.createElement('p'); action.className = 'form-note'; translatedText(action, 'Abre el servicio y compara sus clientes. Esta revisión no cambia la identidad ni elimina reservas de otros servicios.'); item.appendChild(action);
+                    const queue = Array.isArray(diagnostics.queue_jobs) ? diagnostics.queue_jobs.slice(0, 20).filter(job => job && typeof job.job_id === 'string' && /^Q[1-9]\d{0,14}$/.test(job.job_id)
+                        && ['pending', 'cancelled', 'superseded'].includes(job.status) && typeof job.reason === 'string') : [];
+                    if (queue.length) {
+                        const heading = document.createElement('strong'); translatedText(heading, 'Trabajos relacionados con la reserva'); item.appendChild(heading);
+                        for (const job of queue) {
+                            const row = document.createElement('div'); row.className = 'repair-queue-job';
+                            const title = document.createElement('strong'); translatedText(title, 'Trabajo {job} · {state}', { job: job.job_id,
+                                state: t({ pending: 'Pendiente', cancelled: 'Cancelado', superseded: 'Sustituido' }[job.status]) });
+                            const note = document.createElement('p'); note.className = 'form-note';
+                            if (job.status === 'pending') note.textContent = repairReason(job.reason);
+                            else translatedText(note, 'Este trabajo ya no se ejecuta. Sus registros conservados se revisan por separado en Servicios en recuperación.');
+                            row.append(title, note);
+                            if (job.status === 'pending') {
+                                const review = document.createElement('button'); review.type = 'button'; review.className = 'btn btn-secondary'; translatedText(review, 'Revisar trabajo');
+                                review.addEventListener('click', () => { jobReviewRequested = job.job_id; closeModals(); switchView('jobs', 'Trabajos'); }); row.appendChild(review);
+                            }
+                            item.appendChild(row);
+                        }
+                        if (queue.some(job => job.status === 'pending')) {
+                            const help = document.createElement('p'); help.className = 'form-note'; translatedText(help, 'Revisa el trabajo pendiente señalado antes de cambiar la reserva. Abrirlo no lo ejecuta ni lo elimina.'); item.appendChild(help);
+                        }
+                    } else {
+                        const action = document.createElement('p'); action.className = 'form-note'; translatedText(action, 'Abre el servicio y compara sus clientes. Esta revisión no cambia la identidad ni elimina reservas de otros servicios.'); item.appendChild(action);
+                    }
                     item.appendChild(conflictLink(t('Servicio #{id}', { id: serviceId }), '/crm/client/service/' + serviceId, 'service'));
                     if (monitorDate(diagnostics.checked_at)) {
                         const checked = document.createElement('p'); checked.className = 'form-note'; translatedText(checked, 'Verificado: {time}', { time: formatDate(diagnostics.checked_at) }); item.appendChild(checked);
@@ -2268,8 +2342,36 @@ document.addEventListener('DOMContentLoaded', () => {
             recovery_verification_failed: 'La comprobación cambió antes de guardar. Verifica de nuevo.',
             recovery_state_changed: 'La comprobación cambió antes de guardar. Verifica de nuevo.',
             recovery_backup_failed: 'No se pudo crear el respaldo. La recuperación se conserva.',
-            recovery_busy: 'Hay otra operación en curso. Espera a que termine y verifica de nuevo.'
+            recovery_busy: 'Hay otra operación en curso. Espera a que termine y verifica de nuevo.',
+            router_resources_present: 'El router aún conserva recursos de esta recuperación. Revisa el equipo indicado; esta opción no los elimina ni modifica servicios actuales.',
+            router_observation_unavailable: 'No se pudo consultar el router. Revisa su conexión y permisos de lectura, y verifica de nuevo.',
+            router_snapshot_incomplete: 'El registro anterior no permite identificar todos los recursos del router con seguridad. Se conserva la recuperación para revisión.',
+            router_authority_changed: 'La identidad o configuración del equipo cambió. Revisa el equipo antes de resolver la recuperación.',
+            router_observation_limit: 'La comprobación del router superó el límite de recursos. Se conserva la recuperación para revisión.'
         }[reason] || 'No se pudo comprobar esta recuperación con seguridad. Se conserva el registro.');
+    }
+    function validRecoveryChecks(checks) {
+        const paths = ['/ppp/secret', '/ppp/active', '/ip/hotspot/user', '/ip/hotspot/active', '/ppp/profile', '/ip/hotspot/user/profile', '/queue/simple', '/ipv6/pool', '/ip/dhcp-server/lease', '/ipv6/dhcp-server/binding'];
+        return Array.isArray(checks) && checks.length > 0 && checks.length <= 60 && checks.every(check => check
+            && Number.isSafeInteger(check.device_id) && check.device_id > 0 && paths.includes(check.path)
+            && ['absent', 'present', 'unknown'].includes(check.state) && ['name', 'mac', 'duid', 'owner'].includes(check.selector_type)
+            && typeof check.identity_hint === 'string' && /^sha256:[a-f0-9]{12}$/.test(check.identity_hint)
+            && (check.selector_label === undefined || typeof check.selector_label === 'string' && check.selector_label.length > 0 && check.selector_label.length <= 160 && !/[\u0000-\u001f\u007f]/.test(check.selector_label)));
+    }
+    function recoveryCheckList(checks) {
+        const list = document.createElement('div'); list.className = 'recovery-resource-checks';
+        const heading = document.createElement('strong'); translatedText(heading, 'Comprobación de recursos en el router'); list.appendChild(heading);
+        for (const check of checks) {
+            const item = document.createElement('p'); item.className = 'form-note';
+            translatedText(item, 'Equipo #{id} · {path} · {state}', { id: check.device_id, path: check.path,
+                state: t({ absent: 'No encontrado', present: 'Presente en el router', unknown: 'Sin comprobar' }[check.state]) });
+            list.appendChild(item);
+            if (check.selector_label) {
+                const identity = document.createElement('p'); identity.className = 'form-note';
+                translatedText(identity, 'Identificador {type}: {value}', { type: check.selector_type, value: check.selector_label }); list.appendChild(identity);
+            }
+        }
+        return list;
     }
     function renderJobRecoveries() {
         const list = byId('job-recovery-list'); if (!list) return;
@@ -2280,7 +2382,7 @@ document.addEventListener('DOMContentLoaded', () => {
             translatedText(meta, '{count} registros conservados · Equipos: {devices}', { count: row.snapshot_count, devices: row.device_ids.join(', ') || t('Sin comprobar') });
             const note = document.createElement('p'); note.className = 'form-note';
             translatedText(note, 'El trabajo fue cancelado. Estos registros no son trabajos ejecutables; se conservan hasta comprobar que los recursos actuales están protegidos.');
-            const review = document.createElement('button'); review.type = 'button'; review.className = 'btn btn-secondary job-repair-button'; translatedText(review, 'Revisar recuperación');
+            const review = document.createElement('button'); review.type = 'button'; review.className = 'btn btn-secondary job-repair-button'; translatedText(review, 'Comparar con UISP y router');
             review.disabled = jobRecoveryBusy; review.addEventListener('click', () => previewJobRecovery(row));
             item.append(jobRecoveryIdentity(row), meta, note, review); list.appendChild(item);
         }
@@ -2328,18 +2430,20 @@ document.addEventListener('DOMContentLoaded', () => {
         byId('job-recovery-result').style.display = 'none'; byId('job-recovery-result').replaceChildren();
         byId('job-recovery-comparison').style.display = 'grid'; byId('job-recovery-comparison').replaceChildren(jobRecoveryIdentity(row));
         byId('apply-job-recovery').style.display = 'inline-flex'; byId('recheck-job-recovery').style.display = 'inline-flex';
-        translatedText(byId('job-recovery-status'), 'Comprobando el estado aplicado guardado y UISP...'); updateJobRecoveryControls(); renderJobRecoveries();
+        translatedText(byId('job-recovery-status'), 'Comprobando UISP y los registros guardados; si hace falta, se consultará el router sin modificarlo...'); updateJobRecoveryControls(); renderJobRecoveries();
         try {
             const data = checked(await api.previewJobRecovery(row.source_job_id)).data;
             if (generation !== jobRecoveryGeneration) return;
             if (!data || !Array.isArray(data.blocked) || data.blocked.length > 1 || !monitorDate(data.checked_at)
                 || (data.candidate ? !validJobRecoveryGroup(data.candidate) || data.candidate.source_job_id !== row.source_job_id || data.candidate.service_id !== row.service_id
-                    || data.candidate.resolution !== 'redundant_current_resources' || !monitorDate(data.candidate.checked_at)
+                    || !['redundant_current_resources', 'observed_absent_resources'].includes(data.candidate.resolution) || !monitorDate(data.candidate.checked_at)
+                    || data.candidate.resolution === 'observed_absent_resources' && (!validRecoveryChecks(data.candidate.checks) || data.candidate.checks.some(check => check.state !== 'absent'))
                     || !Number.isInteger(data.candidate.crm_status) || data.candidate.crm_status < 0 || data.candidate.crm_status > 8
                     || (data.candidate.client_archived !== null && typeof data.candidate.client_archived !== 'boolean')
                     || data.blocked.length !== 0 || typeof data.previewToken !== 'string' || !/^[a-f0-9]{64}$/.test(data.previewToken) || !monitorDate(data.expiresAt)
                     : data.previewToken !== null || data.blocked.length !== 1)
-                || data.blocked.some(entry => entry.source_job_id !== row.source_job_id || entry.service_id !== null && entry.service_id !== row.service_id || typeof entry.reason !== 'string')) throw new Error(t('Respuesta inválida del servidor.'));
+                || data.blocked.some(entry => entry.source_job_id !== row.source_job_id || entry.service_id !== null && entry.service_id !== row.service_id || typeof entry.reason !== 'string'
+                    || entry.checks !== undefined && (!Array.isArray(entry.checks) || entry.checks.length > 0 && !validRecoveryChecks(entry.checks)))) throw new Error(t('Respuesta inválida del servidor.'));
             jobRecoveryPreview = data;
             if (data.candidate) {
                 jobRecoveryTarget = data.candidate;
@@ -2347,12 +2451,19 @@ document.addEventListener('DOMContentLoaded', () => {
                 translatedText(state, 'Servicio: {state}', { state: repairServiceStatus(data.candidate.crm_status) }); byId('job-recovery-comparison').appendChild(state);
                 const checked = document.createElement('p'); checked.className = 'form-note';
                 translatedText(checked, 'Verificado: {time}', { time: formatDate(data.candidate.checked_at) }); byId('job-recovery-comparison').appendChild(checked);
-                const note = document.createElement('p'); note.className = 'form-note'; translatedText(note, 'La identidad y el estado se comprobaron en UISP. Los registros conservados son copias del estado aplicado guardado; sólo se retirarán esas copias, con un respaldo previo.');
+                const note = document.createElement('p'); note.className = 'form-note'; translatedText(note, data.candidate.resolution === 'observed_absent_resources'
+                    ? 'La identidad se comprobó en UISP y los recursos anteriores ya no están en el router. Sólo se retirarán sus registros locales, con respaldo; el router se consultará de nuevo antes de confirmar.'
+                    : 'La identidad y el estado se comprobaron en UISP. Los registros conservados son copias del estado aplicado guardado; sólo se retirarán esas copias, con un respaldo previo.');
                 byId('job-recovery-comparison').appendChild(note);
+                if (data.candidate.resolution === 'observed_absent_resources') byId('job-recovery-comparison').appendChild(recoveryCheckList(data.candidate.checks));
                 translatedText(byId('job-recovery-status'), 'Recuperación revisada. Vence: {time}.', { time: formatDate(data.expiresAt) });
             } else {
                 const blocked = document.createElement('div'); blocked.className = 'cleanup-blocked-item';
                 blocked.textContent = jobRecoveryReason(data.blocked[0].reason); byId('job-recovery-comparison').appendChild(blocked);
+                if (data.blocked[0].checks?.length) byId('job-recovery-comparison').appendChild(recoveryCheckList(data.blocked[0].checks));
+                const review = document.createElement('p'); review.className = 'form-note';
+                translatedText(review, 'Puedes comprobar el servicio en UISP y el equipo indicado. No se borrarán recursos del router desde esta revisión.');
+                byId('job-recovery-comparison').appendChild(review);
                 translatedText(byId('job-recovery-status'), 'La recuperación se conserva. No se cambiaron los servicios ni el router.');
             }
         } catch (error) { translatedText(byId('job-recovery-status'), 'Error: {message}', { message: t(error.message) }); }
@@ -2365,7 +2476,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const row = jobRecoveryTarget, token = jobRecoveryPreview.previewToken;
         jobRecoveryBusy = true; updateJobRecoveryControls(); renderJobRecoveries();
         try {
-            if (!await confirmAction(t('¿Resolver la recuperación {job} del servicio #{id}? Se respaldarán y retirarán sólo las copias redundantes verificadas; los servicios y routers se conservarán.', { job: row.job_id, id: row.service_id }))) return;
+            if (!await confirmAction(t(row.resolution === 'observed_absent_resources'
+                ? '¿Resolver la recuperación {job} del servicio #{id}? Se comprobará de nuevo que los recursos anteriores no estén en el router y se retirarán sólo sus registros locales con respaldo.'
+                : '¿Resolver la recuperación {job} del servicio #{id}? Se respaldarán y retirarán sólo las copias redundantes verificadas; los servicios y routers se conservarán.', { job: row.job_id, id: row.service_id }))) return;
             jobRecoveryPreview = null;
             const data = checked(await api.applyJobRecovery(token)).data;
             if (!data || !Array.isArray(data.resolved) || data.resolved.length !== 1 || data.resolved[0].source_job_id !== row.source_job_id || data.resolved[0].service_id !== row.service_id
@@ -2375,7 +2488,9 @@ document.addEventListener('DOMContentLoaded', () => {
             byId('job-recovery-comparison').replaceChildren(); byId('job-recovery-comparison').style.display = 'none';
             const result = byId('job-recovery-result'); result.className = 'crm-ip-result is-confirmed';
             const title = document.createElement('h4'); translatedText(title, 'Recuperación resuelta');
-            const note = document.createElement('p'); translatedText(note, 'Se retiraron los registros redundantes de {job}. Los servicios actuales, las IP, las velocidades y los routers se conservaron.', { job: row.job_id });
+            const note = document.createElement('p'); translatedText(note, row.resolution === 'observed_absent_resources'
+                ? 'Se confirmó que los recursos anteriores ya no estaban en el router y se retiraron sus registros locales de {job}. Los servicios actuales, las IP, las velocidades y los routers se conservaron.'
+                : 'Se retiraron los registros redundantes de {job}. Los servicios actuales, las IP, las velocidades y los routers se conservaron.', { job: row.job_id });
             const when = document.createElement('p'); translatedText(when, 'Verificado: {time}', { time: formatDate(data.checked_at) });
             const backup = document.createElement('a'); backup.className = 'btn btn-secondary'; backup.href = api.downloadUrl(data.backup_name); backup.download = data.backup_name; translatedText(backup, 'Descargar respaldo');
             result.replaceChildren(title, jobRecoveryIdentity(row), note, when, backup); result.style.display = 'block'; result.focus?.({ preventScroll: true });
@@ -2400,7 +2515,8 @@ document.addEventListener('DOMContentLoaded', () => {
         count.style.display = known && jobsStatus.total > 0 || uncertain ? 'inline-block' : 'none';
         count.title = uncertain ? t('El estado de los trabajos no está actualizado.')
             : t('{pending} pendientes · {running} en ejecución · {recovery} recuperaciones', jobsStatus);
-        byId('jobs-pending-warning').style.display = uncertain || known && jobsStatus.total > 0 ? 'flex' : 'none';
+        setTopWarning('jobs-pending-warning', uncertain || known && jobsStatus.total > 0,
+            [known ? 1 : 0, jobsStatus?.pending ?? 0, jobsStatus?.failed ?? 0, jobsStatus?.running ?? 0, jobsStatus?.recovery ?? 0, uncertain ? 1 : 0], known || jobsStatusFailure);
         translatedText(byId('jobs-pending-title'), known ? jobsStatus.recovery > 0 ? active > 0 ? 'Trabajos y recuperaciones: {count}' : 'Recuperaciones pendientes: {count}'
             : pending > 0 ? 'Trabajos pendientes: {count}' : 'Trabajos en ejecución: {count}'
             : 'No se pudo comprobar el estado de los trabajos.', { count: jobsStatus?.recovery > 0 ? active > 0 ? jobsStatus.total : jobsStatus.recovery : pending > 0 ? pending : jobsStatus?.running ?? 0 });
@@ -2658,7 +2774,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 </td><td class="job-selection"><input type="checkbox" class="job-checkbox" aria-label="${html(t('Seleccionar trabajo'))}" data-i18n-aria-label="Seleccionar trabajo"></td>`;
             const checkbox = row.querySelector('.job-checkbox');
             checkbox.value = key;
-            checkbox.checked = selected.has(key) && (!job.state || job.state === 'pending');
+            checkbox.checked = (selected.has(key) || jobReviewRequested === key) && (!job.state || job.state === 'pending');
+            if (jobReviewRequested === key) { row.className = 'job-review-target'; checkbox.focus?.({ preventScroll: false }); }
             checkbox.addEventListener('change', updateJobSelection);
             const repair = jobNetworkRepairTarget(error, job.serviceId ?? job.id);
             if (repair && repairModal && typeof api.previewNetworkRepair === 'function') {
@@ -2670,6 +2787,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             tbody.appendChild(row);
         });
+        jobReviewRequested = null;
         updateJobSelection();
         afterTableUpdate('jobs', savedPosition);
     }

@@ -1,6 +1,6 @@
 <?php
 
-/** Inspect cancellation debt without constructing a queue or contacting RouterOS. */
+/** Inspect cancellation debt without constructing a queue. Explicit reviews may observe RouterOS. */
 final class ApiJobRecovery
 {
     private const LIMIT = 100;
@@ -11,13 +11,15 @@ final class ApiJobRecovery
     private $request;
     private $clock;
     private $backup;
+    private $routerReader;
+    private array $observationChecks = [];
 
     public function __construct(?callable $request = null, string $jobsPath = 'data/jobs.db',
         string $dataPath = 'data/data.db', string $legacyPath = 'data/queue.json',
-        ?callable $clock = null, ?callable $backup = null)
+        ?callable $clock = null, ?callable $backup = null, ?callable $routerReader = null)
     {
         $this->request = $request; $this->jobsPath = $jobsPath; $this->dataPath = $dataPath;
-        $this->legacyPath = $legacyPath; $this->clock = $clock; $this->backup = $backup;
+        $this->legacyPath = $legacyPath; $this->clock = $clock; $this->backup = $backup; $this->routerReader = $routerReader;
     }
 
     public function listing(): array
@@ -44,11 +46,11 @@ final class ApiJobRecovery
         } finally { if ($database !== null) $database->close(); }
     }
 
-    /** A preview only observes UISP and local evidence. It never retires recovery ownership. */
+    /** A preview observes UISP and, when necessary, exact RouterOS resources. It never retires ownership. */
     public function preview(int $sourceJobId): array
     {
         if ($sourceJobId < 1) throw new InvalidArgumentException('invalid_recovery_selection');
-        $database = null; $candidate = null; $serviceId = null; $reason = null; $record = null;
+        $database = null; $candidate = null; $serviceId = null; $reason = null; $record = null; $this->observationChecks = [];
         try {
             $database = $this->open(false); $database->exec('BEGIN'); $this->schema($database);
             $group = $this->group($database, $sourceJobId); $serviceId = $group['public']['service_id'];
@@ -56,7 +58,9 @@ final class ApiJobRecovery
             $candidate = $record['candidate'];
         } catch (Throwable $error) {
             $allowed = ['queue_busy','current_ownership_unknown','different_resources','crm_unavailable',
-                'crm_identity_changed','crm_status_changed','source_state_changed','legacy_queue_present'];
+                'crm_identity_changed','crm_status_changed','source_state_changed','legacy_queue_present',
+                'router_resources_present','router_observation_unavailable','router_snapshot_incomplete',
+                'router_authority_changed','router_observation_limit'];
             $reason = in_array($error->getMessage(), $allowed, true) ? $error->getMessage() : 'unavailable';
         } finally { if ($database !== null) $database->close(); }
         $token = null; $expires = null;
@@ -68,10 +72,10 @@ final class ApiJobRecovery
         }
         return ['previewToken' => $token, 'expiresAt' => $expires === null ? null : gmdate('Y-m-d\TH:i:s\Z', $expires),
             'candidate' => $candidate, 'blocked' => $reason === null ? [] : [['source_job_id' => $sourceJobId,
-                'service_id' => $serviceId, 'reason' => $reason]], 'checked_at' => $this->timestamp()];
+                'service_id' => $serviceId, 'reason' => $reason, 'checks' => $this->observationChecks]], 'checked_at' => $this->timestamp()];
     }
 
-    /** Consolidate duplicate debt only; confirmed applied ownership and all jobs remain unchanged. */
+    /** Retire verified duplicate/absent debt; preserve all confirmed applied ownership. */
     public function apply(string $token): array
     {
         $tokenPath = $this->tokenPath($token); $stream = null; $database = null; $locks = []; $transaction = false;
@@ -102,10 +106,16 @@ final class ApiJobRecovery
                     [$row['id'], $row['source_job_id'], $row['service_id'], $row['payload'], $row['identity']]);
                 if ($database->changes() !== 1) throw new InvalidArgumentException('recovery_state_changed');
             }
+            if ($record['candidate']['resolution'] === 'observed_absent_resources') {
+                $this->execute($database, "UPDATE jobs SET status='cleaned',updated=? WHERE id=? AND service_id=? AND status IN ('cancelled','superseded') AND payload=?",
+                    [$this->timestamp(), $group['public']['source_job_id'], $group['public']['service_id'], $group['job']['payload']]);
+                if ($database->changes() !== 1) throw new InvalidArgumentException('recovery_state_changed');
+            }
             $database->exec('COMMIT'); $transaction = false;
             return ['resolved' => [['source_job_id' => $group['public']['source_job_id'],
                 'service_id' => $group['public']['service_id'], 'snapshot_count' => count($group['rows'])]],
-                'backup_name' => $backupName, 'checked_at' => $this->timestamp(), 'router_changes' => false, 'crm_changes' => false];
+                'backup_name' => $backupName, 'checked_at' => $this->timestamp(), 'router_changes' => false, 'crm_changes' => false,
+                'resolution' => $record['candidate']['resolution']];
         } finally {
             if ($stream !== null && is_resource($stream)) { flock($stream, LOCK_UN); fclose($stream); }
             if ($database !== null) { if ($transaction) $database->exec('ROLLBACK'); $database->close(); }
@@ -181,6 +191,92 @@ final class ApiJobRecovery
     }
 
     private function verify(SQLite3 $database, array $group): array
+    {
+        $this->observationChecks = [];
+        try { return $this->verifyCurrent($database, $group); }
+        catch (InvalidArgumentException $error) {
+            if (!in_array($error->getMessage(), ['current_ownership_unknown', 'different_resources'], true)
+                || !is_file($this->dataPath) || is_link($this->dataPath)) throw $error;
+            return $this->verifyObserved($database, $group);
+        }
+    }
+
+    /** A missing applied snapshot is never evidence that the router is empty. */
+    private function verifyObserved(SQLite3 $database, array $group): array
+    {
+        $sid = $group['public']['service_id']; $source = $group['public']['source_job_id']; $job = $group['job'];
+        $clientId = $group['public']['client_id']; $snapshots = [];
+        if ($clientId === null || !$job || (int) $job['service_id'] !== $sid
+            || !in_array($job['status'], ['cancelled', 'superseded'], true)) throw new InvalidArgumentException('source_state_changed');
+        if (isset($job['operation']) && !in_array($job['operation'], ['update', 'queues_set'], true))
+            throw new InvalidArgumentException('router_snapshot_incomplete');
+        $sourceSnapshot = $this->payload($job['payload']);
+        if (self::id($sourceSnapshot['id'] ?? null) !== $sid || self::id($sourceSnapshot['clientId'] ?? null) !== $clientId
+            || !in_array($sourceSnapshot['action'] ?? 'update', ['update', 'queues_set'], true)
+            || array_key_exists('_delete_frozen', $sourceSnapshot)) throw new InvalidArgumentException('router_snapshot_incomplete');
+        foreach ($group['rows'] as $row) {
+            $snapshot = $this->payload($row['payload']);
+            if ((int) $row['source_version'] !== (int) $job['version'] || self::id($snapshot['id'] ?? null) !== $sid
+                || self::id($snapshot['clientId'] ?? null) !== $clientId
+                || !hash_equals($row['identity'], $this->resourceIdentity($snapshot))) throw new InvalidArgumentException('source_state_changed');
+            $snapshots[] = $snapshot;
+        }
+        if (isset($sourceSnapshot['_commands'])) {
+            $own = $sourceSnapshot; unset($own['_cleanup']); $snapshots[] = $own;
+        }
+        if (isset($sourceSnapshot['_cleanup']) && empty($job['cleanup_done'])) {
+            if (!is_array($sourceSnapshot['_cleanup'])) throw new InvalidArgumentException('router_snapshot_incomplete');
+            $snapshots[] = $sourceSnapshot['_cleanup'];
+        }
+        // Releasing a cancelled source also releases its prior reservations. Every
+        // prior value must be represented by a retained frozen resource snapshot.
+        $priorOwners = $snapshots;
+        if (empty($job['prior_cleared'])) $priorOwners[] = $sourceSnapshot;
+        foreach ($priorOwners as $priorOwner) {
+            if (!isset($priorOwner['_prior_network'])) continue;
+            if (!is_array($priorOwner['_prior_network'])) throw new InvalidArgumentException('router_snapshot_incomplete');
+            $covered = ['address' => [], 'address6' => []];
+            $priorIdentity = $priorOwner['_prior_identity'] ?? null; $priorKnown = false;
+            foreach ($snapshots as $snapshot) {
+                if (!is_string($priorIdentity) || !hash_equals($priorIdentity, $this->resourceIdentity($snapshot))) continue;
+                $priorKnown = true;
+                $commandsOnly = ['_commands' => $snapshot['_commands'] ?? []];
+                foreach ($this->addresses($commandsOnly) as $field => $values) $covered[$field] = array_merge($covered[$field], $values);
+            }
+            if (array_filter($priorOwner['_prior_network'], static fn($value): bool => $value !== null && $value !== '') && !$priorKnown)
+                throw new InvalidArgumentException('router_snapshot_incomplete');
+            foreach ($priorOwner['_prior_network'] as $field => $value) {
+                if (!in_array($field, ['address', 'address6'], true) || ($value !== null && $value !== ''
+                    && (!is_string($value) || !in_array($value, $covered[$field], true)))) throw new InvalidArgumentException('router_snapshot_incomplete');
+            }
+        }
+        $service = $this->get('clients/services/' . $sid);
+        if (!is_array($service) && !is_object($service)) throw new InvalidArgumentException('crm_unavailable');
+        $service = (array) $service;
+        if (self::id($service['id'] ?? null) !== $sid || self::id($service['clientId'] ?? null) !== $clientId) throw new InvalidArgumentException('crm_identity_changed');
+        if (self::status($service['status'] ?? null) === null) throw new InvalidArgumentException('crm_status_changed');
+        $client = $this->get('clients/' . $clientId);
+        if (!is_array($client) && !is_object($client)) throw new InvalidArgumentException('crm_unavailable');
+        $client = (array) $client;
+        if (self::id($client['id'] ?? null) !== $clientId) throw new InvalidArgumentException('crm_identity_changed');
+        require_once __DIR__ . '/api_job_recovery_observation.php';
+        $observation = (new ApiJobRecoveryObservation($this->dataPath, $this->routerReader, $this->clock))->inspect($snapshots);
+        $this->observationChecks = $observation['checks'];
+        if (!$observation['safe']) throw new InvalidArgumentException($observation['reason']);
+        $versions = $this->query($database, 'SELECT * FROM service_versions WHERE service_id=?', [$sid]);
+        $candidate = $group['public']; $candidate['client_id'] = $clientId;
+        $candidate['client_name'] = $this->clientName($client) ?? $candidate['client_name'];
+        $candidate['crm_status'] = self::status($service['status']);
+        $candidate['client_archived'] = in_array($client['isArchived'] ?? null, [true, 1, '1'], true) ? true
+            : (in_array($client['isArchived'] ?? null, [false, 0, '0'], true) ? false : null);
+        $candidate['checked_at'] = $this->timestamp(); $candidate['resolution'] = 'observed_absent_resources';
+        $candidate['checks'] = $observation['checks'];
+        return ['candidate' => $candidate, 'local_fingerprint' => hash('sha256', self::canonical([
+            'rows' => $group['rows'], 'job' => $job, 'version' => $versions[0] ?? null, 'observation' => $observation['fingerprint']])),
+            'crm_fingerprint' => hash('sha256', self::canonical(['service' => $service, 'client' => $client]))];
+    }
+
+    private function verifyCurrent(SQLite3 $database, array $group): array
     {
         if (is_link($this->legacyPath) || (file_exists($this->legacyPath) && (!is_file($this->legacyPath)
             || filesize($this->legacyPath) > 1048576))) throw new InvalidArgumentException('legacy_queue_present');

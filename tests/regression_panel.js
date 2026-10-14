@@ -956,6 +956,68 @@ async function checkPendingJobsIndicator() {
     assert.equal(recoveryOnly.calls.filter(call => call.target === 'job_recovery').length, 0, 'Global summary must not initialize recovery inventory');
 }
 
+async function checkWarningDismissals() {
+    const envelope = data => ({ status: 'ok', error: false, data });
+    const summary = (extra = {}) => ({ available: true, pending: 0, failed: 0, running: 0, recovery: 2,
+        total: 2, checked_at: '2026-10-14T13:00:00Z', source: 'sqlite', reason: null, ...extra });
+    const report = { available: true, duplicate_groups: 1, conflicts_truncated: false, checked_at: '2026-10-14T13:00:00Z',
+        scan_started_at: null, scan_in_progress: false, last_error: null, stale: false, services_scanned: 2,
+        families: ['IPv4'], unavailable_families: ['IPv6'], coverage_complete: false, source: 'crm_snapshot', warning_only: true,
+        conflicts: [{ family: 'IPv4', address: '192.0.2.77', service_ids: [42, 43], service_count: 2, owners: [
+            { service_id: 42, client_id: 17, service_status: 'Activo', service_url: '/crm/client/service/42', client_url: '/crm/client/17' },
+            { service_id: 43, client_id: 18, service_status: 'Suspendido', service_url: '/crm/client/service/43', client_url: '/crm/client/18' }
+        ] }] };
+    const replies = () => new Map([['list/jobs_status', envelope(summary())], ['list/crm_network_conflicts', envelope(report)]]);
+    const storage = new Map();
+    const fixture = recoveryPanelFixture({ storage, initialReplies: replies() }); await flush();
+    assert.equal(fixture.nodes.get('jobs-pending-warning').style.display, 'flex');
+    const before = fixture.calls.length;
+    for (const id of ['jobs-pending-warning', 'crm-network-warning']) {
+        await fixture.nodes.get('dismiss-' + id).fire('click');
+        assert.equal(fixture.nodes.get(id).style.display, 'none');
+    }
+    assert.equal(fixture.calls.length, before, 'Closing top warnings must not call any business API');
+    assert.equal(fixture.nodes.get('jobs-pending-count').textContent, '2', 'Sidebar counts remain visible after dismissing the large banner');
+    assert.equal(fixture.nodes.get('restore-warnings').textContent, 'Mostrar avisos (2)');
+    assert.equal(fixture.nodes.get('warning-controls').style.display, 'block');
+    const dismissalKey = [...storage.keys()].find(key => key.startsWith('ros-panel-warning-dismissals-v1:'));
+    assert(dismissalKey); assert(storage.get(dismissalKey).length < 1024);
+    assert(!/192\.0\.2|service_id|client_id|13:00|\/42|\/17/.test(storage.get(dismissalKey)), 'Dismissal preferences must not store customer details, addresses or poll timestamps');
+    fixture.reply('list/jobs_status', envelope(summary({ checked_at: '2026-10-14T13:01:00Z' })));
+    fixture.reply('list/crm_network_conflicts', envelope({ ...report, checked_at: '2026-10-14T13:01:00Z' }));
+    await fixture.tick(30000);
+    assert.equal(fixture.nodes.get('jobs-pending-warning').style.display, 'none');
+    assert.equal(fixture.nodes.get('crm-network-warning').style.display, 'none', 'Polling timestamps alone must not reopen a dismissed warning');
+    const reloaded = recoveryPanelFixture({ storage, initialReplies: replies() }); await flush();
+    assert.equal(reloaded.nodes.get('jobs-pending-warning').style.display, 'none');
+    assert.equal(reloaded.nodes.get('crm-network-warning').style.display, 'none', 'Dismissal survives reload in the same tab scope');
+    await reloaded.nodes.get('restore-warnings').fire('click');
+    assert.equal(reloaded.nodes.get('jobs-pending-warning').style.display, 'flex');
+    assert.equal(reloaded.nodes.get('crm-network-warning').style.display, 'flex');
+    assert.equal(reloaded.nodes.get('warning-controls').style.display, 'none');
+    await fixture.nodes.get('dismiss-jobs-pending-warning').fire('click');
+    fixture.reply('list/jobs_status', envelope(summary({ pending: 1, failed: 1, total: 3, checked_at: '2026-10-14T13:02:00Z' })));
+    await fixture.tick(30000);
+    assert.equal(fixture.nodes.get('jobs-pending-warning').style.display, 'flex', 'A new pending/error count must reopen the warning');
+    await fixture.nodes.get('dismiss-jobs-pending-warning').fire('click');
+    fixture.reply('list/jobs_status', { status: 'failed', error: true, message: attack }); await fixture.tick(30000);
+    assert.equal(fixture.nodes.get('jobs-pending-warning').style.display, 'flex', 'A new status-read failure must not remain hidden');
+    fixture.reply('list/jobs_status', envelope(summary({ recovery: 0, total: 0, checked_at: '2026-10-14T13:03:00Z' }))); await fixture.tick(30000);
+    fixture.reply('list/jobs_status', envelope(summary({ checked_at: '2026-10-14T13:04:00Z' }))); await fixture.tick(30000);
+    assert.equal(fixture.nodes.get('jobs-pending-warning').style.display, 'flex', 'An issue that resolved and recurred must reappear');
+    const blocked = recoveryPanelFixture({ storageBlocked: true, initialReplies: replies() }); await flush();
+    await blocked.nodes.get('dismiss-jobs-pending-warning').fire('click'); await blocked.tick(30000);
+    assert.equal(blocked.nodes.get('jobs-pending-warning').style.display, 'none', 'Blocked storage still permits in-memory dismissal');
+    const details = { duplicate_groups: 1, conflicts: [] };
+    const migration = recoveryPanelFixture({ bootstrap: { readOnly: true, details }, details, storage: new Map(), initialReplies: replies() }); await flush();
+    await migration.nodes.get('dismiss-network-warning').fire('click');
+    assert.equal(migration.nodes.get('network-warning').style.display, 'none');
+    assert.equal(migration.nodes.get('btn-run-jobs').disabled, true, 'Closing a migration warning must preserve its existing safety guards');
+    await migration.nodes.get('restore-warnings').fire('click');
+    assert.equal(migration.nodes.get('network-warning').style.display, 'flex');
+    assert(markup.includes('id="dismiss-jobs-pending-warning" aria-label="Cerrar aviso" title="Cerrar aviso"'));
+}
+
 async function checkJobRecoveryResolutionPanel() {
     const envelope = data => ({ status: 'ok', error: false, data });
     const row = { source_job_id: 8, job_id: 'Q8', service_id: 42, client_id: 17, client_name: attack,
@@ -1027,6 +1089,49 @@ async function checkJobRecoveryResolutionPanel() {
     await blocked.nodes.get('refresh-job-recoveries').fire('click');
     assert.match(blocked.nodes.get('job-recovery-list-status').textContent, /No se pudo refrescar.*última lista/);
     assert(!renderedMarkup(blocked.nodes.get('job-recovery-list')).includes('<img'));
+}
+
+async function checkRecoveryObservationPanel() {
+    const envelope = data => ({ status: 'ok', error: false, data });
+    const row = { source_job_id: 8, job_id: 'Q8', service_id: 42, client_id: 17, client_name: 'Cliente de prueba',
+        device_ids: [2], snapshot_count: 1, reason: 'cancelled_resources', created_at: null };
+    const listing = { available: true, groups: [row], total: 1, has_more: false, checked_at: '2026-10-14T13:00:00Z', reason: null };
+    const checks = [{ device_id: 2, path: '/ppp/secret', state: 'absent', selector_type: 'name', identity_hint: 'sha256:123456abcdef', selector_label: attack }];
+    const candidate = { ...row, crm_status: 1, client_archived: false, checked_at: '2026-10-14T13:00:00Z', resolution: 'observed_absent_resources', checks };
+    const preview = { previewToken: 'f'.repeat(64), expiresAt: '2099-10-14T13:00:00Z', candidate, blocked: [], checked_at: '2026-10-14T13:00:00Z' };
+    const fixture = recoveryPanelFixture({ initialReplies: new Map([['list/job_recovery', envelope(listing)], ['recover/job_recovery', envelope(preview)]]) }); await flush(); await fixture.navigate('jobs');
+    assert.equal(fixture.nodes.get('job-recovery-list').children[0].children[3].textContent, 'Comparar con UISP y router');
+    await fixture.nodes.get('job-recovery-list').children[0].children[3].fire('click');
+    assert.equal(fixture.nodes.get('apply-job-recovery').disabled, false);
+    const comparison = fixture.nodes.get('job-recovery-comparison');
+    assert.match(comparison.children[3].textContent, /ya no están.*consultará de nuevo/);
+    assert.equal(comparison.children[4].children[1].textContent, 'Equipo #2 · /ppp/secret · No encontrado');
+    assert.equal(comparison.children[4].children[2].textContent, 'Identificador name: ' + attack);
+    assert(!renderedMarkup(comparison).includes('<img'), 'Router selectors must remain plain text');
+    assert.equal(fixture.calls.filter(call => ['update', 'repair', 'recover'].includes(call.changeType) && call.action !== 'preview').length, 0, 'Review must not execute or delete router resources');
+    const backup = 'jobs-recovery-20261014T130000Z-' + 'f'.repeat(32) + '.sqlite';
+    fixture.reply('recover/job_recovery', envelope({ resolved: [{ source_job_id: 8, service_id: 42, snapshot_count: 1, resolution: 'observed_absent_resources' }], backup_name: backup,
+        checked_at: '2026-10-14T13:00:00Z', router_changes: false, crm_changes: false }));
+    fixture.reply('list/job_recovery', envelope({ ...listing, groups: [], total: 0 }));
+    const applying = fixture.nodes.get('apply-job-recovery').fire('click'); await flush();
+    const overlay = fixture.document.body.children.find(node => node.className === 'confirm-overlay');
+    assert.match(overlay.children[0].children[0].textContent, /comprobará de nuevo.*sólo sus registros locales/);
+    await overlay.children[0].children[1].children[1].fire('click'); await applying;
+    assert.match(fixture.nodes.get('job-recovery-result').children[2].textContent, /recursos anteriores ya no estaban.*registros locales/);
+
+    const blocked = recoveryPanelFixture({ initialReplies: new Map([['list/job_recovery', envelope(listing)], ['recover/job_recovery', envelope({ ...preview, previewToken: null, expiresAt: null, candidate: null,
+        blocked: [{ source_job_id: 8, service_id: 42, reason: 'router_resources_present', checks: [{ ...checks[0], state: 'present' }] }] })]]) }); await flush(); await blocked.navigate('jobs');
+    await blocked.nodes.get('job-recovery-list').children[0].children[3].fire('click');
+    assert.equal(blocked.nodes.get('apply-job-recovery').disabled, true);
+    assert.match(blocked.nodes.get('job-recovery-comparison').children[1].textContent, /aún conserva.*no los elimina/);
+    assert.match(blocked.nodes.get('job-recovery-comparison').children[2].children[1].textContent, /Presente en el router/);
+    assert.equal(blocked.nodes.get('recheck-job-recovery').disabled, false);
+    for (const badChecks of [[{ ...checks[0], path: attack }], [{ ...checks[0], state: 'present' }], [], Array(61).fill(checks[0]), [{ ...checks[0], selector_label: '\u0000' }]]) {
+        blocked.reply('recover/job_recovery', envelope({ ...preview, candidate: { ...candidate, checks: badChecks } }));
+        await blocked.nodes.get('recheck-job-recovery').fire('click');
+        assert.equal(blocked.nodes.get('apply-job-recovery').disabled, true, 'Malformed/inconclusive router evidence must never enable recovery resolution');
+        assert.match(blocked.nodes.get('job-recovery-status').textContent, /Respuesta inválida/);
+    }
 }
 
 async function checkInvalidReservationRepairPanel() {
@@ -1112,6 +1217,22 @@ async function checkInvalidReservationRepairPanel() {
     assert.match(identityBlock.children[1].textContent, /no cambia la identidad ni elimina reservas/);
     assert.equal(identityBlock.children[2].href, 'https://fixture.invalid/crm/client/service/42');
     assert.match(identityBlock.children[3].textContent, /Verificado:/);
+    jobFixture.reply('repair/network_repair', envelope({ previewToken: null, expiresAt: null, candidates: [], blocked: [{ service_id: 42, reason: 'pending_address_changed',
+        diagnostics: { local_client_id: null, cached_client_id: 17, crm_client_id: 17, checked_at: '2026-10-14T13:00:00Z', queue_jobs: [
+            { job_id: 'Q1', status: 'pending', reason: 'pending_address_changed' }, { job_id: 'Q2', status: 'cancelled', reason: 'pending_address_changed' },
+            { job_id: attack, status: 'pending', reason: attack }
+        ] } }], api_requests: 2 }));
+    await jobFixture.nodes.get('recheck-network-repair').fire('click');
+    const queueBlock = jobFixture.nodes.get('network-repair-comparison').children[0];
+    assert.equal(queueBlock.children[2].children[0].textContent, 'Trabajo Q1 · Pendiente');
+    assert.equal(queueBlock.children[3].children[0].textContent, 'Trabajo Q2 · Cancelado');
+    assert.match(queueBlock.children[3].children[1].textContent, /ya no se ejecuta/);
+    assert.equal(queueBlock.children[3].children.length, 2, 'Cancelled jobs must not be offered as executable pending jobs');
+    const callsBeforeReview = jobFixture.calls.filter(call => ['update', 'repair', 'recover'].includes(call.changeType)).length;
+    await queueBlock.children[2].children[2].fire('click'); await flush();
+    assert.equal(jobFixture.nodes.get('view-jobs').style.display, 'block');
+    assert.equal(jobFixture.tables.get('#jobs-table tbody').children[0].querySelector('.job-checkbox').checked, true, 'Review job opens Jobs and selects only the requested pending QID');
+    assert.equal(jobFixture.calls.filter(call => ['update', 'repair', 'recover'].includes(call.changeType)).length, callsBeforeReview, 'Review job must neither execute, cancel nor modify any job');
     const invalidJobFixture = recoveryPanelFixture({ initialReplies: new Map([['list/jobs', envelope({ Q1: { serviceId: 43, error: 'invalid_network_address: requested_service=99 blocking_service=42 source=reserved family=IPv4' },
         Q2: { serviceId: 43, error: 'invalid_network_address: requested_service=43 blocking_service=42 source=applied family=IPv4' },
         Q3: { serviceId: 43, error: 'invalid_network_address: requested_service=43 blocking_service=42 source=reserved family=IPv4' + attack } })]]) }); await flush(); await invalidJobFixture.navigate('jobs');
@@ -2058,8 +2179,8 @@ async function checkNetworkRecoveryPanel() {
     assert.deepEqual(plain(healthy.diagnostics()[0].data), {}, 'Reactive recovery reads must not request live CRM verification');
     const malformed = recoveryPanelFixture({ bootstrap: '{', details }); await flush();
     assert.equal(malformed.nodes.get('btn-cache').disabled, false, 'An invalid optional bootstrap must not break normal navigation');
-    assert.equal((markup.match(/(?:src|href)="(?:js|css)\/[^"?]+\?v=2\.0\.45"/g) || []).length, 5, 'Every panel asset must use the new revision to invalidate UISP browser caches');
-    assert(!markup.includes('v=2.0.44'));
+    assert.equal((markup.match(/(?:src|href)="(?:js|css)\/[^"?]+\?v=2\.0\.46"/g) || []).length, 5, 'Every panel asset must use the new revision to invalidate UISP browser caches');
+    assert(!markup.includes('v=2.0.45'));
     assert(apiSource.includes("'alert-triangle':"), 'The conflict warning must have its own local warning icon');
 }
 
@@ -3598,7 +3719,9 @@ async function checkLanguagePresentation() {
     await checkJobsRefresh();
     await checkNonblockingDeviceSync();
     await checkPendingJobsIndicator();
+    await checkWarningDismissals();
     await checkJobRecoveryResolutionPanel();
+    await checkRecoveryObservationPanel();
     await checkInvalidReservationRepairPanel();
     await checkCrmNetworkMonitorPanel();
     await checkCrmNetworkResolutionPanel();

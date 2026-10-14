@@ -175,6 +175,11 @@ th.sortable:hover, th.sortable.asc, th.sortable.desc { color: var(--link); }
 .network-warning strong { display: block; margin-bottom: 3px; font-size: 0.84rem; }
 .network-warning p { font-size: 0.77rem; line-height: 1.5; }
 .network-warning .btn { flex-shrink: 0; background: transparent; color: var(--warning-text); border-color: var(--warning-border); }
+.warning-dismiss { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 34px; height: 34px; padding: 6px; border: 1px solid transparent; border-radius: 6px; background: transparent; color: inherit; cursor: pointer; }
+.warning-dismiss svg { width: 18px; height: 18px; }
+.warning-dismiss:hover, .warning-dismiss:focus-visible { border-color: var(--warning-border); background: var(--surface-subtle); }
+.warning-controls { margin: 10px 22px 0; text-align: right; flex-shrink: 0; }
+.warning-controls .btn { padding: 5px 10px; font-size: 0.75rem; }
 .crm-network-warning small { display: block; margin-top: 5px; font-size: 0.7rem; line-height: 1.5; }
 .jobs-warning small { display: block; margin-top: 5px; font-size: 0.7rem; line-height: 1.5; }
 .invalid-reservations-pane { margin-bottom: 28px; }
@@ -183,6 +188,12 @@ th.sortable:hover, th.sortable.asc, th.sortable.desc { color: var(--link); }
 .job-recovery-section .conflicts-heading h3 { font-size: 0.95rem; }
 .job-recovery-section .repair-list-item { background: var(--bg-card); }
 .job-recovery-meta { display: flex; gap: 8px; flex-wrap: wrap; margin: 10px 0; font-size: 0.78rem; color: var(--text-muted); }
+.recovery-resource-checks { padding: 12px; border: 1px solid var(--border); border-radius: 6px; overflow-wrap: anywhere; }
+.recovery-resource-checks strong { font-size: 0.8rem; }
+.recovery-resource-checks p { margin: 8px 0 0; }
+.repair-queue-job { padding: 10px; border: 1px solid var(--border); border-radius: 6px; margin-top: 8px; }
+.repair-queue-job p { margin: 8px 0; }
+.job-review-target { outline: 2px solid var(--primary); outline-offset: -2px; }
 .repair-list-item { padding: 13px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-subtle); }
 .repair-family { display: flex; align-items: start; justify-content: space-between; gap: 12px; margin-top: 10px; }
 .repair-family .btn { flex-shrink: 0; }

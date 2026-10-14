@@ -201,10 +201,30 @@ try {
         repairJob($blockedCase,11,['id'=>11,'clientId'=>999,'address'=>'192.0.2.11']);
         repairSql($blockedCase['jobs'],"UPDATE jobs SET status='" . $terminalState . "'");
         repairBlocked($factory($blockedCase),$choose11,'pending_identity_changed');
-        $reset(); $blockedCase=repairFixture($root,$terminalState . '-desired');
-        repairJob($blockedCase,11,['id'=>11,'clientId'=>111,'address'=>'192.0.2.99']);
-        repairSql($blockedCase['jobs'],"UPDATE jobs SET status='" . $terminalState . "'");
-        repairBlocked($factory($blockedCase),$choose11,'pending_address_changed');
+        foreach (['192.0.2.99','PRIVATE-OBSOLETE-INTENT'] as $obsoleteDesired) {
+            $reset(); $obsoleteCase=repairFixture($root,$terminalState . '-desired-' . substr(hash('sha256',$obsoleteDesired),0,8));
+            repairSql($obsoleteCase['data'],'UPDATE services SET clientId=NULL WHERE id=11');
+            repairSql($obsoleteCase['cache'],'INSERT INTO services VALUES(11,111)');
+            repairJob($obsoleteCase,11,['id'=>11,'clientId'=>111,'address'=>$obsoleteDesired,
+                'network'=>['address'=>$obsoleteDesired], '_prior_network'=>['address'=>'PRIVATE-INVALID-ONE']]);
+            repairSql($obsoleteCase['jobs'],"UPDATE jobs SET status='" . $terminalState . "'");
+            $obsoleteApi=$factory($obsoleteCase); $obsoleteHash=hash_file('sha256',$obsoleteCase['jobs']);
+            $obsoletePreview=$obsoleteApi->preview($choose11);
+            repairCheck(count($obsoletePreview['candidates'])===1 && $obsoletePreview['candidates'][0]['pending_jobs']===0,
+                'Inert ' . $terminalState . ' desired IP was treated as pending despite exact cache/CRM identity');
+            $obsoleteApi->apply($obsoletePreview['previewToken']);
+            repairCheck(hash_file('sha256',$obsoleteCase['jobs'])===$obsoleteHash
+                && repairRows($obsoleteCase['data'])['network'][0]['address']==='192.0.2.11'
+                && repairRows($obsoleteCase['data'])['services'][0]['clientId']===null,
+                'Obsolete cancelled intent was rewritten/revived or local identity was invented');
+        }
+        foreach (['192.0.2.99','PRIVATE-UNREVIEWED-PRIOR'] as $protectedPrior) {
+            $reset(); $protectedCase=repairFixture($root,$terminalState . '-protected-prior-' . substr(hash('sha256',$protectedPrior),0,8));
+            repairJob($protectedCase,11,['id'=>11,'clientId'=>111,'address'=>'PRIVATE-OBSOLETE-INTENT',
+                '_prior_network'=>['address'=>$protectedPrior]]);
+            repairSql($protectedCase['jobs'],"UPDATE jobs SET status='" . $terminalState . "'");
+            repairBlocked($factory($protectedCase),$choose11,'queue_recovery');
+        }
     }
 
     foreach (['address_in_use','valid_local_reservation','pending_address_changed','pending_identity_changed','queue_recovery','applied_ownership',
@@ -225,6 +245,11 @@ try {
         }
         $baseline = repairRows($case['data']); $hash = hash_file('sha256',$case['jobs']);
         repairBlocked($caseApi,$choose11,$reason);
+        if ($reason==='pending_address_changed') {
+            $diagnostic=$caseApi->preview($choose11)['blocked'][0]['diagnostics']['queue_jobs']??[];
+            repairCheck($diagnostic===[['job_id'=>'Q1','status'=>'pending','reason'=>'pending_address_changed']]
+                && !str_contains(json_encode($diagnostic),'192.0.2.99'), 'Pending blocker did not identify its job/state safely');
+        }
         repairCheck(repairRows($case['data']) === $baseline && hash_file('sha256',$case['jobs']) === $hash, 'Blocked repair changed operational state');
     }
     $reset(); $case = repairFixture($root,'crm-collision'); $collection[] = $service(91,'192.0.2.11',null);

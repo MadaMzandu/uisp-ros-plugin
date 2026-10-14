@@ -13,8 +13,8 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     
     <!-- Custom CSS -->
-    <script src="js/theme.js?v=2.0.45"></script>
-    <link rel="stylesheet" href="css/style.css?v=2.0.45">
+    <script src="js/theme.js?v=2.0.46"></script>
+    <link rel="stylesheet" href="css/style.css?v=2.0.46">
 </head>
 <body>
 
@@ -84,6 +84,10 @@
                 </div>
             </header>
 
+            <div class="warning-controls" id="warning-controls" style="display: none;">
+                <button type="button" class="btn btn-secondary" id="restore-warnings" data-i18n="Mostrar avisos">Mostrar avisos</button>
+            </div>
+
             <aside class="network-warning" id="network-warning" role="status" style="display: none;">
                 <i data-feather="alert-triangle"></i>
                 <div class="network-warning-copy">
@@ -91,6 +95,7 @@
                     <p id="network-warning-note" data-i18n="Puedes consultar el plugin. Los cambios y la sincronización están pausados hasta corregir las IP duplicadas.">Puedes consultar el plugin. Los cambios y la sincronización están pausados hasta corregir las IP duplicadas.</p>
                 </div>
                 <button type="button" class="btn btn-secondary" id="btn-view-conflicts" data-i18n="Revisar">Revisar</button>
+                <button type="button" class="warning-dismiss" id="dismiss-network-warning" aria-label="Cerrar aviso" title="Cerrar aviso" data-i18n-aria-label="Cerrar aviso" data-i18n-title="Cerrar aviso"><i data-feather="x"></i></button>
             </aside>
 
             <aside class="network-warning crm-network-warning" id="crm-network-warning" role="status" style="display: none;">
@@ -101,6 +106,7 @@
                     <small id="crm-network-warning-freshness"></small>
                 </div>
                 <button type="button" class="btn btn-secondary" id="btn-view-crm-conflicts" data-i18n="Revisar">Revisar</button>
+                <button type="button" class="warning-dismiss" id="dismiss-crm-network-warning" aria-label="Cerrar aviso" title="Cerrar aviso" data-i18n-aria-label="Cerrar aviso" data-i18n-title="Cerrar aviso"><i data-feather="x"></i></button>
             </aside>
             <aside class="network-warning jobs-warning" id="jobs-pending-warning" role="status" style="display: none;">
                 <i data-feather="alert-triangle"></i>
@@ -110,6 +116,7 @@
                     <small id="jobs-pending-freshness"></small>
                 </div>
                 <button type="button" class="btn btn-secondary" id="btn-view-pending-jobs" data-i18n="Revisar">Revisar</button>
+                <button type="button" class="warning-dismiss" id="dismiss-jobs-pending-warning" aria-label="Cerrar aviso" title="Cerrar aviso" data-i18n-aria-label="Cerrar aviso" data-i18n-title="Cerrar aviso"><i data-feather="x"></i></button>
             </aside>
             
             <div class="content-area" id="content-area">
@@ -385,7 +392,7 @@
         <div class="modal crm-ip-edit-dialog">
             <div class="modal-header"><h3 id="job-recovery-title" data-i18n="Revisar recuperación">Revisar recuperación</h3><button type="button" class="close-modal" aria-label="Cerrar" data-i18n-aria-label="Cerrar"><i data-feather="x"></i></button></div>
             <div class="modal-body">
-                <p class="form-note" data-i18n="Se compararán los registros conservados con el estado aplicado guardado y se comprobarán la identidad y el estado en UISP. Sólo se resolverán copias redundantes; los servicios, las IP, las velocidades y los routers se conservarán.">Se compararán los registros conservados con el estado aplicado guardado y se comprobarán la identidad y el estado en UISP. Sólo se resolverán copias redundantes; los servicios, las IP, las velocidades y los routers se conservarán.</p>
+                <p class="form-note" data-i18n="Se comprobarán UISP y los registros actuales. Si hace falta, se consultará el router sin modificarlo. Sólo se retirarán registros locales redundantes o cuyos recursos ya no existan; los servicios actuales se conservarán.">Se comprobarán UISP y los registros actuales. Si hace falta, se consultará el router sin modificarlo. Sólo se retirarán registros locales redundantes o cuyos recursos ya no existan; los servicios actuales se conservarán.</p>
                 <p id="job-recovery-status" class="form-note" role="status" aria-live="polite"></p>
                 <div id="job-recovery-comparison" class="repair-list"></div>
                 <section id="job-recovery-result" class="crm-ip-result" role="status" aria-live="polite" tabindex="-1" style="display: none;"></section>
@@ -704,8 +711,8 @@
     </div>
 
     <!-- Scripts -->
-    <script src="js/i18n.js?v=2.0.45"></script>
-    <script src="js/api.js?v=2.0.45"></script>
-    <script src="js/app.js?v=2.0.45"></script>
+    <script src="js/i18n.js?v=2.0.46"></script>
+    <script src="js/api.js?v=2.0.46"></script>
+    <script src="js/app.js?v=2.0.46"></script>
 </body>
 </html>

@@ -2,6 +2,18 @@
 
 [Complete English changelog](docs/CHANGELOG_EN.md) · [Texto completo para el PR](docs/PR_DESCRIPTION.md) · [Webhook setup and rationale](docs/WEBHOOK_SETUP_EN.md) · [Mejoras en español](docs/MEJORAS.md)
 
+## Candidato 2.4.31 — cerrar avisos y corregir reservas retenidas por trabajos cancelados
+
+Los tres avisos superiores tienen **Cerrar aviso** y se pueden recuperar con **Mostrar avisos**. El cierre se conserva durante la pestaña mediante cantidades y estados generales; no guarda IP, clientes ni credenciales. No reaparece en cada sondeo ni al navegar. Cambios relevantes de cantidad/error o la desaparición y reaparición del problema vuelven a mostrarlo. Los contadores laterales, la consulta de detalles y las protecciones de una migración pausada siguen vigentes.
+
+La corrección local distingue un trabajo pendiente de una intención cancelada o sustituida. Una actualización cancelada sin comandos preparados ni deuda no bloquea sólo porque su IP solicitada sea antigua o malformada. Conserva íntegros el trabajo y sus reservas válidas; continúa comprobando cliente, identidad anterior, propiedad aplicada y la familia seleccionada. Una intención pendiente diferente sigue protegida y muestra su ID y estado, con acceso para revisarla. El flujo no revive, reescribe ni ejecuta trabajos cancelados. La regresión con la cola real comprueba que, tras corregir las fuentes inválidas, otro servicio vuelve a ejecutarse y los cancelados permanecen sin intentar.
+
+**Comparar con UISP y router** conserva la resolución anterior de copias redundantes y añade observación de los recursos retenidos cuando no basta el estado aplicado guardado. Las consultas RouterOS son sólo `print`, con filtros exactos y propiedades limitadas: no provisionan, adoptan, eliminan ni desconectan cuentas. Comprueba el mismo destino configurado y usa sus credenciales actuales. Muestra equipo, ruta, selector y resultado presente/ausente/sin comprobar. Sólo ofrece resolver por ausencia cuando todos los recursos y reservas anteriores estén representados y se hayan observado ausentes; vuelve a consultar bajo los bloqueos antes de confirmar, respalda `jobs.db` y marca únicamente ese trabajo cancelado como limpiado. El estado aplicado, CRM y routers permanecen intactos. Objetos presentes, perfiles compartidos, destino cambiado, historial incompleto y fallos de lectura siguen protegidos; una comprobación parcial no prueba ausencia. No hay una cola oculta que vuelva a ejecutar las operaciones eliminadas.
+
+Los generadores, vistas previas, capturas y reportes antiguos se retiran del directorio de trabajo. El instalador histórico del repositorio se sustituye por el actual; las herramientas reproducibles, pruebas, código, documentación y dependencias de ejecución se conservan. En `dist` quedan los archivos de entrega y comprobación actuales, con sus capturas en una carpeta propia.
+
+Validación 2.4.31 aprobada: **40 suites aisladas**, sintaxis de **52 archivos PHP propios** y verificación del instalador de 364 entradas, 131 archivos propios y 13 dependencias fijadas. Informe actual: `dist/verification-2.4.31.json`. SHA-256: `48da9d4bd968068f1e85323ae63c39409f98e85ce1b7bad78fefb34306824cab`. Las pruebas de navegador usan datos ficticios; no se realizaron cambios en CRM ni RouterOS de producción.
+
 ## Candidato 2.4.30 — revisar recuperaciones y aclarar los cambios rechazados por UISP
 
 El indicador distingue trabajos ejecutables de recuperaciones conservadas: una cola vacía con registros cancelados muestra **Recuperaciones pendientes**, y un estado mixto muestra **Trabajos y recuperaciones**. **Revisar** abre la sección **Servicios en recuperación** dentro de Trabajos, con servicio, cliente conocido, trabajo original y equipos. La lista se consulta localmente sin inicializar la cola ni contactar CRM/router; una lectura fallida no se presenta como lista vacía comprobada.
@@ -227,10 +239,10 @@ La segunda revisión corrige además propiedad de cuentas/colas padre, hidrataci
 Para verificar el candidato después de instalar dependencias y construir el ZIP:
 
 ```text
-python tools/verify_plugin.py --php RUTA_PHP --node RUTA_NODE --archive dist/ros-plugin-2.4.30-candidate.zip --output dist/verification-2.4.30.json
+python tools/verify_plugin.py --php RUTA_PHP --node RUTA_NODE --archive dist/ros-plugin-2.4.31-candidate.zip --output dist/verification-2.4.31.json
 ```
 
-En Windows sin configuración PHP, añadir `--extension-dir RUTA_EXT`. El verificador ejecuta las suites y comprueba sintaxis PHP, correspondencia del código/dependencias y exclusión de datos/fixtures del instalador. El estado de validación de 2.4.30 se indica al principio. Para construirlo: `python tools/build_plugin.py --vendor-dir src/vendor --output dist/ros-plugin-2.4.30-candidate.zip`.
+En Windows sin configuración PHP, añadir `--extension-dir RUTA_EXT`. El verificador ejecuta las suites y comprueba sintaxis PHP, correspondencia del código/dependencias y exclusión de datos/fixtures del instalador. El estado de validación de 2.4.31 se indica al principio. Para construirlo: `python tools/build_plugin.py --vendor-dir src/vendor --output dist/ros-plugin-2.4.31-candidate.zip`.
 
 Si una migración queda pendiente por IP duplicadas, usar **Conflictos de IP → Revisar limpieza** para comprobar las reservas obsoletas elegibles, revisar los motivos y confirmar únicamente la selección aprobada. Los trabajos pendientes, la recuperación pendiente y el estado aplicado de una cuenta protegen sus reservas; limpiar IP no retira recursos del router. Conservar el respaldo privado generado, que permanece descargable desde **Sistema** después de recargar. Tras resolver el último conflicto, recargar el panel para completar la migración antes de reanudar las demás escrituras.
 
@@ -244,7 +256,7 @@ CRM, NMS y autenticación utilizan límites de 15 segundos por petición y 5 por
 
 Los trabajos completados conservan sólo un resumen sin credenciales; las filas históricas se purgan a los 30 días y los recibos mínimos mantienen la deduplicación de eventos. Las instantáneas pendientes y del estado realmente aplicado conservan los datos necesarios para recuperar operaciones. Los bloqueos de petición se comparten entre cron y FPM y protegen también la restauración frente a escrituras administrativas. Detener workers y entregas de la versión anterior al actualizar; sus filas `running` sin bloqueo nuevo mantienen recuperación conservadora por PID.
 
-La guía de pruebas y recuperación se entrega junto al instalador en `dist/pruebas-reales-2.4.7.html`. Los controles antiguos sin consumidor efectivo (`hs_enable`, `unsuspend_date_fix`, `unsuspend_fix_wait`) se ocultan en el panel; sus valores históricos se conservan.
+La guía de pruebas y recuperación se entrega junto al instalador en `docs/PRUEBAS_REALES.md`. Los controles antiguos sin consumidor efectivo (`hs_enable`, `unsuspend_date_fix`, `unsuspend_fix_wait`) se ocultan en el panel; sus valores históricos se conservan.
 
 Este paquete requiere validar la integración en una copia de UISP y routers CHR antes de instalarlo en producción. Las regresiones locales usan bases temporales y transportes simulados. No sustituyen la prueba de los webhooks, certificados y reglas de firewall de una instalación real.
 

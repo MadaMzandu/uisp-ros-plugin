@@ -118,7 +118,57 @@ try {
     $blocked=$repair->preview([['serviceId'=>599,'fields'=>['address']]]);
     repairBatchCheck($blocked['previewToken']===null && $blocked['blocked'][0]['reason']==='applied_ownership',
         'A fresh CRM absence released an actually applied current IP');
-    echo "Network repair Batch passed: two actual malformed-prior pending updates repaired separately, queue/RouterOS unchanged during repair, ordinary retry applies intended plan/status/IP, exact current applied IP restoration and no applied-address release.\n";
+    // A failed old intent can be cancelled after its requested IP was corrected
+    // in CRM. It must stay cancelled and immutable, but its obsolete requested
+    // value must not strand the independently verified malformed local row.
+    $apiSqlite->edit(['id'=>599,'address'=>'192.0.2.199'],'network');
+    $services[599]['attributes'][0]['value']='192.0.2.199'; $apiSqliteCache->edit(['id'=>599,'address'=>'192.0.2.199'],'network');
+    $cancelledKeys=[];
+    foreach ([595=>'PRIVATE-OBSOLETE-REQUEST',594=>'192.0.2.94'] as $id=>$obsoleteAddress) {
+        $newAddress='192.0.2.'.($id-400);
+        $apiSqlite->insert(['id'=>$id,'clientId'=>null,'device'=>21,'planId'=>1,'status'=>1],'services');
+        $apiSqlite->insert(['id'=>$id,'address'=>'PRIVATE-MALFORMED-'.$id,'address6'=>'2001:db8:'.$id.'::/64'],'network');
+        $apiSqliteCache->insert(['id'=>$id,'clientId'=>71,'device'=>21,'planId'=>1,'status'=>1,'username'=>'fixture-'.$id,
+            'uploadSpeed'=>7,'downloadSpeed'=>21],'services');
+        $apiSqliteCache->insert(['id'=>$id,'address'=>$newAddress,'address6'=>'2001:db8:'.$id.'::/64'],'network');
+        $cancelledKeys[]=$apiJobQueue->enqueue(['id'=>$id,'clientId'=>71,'device'=>21,'username'=>'fixture-'.$id,
+            'address'=>$obsoleteAddress,'network'=>['address'=>$obsoleteAddress],
+            '_prior_network'=>['address'=>'PRIVATE-MALFORMED-'.$id,'address6'=>'2001:db8:'.$id.'::/64']]);
+        $services[$id]=['id'=>$id,'clientId'=>71,'status'=>1,'attributes'=>[
+            ['key'=>'fixture_ip','customAttributeId'=>1,'value'=>$newAddress],
+            ['key'=>'fixture_ip6','customAttributeId'=>2,'value'=>'2001:db8:'.$id.'::/64']]];
+    }
+    repairBatchCheck(!in_array(false,$apiJobQueue->delete($cancelledKeys),true),'Real queue did not cancel stale intents');
+    $cancelledReserved=$apiJobQueue->reservedAddresses();
+    repairBatchCheck(!array_intersect([594,595],array_column($cancelledReserved,'id')),
+        'Cancelled unprepared desired or malformed prior unexpectedly became an allocated IPv4 reservation');
+    $reserved6Before=$apiJobQueue->reservedAddresses(true);
+    repairBatchCheck(count(array_intersect([594,595],array_column($reserved6Before,'id')))===2,
+        'Valid other-family cancelled prior reservations were dropped');
+    $apiSqliteCache->insert(['id'=>603,'clientId'=>71,'device'=>21,'planId'=>1,'status'=>1,'username'=>'fixture-603',
+        'password'=>'fixture','uploadSpeed'=>7,'downloadSpeed'=>21],'services');
+    $apiSqliteCache->insert(['id'=>603,'address'=>'192.0.2.203'],'network');
+    $cancelledWriteCount=count(MT::$writes);
+    repairBatchCheck(!(new Batch())->set_accounts([603]),'Unrelated new service bypassed remaining malformed local rows');
+    $unrelatedKeys=array_column($apiJobQueue->list(),'jobId'); $cancelledBefore=repairBatchState();
+    foreach ([595,594] as $id) {
+        $preview=$repair->preview([['serviceId'=>$id,'fields'=>['address']]]);
+        repairBatchCheck(count($preview['candidates'])===1 && $preview['candidates'][0]['pending_jobs']===0,
+            'Cancelled stale desired IP blocked fresh identity-verified local repair: '.json_encode($preview));
+        $repair->apply($preview['previewToken']);
+        repairBatchCheck(hash_file('sha256','data/jobs.db')===$cancelledBefore['queue_hash']
+            && count(MT::$writes)===$cancelledWriteCount && $apiJobQueue->reservedAddresses(true)===$reserved6Before,
+            'Cancelled-intent repair modified job history, router, or a valid other-family prior');
+    }
+    $unrelatedRun=$apiJobQueue->runSelected($unrelatedKeys);
+    repairBatchCheck(count($unrelatedRun)===1 && reset($unrelatedRun)['success']===true,
+        'Malformed cancelled prior kept blocking an unrelated service after exact local correction');
+    $cancelledRun=$apiJobQueue->runSelected($cancelledKeys);
+    repairBatchCheck(!array_filter($cancelledRun,static fn($row)=>$row['attempted']??false),
+        'Repair made a cancelled stale intent executable');
+    repairBatchCheck(!array_filter(array_slice(MT::$writes,$cancelledWriteCount),static fn($row)=>in_array(
+        $row['command']['name']??null,['fixture-594','fixture-595'],true)), 'Cancelled accounts were provisioned by recovery');
+    echo "Network repair Batch passed: malformed pending and cancelled stale-intent repairs preserve queue/RouterOS and valid sibling reservations; ordinary unrelated retry resumes without reviving cancelled jobs; current applied ownership and configured plan/status remain protected.\n";
 } finally {
     if(isset($apiJobQueue)) $apiJobQueue->close(); if(isset($apiSqlite)) $apiSqlite->close(); if(isset($apiSqliteCache)) $apiSqliteCache->close();
     chdir($original); set_include_path($originalInclude);
