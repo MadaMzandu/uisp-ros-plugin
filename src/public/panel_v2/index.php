@@ -13,8 +13,8 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     
     <!-- Custom CSS -->
-    <script src="js/theme.js?v=2.0.50"></script>
-    <link rel="stylesheet" href="css/style.css?v=2.0.50">
+    <script src="js/theme.js?v=2.0.51"></script>
+    <link rel="stylesheet" href="css/style.css?v=2.0.51">
 </head>
 <body>
 
@@ -48,6 +48,10 @@
                 <a href="#" class="nav-item" data-view="system">
                     <i data-feather="cpu"></i>
                     <span data-i18n="Sistema">Sistema</span>
+                </a>
+                <a href="#" class="nav-item" data-view="diagnostics">
+                    <i data-feather="search"></i>
+                    <span data-i18n="Diagnóstico por servicio">Diagnóstico por servicio</span>
                 </a>
                 <a href="#" class="nav-item conflict-nav" data-view="network_conflicts" id="network-conflicts-nav">
                     <i data-feather="alert-triangle"></i>
@@ -277,6 +281,20 @@
                     </form>
                 </div>
 
+                <section id="view-diagnostics" class="view-section" style="display: none;">
+                    <section class="system-panel">
+                        <h2 data-i18n="Diagnóstico por servicio">Diagnóstico por servicio</h2>
+                        <p class="form-note" data-i18n="Compara UISP, el estado previsto del plugin y la cuenta del router sin modificar el servicio.">Compara UISP, el estado previsto del plugin y la cuenta del router sin modificar el servicio.</p>
+                        <form id="service-diagnostic-search" class="operations-search">
+                            <label for="service-diagnostic-query" data-i18n="Servicio, cliente, usuario o IP">Servicio, cliente, usuario o IP</label>
+                            <div class="operations-search-controls"><input id="service-diagnostic-query" type="search" class="form-control" maxlength="160" autocomplete="off" required><button type="submit" class="btn btn-primary" data-i18n="Buscar">Buscar</button></div>
+                        </form>
+                        <p id="service-diagnostic-status" class="form-note" role="status" aria-live="polite"></p>
+                        <div id="service-diagnostic-results" class="operations-search-results"></div>
+                    </section>
+                    <section id="service-diagnostic-detail" class="system-panel" style="display: none;" aria-live="polite" tabindex="-1"></section>
+                </section>
+
                 <!-- View Jobs -->
         <section id="view-jobs" class="view-section" style="display: none;">
             <div class="panel">
@@ -324,10 +342,20 @@
                     <div class="repair-list" id="job-retained-list"></div>
                 </div>
             </section>
+            <section class="system-panel operations-results" aria-labelledby="provisioning-results-title">
+                <div class="conflicts-heading"><div><h3 id="provisioning-results-title" data-i18n="Resultados recientes">Resultados recientes</h3><p class="form-note" data-i18n="La confirmación consulta el router. Verificar de nuevo no repite los cambios ni las reconexiones.">La confirmación consulta el router. Verificar de nuevo no repite los cambios ni las reconexiones.</p></div><button type="button" id="refresh-provisioning-results" class="btn btn-secondary" data-i18n="Refrescar">Refrescar</button></div>
+                <p id="provisioning-results-status" class="form-note" role="status" aria-live="polite"></p>
+                <div id="provisioning-results-list" class="operations-result-grid"></div>
+            </section>
         </section>
 
         <!-- View System -->
         <section id="view-system" class="view-section" style="display: none;">
+            <section class="system-panel" aria-labelledby="automation-health-title">
+                <div class="conflicts-heading"><div><h2 id="automation-health-title" data-i18n="Salud de la automatización">Salud de la automatización</h2><p class="form-note" data-i18n="Actividad observada del proceso automático, webhooks y cola. Una ejecución manual no cuenta como ejecución programada.">Actividad observada del proceso automático, webhooks y cola. Una ejecución manual no cuenta como ejecución programada.</p></div><button type="button" id="refresh-automation-health" class="btn btn-secondary" data-i18n="Refrescar">Refrescar</button></div>
+                <p id="automation-health-status" class="form-note" role="status" aria-live="polite"></p>
+                <div id="automation-health-content" class="automation-health-grid"></div>
+            </section>
             <div class="system-panel">
                 <h4 class="section-title" data-i18n="Información del sistema">Información del sistema</h4>
                 <div id="system-info-container" class="system-grid">
@@ -718,8 +746,9 @@
     </div>
 
     <!-- Scripts -->
-    <script src="js/i18n.js?v=2.0.50"></script>
-    <script src="js/api.js?v=2.0.50"></script>
-    <script src="js/app.js?v=2.0.50"></script>
+    <script src="js/i18n.js?v=2.0.51"></script>
+    <script src="js/api.js?v=2.0.51"></script>
+    <script src="js/operations.js?v=2.0.51"></script>
+    <script src="js/app.js?v=2.0.51"></script>
 </body>
 </html>

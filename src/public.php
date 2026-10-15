@@ -56,14 +56,51 @@ try {
         respond('invalid_origin', true);
         exit;
     }
-    if ($method === 'POST' && empty($_FILES) && stripos($_SERVER['CONTENT_TYPE'] ?? '', 'application/json') !== 0) {
+    if ($method === 'POST' && empty($_FILES)
+        && preg_match('~^application/json(?:\s*;|$)~i', trim($_SERVER['CONTENT_TYPE'] ?? '')) !== 1) {
         throw new InvalidArgumentException('json_content_type_required');
+    }
+    if ($method === 'POST' && ApiSecurity::isWebhook($data)) {
+        // Authentication has passed. Receipt records delivery, not successful provisioning.
+        try {
+            require_once __DIR__ . '/lib/api_automation_health.php';
+            ApiAutomationHealth::webhookReceived();
+        } catch (Throwable $ignored) { /* Telemetry must not prevent a valid delivery. */ }
     }
     set_error_handler('myErrorHandler');
     require_once 'lib/api_setup.php';
     require_once 'lib/api_cache.php';
     $setupComplete = false;
     if (!$webhook && empty($_FILES)) {
+        if ($method === 'POST' && is_object($data)
+            && in_array($data->target ?? null, ['automation_health', 'service_diagnostics', 'provisioning_verification'], true)) {
+            $values = $data->data ?? null;
+            if (($data->changeType ?? '') !== 'list' || !empty($data->entity) || !is_object($values)) throw new InvalidArgumentException('invalid_operations_request');
+            $keys = array_keys(get_object_vars($values));
+            $action = $data->action ?? 'list';
+            if ($data->target === 'automation_health' && $action === 'list' && !$keys) {
+                require_once __DIR__ . '/lib/api_automation_health.php';
+                $result = ApiAutomationHealth::read();
+            } elseif ($data->target === 'service_diagnostics' && $action === 'search' && $keys === ['query']
+                && is_string($values->query) && strlen($values->query) <= 160) {
+                require_once __DIR__ . '/lib/api_service_diagnostics.php';
+                $result = (new ApiServiceDiagnostics())->search($values->query);
+            } elseif ($data->target === 'service_diagnostics' && $action === 'inspect' && $keys === ['serviceId']
+                && is_int($values->serviceId) && $values->serviceId > 0) {
+                require_once __DIR__ . '/lib/api_service_diagnostics.php';
+                $result = (new ApiServiceDiagnostics())->inspect($values->serviceId);
+            } elseif ($data->target === 'provisioning_verification' && $action === 'list' && !$keys) {
+                require_once __DIR__ . '/lib/api_provisioning_verification.php';
+                $result = (new ApiProvisioningVerification())->listing();
+            } elseif ($data->target === 'provisioning_verification' && in_array($action, ['read', 'recheck'], true)
+                && $keys === ['serviceId'] && is_int($values->serviceId) && $values->serviceId > 0) {
+                require_once __DIR__ . '/lib/api_provisioning_verification.php';
+                $verification = new ApiProvisioningVerification();
+                $result = $action === 'recheck' ? $verification->recheck($values->serviceId) : $verification->read($values->serviceId);
+            } else throw new InvalidArgumentException('invalid_operations_request');
+            respond($data->target, false, $result);
+            exit;
+        }
         // Counts read existing local storage only, even when migration is paused.
         if ($method === 'POST' && is_object($data) && ($data->changeType ?? '') === 'list'
             && ($data->target ?? '') === 'jobs_status') {

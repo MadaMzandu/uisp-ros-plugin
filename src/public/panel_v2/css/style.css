@@ -480,6 +480,53 @@ details.config-section[open] > summary.config-section-header::after { content: '
     .conflicts-table td, .conflicts-table th { padding-left: 10px; padding-right: 10px; }
     .conflict-owner { display: flex; flex-direction: column; gap: 8px; }
 }
+.operations-search { margin-top: 18px; max-width: 760px; }
+.operations-search label { display: block; margin-bottom: 8px; font-size: .85rem; }
+.operations-search-controls { display: flex; align-items: stretch; gap: 10px; }
+.operations-search-controls input { flex: 1; min-width: 0; }
+.operations-search-results { display: flex; flex-direction: column; align-items: stretch; gap: 8px; }
+.operations-search-results .btn { justify-content: flex-start; white-space: normal; text-align: left; overflow-wrap: anywhere; }
+.automation-health-grid, .operations-result-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.operations-result-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); }
+.operations-health-card, .operations-result-card { border: 1px solid var(--border); border-radius: 8px; padding: 16px; background: var(--surface-subtle); min-width: 0; }
+.operations-health-card h3 { font-size: .92rem; margin-bottom: 12px; }
+.operations-health-card .badge { margin-bottom: 10px; }
+.operations-metric { display: flex; flex-direction: column; gap: 4px; margin: 10px 0; font-size: .8rem; overflow-wrap: anywhere; }
+.operations-metric span { color: var(--text-muted); }
+.operations-metric strong { font-weight: 500; }
+.operations-counts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.operations-counts strong { font-size: 1.2rem; }
+.operations-result-card { display: flex; flex-direction: column; gap: 10px; align-items: flex-start; }
+.operations-result-card .badge { white-space: normal; }
+.operations-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.operations-source-status { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin: 16px 0; }
+.operations-source-status > div { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; font-size: .8rem; }
+.operations-source-status small { color: var(--text-muted); overflow-wrap: anywhere; }
+.operations-stored-verification { display: flex; flex-direction: column; gap: 7px; font-size: .76rem; align-items: flex-start; }
+.operations-comparison-scroll { overflow-x: auto; }
+.operations-comparison { width: 100%; min-width: 610px; border-collapse: collapse; font-size: .82rem; table-layout: fixed; }
+.operations-comparison th, .operations-comparison td { padding: 12px; border-bottom: 1px solid var(--border); text-align: left; vertical-align: top; overflow-wrap: anywhere; }
+.operations-comparison th { color: var(--text-muted); font-weight: 500; }
+.operations-comparison th:first-child { width: 17%; }
+.operations-difference { background: var(--warning-bg); }
+.operations-difference small { display: block; margin-top: 5px; color: var(--warning-text); }
+.operations-history { margin-top: 22px; border-top: 1px solid var(--border); padding-top: 16px; }
+.operations-history h3 { font-size: .92rem; }
+.operations-history-row { font-size: .8rem; margin: 10px 0; color: var(--text-muted); }
+.operations-issues { border-left: 3px solid var(--warning-border); padding: 10px 12px; margin-top: 16px; font-size: .82rem; }
+.operations-checks { width: 100%; font-size: .78rem; margin-top: 12px; }
+.operations-checks summary { cursor: pointer; color: var(--primary); }
+.operations-checks > div { padding: 12px 0; border-bottom: 1px solid var(--border); }
+.operations-checks dl > div { padding: 8px; overflow-wrap: anywhere; }
+.operations-checks dt { color: var(--text-muted); margin-bottom: 4px; }
+.operations-checks dd { margin: 0; }
+@media (max-width: 700px) {
+    .automation-health-grid { grid-template-columns: minmax(0, 1fr); }
+    .operations-source-status { grid-template-columns: minmax(0, 1fr); }
+    .operations-source-status > div { flex-direction: row; flex-wrap: wrap; align-items: center; }
+    .operations-search-controls { flex-wrap: wrap; }
+    .operations-search-controls .btn { width: 100%; }
+}
 @media (prefers-reduced-motion: reduce) {
     * { transition: none !important; }
     .spinner { animation-duration: 2s; }

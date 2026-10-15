@@ -613,8 +613,27 @@ PHP
                     && strpos($response['body'],'onerror')===false && strpos($response['body'],'service_ids')===false
                     && strpos($response['body'],'conflicts')===false,
                     'Compatibility/authenticated webhook disclosed private conflict diagnostics');
-                checkMigrationConflict(recoveryDiskSnapshot()===$before,
+                // An authenticated, valid delivery is observed even when setup
+                // refuses provisioning. Only its timestamp telemetry may change.
+                $afterWebhook = recoveryDiskSnapshot();
+                $expectedWebhook = $before;
+                foreach ($afterWebhook as $path=>$hash) {
+                    $normalized = str_replace('\\','/',$path);
+                    if (in_array($normalized,['data/automation-health','data/automation-health/state.lock',
+                        'data/automation-health/state.json'],true)) $expectedWebhook[$path] = $hash;
+                }
+                ksort($expectedWebhook);
+                checkMigrationConflict($afterWebhook===$expectedWebhook,
                     'Rejected webhook migration changed persistent recovery or operational state');
+                $telemetry = json_decode(file_get_contents('data/automation-health/state.json'),true,8,JSON_THROW_ON_ERROR);
+                checkMigrationConflict(($telemetry['version'] ?? null)===1
+                    && is_int($telemetry['lastWebhookAt'] ?? null) && abs(time()-$telemetry['lastWebhookAt'])<10
+                    && ($telemetry['lastStartedAt'] ?? null)===null && ($telemetry['lastResult'] ?? null)===null
+                    && ($telemetry['active'] ?? null)===[]
+                    && strpos(json_encode($telemetry),'MIGRATION-PRIVACY')===false,
+                    'Accepted webhook telemetry fabricated scheduled success or retained event/authentication details');
+                // Later rejected or unauthenticated requests must preserve this observation too.
+                $before = $afterWebhook;
                 checkMigrationConflict(file_get_contents($directory . '/sdk-reads.jsonl')===$readsBeforeWebhook,
                     'A webhook diagnostic hint called CRM without an administrative read grant');
             }

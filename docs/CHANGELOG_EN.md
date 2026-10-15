@@ -2,9 +2,21 @@
 
 [Español](MEJORAS.md) · [PR description](PR_DESCRIPTION.md) · [Webhook setup and rationale](WEBHOOK_SETUP_EN.md)
 
-This revision combines [dhanielsnieto's changes in PR #89](https://github.com/MadaMzandu/uisp-ros-plugin/pull/89) with the subsequent fixes prepared in this repository. The comparison starts at `7ca8dc8`; the original PR ends at `056b89f`. The current candidate is **2.4.35**. The operator confirmed archived-plan speed recovery in their 2.4.19 installation. That confirmation covers this historical scenario; the remaining UISP and RouterOS integration scenarios still require their own checks before production readiness can be established.
+This revision combines [dhanielsnieto's changes in PR #89](https://github.com/MadaMzandu/uisp-ros-plugin/pull/89) with the subsequent fixes prepared in this repository. The comparison starts at `7ca8dc8`; the original PR ends at `056b89f`. The current candidate is **2.4.36**. The operator confirmed archived-plan speed recovery in their 2.4.19 installation. That confirmation covers this historical scenario; the remaining UISP and RouterOS integration scenarios still require their own checks before production readiness can be established.
 
 The plugin connects UISP CRM to MikroTik through the **native RouterOS API**, normally on port `8728`, or `8729` with TLS. The panel manages that integration; it does not switch the transport to SSH, WinBox, or REST.
+
+## Candidate 2.4.36: RouterOS confirmation, service diagnostics and automation health
+
+New jobs read back effective account, profile, queue and disconnection properties after executing their commands. Jobs distinguishes **Applied and verified**, **Applied, awaiting confirmation** and **Router differences detected**, with timestamps and field evidence. Failed observation never retries a completed write or turns it into pending work. **Verify again** only observes; it does not replay provisioning or reconnection. Cross-router moves preserve old-router cleanup evidence across failed replacement attempts. Receipts are bound to job/version and router endpoints; older versions are identified and pre-upgrade jobs are not given invented confirmation.
+
+**Service diagnostics** searches local service, client, username and IP records. Selecting a service reads fresh UISP and exact filtered RouterOS state and compares them with queued/applied/cached expectations: username, Site, IPv4/IPv6, profile, plan, status and ownership. It shows each source's timestamp, differences, job history, attempts, next retry and informational retained history. Missing evidence remains unknown. Diagnosis never provisions, reconnects, updates cache or edits CRM.
+
+**System → Automation health** shows observed scheduled starts/completions, the last authorized webhook, pending/running/failed counts, oldest pending work, stored next retry, cache refresh and maintenance hints. Manual runs do not create scheduler heartbeats. Activity recording has a short bounded wait; file contention may skip an observation without stopping provisioning. Webhook acceptance does not mean provisioning; the external cron schedule remains explicitly unknown. Health reads local storage only, pauses polling during mutations/hidden tabs, and retains no credentials or response bodies. Authenticated same-origin operations have strict JSON/action validation and work without triggering setup or migrations.
+
+Observation uses bounded read-only RouterOS queries, current credentials and endpoint/version guards. Confirmation establishes the observed configuration and removal of identified old sessions; it does not establish subscriber Internet reachability. The queue remains first, compact recoveries follow it, and recent confirmation cards follow recovery. All new controls support the panel's six languages. Reload after upgrading; subsequent scheduled deliveries and new jobs populate health and receipts.
+
+**2.4.36 validation passed:** 54 isolated suites, syntax checks for 58 first-party PHP files, and installer verification of 371 entries, 138 first-party files and 13 locked dependencies. Current report: `dist/verification-2.4.36.json`. SHA-256: `e56d016e13804415acfca3400588c729fa41dc895332f105e47998f25fe47508`. Browser checks cover desktop/mobile, Spanish/English and light/dark themes with synthetic fixtures; no production UISP or RouterOS changes were performed. The report retains the initial contention-test failure and its subsequent check against the identical ZIP.
 
 ## Candidate 2.4.35: verify and repair a contradictory RouterOS service marker
 
@@ -234,7 +246,7 @@ This revision's standalone warning is superseded by 2.4.21 view mode. Its report
 - Evidence of partially creating a suspension profile is preserved. Cleanup verifies an existing profile before changing accounts or sessions; mismatched frozen values remain an error. A missing profile is not recreated during cleanup, and an existing profile is not overwritten.
 - Connection handling is unchanged: each service batch opens and closes its own API connection; queries and cleanup can open additional connections. API login/logout messages alone do not mean PPP sessions were disconnected. No connection sharing between batches was introduced.
 
-The historical 2.4.17 validation passed 27 suites, checks for 39 first-party PHP files, and verification of a ZIP containing 351 entries, 118 first-party files, and 13 pinned dependencies. Its report and hash are retained later in this changelog; the validation status of current candidate 2.4.33 is recorded above.
+The historical 2.4.17 validation passed 27 suites, checks for 39 first-party PHP files, and verification of a ZIP containing 351 entries, 118 first-party files, and 13 pinned dependencies. Its report and hash are retained later in this changelog; the validation status of current candidate 2.4.36 is recorded above.
 
 ## Changes contributed in PR #89
 
@@ -461,7 +473,7 @@ Later production evidence identified missing tokens and a URL pasted as the secr
 
 ## Installation and validation readiness
 
-The current version is 2.4.33. Its validation status appears at the beginning of this changelog. Archived-plan recovery confirmation belongs to 2.4.19 and retains its historical scope. CRM warnings keep other jobs available: current duplicate addresses can be corrected explicitly, and a freshly verified ended service can have its exact historical assignment reviewed without editing its CRM history. **Review cleanup** separately previews eligible obsolete local reservations with a private backup; pending work, unresolved recovery, and recorded applied ownership still protect their reservations. Backups remain downloadable from **System** after reload. Only the separate duplicate-reservation preflight that prevents safe migration pauses other writes and provisioning; it requires resolving those stored conflicts and reloading. The [real-environment test guide](PRUEBAS_REALES.md) contains 171 scenarios for the remaining checks.
+The current version is 2.4.36. Its validation status appears at the beginning of this changelog. Archived-plan recovery confirmation belongs to 2.4.19 and retains its historical scope. CRM warnings keep other jobs available: current duplicate addresses can be corrected explicitly, and a freshly verified ended service can have its exact historical assignment reviewed without editing its CRM history. **Review cleanup** separately previews eligible obsolete local reservations with a private backup; pending work, unresolved recovery, and recorded applied ownership still protect their reservations. Backups remain downloadable from **System** after reload. Only the separate duplicate-reservation preflight that prevents safe migration pauses other writes and provisioning; it requires resolving those stored conflicts and reloading. The [real-environment test guide](PRUEBAS_REALES.md) contains 195 scenarios for the remaining checks.
 
 ### Historical 2.4.17 result
 
@@ -494,8 +506,7 @@ Local regressions use PHP 8.5.11, temporary databases, mocks, and local sockets.
 
 ## Known outstanding work
 
-- General read-after-write confirmation of account/profile properties and session removal. Current checks inspect API responses and prior state, with specific subsequent reads for profile renames and suspension-profile creation. General post-write verification was investigated but remained pending in 2.4.17.
-- Review removal of an individual suspension queue with unexpected dependencies: the current check may preserve it while treating the command as completed. This was reproduced with simulated transport and was not observed as the cause of the reported logging incident.
+- Physical removal of an individual suspension queue with unexpected dependencies can remain deferred; 2.4.36 reports a required retained resource as unconfirmed instead of presenting verified removal.
 - Periodic reconciliation between UISP, applied state, and observed RouterOS state.
 - Ordering distinct events delivered out of order using a reliable source revision; deduplicating the same UUID does not solve this case.
 - NMS topology writes remain disabled because earlier code could delete other services' nodes. Reads remain supported. Re-enabling writes requires a persistent `serviceId → deviceId` relationship and verified ownership.

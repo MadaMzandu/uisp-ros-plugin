@@ -23,6 +23,7 @@ def main() -> int:
     parser.add_argument('--extension-dir')
     parser.add_argument('--archive', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--retry-failed', action='store_true', help='Retry only failed suites against the identical already-verified archive; retain previous attempts')
     args = parser.parse_args()
     php = [args.php, '-n']
     if args.extension_dir:
@@ -30,12 +31,25 @@ def main() -> int:
     php_tests = php + ['-d', 'extension=sqlite3', '-d', 'extension=gmp', '-d', 'extension=zip']
     suites = [
         'backend', 'jobs', 'router', 'burst', 'runtime', 'stability', 'client_queue', 'automatic_reconciliation',
-        'locale', 'second_audit', 'ownership', 'shared_resources', 'shared_pool', 'pool_reset', 'ip_attribute_export', 'site_address_policy', 'site_address_retry', 'router_ownership',
+        'locale', 'second_audit', 'ownership', 'shared_resources', 'shared_pool', 'pool_reset', 'ip_attribute_export', 'site_address_policy', 'site_address_retry', 'router_ownership', 'provisioning_verification', 'provisioning_verification_retry', 'service_diagnostics', 'automation_health',
         'nonfinite', 'profile_names', 'unmanaged', 'reconnect', 'reconnect_router', 'webhook_auth', 'webhook_flow', 'billing_router', 'job_diagnostics', 'job_actions', 'jobs_status', 'job_recovery', 'job_recovery_observation', 'job_retained_resources', 'cancelled_recovery', 'archived_plans', 'migration_conflicts', 'recovery_reads', 'network_diagnostics', 'network_cleanup', 'network_repair', 'network_repair_batch', 'crm_network_monitor', 'crm_network_resolution', 'reserved_networks',
     ]
     commands = [('regression_' + name, php_tests + ['tests/regression_' + name + '.php']) for name in suites]
-    commands += [('regression_' + name, [args.node, 'tests/regression_' + name + '.js']) for name in ['panel', 'theme', 'i18n']]
+    commands += [('regression_' + name, [args.node, 'tests/regression_' + name + '.js']) for name in ['panel', 'theme', 'i18n', 'operations', 'operations_i18n']]
+    commands.append(('regression_operations_http', [sys.executable, 'tests/regression_operations_http.py', '--php', args.php, *( ['--extension-dir', args.extension_dir] if args.extension_dir else [] )]))
     commands.append(('regression_http', [sys.executable, 'tests/regression_http.py', '--php', args.php]))
+    previous = None
+    selected_commands = commands
+    if args.retry_failed:
+        previous = json.loads(args.output.read_text(encoding='utf-8'))
+        if previous.get('archive_sha256') != hashlib.sha256(args.archive.read_bytes()).hexdigest() or previous.get('archive_errors'):
+            raise ValueError('Failed-suite retry requires the identical archive without previous archive errors')
+        saved = {item['name']: item for item in previous['regressions']}
+        if set(saved) != {name for name, _ in commands}:
+            raise ValueError('Regression suite selection changed; run full verification')
+        selected_commands = [item for item in commands if saved[item[0]]['exit_code'] != 0]
+        if not selected_commands:
+            raise ValueError('No failed regression suites to retry')
 
     def run(item: tuple[str, list[str]]) -> dict:
         name, command = item
@@ -50,12 +64,20 @@ def main() -> int:
         return record
 
     with ThreadPoolExecutor(max_workers=3) as pool:
-        regressions = list(pool.map(run, commands))
+        regressions = list(pool.map(run, selected_commands))
+        if previous is not None:
+            retried = {item['name']: item for item in regressions}
+            for name, item in retried.items():
+                old = saved[name]
+                item['previous_attempts'] = old.get('previous_attempts', []) + [{key: value for key, value in old.items() if key != 'previous_attempts'}]
+            regressions = [retried.get(name, saved[name]) for name, _ in commands]
         owned_php = sorted(path for path in (ROOT / 'src').rglob('*.php') if 'vendor' not in path.relative_to(ROOT / 'src').parts)
         lint = list(pool.map(run, [('lint:' + str(path.relative_to(ROOT)), php + ['-l', str(path)]) for path in owned_php]))
 
     report = {'created_utc': datetime.now(timezone.utc).isoformat(), 'regressions': regressions,
               'php_lint_count': len(lint), 'php_lint_failures': [item for item in lint if item['exit_code'] != 0]}
+    if previous is not None:
+        report['retry_of_verification_utc'] = previous['created_utc']
     source = ROOT / 'src'
     manifest = json.loads((source / 'manifest.json').read_text(encoding='utf-8'))
     report['version'] = manifest['information']['version']

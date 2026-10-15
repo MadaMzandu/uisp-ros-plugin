@@ -10,9 +10,11 @@ class ApiJobQueue
     /** @var array<string,array> Request-owned resources; PHP releases these even when an FPM PID survives. */
     private array $ownerLocks = [];
     private array $serviceOwners = [];
+    private string $path;
 
     public function __construct(string $path = 'data/jobs.db', ?string $legacy = 'data/queue.json')
     {
+        $this->path=$path;
         $this->legacy = $legacy ?? '';
         $lockIdentity = $path === ':memory:' ? bin2hex(random_bytes(16))
             : (realpath($path) ?: (realpath(dirname($path)) ?: dirname($path)) . DIRECTORY_SEPARATOR . basename($path));
@@ -413,8 +415,28 @@ class ApiJobQueue
                 'state' => $state, 'blockedBy' => $blockedBy, 'blockedReason' => $blockedReason,
                 'canDelete' => $deleteBlockedReason === null, 'deleteBlockedReason' => $deleteBlockedReason,
             ];
+            if ($state==='succeeded' && $this->path!==':memory:') {
+                try {
+                    $verification=$this->verificationStore()->read((int)$row['service_id']);
+                    if ($verification['job_id']==='Q'.$id && $verification['current']===true
+                        && $verification['version']===(int)($row['version']??0)) $result['Q'.$id]['verification']=$verification;
+                } catch (Throwable $ignored) {}
+            }
         }
         return $result;
+    }
+
+    /** Evidence has no role in claim/finish/retry decisions. */
+    public function recordVerification(array $service,array $job,object $device,array $stages): array
+    {
+        if ($this->path===':memory:') return ['state'=>'unconfirmed','reason'=>'receipt_unavailable'];
+        return $this->verificationStore()->record($service,$job,$device,$stages);
+    }
+
+    private function verificationStore(): ApiProvisioningVerification
+    {
+        require_once __DIR__.'/api_provisioning_verification.php';
+        return new ApiProvisioningVerification(null,dirname($this->path).DIRECTORY_SEPARATOR.'data.db',$this->path);
     }
 
     /** Immediate and manual retries include unfinished prerequisites, never newer or unrelated work. */
@@ -911,7 +933,7 @@ class ApiJobQueue
                     $applied = $this->payload($current);
                     // Confirmed state needs only current resources, never completed
                     // old-router cleanup or a one-time forced reconnect request.
-                    unset($applied['_cleanup'], $applied['_prior_network'], $applied['_prior_identity'], $applied['_force_reconnect'], $applied['_previous_addresses']);
+                    unset($applied['_cleanup'], $applied['_prior_network'], $applied['_prior_identity'], $applied['_force_reconnect'], $applied['_previous_addresses'], $applied['_verification_stages']);
                     $this->execute('UPDATE service_versions SET applied_identity=:identity,applied_payload=:payload WHERE service_id=:sid',
                         ['identity' => $current['identity'], 'payload' => $this->encode($applied), 'sid' => (int) $current['service_id']]);
                 } elseif ($current['operation'] === 'delete') {

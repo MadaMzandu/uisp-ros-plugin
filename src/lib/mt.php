@@ -19,6 +19,42 @@ class MT extends Device
     private ?string $connectionFailure = null;
     private array $cancellationBootstrapGuards = [];
     private $ownershipResolver = null;
+    private $verificationObserver = null;
+    private array $verificationChecks = [];
+    private ?float $verificationDeadline = null;
+
+    /** Evidence collection cannot alter execution success or leak into a subsequent batch. */
+    public function withVerificationScope(callable $observer, callable $operation)
+    {
+        $previous=$this->verificationObserver; $checks=$this->verificationChecks;
+        $this->verificationObserver=$observer; $this->verificationChecks=[];
+        try { return $operation(); }
+        finally { $this->verificationObserver=$previous; $this->verificationChecks=$checks; }
+    }
+
+    private function captureVerification(array $command,array $effective,string $action,?string $skip=null): void
+    {
+        if ($this->verificationObserver===null) return;
+        try {
+            require_once __DIR__.'/api_provisioning_verification.php';
+            $this->verificationChecks[]=ApiProvisioningVerification::expectation($command,$effective,$action,$skip);
+        } catch (Throwable $ignored) {
+            $this->verificationChecks[]=['path'=>'','kind'=>'resource','skip'=>'identity_unavailable'];
+        }
+    }
+
+    /** Exact read-only checks; never call write, prepare, make-static or a queue executor. */
+    public function readVerification(object $device,array $checks,?float $deadline=null): array
+    {
+        require_once __DIR__.'/api_provisioning_verification.php';
+        $this->batch_device=$device; $previous=$this->verificationDeadline; $this->verificationDeadline=$deadline??microtime(true)+12;
+        try {
+            $this->api=$this->api_connect();
+            if (!$this->api) return ApiProvisioningVerification::compare($checks,static fn()=>null,$this->verificationDeadline);
+            return $this->api->withReadDeadline($this->verificationDeadline,fn()=>ApiProvisioningVerification::compare($checks,fn($path,$filter)=>$this->read($path,$filter),$this->verificationDeadline));
+        } catch (Throwable $ignored) { return ApiProvisioningVerification::compare($checks,static fn()=>null,$this->verificationDeadline); }
+        finally { if ($this->api) $this->api_disconnect(); $this->verificationDeadline=$previous; }
+    }
 
     /** Permission exists only during this verified update, never in a stored command. */
     public function withOwnershipResolver(callable $resolver, callable $operation)
@@ -41,6 +77,7 @@ class MT extends Device
         if (in_array(trim($post['path'] ?? '', '/'), ['ppp/active', 'ip/hotspot/active'], true)
             && ($post['action'] ?? null) === 'remove' && ($post['_reconnect_required'] ?? null) === false) {
             // The identity/ownership lookup above remains mandatory even for an unchanged session.
+            $this->captureVerification($post,[],'remove','reconnect_not_required');
             return [];
         }
         $renamingProfile=$ownedProfile!==null && ($post['action'] ?? '')!=='remove'
@@ -54,8 +91,11 @@ class MT extends Device
         $action = $id ? 'set' : 'add';
         $wants = $post['action'] ?? null;
         if ($wants == 'remove') {
-            if (!$id) return []; // Already absent: deletion is idempotent.
-            if ($this->find_deps($post)) return null;
+            if (!$id) { $this->captureVerification($post,[],'remove',in_array(trim($post['path'],'/'),['ppp/active','ip/hotspot/active'],true)?'reconnect_already_absent':null); return []; }
+            if ($this->find_deps($post)) {
+                $shared=$managedProfile || preg_match('/^uisp-ros-plugin:(?:plan-parent|ipv6-pool):/D',$post['_owner']??'')===1;
+                $this->captureVerification($post,[],'remove',$shared?'shared_resource_retained':'required_resource_retained'); return null;
+            }
             else $action = 'remove';
         }
         $path = $post['path'];
@@ -96,6 +136,7 @@ class MT extends Device
             $this->api->finishSentence();
             $read=$this->api->read();
         }
+        if (!$this->find_error($read)) $this->captureVerification($post,$data,$action);
         return $read ;
         } finally {
             if($opened && $this->api) $this->api_disconnect();
@@ -232,6 +273,10 @@ class MT extends Device
                 if($id) $this->batch_success[$id] = $id;
                 $writes++;
             }
+        }
+        if ($this->verificationObserver!==null && $writes===count($this->batch) && !$this->batch_failed) {
+            try { $api->withReadDeadline(microtime(true)+12,fn()=>($this->verificationObserver)($this->verificationChecks,fn($path,$filter)=>$this->read($path,$filter))); }
+            catch (Throwable $ignored) { /* An acknowledged write is never replayed because evidence failed. */ }
         }
         $this->batch = null;
         $this->api = null ;
@@ -388,6 +433,7 @@ class MT extends Device
                 if ($this->sessionFieldsDiffer($this->suspensionBootstrapData($command),$records[0]))
                     throw $this->externalProfileFailure([],$path,$name,'bootstrap_failed');
             }
+            $this->captureVerification($command,[],'set','external_profile');
             return [];
         }
         // An absence first discovered during writing has no durable creation decision yet.
@@ -405,6 +451,7 @@ class MT extends Device
             throw $this->externalProfileFailure([],$path,$name,'bootstrap_failed');
         try { MyLog()->Append(['event'=>'suspension_profile_created','deviceId'=>(int)($this->batch_device->id ?? 0),
             'protocol'=>$path==='ppp/profile' ? 'ppp' : 'hotspot'],LOG_INFO); } catch (Throwable $ignored) {}
+        $this->captureVerification($command,$data,'add');
         return [];
     }
 
@@ -583,8 +630,9 @@ class MT extends Device
         $api->ssl = isset($this->device->ssl)
             ? filter_var($this->device->ssl, FILTER_VALIDATE_BOOLEAN) : $api->port === 8729;
         $api->allow_self_signed = filter_var($this->device->allowSelfSigned ?? false, FILTER_VALIDATE_BOOLEAN);
-        if (!$api->connect($this->device->ip,
-            $this->device->user, $this->device->password ?? null)) {
+        $connect=fn()=>$api->connect($this->device->ip,$this->device->user,$this->device->password??null);
+        $connected=$this->verificationDeadline===null ? $connect() : $api->withReadDeadline($this->verificationDeadline,$connect);
+        if (!$connected) {
             $this->setErr($this->connectionFailure = $api->connectionFailure() ?? 'router_connection_failed');
             try { MyLog()->Append(['event'=>'router_connection_failed','deviceId'=>(int)($this->device->id ?? 0),
                 'protocol'=>$api->ssl ? 'tls' : 'tcp','port'=>(int)$api->port,
@@ -836,6 +884,7 @@ class MT extends Device
 
     public function do_batch($device,$data,?callable $beforeWrite = null): int
     {
+        $this->verificationChecks=[];
         $this->sessionOwnership = [];
         $this->resolvedLocals = [];
         $this->ownedLocalFallback = null;

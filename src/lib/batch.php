@@ -9,6 +9,7 @@ require_once __DIR__ . '/api_shared_resources.php';
 require_once __DIR__ . '/api_plan_catalog.php';
 require_once __DIR__ . '/api_site_address_policy.php';
 require_once __DIR__ . '/api_router_ownership.php';
+require_once __DIR__ . '/api_provisioning_verification.php';
 
 class Batch
 {
@@ -418,6 +419,23 @@ class Batch
     /** Execute exactly this job's identity and commands, never current cached service credentials. */
     public function applySnapshot(array $service, string $operation, ApiJobQueue $queue, array $job): bool
     {
+        $verificationStages=ApiProvisioningVerification::boundedStages(is_array($service['_verification_stages']??null)?$service['_verification_stages']:[]);
+        $verificationDeadline=microtime(true)+12;
+        // Previous cleanup was acknowledged before a later stage failed. Re-read
+        // its safe journal, without replaying the old removal/disconnection.
+        foreach ($verificationStages as &$stage) {
+            $oldDevice=$this->find_device($stage['device_id']??0);
+            try {
+                if (!$oldDevice || ApiSharedResources::endpointIdentity($oldDevice)!==($stage['endpoint']??null)) throw new RuntimeException('router_changed');
+                $stage['results']=$queue->withResourceLock($stage['endpoint'],fn()=>$this->device_api($oldDevice->type??'mikrotik')->readVerification($oldDevice,$stage['checks'],$verificationDeadline));
+            } catch (Throwable $ignored) { $stage['results']=ApiProvisioningVerification::compare($stage['checks'],static fn()=>null,$verificationDeadline); }
+        }
+        unset($stage);
+        $observe=function(object $target) use (&$verificationStages): callable {
+            return function(array $checks,callable $read) use ($target,&$verificationStages): void {
+                $verificationStages[]=ApiProvisioningVerification::stage($target,$checks,$read);
+            };
+        };
         if (in_array($operation, ['update','queues_set'], true)) {
             $planId = (int) ($service['_plan']['id'] ?? $service['planId'] ?? 0);
             $this->ensurePlanMetadata($planId);
@@ -500,11 +518,13 @@ class Batch
                     array_merge($alreadyDeleting || $allRemoval ? $remove : array_reverse($remove), $disconnect), 'delete');
                 $cleanupDevice = $this->operationDevice($cleanup);
                 $queue->withResourceLock(ApiSharedResources::lockIdentity($cleanupDevice, $cleanup),
-                    function () use ($cleanupDevice, $cleanup, $guards): void {
-                        $this->writeCommands($cleanupDevice, $cleanup['_commands'], null, $guards);
+                    function () use ($cleanupDevice, $cleanup, $guards, $observe): void {
+                        $this->writeCommands($cleanupDevice, $cleanup['_commands'], null, $guards, null, $observe($cleanupDevice));
                     });
                 $this->batch_failed = [];
                 $this->batch_success = [$batchId => $batchId];
+                $service['_verification_stages']=$verificationStages=ApiProvisioningVerification::boundedStages($verificationStages);
+                $service=$queue->freezePrepared($job,$service);
                 if ($queue->canClearApplied($cleanup)) $this->unsave_batch([$cleanup['device'] => [$cleanup]]);
                 $queue->confirmCancellationCleanup($job, (int) $debt['id']);
             }
@@ -542,10 +562,12 @@ class Batch
             }
             $cleanupDevice = $this->operationDevice($cleanup);
             $queue->withResourceLock(ApiSharedResources::lockIdentity($cleanupDevice, $cleanup),
-                function () use ($cleanupDevice, $cleanup): void { $this->writeCommands($cleanupDevice, $cleanup['_commands']); });
+                function () use ($cleanupDevice, $cleanup, $observe): void { $this->writeCommands($cleanupDevice, $cleanup['_commands'], null, [], null, $observe($cleanupDevice)); });
             $cleanup['batch'] = $batchId;
             $this->batch_failed = [];
             $this->batch_success = [$batchId => $batchId];
+            $service['_verification_stages']=$verificationStages=ApiProvisioningVerification::boundedStages($verificationStages);
+            $service=$queue->freezePrepared($job,$service);
             if ($queue->canClearApplied($cleanup)) { $this->unsave_batch([$cleanup['device'] => [$cleanup]]); }
             $queue->confirmCleanup($job, $cleanup);
         }
@@ -558,7 +580,7 @@ class Batch
             $service['_commands'] = $commands;
             $service = $queue->freezePrepared($job, $service);
         }
-        $queue->withResourceLock(ApiSharedResources::lockIdentity($device, $service), function () use ($device, $operation, $queuesOnly, $queue, $job, &$service, &$commands): void {
+        $queue->withResourceLock(ApiSharedResources::lockIdentity($device, $service), function () use ($device, $operation, $queuesOnly, $queue, $job, &$service, &$commands, $observe): void {
             if ($operation === 'update') {
                 // Re-read while holding the physical router/plan gate. An old
                 // customer's retry must not overwrite a newer shared plan.
@@ -597,7 +619,7 @@ class Batch
                         $service['_commands'] = $prepared;
                         $service = $queue->freezePrepared($job, $service);
                     }
-                } : null, [], $operation === 'update' ? $service : null);
+                } : null, [], $operation === 'update' ? $service : null, $observe($device));
             elseif (!$queuesOnly) throw new RuntimeException('No router commands were prepared for this service');
         });
         $this->batch_failed = [];
@@ -609,6 +631,11 @@ class Batch
             }
             else { $this->save_batch($services); }
         }
+        // Verification is a separate receipt, never an execution exception/retry condition.
+        try {
+            if ($verificationStages || method_exists($this->device_api($device->type??'mikrotik'),'withVerificationScope'))
+                $queue->recordVerification($service,$job,$device,$verificationStages);
+        } catch (Throwable $ignored) {}
         return true;
     }
 
@@ -673,14 +700,17 @@ class Batch
         return $device;
     }
 
-    private function writeCommands(object $device, array $commands, ?callable $beforeWrite = null, array $cancellationGuards = [], ?array $ownershipService = null): void
+    private function writeCommands(object $device, array $commands, ?callable $beforeWrite = null, array $cancellationGuards = [], ?array $ownershipService = null, ?callable $verificationObserver = null): void
     {
         // Different plans can still collide on the same account or DHCP identity.
         // Serialize lookup + ownership checks + mutation for this physical endpoint.
-        myJobQueue()->withResourceLock(ApiSharedResources::endpointIdentity($device), function () use ($device, $commands, $beforeWrite, $cancellationGuards, $ownershipService): void {
+        myJobQueue()->withResourceLock(ApiSharedResources::endpointIdentity($device), function () use ($device, $commands, $beforeWrite, $cancellationGuards, $ownershipService, $verificationObserver): void {
             $api = $this->device_api($device->type ?? 'mikrotik');
             $write = fn() => $cancellationGuards ? $api->do_cancellation_cleanup($device, $commands, $cancellationGuards)
                 : $api->do_batch($device, $commands, $beforeWrite);
+            if ($verificationObserver!==null && method_exists($api,'withVerificationScope')) {
+                $execute=$write; $write=fn()=>$api->withVerificationScope($verificationObserver,$execute);
+            }
             if ($ownershipService !== null && method_exists($api, 'withOwnershipResolver')) {
                 $verifier = new ApiRouterOwnership($ownershipService, (array)$device);
                 $proofs = [];

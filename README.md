@@ -2,6 +2,18 @@
 
 [Complete English changelog](docs/CHANGELOG_EN.md) · [Texto completo para el PR](docs/PR_DESCRIPTION.md) · [Webhook setup and rationale](docs/WEBHOOK_SETUP_EN.md) · [Mejoras en español](docs/MEJORAS.md)
 
+## Candidato 2.4.36 — confirmación en RouterOS, diagnóstico por servicio y salud automática
+
+Cada trabajo nuevo guarda una comprobación de los campos efectivos de cuenta, perfil, cola y desconexión después de ejecutar sus comandos. Trabajos distingue **Aplicado y verificado**, **Aplicado sin confirmar** y **Diferencias en el router**, con fecha y valores comprobados. Una lectura fallida no vuelve a ejecutar el cambio ni deja el trabajo pendiente. **Verificar de nuevo** consulta el router sin repetir escrituras o reconexiones. Los traslados conservan también la evidencia del router anterior entre reintentos. Las comprobaciones antiguas se identifican cuando existe una versión nueva del servicio; los trabajos anteriores a esta versión no reciben una confirmación inventada.
+
+**Diagnóstico por servicio** busca por servicio, cliente, usuario o IP en los registros locales. Al elegir un servicio, consulta UISP y RouterOS y los compara con el estado previsto por el plugin: usuario, Site, IPv4/IPv6, perfil, plan, estado y propiedad. Muestra fecha y origen de cada lectura, diferencias, trabajos, intentos, próximo reintento e historial local. Un dato desconocido aparece como sin comprobar. El diagnóstico y la nueva verificación no actualizan caché ni modifican servicios.
+
+En **Sistema → Salud de la automatización** aparecen las ejecuciones observadas del proceso programado, el último webhook autorizado, la cola, el pendiente más antiguo, el próximo reintento guardado, la última caché y el mantenimiento registrado. Una ejecución manual no cuenta como actividad programada. La recepción de un webhook no equivale a aprovisionamiento y el panel no inventa el horario del cron externo. El sondeo es local y se pausa al ocultar la pestaña o ejecutar cambios. El registro de actividad tiene espera limitada: una contención de archivos puede omitir una observación sin detener el aprovisionamiento.
+
+La confirmación acredita configuración observada en RouterOS y retirada de las sesiones anteriores identificadas, no conectividad de Internet del abonado. Las consultas tienen límites y excluyen contraseñas. La cola sigue primero y las recuperaciones compactas permanecen debajo. Interfaz disponible en los seis idiomas del panel. Después de instalar, recargar el panel; la salud empezará a registrar actividad desde las siguientes ejecuciones y los nuevos trabajos generarán sus comprobaciones.
+
+Validación 2.4.36 aprobada: **54 suites aisladas**, sintaxis de **58 archivos PHP propios** y verificación de 371 entradas, 138 archivos propios y 13 dependencias fijadas. Informe actual: `dist/verification-2.4.36.json`. SHA-256: `e56d016e13804415acfca3400588c729fa41dc895332f105e47998f25fe47508`. Pruebas de navegador en escritorio/móvil, español/inglés y temas claro/oscuro con datos sintéticos; no se modificaron UISP ni routers de producción. El informe conserva el primer fallo de contención y su comprobación posterior contra el mismo ZIP.
+
 ## Candidato 2.4.35 — corregir un ID de servicio contradictorio en la cuenta del router
 
 La comprobación de propiedad de una cuenta PPPoE acepta que el atributo opcional de Hotspot no exista en un catálogo válido de UISP. Site y usuario siguen siendo obligatorios. Los errores distinguen qué configuración falta y presentan el ID del comentario como un dato por comprobar, sin atribuirle automáticamente la propiedad de la cuenta.

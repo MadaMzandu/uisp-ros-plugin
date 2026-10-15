@@ -1,6 +1,14 @@
 <?php
 chdir(__DIR__);
 ini_set('display_errors', '0');
+require_once __DIR__ . '/lib/api_automation_health.php';
+// Only the scheduled entry point records this heartbeat. Manual queue actions do not.
+$automationHealthToken = ApiAutomationHealth::schedulerStarted();
+$automationHealthFinished = false;
+$automationHealthErrorCode = null;
+register_shutdown_function(static function () use (&$automationHealthFinished, $automationHealthToken): void {
+    if (!$automationHealthFinished) ApiAutomationHealth::schedulerFinished($automationHealthToken, false, 'runtime_failure');
+});
 require_once __DIR__ . '/lib/api_runtime.php';
 $runtimeRefresh = refresh_plugin_runtime();
 require_once __DIR__ . '/lib/api_common.php';
@@ -13,7 +21,10 @@ try {
     require_once __DIR__ . '/lib/api_jobs.php';
     run_setup();
     try { cache_setup(); cache_sync(); }
-    catch (Throwable $error) { MyLog()->Append('Scheduled cache setup deferred: ' . $error->getMessage(), LOG_ERR); }
+    catch (Throwable $error) {
+        $automationHealthErrorCode = 'cache_refresh_failed';
+        MyLog()->Append('Scheduled cache setup deferred: ' . $error->getMessage(), LOG_ERR);
+    }
     // Repair proven malformed local reservations before any worker owns a job.
     // The bounded pass takes its own review/backup guards and cannot abort jobs.
     try {
@@ -36,7 +47,12 @@ try {
         MyLog()->Append(['event' => 'crm_network_monitor_failed', 'errorCode' => 'monitor_unavailable'], LOG_WARNING);
     }
     myJobQueue()->withAdministrativeLock(function () { include_once __DIR__ . '/lib/api_ip_mgmt.php'; });
+    ApiAutomationHealth::schedulerFinished($automationHealthToken, $automationHealthErrorCode === null, $automationHealthErrorCode);
+    $automationHealthFinished = true;
 } catch (Throwable $error) {
+    ApiAutomationHealth::schedulerFinished($automationHealthToken, false,
+        $error instanceof ApiVersionMismatchException ? 'version_mismatch' : 'scheduled_operation_failed');
+    $automationHealthFinished = true;
     MyLog()->Append('Scheduled operation failed: ' . $error->getMessage(), LOG_ERR);
     if ($error instanceof ApiVersionMismatchException) MyLog()->Append(['version_mismatch' => $error->getVersions()], LOG_ERR);
     exit(1);

@@ -240,6 +240,11 @@ class ApiService {
     getFields(language) { return this.send('list', 'messages', 'list', language ? { language } : {}); }
     getJobs() { return this.send('list', 'jobs'); }
     getJobsStatus() { return this.send('list', 'jobs_status'); }
+    getAutomationHealth() { return this.send('list', 'automation_health'); }
+    searchServiceDiagnostics(query) { return this.send('list', 'service_diagnostics', 'search', { query }); }
+    inspectService(serviceId) { return this.send('list', 'service_diagnostics', 'inspect', { serviceId }); }
+    getProvisioningVerifications() { return this.send('list', 'provisioning_verification'); }
+    recheckProvisioning(serviceId) { return this.send('list', 'provisioning_verification', 'recheck', { serviceId }); }
     getJobRecoveries() { return this.send('list', 'job_recovery'); }
     previewJobRecovery(sourceJobId, mode = 'resolve') { return this.send('recover', 'job_recovery', 'preview', mode === 'resolve' ? { sourceJobId } : { sourceJobId, mode }); }
     applyJobRecovery(previewToken) { return this.send('recover', 'job_recovery', 'apply', { previewToken }); }

@@ -870,7 +870,7 @@ async function checkNonblockingDeviceSync() {
     await first; await flush();
     assert.equal(fixture.nodes.get('view-jobs').style.display, 'block', 'A background completion cannot force navigation');
     assert.equal(fixture.nodes.get('view-devices').style.display, 'none');
-    assert.match(fixture.nodes.get('notifications').lastElementChild.children[0].textContent, /Router A \(#1\).*completadas/);
+    assert.match(fixture.nodes.get('notifications').lastElementChild.children[0].textContent, /Router A \(#1\).*Sincronización ejecutada.*confirmación en Trabajos/);
     await fixture.navigate('devices');
     assert(rows().every(item => !item.innerHTML.includes('device-sync-spinner')));
     const beforeCancel = syncCalls().length;
@@ -2328,7 +2328,7 @@ async function checkNetworkRecoveryPanel() {
     assert.deepEqual(plain(healthy.diagnostics()[0].data), {}, 'Reactive recovery reads must not request live CRM verification');
     const malformed = recoveryPanelFixture({ bootstrap: '{', details }); await flush();
     assert.equal(malformed.nodes.get('btn-cache').disabled, false, 'An invalid optional bootstrap must not break normal navigation');
-    assert.equal((markup.match(/(?:src|href)="(?:js|css)\/[^"?]+\?v=2\.0\.50"/g) || []).length, 5, 'Every panel asset must use the new revision to invalidate UISP browser caches');
+    assert.equal((markup.match(/(?:src|href)="(?:js|css)\/[^"?]+\?v=2\.0\.51"/g) || []).length, 6, 'Every panel asset must use the new revision to invalidate UISP browser caches');
     assert(!markup.includes('v=2.0.45'));
     assert(apiSource.includes("'alert-triangle':"), 'The conflict warning must have its own local warning icon');
 }
@@ -3119,16 +3119,16 @@ async function checkLanguagePresentation() {
     assert.equal(elements.get('notifications').children.length, canceledNotifications, 'Canceling must not claim synchronization or reconnection');
     const syncSuccess = await synchronizeDevice({ status: 'ok', error: false, data: { requested: 2, completed: 2, failed: 0 } }, true);
     assert.equal(syncSuccess.role, 'status');
-    assert(syncSuccess.children[0].textContent.includes('Sincronización y reconexión completadas.'));
+    assert(syncSuccess.children[0].textContent.includes('Sincronización ejecutada. Revisa la confirmación en Trabajos.'));
     const syncPartial = await synchronizeDevice({ status: 'failed', error: true, message: 'provisioning_incomplete',
         data: { requested: 2, completed: 1, failed: 1, failures: [{ serviceId: 1420, planId: 1 }] } }, true, 502);
     assert.equal(syncPartial.role, 'alert');
     assert.match(syncPartial.children[0].textContent, /1 de 2 servicios completados; 1 pendientes o con error/);
-    assert(!syncPartial.children[0].textContent.includes('Sincronización y reconexión completadas.'), 'Partial synchronization must not claim that all reconnections completed');
+    assert(!syncPartial.children[0].textContent.includes('Sincronización ejecutada. Revisa la confirmación en Trabajos.'), 'Partial synchronization must not claim that all jobs completed');
     const syncPending = await synchronizeDevice({ status: 'accepted', error: false, accepted: true, data: {} }, true);
     assert.equal(syncPending.role, 'status');
     assert(syncPending.children[0].textContent.includes('Solicitud aceptada.'));
-    assert(!syncPending.children[0].textContent.includes('Sincronización y reconexión completadas.'), 'Pending synchronization must not claim completed reconnections');
+    assert(!syncPending.children[0].textContent.includes('Sincronización ejecutada. Revisa la confirmación en Trabajos.'), 'Pending synchronization must not claim completed reconnections');
     responders.delete('update/system/insert');
     const deviceRow = tables.get('#devices-table tbody').children[0];
     assert(deviceRow.innerHTML.includes('&lt;img'));
@@ -3760,6 +3760,13 @@ async function checkLanguagePresentation() {
     assert.equal(prerequisitesDone.role, 'status');
     assert(prerequisitesDone.children[0].textContent.includes('2 intentados · 2 completados'), 'Actual prerequisite work may exceed the number of selected jobs');
     assert(tables.get('#jobs-table tbody').innerHTML.includes('No hay trabajos en cola.'));
+    await showJobFixtures({ Q2: jobMeta('Q2') });
+    const awaitingConfirmation = await jobEnvelopeAction('run', { status: 'ok', error: false, data: {
+        operation: 'run', requested: ['Q2'], results: { Q2: { success: true, error: null, attempted: true } },
+        jobs: { Q2: jobMeta('Q2', { state: 'succeeded', verification: { state: 'unconfirmed' } }) },
+        summary: jobSummary(1, { attempted: 1, succeeded: 1 }) } }, ['Q2']);
+    assert.equal(awaitingConfirmation.className, 'toast toast-info', 'Unconfirmed observation must not show a green verified success or turn a completed write into an error');
+    assert(tables.get('#jobs-table tbody').innerHTML.includes('No hay trabajos en cola.'), 'An unconfirmed receipt must not requeue completed execution');
     await showJobFixtures({ Q2: jobMeta('Q2') });
     const completedElsewhere = await jobEnvelopeAction('run', { status: 'ok', error: false, data: {
         operation: 'run', requested: ['Q2'], results: { Q2: { success: true, error: null, attempted: false } },

@@ -105,7 +105,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let repairBusy = false;
     let repairGeneration = 0;
     let repairRequiresReload = false;
-    const navigationViews = new Set(['devices', 'plans', 'config', 'jobs', 'system', 'network_conflicts']);
+    const navigationViews = new Set(['devices', 'plans', 'config', 'jobs', 'system', 'network_conflicts', 'diagnostics']);
     const navigationVersion = 1;
     const navigationScopeUrl = new URL(api.endpoint || window.location.href, window.location.href);
     const navigationScope = navigationScopeUrl.origin + navigationScopeUrl.pathname;
@@ -1933,7 +1933,8 @@ document.addEventListener('DOMContentLoaded', () => {
         jobsViewGeneration++;
         clearJobsRefreshTimer();
         currentView = view;
-        translatedText(byId('page-title'), { devices: 'Dispositivos administrados', plans: 'Planes', config: 'Configuración', jobs: 'Trabajos', system: 'Sistema', network_conflicts: 'Conflictos de IP' }[view] || title);
+        globalThis.PanelOperations?.onView(view);
+        translatedText(byId('page-title'), { devices: 'Dispositivos administrados', plans: 'Planes', config: 'Configuración', jobs: 'Trabajos', system: 'Sistema', network_conflicts: 'Conflictos de IP', diagnostics: 'Diagnóstico por servicio' }[view] || title);
         document.querySelectorAll('.nav-item').forEach(nav => nav.classList.toggle('active', nav.dataset.view === view));
         document.querySelectorAll('.view-section').forEach(section => {
             section.style.display = section.id === `view-${view}` ? 'block' : 'none';
@@ -1996,7 +1997,7 @@ document.addEventListener('DOMContentLoaded', () => {
             crmLocalAssignmentProofs.clear();
             if (currentView === 'devices') renderDevicesTable();
             completed(await api.send('update', 'system', 'insert', { type: 'device', id }),
-                t('Sincronización y reconexión completadas.'), name);
+                t('Sincronización ejecutada. Revisa la confirmación en Trabajos.'), name);
             try { await renderDevices(); }
             catch (_) {
                 notify(t('Equipo {name}: {message}', { name, message: t('No se pudo actualizar el estado del equipo.') }), 'error');
@@ -2714,6 +2715,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     throw new Error(t('Respuesta inválida del servidor.'));
                 jobsCache = jobs;
                 renderJobsTable(jobs);
+                globalThis.PanelOperations?.jobsUpdated();
                 jobsLastUpdated = new Date();
                 jobsRefreshFailed = false;
                 return true;
@@ -2928,6 +2930,13 @@ document.addEventListener('DOMContentLoaded', () => {
             if (jobReviewRequested === key) { row.className = 'job-review-target'; checkbox.focus?.({ preventScroll: false }); }
             checkbox.addEventListener('change', updateJobSelection);
             const repair = jobNetworkRepairTarget(error, job.serviceId ?? job.id);
+            const diagnosticId = Number(job.serviceId ?? job.id);
+            if (globalThis.PanelOperations && Number.isSafeInteger(diagnosticId) && diagnosticId > 0) {
+                const diagnostic = document.createElement('button'); diagnostic.type = 'button'; diagnostic.className = 'btn btn-secondary job-repair-button';
+                translatedText(diagnostic, 'Diagnóstico por servicio');
+                diagnostic.addEventListener('click', () => globalThis.PanelOperations.openService(diagnosticId));
+                row.querySelector('.job-description').appendChild(diagnostic);
+            }
             if (repair && repairModal && typeof api.previewNetworkRepair === 'function') {
                 const review = document.createElement('button'); review.type = 'button'; review.className = 'btn btn-secondary job-repair-button';
                 translatedText(review, 'Revisar reserva del servicio #{id}', { id: repair.serviceId });
@@ -2997,6 +3006,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const job = data.jobs[key] || {};
             if (action === 'run' && result?.success === true) {
                 if (result.attempted === false && details++ < 8) parts.push(t('{job}: ya estaba completado.', { job: key }));
+                if (job.verification && globalThis.PanelOperations) parts.push(t('{job}: {reason}', { job: key,
+                    reason: globalThis.PanelOperations.verificationLabel(job.verification.state) }));
                 continue;
             }
             if (action === 'delete' && result === true) continue;
@@ -3016,7 +3027,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const error = Boolean(response.error || ['failed', 'error'].includes(response.status)
             || summary.failed || summary.pending || summary.refused);
         if (error && !summary.failed && !summary.pending && !summary.refused) parts.push(t('No se pudo confirmar el resultado de la operación.'));
-        return { data, message: parts.join(' '), kind: error ? 'error' : 'success' };
+        const unverified = action === 'run' && Object.values(data.jobs).some(job =>
+            ['unconfirmed', 'mismatch'].includes(job.verification?.state));
+        return { data, message: parts.join(' '), kind: error ? 'error' : unverified ? 'info' : 'success' };
     }
     function retainJobDiagnostics(feedback) {
         for (const [key, job] of Object.entries(feedback.data.jobs)) {
@@ -3061,7 +3074,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         + t('No se pudo actualizar la lista de trabajos. Recarga la vista para ver el último estado.'));
                 }
             }
-            if (feedback) { notify(feedback.message, feedback.kind); return; }
+            if (feedback) { await globalThis.PanelOperations?.refreshResults(); notify(feedback.message, feedback.kind); return; }
             if (operationError) throw operationError;
             if (action === 'run') completed(result, t('Trabajos procesados.'));
         } finally {
@@ -3446,6 +3459,11 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (error) { if (sequence === languageLoad) notify(t('Error: {message}', { message: error.message }), 'error'); }
     });
 
+    globalThis.PanelOperations?.mount({ api, navigate: view => switchView(view, view), reviewJob: key => {
+        if (!/^Q[1-9]\d*$/.test(key)) return;
+        jobReviewRequested = key;
+        switchView('jobs', 'Trabajos');
+    } });
     PanelUtils.replaceIcons();
     api.onRecovery?.(applyRecovery);
     if (api.recovery?.readOnly === true) applyRecovery(api.recovery);

@@ -31,6 +31,29 @@ class RouterosAPI
     var $error_str;         //  Variable for storing connection error text, if any
     private ?string $connection_failure = null;
     private bool $logging_in = false;
+    private ?float $read_deadline = null;
+
+    /** Optional absolute budget for read-only observation; ordinary provisioning is unchanged. */
+    public function withReadDeadline(float $deadline, callable $operation)
+    {
+        $previous=$this->read_deadline; $this->read_deadline=$deadline;
+        try { return $operation(); }
+        finally {
+            $this->read_deadline=$previous;
+            if (is_resource($this->socket)) stream_set_timeout($this->socket,(int)$this->timeout);
+        }
+    }
+
+    private function applyReadDeadline(): void
+    {
+        if ($this->read_deadline===null) return;
+        $remaining=$this->read_deadline-microtime(true);
+        if ($remaining<=0) throw new RuntimeException('RouterOS observation timed out');
+        if (is_resource($this->socket)) {
+            $remaining=min((float)$this->timeout,$remaining); $seconds=(int)$remaining;
+            stream_set_timeout($this->socket,$seconds,max(1,(int)(($remaining-$seconds)*1000000)));
+        }
+    }
 
     /* Check, can be var used in foreach  */
 
@@ -109,7 +132,9 @@ class RouterosAPI
     protected function openSocket(string $address, $context)
     {
         $transportError = '';
-        return @stream_socket_client($address, $this->error_no, $transportError, $this->timeout, STREAM_CLIENT_CONNECT, $context);
+        $this->applyReadDeadline();
+        $timeout=$this->read_deadline===null ? $this->timeout : min($this->timeout,max(0.001,$this->read_deadline-microtime(true)));
+        return @stream_socket_client($address, $this->error_no, $transportError, $timeout, STREAM_CLIENT_CONNECT, $context);
     }
 
     private function loginResponseState($response, bool $allowChallenge): string
@@ -186,6 +211,7 @@ class RouterosAPI
         if (!is_resource($this->socket)) throw new RuntimeException('RouterOS connection is closed');
         $offset = 0;
         while ($offset < strlen($bytes)) {
+            $this->applyReadDeadline();
             $written = @fwrite($this->socket, substr($bytes, $offset));
             if ($written === false || $written === 0) {
                 $this->connected = false;
@@ -205,6 +231,7 @@ class RouterosAPI
         if (!is_resource($this->socket)) throw new RuntimeException('RouterOS connection is closed');
         $bytes = '';
         while (strlen($bytes) < $length) {
+            $this->applyReadDeadline();
             $chunk = @fread($this->socket, $length - strlen($bytes));
             if ($chunk === false || $chunk === '') {
                 $status = stream_get_meta_data($this->socket);
