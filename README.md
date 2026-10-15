@@ -2,6 +2,18 @@
 
 [Complete English changelog](docs/CHANGELOG_EN.md) · [Texto completo para el PR](docs/PR_DESCRIPTION.md) · [Webhook setup and rationale](docs/WEBHOOK_SETUP_EN.md) · [Mejoras en español](docs/MEJORAS.md)
 
+## Candidato 2.4.35 — corregir un ID de servicio contradictorio en la cuenta del router
+
+La comprobación de propiedad de una cuenta PPPoE acepta que el atributo opcional de Hotspot no exista en un catálogo válido de UISP. Site y usuario siguen siendo obligatorios. Los errores distinguen qué configuración falta y presentan el ID del comentario como un dato por comprobar, sin atribuirle automáticamente la propiedad de la cuenta.
+
+Cuando el comentario contiene el cliente correcto pero el ID de servicio de otra persona, la corrección exige coincidencia exacta entre el usuario actual del router, del trabajo y de UISP, el Site del destino y la IPv4 actual. El otro servicio debe tener cliente, usuario, router e IP diferentes y confirmados. Se revisan reclamaciones aplicadas y trabajos ejecutables, se releen ambas fichas y se guarda un respaldo privado antes de actualizar el mismo registro RouterOS. Una evidencia incompleta conserva la cuenta y muestra el motivo.
+
+Los reintentos preparados también normalizan los identificadores del comentario de la cuenta desde su propio servicio, conservando usuario, IP y credenciales, para no volver a publicar un marcador antiguo incoherente.
+
+Después de instalar, recargar el panel y ejecutar el pendiente afectado. No hace falta vaciar la cola ni repetir la sincronización completa. La comprobación utiliza lecturas de UISP; la corrección actualiza únicamente la cuenta identificada del router, sin editar la ficha del ID incorrecto. Las pruebas usan datos sintéticos; el resultado real se confirma después del reintento.
+
+Validación 2.4.35 aprobada: **47 suites aisladas**, sintaxis de **55 archivos PHP propios** y verificación de 367 entradas, 134 archivos propios y 13 dependencias fijadas. Informe actual: `dist/verification-2.4.35.json`. SHA-256: `92a773f1021233b4407d5a42466d8ee799322cad3db35dd7b703e208581389e1`. Las pruebas usan datos sintéticos y transportes simulados/locales; el reintento de producción queda por confirmar.
+
 ## Candidato 2.4.34 — corregir reintentos con IP de otro Site y vínculos de cuentas anteriores
 
 Los trabajos ya preparados comprueban de nuevo en UISP una IP perteneciente a otro Site antes de ejecutar sus comandos. Si sigue siendo ajena al destino, vacían únicamente ese atributo y preparan una dirección del pool correspondiente. Si UISP ya tiene una IP manual nueva, la respetan. Se conserva la elección entre reintentos y la reserva anterior hasta confirmar el cambio completo. La corrección mantiene la identidad de los recursos existentes, el plan y las credenciales del servicio.

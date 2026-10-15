@@ -6,6 +6,18 @@ Esta revisión reúne las modificaciones de [dhanielsnieto en el PR #89](https:/
 
 El plugin comunica UISP CRM con los MikroTik mediante la **API nativa de RouterOS**. Los puertos habituales son `8728` para API y `8729` para API con TLS. El panel permite administrar esa integración; no cambia el transporte a SSH, WinBox o REST.
 
+## Candidato 2.4.35 — comprobar y corregir un ID contradictorio en RouterOS
+
+La revisión de una cuenta PPPoE ya no exige crear un atributo opcional de Hotspot ausente de un catálogo válido. Site y usuario mantienen la validación estricta; una cuenta Hotspot requiere su atributo confirmado. Los errores identifican la configuración de Site, usuario o Hotspot que no pudo comprobarse. El ID presente en un comentario se muestra como indicado, sin asumir que sea un servicio anterior del cliente.
+
+Si el comentario combina el cliente actual con el ID de servicio de otra persona, se permite corregir el mismo registro sólo con usuario exacto en RouterOS, trabajo y UISP, Site del router actual e IPv4 coincidente. El servicio indicado debe tener cliente, usuario, endpoint e IP distintos, confirmados con consultas frescas. Se vuelven a leer ambas fichas y la cuenta, se comprueban reclamaciones aplicadas, trabajos y limpiezas, y se guarda un respaldo privado sin contraseñas. Los trabajos del otro servicio no bloquean por su ID si su destino e identidad prueban que son ajenos a la cuenta revisada. Los datos desconocidos o contradictorios conservan la protección.
+
+Los comandos PPP/Hotspot preparados normalizan el CID y SID del comentario desde la instantánea que identifica el trabajo. Conservan la etiqueta legible y los parámetros de la cuenta, y mantienen la comprobación independiente de propiedad del registro RouterOS. Esto evita reintroducir un ID ajeno desde un comentario antiguo; no atribuye el origen de los datos observados a ese caso. Las eliminaciones conservan su evidencia histórica.
+
+La corrección usa lecturas de UISP y un set del registro exacto de la cuenta; no edita ni retira el servicio indicado por error. La reasociación anterior para servicios terminados o HTTP 404 comprobado se conserva. Después de actualizar, recargar el panel y reintentar el pendiente; vaciar la cola no repara un comentario incorrecto del router.
+
+Validación 2.4.35 aprobada: **47 suites aisladas**, sintaxis de **55 archivos PHP propios** y verificación de 367 entradas, 134 archivos propios y 13 dependencias fijadas. Informe actual: `dist/verification-2.4.35.json`. SHA-256: `92a773f1021233b4407d5a42466d8ee799322cad3db35dd7b703e208581389e1`. Las pruebas usan datos sintéticos y transportes simulados/locales; el reintento de producción queda por confirmar.
+
 ## Candidato 2.4.34 — corregir reintentos con IP de otro Site y vínculos de cuentas anteriores
 
 Los trabajos ya preparados comprueban de nuevo en UISP una IP perteneciente a otro Site antes de ejecutar sus comandos. Si sigue siendo ajena al destino, vacían únicamente ese atributo y preparan una dirección del pool correspondiente. Si UISP ya tiene una IP manual nueva, la respetan. Se conserva la elección entre reintentos y la reserva anterior hasta confirmar el cambio completo. La corrección mantiene la identidad de los recursos existentes, el plan y las credenciales del servicio.

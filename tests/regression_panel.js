@@ -1501,13 +1501,15 @@ async function checkCrmNetworkMonitorPanel() {
     }
     const ownershipReasons = {
         identity_unverified: 'Revisa el usuario y su vínculo', router_changed: 'La configuración del router cambió',
-        mapping_unverified: 'atributos de Site y usuario', client_unverified: 'cliente esté vigente en UISP',
+        mapping_unverified: 'catálogo de atributos de UISP', client_unverified: 'cliente esté vigente en UISP',
+        mapping_site_unverified: 'atributo de Site configurado', mapping_user_unverified: 'atributo de usuario configurado',
+        mapping_hotspot_unverified: 'atributo de Hotspot configurado', marker_unverified: 'faltan datos coincidentes de usuario, Site o IP',
         target_unverified: 'comprobar el servicio actual', target_changed: 'Sincronízalo de nuevo',
-        previous_unverified: 'comprobar el servicio anterior', previous_active: 'El servicio anterior sigue vigente',
-        previous_job_pending: 'El servicio anterior tiene un trabajo pendiente', queue_unverified: 'comprobar los trabajos del servicio anterior',
-        previous_changed: 'estado del servicio anterior cambió', catalog_incomplete: 'comprobación de los servicios en UISP',
-        peer_site_unverified: 'mismo usuario y no se pudo comprobar su Site', account_claimed: 'Otro servicio vigente usa esta misma cuenta',
-        verification_unavailable: 'completar la verificación con UISP', backup_failed: 'guardar el respaldo del vínculo anterior',
+        previous_unverified: 'comprobar el servicio indicado', previous_active: 'El servicio indicado sigue vigente',
+        previous_job_pending: 'El servicio indicado tiene un trabajo pendiente', queue_unverified: 'comprobar los trabajos del servicio indicado',
+        previous_changed: 'datos del servicio indicado cambiaron', catalog_incomplete: 'comprobación de los servicios en UISP',
+        peer_site_unverified: 'mismo usuario y no se pudo comprobar su Site', account_claimed: 'Otro servicio reclama esta misma cuenta',
+        verification_unavailable: 'completar la verificación con UISP', backup_failed: 'guardar el respaldo del comentario de la cuenta',
         record_changed: 'cuenta del router cambió'
     };
     for (const [reason, guidance] of Object.entries(ownershipReasons)) {
@@ -1516,10 +1518,13 @@ async function checkCrmNetworkMonitorPanel() {
         await jobs.navigate('jobs'); const jobHtml = jobs.tables.get('#jobs-table tbody').children[0].innerHTML;
         assert(!jobHtml.includes('router_ownership_conflict:') && jobHtml.includes(guidance), 'Ownership diagnostics must explain the actual reason: ' + reason);
         assert(jobHtml.includes('/crm/client/service/501') && jobHtml.includes('/crm/client/service/509') && jobHtml.includes('noopener noreferrer'));
-        assert(jobHtml.includes('Servicio actual #501') && jobHtml.includes('Servicio anterior #509'));
-        if (['previous_active', 'account_claimed', 'previous_job_pending'].includes(reason))
-            assert(!jobHtml.includes('reasociará la cuenta automáticamente'), 'Current owners require review instead of an automatic repair promise');
-        if (reason === 'verification_unavailable') assert(jobHtml.includes('sólo si el servicio anterior terminó o ya no existe'));
+        assert(jobHtml.includes('Servicio actual #501') && jobHtml.includes('Servicio indicado #509'));
+        assert(jobHtml.includes('El comentario de la cuenta del servicio #501 indica el servicio #509. Ese ID debe comprobarse con UISP.')
+            && !jobHtml.includes('servicio anterior') && !jobHtml.includes('sigue vinculada'), 'A router comment does not prove that the referenced ID is a previous owner');
+        if (['previous_active', 'account_claimed', 'previous_job_pending', 'marker_unverified'].includes(reason))
+            assert(!jobHtml.includes('corregirá el comentario sólo si'), 'Unverified owners require review instead of an automatic repair promise');
+        if (reason === 'verification_unavailable') assert(jobHtml.includes('confirma la identidad de la cuenta')
+            && jobHtml.includes('terminó, ya no existe o corresponde a otro servicio con datos distintos'));
         assert.equal(jobs.calls.filter(call => call.changeType !== 'list').length, 0, 'Rendering ownership guidance must not change or execute anything');
     }
     for (const error of ['router_ownership_conflict: current_service=502 previous_service=509 reason=previous_active',
@@ -2323,7 +2328,7 @@ async function checkNetworkRecoveryPanel() {
     assert.deepEqual(plain(healthy.diagnostics()[0].data), {}, 'Reactive recovery reads must not request live CRM verification');
     const malformed = recoveryPanelFixture({ bootstrap: '{', details }); await flush();
     assert.equal(malformed.nodes.get('btn-cache').disabled, false, 'An invalid optional bootstrap must not break normal navigation');
-    assert.equal((markup.match(/(?:src|href)="(?:js|css)\/[^"?]+\?v=2\.0\.49"/g) || []).length, 5, 'Every panel asset must use the new revision to invalidate UISP browser caches');
+    assert.equal((markup.match(/(?:src|href)="(?:js|css)\/[^"?]+\?v=2\.0\.50"/g) || []).length, 5, 'Every panel asset must use the new revision to invalidate UISP browser caches');
     assert(!markup.includes('v=2.0.45'));
     assert(apiSource.includes("'alert-triangle':"), 'The conflict warning must have its own local warning icon');
 }
@@ -3675,9 +3680,27 @@ async function checkLanguagePresentation() {
         operation: 'run', requested: ['Q1'], results: { Q1: { success: false, error: ownershipError, attempted: true } },
         jobs: { Q1: jobMeta('Q1', { error: ownershipError, attempts: 1 }) },
         summary: jobSummary(1, { attempted: 1, failed: 1, pending: 1 }) } }, ['Q1']);
-    assert(ownershipFailure.children[0].textContent.includes('servicio #1420 sigue vinculada al servicio #1450')
-        && ownershipFailure.children[0].textContent.includes('El servicio anterior sigue vigente en UISP.')
+    assert(ownershipFailure.children[0].textContent.includes('El comentario de la cuenta del servicio #1420 indica el servicio #1450.')
+        && ownershipFailure.children[0].textContent.includes('El servicio indicado sigue vigente en UISP.')
         && !ownershipFailure.children[0].textContent.includes('router_ownership_conflict:'), 'Run feedback must explain the actual ownership reason too');
+    for (const [language, reason, prefix, detail] of [
+        ['es', 'marker_unverified', 'El comentario de la cuenta del servicio #1420 indica el servicio #1450.', 'faltan datos coincidentes de usuario, Site o IP'],
+        ['en', 'marker_unverified', 'The account comment for service #1420 names service #1450.', 'matching username, Site or IP details are missing'],
+        ['es', 'mapping_hotspot_unverified', 'El comentario de la cuenta del servicio #1420 indica el servicio #1450.', 'atributo de Hotspot configurado'],
+        ['en', 'mapping_hotspot_unverified', 'The account comment for service #1420 names service #1450.', 'Hotspot attribute configured in the plugin']
+    ]) {
+        jobsTranslations.PanelI18n.setLanguage(language);
+        const error = 'router_ownership_conflict: current_service=1420 previous_service=1450 reason=' + reason;
+        const feedback = await jobEnvelopeAction('run', { status: 'failed', error: true, data: {
+            operation: 'run', requested: ['Q1'], results: { Q1: { success: false, error, attempted: true } },
+            jobs: { Q1: jobMeta('Q1', { error, attempts: 1 }) },
+            summary: jobSummary(1, { attempted: 1, failed: 1, pending: 1 }) } }, ['Q1']);
+        const message = feedback.children[0].textContent;
+        assert(message.includes(prefix) && message.includes(detail) && !message.includes('router_ownership_conflict:'),
+            'The failed action toast must translate the exact ownership blocker in ' + language);
+        assert(!message.includes('previous service') && !message.includes('servicio anterior'), 'Toast must not confirm an unverified previous owner');
+    }
+    jobsTranslations.PanelI18n.setLanguage('es');
     await showJobFixtures({ Q1: jobMeta('Q1'), Q2: jobMeta('Q2', { blockedBy: 'Q1', blockedReason: 'earlier_job' }) });
     const attemptError = 'Router actual fixture failed ' + attack;
     const actualFailure = await jobEnvelopeAction('run', { status: 'failed', error: true, message: 'jobs_pending_after_failed_attempt', data: {

@@ -2811,7 +2811,7 @@ document.addEventListener('DOMContentLoaded', () => {
         return null;
     }
     function jobOwnershipDiagnostic(error, serviceId) {
-        const retry = 'Al ejecutar de nuevo, el plugin comprobará UISP y reasociará la cuenta automáticamente sólo si el servicio anterior terminó o ya no existe.';
+        const retry = 'Al ejecutar de nuevo, el plugin comprobará UISP y corregirá el comentario sólo si confirma la identidad de la cuenta y que el servicio indicado terminó, ya no existe o corresponde a otro servicio con datos distintos.';
         if (error === 'router_ownership_record_changed') return { parts: [{ source: 'La cuenta del router cambió durante la comprobación. Se requiere verificarla de nuevo.', params: {} },
             { source: retry, params: {} }], links: [] };
         if (error === 'The matching RouterOS account or queue belongs to another service or was created manually') {
@@ -2825,27 +2825,31 @@ document.addEventListener('DOMContentLoaded', () => {
         const reasons = {
             identity_unverified: 'No se pudo confirmar la identidad de la cuenta del router. Revisa el usuario y su vínculo con el cliente en UISP.',
             router_changed: 'La configuración del router cambió. Sincroniza de nuevo el servicio con los datos actuales de UISP.',
-            mapping_unverified: 'No se pudieron comprobar los atributos de Site y usuario. Revisa su configuración en el plugin.',
+            mapping_unverified: 'No se pudo comprobar el catálogo de atributos de UISP. Verifica que esté disponible antes de reintentar.',
+            mapping_site_unverified: 'No se pudo comprobar el atributo de Site configurado en el plugin. Revisa su clave y que sea un atributo de servicio en UISP.',
+            mapping_user_unverified: 'No se pudo comprobar el atributo de usuario configurado en el plugin. Revisa su clave y que sea un atributo de servicio en UISP.',
+            mapping_hotspot_unverified: 'No se pudo comprobar el atributo de Hotspot configurado en el plugin. Revisa su clave y que sea un atributo de servicio en UISP.',
+            marker_unverified: 'El ID del comentario corresponde a otro cliente, pero faltan datos coincidentes de usuario, Site o IP para corregirlo automáticamente. Revisa la cuenta y ambas fichas.',
             client_unverified: 'No se pudo confirmar que el cliente esté vigente en UISP. Revisa su ficha antes de reintentar.',
             target_unverified: 'No se pudo comprobar el servicio actual en UISP. Revisa su ficha antes de reintentar.',
             target_changed: 'El servicio actual cambió en UISP. Sincronízalo de nuevo para usar su estado y sus atributos actuales.',
-            previous_unverified: 'No se pudo comprobar el servicio anterior en UISP. Su vínculo con la cuenta se conserva.',
-            previous_active: 'El servicio anterior sigue vigente en UISP. Revisa ambas fichas y corrige el vínculo antes de reintentar.',
-            previous_job_pending: 'El servicio anterior tiene un trabajo pendiente sobre esta cuenta. Revisa ese trabajo antes de reintentar.',
-            queue_unverified: 'No se pudieron comprobar los trabajos del servicio anterior. Su vínculo con la cuenta se conserva.',
-            previous_changed: 'El estado del servicio anterior cambió durante la comprobación. Su vínculo con la cuenta se conserva.',
+            previous_unverified: 'No se pudo comprobar el servicio indicado en UISP. El comentario de la cuenta se conserva.',
+            previous_active: 'El servicio indicado sigue vigente en UISP. Revisa ambas fichas y corrige el vínculo antes de reintentar.',
+            previous_job_pending: 'El servicio indicado tiene un trabajo pendiente sobre esta cuenta. Revisa ese trabajo antes de reintentar.',
+            queue_unverified: 'No se pudieron comprobar los trabajos del servicio indicado. El comentario de la cuenta se conserva.',
+            previous_changed: 'Los datos del servicio indicado cambiaron durante la comprobación. El comentario de la cuenta se conserva.',
             catalog_incomplete: 'No se pudo completar la comprobación de los servicios en UISP.',
             peer_site_unverified: 'Otro servicio tiene el mismo usuario y no se pudo comprobar su Site. Revisa sus atributos en UISP.',
-            account_claimed: 'Otro servicio vigente usa esta misma cuenta en el router. Revisa los usuarios y Sites en UISP antes de reintentar.',
-            verification_unavailable: 'No se pudo completar la verificación con UISP. La cuenta conserva su vínculo anterior.',
-            backup_failed: 'No se pudo guardar el respaldo del vínculo anterior. Revisa el espacio y los permisos de la carpeta de datos del plugin.',
+            account_claimed: 'Otro servicio reclama esta misma cuenta en el router. Revisa los usuarios y Sites en UISP y el estado aplicado antes de reintentar.',
+            verification_unavailable: 'No se pudo completar la verificación con UISP. El comentario de la cuenta se conserva.',
+            backup_failed: 'No se pudo guardar el respaldo del comentario de la cuenta. Revisa el espacio y los permisos de la carpeta de datos del plugin.',
             record_changed: 'La cuenta del router cambió durante la comprobación. Se requiere verificarla de nuevo.'
         };
         if (!Object.prototype.hasOwnProperty.call(reasons, match[3]) || match[2] === '0' && match[3] !== 'identity_unverified') return null;
         const current = Number(match[1]), previous = Number(match[2]), parts = [], links = [];
         if (previous) {
-            parts.push({ source: 'La cuenta del servicio #{current} sigue vinculada al servicio #{previous} en el router.', params: { current, previous } });
-            links.push({ id: current, label: 'Servicio actual #{id}' }, { id: previous, label: 'Servicio anterior #{id}' });
+            parts.push({ source: 'El comentario de la cuenta del servicio #{current} indica el servicio #{previous}. Ese ID debe comprobarse con UISP.', params: { current, previous } });
+            links.push({ id: current, label: 'Servicio actual #{id}' }, { id: previous, label: 'Servicio indicado #{id}' });
         }
         parts.push({ source: reasons[match[3]], params: {} });
         if (['previous_unverified', 'previous_changed', 'catalog_incomplete', 'verification_unavailable', 'record_changed', 'queue_unverified'].includes(match[3]))

@@ -136,7 +136,7 @@ try {
         ownershipReject(static fn() => $make()->authorize($command,$row), 'previous_active');
     }
     $previous = $entity(41,18,2); $collection = [$target,$previous];
-    ownershipReject(static fn() => $make()->authorize($command,$row), 'previous_unverified');
+    ownershipReject(static fn() => $make()->authorize($command,$row), 'marker_unverified');
     $previous = $oldSafe; $collection = [$target,$previous,$entity(43)];
     ownershipReject(static fn() => $make()->authorize($command,$row), 'account_claimed');
     $collection[2] = $entity(43,99);
@@ -193,7 +193,7 @@ try {
     ownershipReject(static fn() => $make()->authorize($command,$row), 'client_unverified');
     $client['isArchived'] = false;
     $catalog[1]['attributeType'] = 'client';
-    ownershipReject(static fn() => $make()->authorize($command,$row), 'mapping_unverified');
+    ownershipReject(static fn() => $make()->authorize($command,$row), 'mapping_user_unverified');
     $catalog[1]['attributeType'] = 'service';
 
     // The retired service may no longer carry this account attribute, so it need not appear in the filtered catalog.
@@ -297,6 +297,148 @@ try {
         return $freshVerifier->matches($freshProof,$post,$record,$device);
     },static fn() => $mt->do_batch((object)$device,[$update]));
     ownershipCheck($writes === 0 && !$router->mutations && $router->account['.id'] === '*A2', 'Changed RouterOS identity was detected only after mutation');
+
+    // Optional Hotspot mapping absent from a valid catalog must not block a PPP repair.
+    $target = $targetSafe; $previous = $oldSafe; $collection = [$target,$previous];
+    $catalog = array_slice($catalog,0,2);
+    $optional = $make(); ownershipCheck($optional->matches($optional->authorize($command,$row),$command,$row,$device),
+        'Configured but absent optional Hotspot descriptor blocked a PPP account');
+    $target['attributes'][] = ['key'=>'access_mode','customAttributeId'=>3,'value'=>'1']; $collection = [$target,$previous];
+    ownershipReject(static fn() => $make()->authorize($command,$row), 'mapping_hotspot_unverified');
+    $target = $targetSafe; $collection = [$target,$previous];
+    ownershipReject(static fn() => (new ApiRouterOwnership($hotspotService,$device,$transport,$directory . '/data/data.db'))->authorize($hotspot,$row), 'mapping_hotspot_unverified');
+    $catalog[] = ['id'=>3,'key'=>'access_mode','attributeType'=>'client'];
+    ownershipReject(static fn() => $make()->authorize($command,$row), 'mapping_hotspot_unverified');
+    $catalog[2]['attributeType']='service'; $catalog[]=['id'=>4,'key'=>'access_mode','attributeType'=>'service'];
+    ownershipReject(static fn() => $make()->authorize($command,$row), 'mapping_unverified');
+    $catalog = array_slice($catalog,0,2); $catalog[]=['id'=>2,'key'=>'unused','attributeType'=>'service'];
+    ownershipReject(static fn() => $make()->authorize($command,$row), 'mapping_unverified');
+    $catalog = array_slice($catalog,0,2); $catalog[0]['key']='renamed-site';
+    ownershipReject(static fn() => $make()->authorize($command,$row), 'mapping_site_unverified');
+    $catalog[0]['key']='site'; $catalog[1]['key']='renamed-account';
+    ownershipReject(static fn() => $make()->authorize($command,$row), 'mapping_user_unverified');
+    $catalog[1]['key']='account';
+
+    // A contradictory marker combines the target client with another client's service ID.
+    // Require disjoint fresh identity/router and a literal target IPv4 matching the actual account.
+    $database->exec("INSERT INTO config(key,value) VALUES('ip_addr_attr','ipv4')");
+    $catalog[]=['id'=>4,'key'=>'ipv4','attributeType'=>'service'];
+    $target=$entity(42); $target['attributes'][]=['key'=>'ipv4','customAttributeId'=>4,'value'=>'198.51.100.42'];
+    $previous=$entity(41,99,1,'Fixture West','other-fixture-account');
+    $previous['attributes'][]=['key'=>'ipv4','customAttributeId'=>4,'value'=>'203.0.113.41'];
+    $mixedTarget=$target; $mixedPrevious=$previous; $collection=[$target];
+    $mixedRow=array_replace($row,['remote-address'=>'198.51.100.42']);
+    $mixedCommand=$command+['batch'=>'mixed-marker','remote-address'=>'198.51.100.42'];
+    $jobs=new SQLite3($directory . '/data/jobs.db'); $jobs->enableExceptions(true);
+    $jobs->exec('DELETE FROM jobs; DELETE FROM cancellation_cleanups; CREATE TABLE service_versions(service_id INTEGER,applied_payload TEXT)');
+    $jobInsert=static function(int $sid,array $snapshot,string $table='jobs') use($jobs): void {
+        $query=$table==='jobs' ? "INSERT INTO jobs(service_id,status,payload) VALUES(?,'pending',?)"
+            : ($table==='service_versions' ? 'INSERT INTO service_versions(service_id,applied_payload) VALUES(?,?)' : 'INSERT INTO cancellation_cleanups(service_id,payload) VALUES(?,?)');
+        $statement=$jobs->prepare($query); $statement->bindValue(1,$sid,SQLITE3_INTEGER);
+        $statement->bindValue(2,json_encode($snapshot,JSON_THROW_ON_ERROR),SQLITE3_TEXT); $statement->execute();
+    };
+    $otherSnapshot=['id'=>41,'clientId'=>99,'device'=>2,'username'=>'other-fixture-account','hotspot'=>false,
+        '_commands'=>[['path'=>'/ppp/secret','name'=>'other-fixture-account','_service_id'=>41,'_client_id'=>99]]];
+    $jobInsert(42,$service); $jobInsert(41,$otherSnapshot); $jobInsert(41,$otherSnapshot,'service_versions');
+    $jobHash=hash_file('sha256',$directory . '/data/jobs.db'); $mainHash=hash_file('sha256',$directory . '/data/data.db');
+    $mixedVerifier=$make(); $mixedProof=$mixedVerifier->authorize($mixedCommand,$mixedRow);
+    ownershipCheck($mixedVerifier->matches($mixedProof,$mixedCommand,$mixedRow,$device),'Exclusive, contradictory marker could not be corrected');
+    ownershipCheck(hash_file('sha256',$directory . '/data/jobs.db')===$jobHash && hash_file('sha256',$directory . '/data/data.db')===$mainHash,
+        'Marker verification altered the other client queue, cache or current service data');
+    $backup=json_decode(file_get_contents($directory . '/data/router-ownership/42-' . substr($mixedProof['token'],0,32) . '.json'),true,32,JSON_THROW_ON_ERROR);
+    ownershipCheck($backup['evidence']['kind']==='contradictory_service_marker' && $backup['evidence']['previous_client']===99
+        && $backup['evidence']['previous_username']==='other-fixture-account' && $backup['evidence']['target_address']==='198.51.100.42',
+        'Contradictory marker backup omitted the evidence that protects the other service');
+    $driftRow=$mixedRow; $driftRow['remote-address']='198.51.100.99';
+    ownershipCheck(!$mixedVerifier->matches($mixedProof,$mixedCommand,$driftRow,$device),'Changed router address reused an IP-based ownership proof');
+    foreach (['198.51.100.99','named-router-pool',null,'198.51.100.42/32'] as $address) {
+        $unsafeRow=$mixedRow; $unsafeRow['remote-address']=$address;
+        ownershipReject(static fn() => $make()->authorize($mixedCommand,$unsafeRow),'marker_unverified');
+        $unsafeCommand=$mixedCommand; $unsafeCommand['remote-address']=$address;
+        ownershipReject(static fn() => $make()->authorize($unsafeCommand,$mixedRow),'marker_unverified');
+    }
+    $target['attributes'][2]['value']='198.51.100.99'; $collection=[$target];
+    ownershipReject(static fn() => $make()->authorize($mixedCommand,$mixedRow),'marker_unverified');
+    $target=$mixedTarget; $collection=[$target]; $previous['attributes'][1]['value']='fixture-user';
+    ownershipReject(static fn() => $make()->authorize($mixedCommand,$mixedRow),'marker_unverified');
+    $previous=$mixedPrevious; $previous['attributes'][0]['value']='Fixture East';
+    ownershipReject(static fn() => $make()->authorize($mixedCommand,$mixedRow),'marker_unverified');
+    $previous=$mixedPrevious; $database->exec("UPDATE devices SET ip='192.0.2.1' WHERE id=2");
+    ownershipReject(static fn() => $make()->authorize($mixedCommand,$mixedRow),'marker_unverified');
+    $database->exec("UPDATE devices SET ip='192.0.2.2' WHERE id=2");
+    $previous['attributes'][2]['value']='198.51.100.42';
+    ownershipReject(static fn() => $make()->authorize($mixedCommand,$mixedRow),'marker_unverified');
+    $previous=$mixedPrevious; $previous['attributes'][2]['value']=null;
+    ownershipReject(static fn() => $make()->authorize($mixedCommand,$mixedRow),'marker_unverified');
+    $previous=$mixedPrevious; $previous['clientId']=17;
+    ownershipReject(static fn() => $make()->authorize($mixedCommand,$mixedRow),'previous_active');
+    $previous=$mixedPrevious;
+
+    // Every relevant old-service fact is reread, including facts that remain disjoint but changed meanwhile.
+    foreach (['client','status','username','site','address'] as $change) {
+        $oldReads=0; $previous=$mixedPrevious;
+        $getHook=static function($path) use(&$previous,&$oldReads,$change): void {
+            if($path!=='clients/services/41' || $oldReads!==1) return;
+            if($change==='client') $previous['clientId']=100;
+            if($change==='status') $previous['status']=3;
+            if($change==='username') $previous['attributes'][1]['value']='changed-other-account';
+            if($change==='site') $previous['attributes'][0]['value']='fixture west';
+            if($change==='address') $previous['attributes'][2]['value']='203.0.113.99';
+        };
+        ownershipReject(static fn() => $make()->authorize($mixedCommand,$mixedRow),'target_changed');
+    }
+    $getHook=null; $previous=$mixedPrevious;
+    $targetReads=0;
+    $getHook=static function($path) use(&$target,&$targetReads): void {
+        if($path==='clients/services/42' && $targetReads===1) $target['attributes'][2]['value']='198.51.100.99';
+    };
+    ownershipReject(static fn() => $make()->authorize($mixedCommand,$mixedRow),'marker_unverified');
+    $getHook=null; $target=$mixedTarget; $collection=[$target];
+
+    // Applied or queued snapshots are checked by actual account and endpoint, not an unrelated numeric ID.
+    $claim=['id'=>41,'clientId'=>99,'device'=>1,'username'=>'fixture-user','_commands'=>[['path'=>'/ppp/secret','name'=>'fixture-user']]];
+    $jobs->exec('DELETE FROM service_versions'); $jobInsert(41,$claim,'service_versions');
+    ownershipReject(static fn() => $make()->authorize($mixedCommand,$mixedRow),'account_claimed');
+    $jobs->exec('DELETE FROM service_versions'); $jobInsert(43,array_replace($claim,['id'=>43]),'service_versions');
+    ownershipReject(static fn() => $make()->authorize($mixedCommand,$mixedRow),'account_claimed');
+    $jobs->exec('DELETE FROM service_versions'); $jobInsert(41,['id'=>41],'service_versions');
+    ownershipReject(static fn() => $make()->authorize($mixedCommand,$mixedRow),'queue_unverified');
+    $jobs->exec('DELETE FROM service_versions'); $jobInsert(41,array_replace($otherSnapshot,['clientId'=>100]),'service_versions');
+    ownershipReject(static fn() => $make()->authorize($mixedCommand,$mixedRow),'queue_unverified');
+    $jobs->exec('DELETE FROM service_versions'); $jobInsert(41,$claim);
+    ownershipReject(static fn() => $make()->authorize($mixedCommand,$mixedRow),'previous_job_pending');
+    $jobs->exec('DELETE FROM jobs WHERE service_id=41'); $jobInsert(41,['id'=>41,'clientId'=>99,'username'=>'other-fixture-account']);
+    ownershipReject(static fn() => $make()->authorize($mixedCommand,$mixedRow),'queue_unverified');
+    $jobs->exec('DELETE FROM jobs WHERE service_id=41'); $jobInsert(41,$otherSnapshot);
+    $jobInsert(42,array_replace($service,['_cleanup'=>$claim]));
+    ownershipReject(static fn() => $make()->authorize($mixedCommand,$mixedRow),'previous_job_pending');
+    $jobs->exec('DELETE FROM jobs WHERE service_id=42'); $jobInsert(42,$service);
+    $jobInsert(41,$otherSnapshot,'cancellation_cleanups');
+    $cleared=$make(); ownershipCheck($cleared->matches($cleared->authorize($mixedCommand,$mixedRow),$mixedCommand,$mixedRow,$device),
+        'Unrelated other-client cleanup blocked correction of an independent marker');
+    $dhcpSnapshot=['id'=>43,'clientId'=>100,'device'=>1,'username'=>'fixture-user','mac'=>'02:00:00:00:00:43',
+        '_commands'=>[['path'=>'/ip/dhcp-server/lease','mac-address'=>'02:00:00:00:00:43']]];
+    $jobInsert(43,$dhcpSnapshot,'service_versions');
+    $dhcpUnrelated=$make(); ownershipCheck($dhcpUnrelated->matches($dhcpUnrelated->authorize($mixedCommand,$mixedRow),$mixedCommand,$mixedRow,$device),
+        'DHCP service with an unused matching username falsely claimed the PPP account');
+    $jobs->exec('DELETE FROM service_versions');
+    $dhcpSnapshot['_commands'][]=['path'=>'/ppp/secret','name'=>'fixture-user'];
+    $jobInsert(43,$dhcpSnapshot,'service_versions');
+    ownershipReject(static fn() => $make()->authorize($mixedCommand,$mixedRow),'account_claimed');
+    $jobs->exec('DELETE FROM service_versions');
+
+    // Real MT batch corrects only the account whose client, username, Site and IPv4 are proven.
+    $router=new OwnershipIntegrationAPI(); $router->account=$mixedRow; $mt=new OwnershipIntegrationMT($router);
+    $actualVerifier=$make(); $actualProof=null; $beforeOtherQueue=hash_file('sha256',$directory . '/data/jobs.db');
+    $writes=$mt->withOwnershipResolver(static function($post,$record) use($actualVerifier,&$actualProof,$device): bool {
+        if($actualProof===null) $actualProof=$actualVerifier->authorize($post,$record);
+        return $actualVerifier->matches($actualProof,$post,$record,$device);
+    },static fn()=>$mt->do_batch((object)$device,[$mixedCommand]));
+    ownershipCheck($writes===1 && $router->mutations===['/ppp/secret/set'] && $router->account['.id']==='*A1'
+        && $router->account['comment']==='17 - Fixture customer - 42' && $router->account['name']==='fixture-user'
+        && hash_file('sha256',$directory . '/data/jobs.db')===$beforeOtherQueue,
+        'Real MT correction recreated an account or changed the other service state');
+    $jobs->close();
     echo "Router ownership regression checks passed\n";
 } finally {
     $database->close();

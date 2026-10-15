@@ -45,6 +45,27 @@ $rejected=false;
 try { $router->execute($account); } catch(Throwable $error) { $rejected=true; }
 checkOwnership($rejected,'Another service account was overwritten merely because its username matched');
 checkOwnership(!in_array('/ppp/secret/set',$router->recording->words,true),'Ownership rejection occurred after the account was changed');
+// Prepared retries may contain a stale marker even when their private guards
+// already identify the right service. Never reintroduce that marker on an owned row.
+foreach(['/ppp/secret','/ip/hotspot/user'] as $path){
+    $frozen=['path'=>$path,'name'=>'shared-user','comment'=>'71 - Frozen label - 92',
+        'password'=>'synthetic-credential','batch'=>'service-91','remote-address'=>'192.0.2.91'];
+    $safe=MtData::safePreparedCommands($service,[$frozen]);
+    $principal=array_values(array_filter($safe,static fn($item)=>$item['path']===$path))[0];
+    checkOwnership($principal['comment']==='70 - Frozen label - 91'
+        && $principal['_client_id']===70 && $principal['_service_id']===91
+        && $principal['name']===$frozen['name'] && $principal['password']===$frozen['password']
+        && $principal['remote-address']===$frozen['remote-address'], 'Frozen marker normalization changed account identity or retained another owner');
+    $router=new CatalogueMT();
+    $router->catalogue[trim($path,'/')]=[['.id'=>'*owned','name'=>'shared-user','comment'=>'70 - Original label - 91']];
+    $router->execute($principal);
+    checkOwnership(in_array('=comment=70 - Frozen label - 91',$router->recording->words,true)
+        && !in_array('=comment='.$frozen['comment'],$router->recording->words,true),'Owned account received the stale prepared marker');
+    $frozen['action']='remove';
+    $deletion=MtData::safePreparedCommands($service,[$frozen],'delete');
+    $principal=array_values(array_filter($deletion,static fn($item)=>$item['path']===$path))[0];
+    checkOwnership($principal['comment']===$frozen['comment'],'Deletion normalization altered historical evidence');
+}
 function guardedOwnership(array $command): array {
     global $service;
     $commands=MtData::safePreparedCommands($service,[$command]);

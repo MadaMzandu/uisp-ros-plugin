@@ -5,7 +5,7 @@
     "displayName": "Ros Plugin",
     "description": "Real time provisioning for RouterOs",
     "url": "",
-    "version": "2.4.34",
+    "version": "2.4.35",
     "ucrmVersionCompliancy": {
       "min": "2.14.0-beta4",
       "max": null

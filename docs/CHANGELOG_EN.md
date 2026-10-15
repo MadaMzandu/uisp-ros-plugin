@@ -2,9 +2,21 @@
 
 [Español](MEJORAS.md) · [PR description](PR_DESCRIPTION.md) · [Webhook setup and rationale](WEBHOOK_SETUP_EN.md)
 
-This revision combines [dhanielsnieto's changes in PR #89](https://github.com/MadaMzandu/uisp-ros-plugin/pull/89) with the subsequent fixes prepared in this repository. The comparison starts at `7ca8dc8`; the original PR ends at `056b89f`. The current candidate is **2.4.34**. The operator confirmed archived-plan speed recovery in their 2.4.19 installation. That confirmation covers this historical scenario; the remaining UISP and RouterOS integration scenarios still require their own checks before production readiness can be established.
+This revision combines [dhanielsnieto's changes in PR #89](https://github.com/MadaMzandu/uisp-ros-plugin/pull/89) with the subsequent fixes prepared in this repository. The comparison starts at `7ca8dc8`; the original PR ends at `056b89f`. The current candidate is **2.4.35**. The operator confirmed archived-plan speed recovery in their 2.4.19 installation. That confirmation covers this historical scenario; the remaining UISP and RouterOS integration scenarios still require their own checks before production readiness can be established.
 
 The plugin connects UISP CRM to MikroTik through the **native RouterOS API**, normally on port `8728`, or `8729` with TLS. The panel manages that integration; it does not switch the transport to SSH, WinBox, or REST.
+
+## Candidate 2.4.35: verify and repair a contradictory RouterOS service marker
+
+PPP account verification no longer requires an optional Hotspot attribute missing from a valid UISP catalog. Site and username mappings remain mandatory; Hotspot accounts still require their verified attribute. Diagnostics identify which mapping could not be verified and describe the service ID as indicated by the router comment, without assuming it identifies a previous owner.
+
+A comment combining the verified current client with another client's service ID can be corrected in place only when the exact router, job and fresh UISP username, destination Site and current IPv4 agree. The indicated service must have a different verified client, username, router endpoint and IP. Both services and the exact router record are reread; applied account claims, executable jobs and cleanups remain checked, and a private password-free backup precedes the update. Unrelated work for the other service does not block solely because of its ID when its destination and identity prove it cannot touch this account. Unknown or conflicting evidence retains protection.
+
+Prepared PPP/Hotspot retries also normalize the outgoing comment client/service IDs from their own snapshot while preserving its readable label, account identity, addresses and credentials. Independent router ownership checks still run; deletion evidence stays unchanged. This prevents restoring an inconsistent frozen marker without claiming it caused the observed production data.
+
+Verification only reads UISP. Correction updates the exact identified router account, without editing or removing the service mistakenly named by its comment. Existing terminal/verified-404 same-client reassociation remains available. After upgrading, reload the panel and retry the affected job; clearing the queue does not repair a router comment. Production results remain to be confirmed after the retry.
+
+**2.4.35 validation passed:** 47 isolated suites, syntax checks for 55 first-party PHP files, and installer verification of 367 entries, 134 first-party files and 13 locked dependencies. Current report: `dist/verification-2.4.35.json`. SHA-256: `92a773f1021233b4407d5a42466d8ee799322cad3db35dd7b703e208581389e1`. Tests use synthetic fixtures and simulated/local transports; the production retry remains to be confirmed.
 
 ## Candidate 2.4.34: correct queued foreign-Site IPs and obsolete account links
 

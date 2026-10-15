@@ -457,6 +457,18 @@ class MtData extends Data
                 }
             }
             if(in_array($path,['ppp/secret','ip/hotspot/user'],true)){
+                // A frozen legacy payload must not restore an unrelated service ID
+                // after its ownership guards have been upgraded to this snapshot.
+                // This changes only the outgoing marker; router ownership is still
+                // checked independently before any write or reassociation.
+                $sid=(int)($service['id'] ?? 0); $cid=(int)($service['clientId'] ?? 0);
+                if(!$deleting && !$remove && $sid>0 && $cid>0){
+                    $label='Client-'.$cid;
+                    if(is_string($command['comment'] ?? null)
+                        && preg_match('/^[1-9][0-9]* - (.+) - [1-9][0-9]*$/sD',$command['comment'],$marker)===1)
+                        $label=$marker[1];
+                    $command['comment']=$cid.' - '.$label.' - '.$sid;
+                }
                 $account=$command;
                 if(!$remove && !$disabled && isset($command['profile']))
                     $command['profile']=self::managedProfileName($planId,(int)$service['id'],$service['_plan']['name'] ?? null);

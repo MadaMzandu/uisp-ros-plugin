@@ -98,6 +98,20 @@ for (const code of codes) {
         assert(ui.i18n.has(key, code), 'Router reconnection action is missing in ' + code + ': ' + key);
         if (code !== 'es') assert.notEqual(ui.i18n.t(key), key, 'Router reconnection action was not translated in ' + code);
     }
+    for (const key of [
+        'El comentario de la cuenta del servicio #{current} indica el servicio #{previous}. Ese ID debe comprobarse con UISP.',
+        'Servicio indicado #{id}',
+        'Otro servicio reclama esta misma cuenta en el router. Revisa los usuarios y Sites en UISP y el estado aplicado antes de reintentar.',
+        'No se pudo comprobar el catálogo de atributos de UISP. Verifica que esté disponible antes de reintentar.',
+        'No se pudo comprobar el atributo de Site configurado en el plugin. Revisa su clave y que sea un atributo de servicio en UISP.',
+        'No se pudo comprobar el atributo de usuario configurado en el plugin. Revisa su clave y que sea un atributo de servicio en UISP.',
+        'No se pudo comprobar el atributo de Hotspot configurado en el plugin. Revisa su clave y que sea un atributo de servicio en UISP.',
+        'El ID del comentario corresponde a otro cliente, pero faltan datos coincidentes de usuario, Site o IP para corregirlo automáticamente. Revisa la cuenta y ambas fichas.',
+        'Al ejecutar de nuevo, el plugin comprobará UISP y corregirá el comentario sólo si confirma la identidad de la cuenta y que el servicio indicado terminó, ya no existe o corresponde a otro servicio con datos distintos.'
+    ]) {
+        assert(ui.i18n.has(key, code), 'Ownership diagnostic lacks a translation in ' + code + ': ' + key);
+        if (code !== 'es') assert.notEqual(ui.i18n.t(key), key, 'Ownership diagnostic was not translated in ' + code);
+    }
 }
 assert.equal(ui.i18n.setLanguage('ar'), false);
 assert.equal(ui.i18n.getLanguage(), 'it');
