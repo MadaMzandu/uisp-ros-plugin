@@ -18,8 +18,16 @@ file_put_contents($directory . '/vendor/autoload.php', <<<'PHP'
 <?php
 namespace Ubnt\UcrmPluginSdk\Service;
 class UcrmApi {
+    public static array $requests=[];
     public static function create() { return new self(); }
-    public function get($path,$options=[]) { throw new \RuntimeException('Fixture external network prohibited'); }
+    public function get($path,$options=[]) {
+        if (preg_match('#^clients/services/([1-9][0-9]*)$#D',$path,$match) && isset(self::$requests[(int)$match[1]])) {
+            $request=self::$requests[(int)$match[1]]; $entity=clone $request->extraData->entity;
+            $entity->status=['suspend'=>3,'unsuspend'=>1,'suspend_cancel'=>1,'activate'=>1,'end'=>2,'delete'=>2][$request->changeType]??$entity->status;
+            return $entity;
+        }
+        throw new \RuntimeException('Fixture external network prohibited');
+    }
     public function patch($path,$data=[]) { throw new \RuntimeException('Fixture external network prohibited'); }
 }
 PHP);
@@ -128,8 +136,10 @@ try {
                 (object)['key'=>'pass','value'=>'ram-pass']]];
         $extra=(object)['entity'=>$entity];
         if ($before!==null) { $extra->entityBeforeEdit=clone $entity; $extra->entityBeforeEdit->status=$before; }
-        return (object)['entity'=>'service','entityId'=>'91','changeType'=>$action,
+        $request=(object)['entity'=>'service','entityId'=>'91','changeType'=>$action,
             'uuid'=>'billing-router-fixture-' . ++$sequence,'extraData'=>$extra];
+        \Ubnt\UcrmPluginSdk\Service\UcrmApi::$requests[91]=$request;
+        return $request;
     };
     $transition=static function (array $step,bool $shouldDisconnect,bool $shouldWrite=true) use ($makeRequest,$queue): void {
         $GLOBALS['billingCatalogue']['ppp/active']=[['.id'=>'*session','name'=>'ram-user']];

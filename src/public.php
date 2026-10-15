@@ -9,6 +9,12 @@ header('Pragma: no-cache');
 header('Expires: 0');
 require_once 'lib/api_runtime.php';
 $runtimeRefresh = refresh_plugin_runtime();
+require_once 'lib/api_full_backup.php';
+try { ApiFullBackup::recoverPending(); }
+catch (Throwable $error) {
+    http_response_code(503); header('Content-Type: application/json');
+    echo json_encode(['status'=>'failed','error'=>true,'message'=>'full_backup_recovery_required']); exit;
+}
 require_once 'vendor/autoload.php';
 require_once 'lib/api_common.php';
 require_once 'lib/api_security.php';
@@ -71,6 +77,10 @@ try {
     require_once 'lib/api_setup.php';
     require_once 'lib/api_cache.php';
     $setupComplete = false;
+    if (!$webhook) {
+        require_once 'lib/api_panel_workflows.php';
+        if (ApiPanelWorkflows::handle($method,is_object($data)?$data:null,$_FILES,$_POST,$_GET)) exit;
+    }
     if (!$webhook && empty($_FILES)) {
         if ($method === 'POST' && is_object($data)
             && in_array($data->target ?? null, ['automation_health', 'service_diagnostics', 'provisioning_verification'], true)) {

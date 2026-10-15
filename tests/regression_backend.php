@@ -299,6 +299,28 @@ try {
 
     // Exercise the real normalizer + action + Batch snapshot together. Only delivery is deliberately deferred.
     require_once 'lib/api_action.php';
+    // Legacy normalization scenarios supply a complete current UISP response from the fixture model.
+    // Dedicated freshness regressions keep this source independent from delivery bodies and cache.
+    function backendAction(object $request): ApiAction {
+        if (($request->entity??'')!=='service' || in_array((int)($request->entityId??0),[179,180],true)) return new ApiAction($request);
+        $fresh=new ApiWebhookFreshness(static function() use($request): object {
+            $sid=(int)$request->entityId;
+            $row=myCache()->singleQuery('SELECT * FROM services WHERE id=?',true,[$sid])?:myJobQueue()->appliedSnapshot($sid);
+            $network=myCache()->singleQuery('SELECT address,address6 FROM network WHERE id=?',true,[$sid])?:($row['network']??[]);
+            $config=(array)mySqlite()->readConfig(); $device=mySqlite()->selectDeviceById((int)($row['device']??0));
+            $map=['device_name_attr'=>$device->name??null,'pppoe_user_attr'=>$row['username']??null,'pppoe_pass_attr'=>$row['password']??null,
+                'mac_addr_attr'=>$row['mac']??null,'duid_attr'=>$row['duid']??null,'iaid_attr'=>$row['iaid']??null,
+                'hs_attr'=>$row['hotspot']??null,'ip_addr_attr'=>$network['address']??null,'ip_addr6_attr'=>$network['address6']??null];
+            $attributes=[];
+            foreach($map as $field=>$value) if(is_string($config[$field]??null)&&$config[$field]!=='') $attributes[]=(object)['key'=>$config[$field],'value'=>$value];
+            $entity=(object)array_replace(['id'=>$sid,'clientId'=>$row['clientId']??178,'status'=>$row['status']??1,
+                'servicePlanId'=>$row['planId']??null,'uploadSpeed'=>$row['uploadSpeed']??null,'downloadSpeed'=>$row['downloadSpeed']??null,
+                'attributes'=>$attributes],(array)$request->extraData->entity);
+            $entity->status=$GLOBALS['backendFreshStatus']??(['suspend'=>3,'unsuspend'=>1,'end'=>2,'delete'=>2][$request->changeType]??$entity->status);
+            return $entity;
+        });
+        return new ApiAction($request,$fresh);
+    }
     class BackendDeferredQueue extends ApiJobQueue {
         public array $submitted = [];
         public function run(?array $keys = null, ?callable $executor = null): array {
@@ -328,12 +350,12 @@ try {
     $trimmed = myTrimmer()->trim('service', $lifecycle('suspend','real-thin-suspend',[]));
     checkBackend(!array_key_exists('planId',$trimmed['entity']) && !array_key_exists('username',$trimmed['entity']),
         'Normalizer confused omitted plan/attributes with an explicit clear');
-    (new ApiAction($lifecycle('suspend','real-thin-suspend',[])))->exec();
+    (backendAction($lifecycle('suspend','real-thin-suspend',[])))->exec();
     $suspended = end($apiJobQueue->submitted);
     checkBackend($apiSqliteCache->singleQuery('SELECT planId FROM services WHERE id=178')===177
         && $suspended['_plan']['id']===177 && $suspended['_plan']['uploadSpeed']===3.75,
         'A thin suspension lost the configured plan/override in the real Batch path');
-    (new ApiAction($lifecycle('unsuspend','real-thin-resume',[])))->exec();
+    (backendAction($lifecycle('unsuspend','real-thin-resume',[])))->exec();
     $resumed = end($apiJobQueue->submitted);
     checkBackend($resumed['status']===1 && $resumed['_plan']['id']===177 && (float)$resumed['_plan']['burstUpload']===5625000.0
         && $resumed['username']==='0' && $resumed['password']===' secret ', 'Thin reactivation changed plan, burst or literal credentials');
@@ -360,13 +382,13 @@ try {
         'username'=>'clear-fixture','password'=>'fixture-private'], 'services');
     $apiSqliteCache->insert(['id'=>181,'address'=>'192.0.2.181','address6'=>'2001:db8:181::/64'], 'network');
     $thinBeforeClear=$networkEvent('thin-event-preserves-fixed-ip',null); $thinBeforeClear->extraData->entity->price=1;
-    (new ApiAction($thinBeforeClear))->exec(); $thinFixed=end($apiJobQueue->submitted);
+    (backendAction($thinBeforeClear))->exec(); $thinFixed=end($apiJobQueue->submitted);
     checkBackend($thinFixed['network']['address']==='192.0.2.181' && !isset($thinFixed['_network_reset']),
         'Omitted attributes were mistaken for an explicit address removal');
     $clearEvent=$networkEvent('explicit-ipv4-removal',$networkAttrs(null,'2001:db8:181::/64'));
     $clearEvent->extraData->entityBeforeEdit=(object)['id'=>181,'clientId'=>178,
         'attributes'=>$networkAttrs('192.0.2.181','2001:db8:181::/64')];
-    (new ApiAction($clearEvent))->exec();
+    (backendAction($clearEvent))->exec();
     $cleared=end($apiJobQueue->submitted); $reset=$cleared['_network_reset']['address'] ?? [];
     checkBackend($cleared['action']==='update' && array_key_exists('address',$cleared['network'])
         && $cleared['network']['address']===null && $cleared['network']['address6']==='2001:db8:181::/64'
@@ -375,18 +397,18 @@ try {
     checkBackend($apiSqliteCache->singleQuery('SELECT address,address6 FROM network WHERE id=181',true)
         ===['address'=>null,'address6'=>'2001:db8:181::/64'], 'The desired cache forgot an explicit IP clear');
     $pairedClear=unserialize(serialize($clearEvent)); $pairedClear->uuid='paired-ipv4-removal';
-    (new ApiAction($pairedClear))->exec(); $paired=end($apiJobQueue->submitted);
+    (backendAction($pairedClear))->exec(); $paired=end($apiJobQueue->submitted);
     checkBackend($paired['_network_reset']['address']===$reset, 'Paired removal events requested two different fresh allocations');
     $thinEvent=$networkEvent('thin-event-after-ipv4-removal',null); $thinEvent->extraData->entity->price=7;
-    (new ApiAction($thinEvent))->exec(); $thin=end($apiJobQueue->submitted);
+    (backendAction($thinEvent))->exec(); $thin=end($apiJobQueue->submitted);
     checkBackend($thin['network']['address']===null && $thin['_network_reset']['address']===$reset
         && !array_filter($apiJobQueue->list(),static fn($job): bool => ($job['id'] ?? 0)===181 && $job['action']==='delete'),
         'A thin follow-up lost the pending reset generation or turned address removal into account deletion');
     $fixedEvent=$networkEvent('fixed-address-replaces-reset',$networkAttrs('192.0.2.180','2001:db8:181::/64'));
-    (new ApiAction($fixedEvent))->exec(); $fixed=end($apiJobQueue->submitted);
+    (backendAction($fixedEvent))->exec(); $fixed=end($apiJobQueue->submitted);
     checkBackend($fixed['network']['address']==='192.0.2.180' && !isset($fixed['_network_reset']['address']),
         'A later explicit fixed address inherited an obsolete reset request');
-    (new ApiAction($networkEvent('explicit-ipv6-removal',$networkAttrs('192.0.2.180',null))))->exec();
+    (backendAction($networkEvent('explicit-ipv6-removal',$networkAttrs('192.0.2.180',null))))->exec();
     $cleared6=end($apiJobQueue->submitted);
     checkBackend($cleared6['network']===['address'=>'192.0.2.180','address6'=>null]
         && $cleared6['_network_reset']['address6']['previous']==='2001:db8:181::/64'
@@ -408,7 +430,7 @@ try {
     $allocatedKey=$apiJobQueue->enqueue($allocatedSeed); $apiJobQueue->run([$allocatedKey],fn()=>true);
     $fromAllocation=$networkEvent('thin-cache-rebuild-keeps-blank-ip',null);
     $fromAllocation->entityId=182; $fromAllocation->extraData->entity->id=182; $fromAllocation->extraData->entity->price=8;
-    (new ApiAction($fromAllocation))->exec(); $rebuilt=end($apiJobQueue->submitted);
+    (backendAction($fromAllocation))->exec(); $rebuilt=end($apiJobQueue->submitted);
     checkBackend($rebuilt['network']===['address'=>null,'address6'=>null] && !isset($rebuilt['_network_reset']),
         'Rebuilding a missing desired cache turned an automatically allocated address into a fixed attribute');
     $testApi=fn()=>[];
@@ -417,13 +439,13 @@ try {
     $nullPlan = myTrimmer()->trim('service',$lifecycle('edit','explicit-null-plan',['servicePlanId'=>null]));
     checkBackend(array_key_exists('planId',$nullPlan['entity']) && $nullPlan['entity']['planId']===null,
         'An explicitly cleared service plan was confused with an omitted property');
-    (new ApiAction($lifecycle('edit','explicit-null-plan',['servicePlanId'=>null])))->exec();
+    (backendAction($lifecycle('edit','explicit-null-plan',['servicePlanId'=>null])))->exec();
     checkBackend($apiSqliteCache->singleQuery('SELECT planId FROM services WHERE id=178')===null,
         'An explicit null plan did not clear the prior plan in the real action path');
     $apiSqliteCache->edit(['id'=>178,'planId'=>177], 'services');
     $partialPrevious = $lifecycle('edit','partial-previous-preserved',['price'=>5]);
     $partialPrevious->extraData->entityBeforeEdit = (object)['id'=>178,'clientId'=>178,'price'=>0];
-    (new ApiAction($partialPrevious))->exec();
+    (backendAction($partialPrevious))->exec();
     checkBackend($apiSqliteCache->singleQuery('SELECT planId FROM services WHERE id=178')===177
         && $apiSqliteCache->singleQuery('SELECT password FROM services WHERE id=178')===' secret ',
         'A partial before-edit entity cleared identity or plan fields');
@@ -432,7 +454,7 @@ try {
     $appliedKey = $apiJobQueue->enqueue($appliedSeed);
     $apiJobQueue->run([$appliedKey], fn()=>true);
     $apiSqliteCache->delete(178,'services'); $apiSqliteCache->delete(178,'network');
-    (new ApiAction($lifecycle('unsuspend','real-thin-from-applied',[])))->exec();
+    (backendAction($lifecycle('unsuspend','real-thin-from-applied',[])))->exec();
     $fromApplied = end($apiJobQueue->submitted);
     checkBackend($fromApplied['planId']===177 && $fromApplied['_plan']['uploadSpeed']===3.75
         && $fromApplied['password']===' secret ' && $apiSqliteCache->exists(178,'services')===178,
@@ -442,19 +464,19 @@ try {
     $apiSqliteCache->edit(['id'=>178,'status'=>3], 'services');
     $beforeCacheAheadSuspend = count($apiJobQueue->submitted);
     $cacheAheadSuspend = $lifecycle('edit','cache-ahead-suspend',['status'=>3]);
-    (new ApiAction($cacheAheadSuspend))->exec();
+    (backendAction($cacheAheadSuspend))->exec();
     checkBackend(count($apiJobQueue->submitted)>$beforeCacheAheadSuspend
         && end($apiJobQueue->submitted)['status']===3 && $apiJobQueue->appliedSnapshot(178)['status']===1,
         'A desired cache already suspended suppressed a thin edit while RouterOS applied state was active');
     $apiJobQueue->run($apiJobQueue->eventKeys('cache-ahead-suspend'), fn()=>true);
     $apiSqliteCache->edit(['id'=>178,'status'=>1], 'services');
     $beforeCacheAheadResume = count($apiJobQueue->submitted);
-    (new ApiAction($lifecycle('edit','cache-ahead-resume',['status'=>1])))->exec();
+    (backendAction($lifecycle('edit','cache-ahead-resume',['status'=>1])))->exec();
     checkBackend(count($apiJobQueue->submitted)>$beforeCacheAheadResume && end($apiJobQueue->submitted)['status']===1,
         'A desired cache already active suppressed a thin reactivation while RouterOS applied state was suspended');
     $apiJobQueue->run($apiJobQueue->eventKeys('cache-ahead-resume'), fn()=>true);
     $beforeOldSuspensionReplay = count($apiJobQueue->submitted);
-    (new ApiAction($cacheAheadSuspend))->exec();
+    (backendAction($cacheAheadSuspend))->exec();
     checkBackend(count($apiJobQueue->submitted)===$beforeOldSuspensionReplay
         && $apiSqliteCache->singleQuery('SELECT status FROM services WHERE id=178')===1,
         'Replaying an older completed suspension UUID overwrote a newer reactivation');
@@ -462,7 +484,7 @@ try {
     $sameBefore = $lifecycle('edit','cache-ahead-equal-before',['status'=>3]);
     $sameBefore->extraData->entityBeforeEdit = (object)['id'=>178,'clientId'=>178,'status'=>3];
     $beforeEqualSnapshot = count($apiJobQueue->submitted);
-    (new ApiAction($sameBefore))->exec();
+    (backendAction($sameBefore))->exec();
     checkBackend(count($apiJobQueue->submitted)>$beforeEqualSnapshot && end($apiJobQueue->submitted)['status']===3,
         'A provided before-edit snapshot equal to the advanced cache suppressed pending applied-state reconciliation');
     $apiJobQueue->run($apiJobQueue->eventKeys('cache-ahead-equal-before'), fn()=>true);
@@ -470,7 +492,7 @@ try {
         $apiSqliteCache->edit(['id'=>178,'password'=>$password], 'services');
         $beforeCredentialReconcile = count($apiJobQueue->submitted);
         $credentialEvent = 'cache-ahead-credential-' . $password;
-        (new ApiAction($lifecycle('edit',$credentialEvent,['status'=>3])))->exec();
+        (backendAction($lifecycle('edit',$credentialEvent,['status'=>3])))->exec();
         checkBackend(count($apiJobQueue->submitted)>$beforeCredentialReconcile
             && end($apiJobQueue->submitted)['password']===$password && end($apiJobQueue->submitted)['username']==='0',
             'Advanced cache credentials were ignored or numeric-looking literal passwords were compared numerically');
@@ -478,7 +500,7 @@ try {
     }
     // An identity change visible first in the cache still deletes the actual frozen old destination first.
     $apiSqliteCache->edit(['id'=>178,'device'=>1], 'services');
-    (new ApiAction($lifecycle('edit','cache-ahead-router',['status'=>3])))->exec();
+    (backendAction($lifecycle('edit','cache-ahead-router',['status'=>3])))->exec();
     $migrationKeys = $apiJobQueue->eventKeys('cache-ahead-router');
     checkBackend(count($migrationKeys)===2, 'A cache-ahead router identity did not create its old-account cleanup barrier');
     $normalizationJobs = (new ReflectionProperty(ApiJobQueue::class, 'db'))->getValue($apiJobQueue);
@@ -495,11 +517,13 @@ try {
     $terminalKey = $apiJobQueue->enqueue($terminalSnapshot,'delete');
     $apiSqliteCache->edit(['id'=>178,'status'=>1], 'services'); // Simulate a stale cache refresh while ending remains pending.
     $beforeMetadataWhileTerminal = count($apiJobQueue->submitted);
-    (new ApiAction($lifecycle('edit','metadata-after-terminal',['price'=>17])))->exec();
-    checkBackend($apiJobQueue->isServiceBlocked(178) && count($apiJobQueue->submitted)===$beforeMetadataWhileTerminal
-        && $apiJobQueue->eventKeys('metadata-after-terminal')===[],
-        'A metadata-only thin edit revoked a pending terminal billing intent');
-    (new ApiAction($lifecycle('edit','explicit-state-after-terminal',['status'=>1])))->exec();
+    $GLOBALS['backendFreshStatus']=2;
+    (backendAction($lifecycle('edit','metadata-after-terminal',['price'=>17])))->exec();
+    unset($GLOBALS['backendFreshStatus']);
+    checkBackend($apiJobQueue->isServiceBlocked(178) && $apiSqliteCache->singleQuery('SELECT status FROM services WHERE id=178')===2
+        && $apiJobQueue->pending([$terminalKey]),
+        'A metadata delivery contradicted confirmed terminal UISP state or discarded its cleanup barrier');
+    (backendAction($lifecycle('edit','explicit-state-after-terminal',['status'=>1])))->exec();
     checkBackend(!$apiJobQueue->isServiceBlocked(178) && count($apiJobQueue->eventKeys('explicit-state-after-terminal'))===1,
         'A fresh explicit active billing state could not queue reactivation after terminal cleanup');
     $apiJobQueue->run([$terminalKey], fn()=>true);
@@ -512,32 +536,33 @@ try {
     $zeroPassword = myAttr()->extract([(object)['key'=>'password','value'=>'0']]);
     checkBackend($zeroPassword['password']==='0', 'A valid literal zero password disappeared');
     $clientEvent = (object)['entity'=>'client','changeType'=>'edit','extraData'=>(object)['entity'=>(object)['id'=>178,'firstName'=>'New']]];
-    (new ApiAction($clientEvent))->exec();
+    (backendAction($clientEvent))->exec();
     $client = $apiSqliteCache->singleQuery('SELECT * FROM clients WHERE id=178',true);
     checkBackend($client['firstName']==='New' && $client['lastName']==='Surname' && $client['company']==='ACME',
         'Partial client event erased omitted surname/company');
     $clientEvent->extraData->entity->lastName = null;
-    (new ApiAction($clientEvent))->exec();
+    (backendAction($clientEvent))->exec();
     checkBackend($apiSqliteCache->singleQuery('SELECT lastName FROM clients WHERE id=178')===null
         && $apiSqliteCache->singleQuery('SELECT company FROM clients WHERE id=178')==='ACME', 'Explicit client null failed or cleared an unrelated field');
     $hydrationReads = 0;
     $testApi = function ($method, $path, $params) use (&$hydrationReads) {
         if ($path==='clients/services/179') {
             $hydrationReads++;
-            return ['id'=>179,'clientId'=>178,'servicePlanId'=>177,'status'=>1,'uploadSpeed'=>20,'downloadSpeed'=>50,
+            return ['id'=>179,'clientId'=>178,'servicePlanId'=>177,'status'=>3,'uploadSpeed'=>20,'downloadSpeed'=>50,
                 'attributes'=>[['key'=>'device','value'=>'Literal router'],['key'=>'username','value'=>'new-user'],['key'=>'password','value'=>'0']]];
         }
         throw new RuntimeException('fixture service unavailable');
     };
     $newThin = (object)['entity'=>'service','entityId'=>179,'changeType'=>'suspend','uuid'=>'new-thin-hydrated',
         'extraData'=>(object)['entity'=>(object)['id'=>179]]];
-    (new ApiAction($newThin))->exec();
+    (backendAction($newThin))->exec();
     $hydrated = end($apiJobQueue->submitted);
     checkBackend($hydrationReads===1 && $hydrated['clientId']===178 && $hydrated['planId']===177 && $hydrated['status']===3
         && $hydrated['username']==='new-user' && $hydrated['password']==='0', 'New thin event was not safely completed from UISP before provisioning');
     $newThin->entityId=180; $newThin->extraData->entity->id=180; $newThin->uuid='new-thin-unavailable';
     $jobsBeforeUnavailable = $apiJobQueue->list();
-    rejectedBackend(fn()=>(new ApiAction($newThin))->exec(), 'Unavailable thin event was provisioned with invented fallback settings');
+    $unavailableAction=backendAction($newThin); $unavailableAction->exec();
+    checkBackend($unavailableAction->result()['provisioning']==='awaiting_fresh_state', 'Unavailable thin event did not defer to a fresh review');
     checkBackend($apiJobQueue->list()===$jobsBeforeUnavailable && !$apiSqliteCache->exists(180,'services'),
         'Failed hydration changed cached desired state or scheduled unsafe work');
     $apiJobQueue->close(); $apiJobQueue=$queueBeforeNormalization; unset($GLOBALS['backendQueueOverride']);

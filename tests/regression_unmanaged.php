@@ -19,8 +19,14 @@ file_put_contents($directory . '/vendor/autoload.php', <<<'PHP'
 namespace Ubnt\UcrmPluginSdk\Service;
 class UcrmApi {
     public static array $calls = [];
+    public static array $services = [];
     public static function create() { return new self(); }
-    public function get($path, $options = []) { self::$calls[] = ['get', $path]; throw new \RuntimeException('Network prohibited: ' . $path); }
+    public function get($path, $options = []) {
+        self::$calls[] = ['get', $path];
+        if (preg_match('#^clients/services/([1-9][0-9]*)$#D',$path,$match) && isset(self::$services[(int)$match[1]]))
+            return json_decode(json_encode(self::$services[(int)$match[1]]));
+        throw new \RuntimeException('Network prohibited: ' . $path);
+    }
     public function patch($path, $data = []) { self::$calls[] = ['patch', $path]; throw new \RuntimeException('Network prohibited: ' . $path); }
 }
 PHP);
@@ -68,6 +74,11 @@ try {
     };
     $sequence = 0;
     $event = static function (int $id, string $change, array $fields, ?object $previous = null) use (&$sequence): ApiAction {
+        // Delivery fields may be partial. The live fixture independently represents a full current UISP service.
+        $current=(array)(\Ubnt\UcrmPluginSdk\Service\UcrmApi::$services[$id]??['id'=>$id,'clientId'=>70,'status'=>1,'servicePlanId'=>1,'attributes'=>[]]);
+        $current=array_replace($current,$fields,['id'=>$id,'clientId'=>70]);
+        $current['status']=['suspend'=>3,'unsuspend'=>1,'activate'=>1,'end'=>2,'delete'=>2][$change]??$current['status'];
+        \Ubnt\UcrmPluginSdk\Service\UcrmApi::$services[$id]=(object)$current;
         $request = (object) ['entity' => 'service', 'entityId' => $id, 'changeType' => $change, 'uuid' => 'unmanaged-event-' . (++$sequence),
             'extraData' => (object) ['entity' => (object) array_replace(['id' => $id, 'clientId' => 70], $fields)]];
         if ($previous !== null) $request->extraData->entityBeforeEdit = $previous;
@@ -92,10 +103,10 @@ try {
     unmanagedCheck($cached(1353)['device'] === null && $cached(1353)['username'] === 'external-documentation'
         && $network(1353)['address'] === '10.32.5.38 /30', 'Documentary attributes were rewritten');
     unmanagedCheck($apiJobQueue->list() === [] && MT::$writes === []
-        && \Ubnt\UcrmPluginSdk\Service\UcrmApi::$calls === [], 'A documentary service provisioned or rewrote UISP');
+        && array_filter(\Ubnt\UcrmPluginSdk\Service\UcrmApi::$calls,static fn(array $call):bool=>$call!==['get','clients/services/1353']) === [], 'A documentary service provisioned or rewrote UISP');
     $empty = $doc; $empty['attributes'] = $attributes(null, null, null);
     unmanagedCheck(!$event(1354, 'insert', $empty)->status()->error, 'A Site-less service with no credentials failed');
-    unmanagedCheck(\Ubnt\UcrmPluginSdk\Service\UcrmApi::$calls === [], 'Site-less service generated credentials');
+    unmanagedCheck(array_filter(\Ubnt\UcrmPluginSdk\Service\UcrmApi::$calls,static fn(array $call):bool=>$call[0]!=='get'||!in_array($call[1],['clients/services/1353','clients/services/1354'],true)) === [], 'Site-less service generated credentials');
     unmanagedCheck(!$event(1354, 'end', [])->status()->error && (int) $cached(1354)['status'] === 2, 'Documentary termination failed');
     unmanagedCheck(!$event(1354, 'delete', [])->status()->error && $cached(1354) === [] && $network(1354) === [], 'Documentary deletion left cached data');
     unmanagedCheck($apiJobQueue->list() === [], 'Documentary terminal events enqueued RouterOS jobs');
@@ -237,12 +248,14 @@ try {
         trim($command['path'], '/') === 'ppp/secret' && ($command['action'] ?? '') === 'remove');
     unmanagedCheck(count($deletedMoveCommands) === 1 && reset($deletedMoveCommands)['name'] === 'deleted-site-account',
         'Migration from a removed Site guessed a different account to delete');
-    // With no confirmed identity, an unknown previous label cannot supply a cleanup target.
+    // An untrusted old delivery label cannot supply a cleanup target; the valid fresh target remains authoritative.
     $missingPrevious = clone $oldEntity; $missingPrevious->id = 1381;
     $beforeMissingPrevious = count(MT::$writes);
-    $rejectSite(static fn() => $event(1381, 'edit', $newFields, $missingPrevious));
-    unmanagedCheck($cached(1381) === [] && $apiJobQueue->appliedSnapshot(1381) === [] && count(MT::$writes) === $beforeMissingPrevious,
-        'An unknown previous Site without applied identity generated a guessed cleanup');
+    $freshIndependent=$newFields;$freshIndependent['attributes']=$attributes('Fixture router','independent-fresh-account','192.0.2.214');
+    unmanagedCheck(!$event(1381,'edit',$freshIndependent,$missingPrevious)->status()->error
+        && ($apiJobQueue->appliedSnapshot(1381)['username']??null)==='independent-fresh-account'
+        && count(array_filter(array_slice(MT::$writes,$beforeMissingPrevious),static fn(array $command):bool=>trim($command['path'],'/')==='ppp/secret'&&($command['action']??'')==='remove'))===0,
+        'An unknown previous Site overrode fresh UISP intent or generated a guessed cleanup');
     // A partial provisioning write can survive a cache refresh that already removed Site.
     $partial = $assigned; $partial['attributes'] = $attributes('Fixture router', 'partial-account', '192.0.2.136');
     MT::$failSet = true;
@@ -251,7 +264,7 @@ try {
     $apiSqliteCache->edit(['id' => 1356, 'device' => null], 'services');
     // Keep the earlier attempt failing: an immediate detach now retries its prerequisites too.
     $beforeCleanup = count(MT::$writes);
-    unmanagedCheck($event(1356, 'edit', [])->status()->error && $apiJobQueue->isServiceBlocked(1356),
+    unmanagedCheck($event(1356, 'edit', ['attributes'=>$attributes(null,'partial-account','192.0.2.136')])->status()->error && $apiJobQueue->isServiceBlocked(1356),
         'A partial update did not retain its ordered cleanup barrier');
     $pendingDelete = $queueDatabase->querySingle("SELECT payload FROM jobs WHERE service_id=1356 AND operation='delete' ORDER BY id DESC LIMIT 1");
     unmanagedCheck(is_string($pendingDelete), 'Partially provisioned resources were silently ignored');
@@ -274,7 +287,7 @@ try {
         'Recovered-detach fixture did not retain its failed prepared identity/address');
     $apiSqliteCache->edit(['id' => 1357, 'device' => null], 'services');
     MT::$failSet = false; $beforeRecoveredCleanup = count(MT::$writes);
-    $recoveredDetach = $event(1357, 'edit', []);
+    $recoveredDetach = $event(1357, 'edit', ['attributes'=>$attributes(null,'recovered-partial-account','192.0.2.137')]);
     $recoveredAccountWrites = array_values(array_filter(array_slice(MT::$writes, $beforeRecoveredCleanup),
         static fn(array $command): bool => trim($command['path'], '/') === 'ppp/secret'
             && ($command['_service_id'] ?? null) === 1357));
@@ -309,7 +322,7 @@ try {
     unmanagedCheck(($apiJobQueue->appliedSnapshot(1370)['username'] ?? null) === 'old-account-1370', 'Prepared fixture lost old applied state');
     $apiSqliteCache->edit(['id' => 1370, 'device' => null, 'username' => 'new-account-1370'], 'services');
     $apiSqliteCache->edit(['id' => 1370, 'address' => '192.0.2.171'], 'network');
-    unmanagedCheck($event(1370, 'edit', [])->status()->error, 'Prepared detach bypassed its outstanding barrier');
+    unmanagedCheck($event(1370, 'edit', ['attributes'=>$attributes(null,'new-account-1370','192.0.2.171')])->status()->error, 'Prepared detach bypassed its outstanding barrier');
     unmanagedCheck((int) $queueDatabase->querySingle("SELECT count(*) FROM jobs WHERE service_id=1370 AND operation='delete' AND status='pending'") === 2,
         'Detaching multiple identities omitted an old or prepared account');
     MT::$failSet = false; MT::$failDeleteUser = 'new-account-1370';

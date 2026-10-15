@@ -8,6 +8,9 @@ class ApiAttributes
     private ?array $_devmap = null;
     private ?object  $_conf = null ;
     private ?array $_attrs = null ;
+    private ?ApiSqlite $readDatabase = null;
+
+    public function __construct(?ApiSqlite $database = null) { $this->readDatabase = $database; }
 
     public function set_user($serviceId, $clientId): void
     {
@@ -166,7 +169,7 @@ class ApiAttributes
         ];
     }
 
-    private function db(): ApiSqlite { return mySqlite(); }
+    private function db(): ApiSqlite { return $this->readDatabase ?? mySqlite(); }
 
     private function conf(): ?object
     {

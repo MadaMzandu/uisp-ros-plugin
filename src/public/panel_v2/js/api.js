@@ -146,6 +146,7 @@ class ApiService {
         }
         this.endpoint = endpoint || current.pathname;
         this.recovery = null;
+        this.reloadRequired = false;
         this.recoveryListeners = new Set();
         this.mutationListeners = new Set();
         const bootstrap = document.querySelectorAll('#network-recovery-state')[0];
@@ -163,6 +164,11 @@ class ApiService {
         this.recoveryListeners.add(listener);
     }
     onMutation(listener) { this.mutationListeners.add(listener); }
+    requireReload() { this.reloadRequired = true; }
+    blockedReload() {
+        return Promise.resolve({ status: 'failed', error: true,
+            message: PanelUtils.t('Recarga el panel antes de hacer cambios sobre el estado restaurado.') });
+    }
     async mutatingRequest(options) {
         for (const listener of this.mutationListeners) listener(true);
         try { return await this.request(options); }
@@ -202,11 +208,14 @@ class ApiService {
         }
     }
     send(changeType, target, action = 'list', data = {}) {
+        if (this.reloadRequired && changeType !== 'list') return this.blockedReload();
         const cleanup = changeType === 'cleanup' && target === 'network_conflicts' && ['preview', 'apply'].includes(action);
         const crmRepair = ['cleanup', 'resolve'].includes(changeType) && target === 'crm_network_conflicts' && ['preview', 'apply'].includes(action);
         const localRepair = changeType === 'repair' && target === 'network_repair' && ['preview', 'apply'].includes(action);
         const jobRecovery = changeType === 'recover' && target === 'job_recovery' && ['preview', 'apply'].includes(action);
-        if (changeType !== 'list' && !cleanup && !crmRepair && !localRepair && !jobRecovery && this.recovery?.readOnly === true) return this.blockedWrite();
+        const jobCleanup = changeType === 'cleanup' && target === 'job_reservation' && ['preview', 'apply'].includes(action);
+        const fullRestore = changeType === 'update' && target === 'full_backup' && ['preview', 'apply'].includes(action);
+        if (changeType !== 'list' && !cleanup && !crmRepair && !localRepair && !jobRecovery && !jobCleanup && !fullRestore && this.recovery?.readOnly === true) return this.blockedWrite();
         if (target === 'orphans' && this.recovery?.readOnly === true) return this.blockedRouterRead();
         const mutate = changeType === 'update' || action === 'apply' && ['cleanup', 'resolve', 'repair', 'recover'].includes(changeType);
         return (mutate ? this.mutatingRequest.bind(this) : this.request.bind(this))({ method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -217,14 +226,21 @@ class ApiService {
             });
     }
     uploadBackup(file) {
+        if (this.reloadRequired) return this.blockedReload();
         if (this.recovery?.readOnly === true) return this.blockedWrite();
         const body = new FormData();
         body.append('backup', file);
         return this.mutatingRequest({ method: 'POST', body });
     }
+    uploadFullBackup(file) {
+        if (this.reloadRequired) return this.blockedReload();
+        const body = new FormData(); body.append('workflow', 'full_backup'); body.append('fullBackup', file);
+        return this.mutatingRequest({ method: 'POST', body });
+    }
     downloadUrl(name) {
         if (name !== 'network-conflicts' && !/^backup-[0-6]$/.test(name)
-            && !/^(?:network-cleanup|jobs-recovery)-\d{8}T\d{6}Z-[a-f0-9]{32}\.sqlite$/.test(name)) throw new Error(PanelUtils.t('Nombre de respaldo inválido.'));
+            && !/^(?:network-cleanup|jobs-recovery)-\d{8}T\d{6}Z-[a-f0-9]{32}\.sqlite$/.test(name)
+            && !/^full-backup-\d{8}T\d{6}Z-[a-f0-9]{32}\.zip$/.test(name)) throw new Error(PanelUtils.t('Nombre de respaldo inválido.'));
         const url = new URL(this.endpoint, window.location.href);
         url.search = '';
         url.searchParams.set('download', name);
@@ -241,6 +257,15 @@ class ApiService {
     getJobs() { return this.send('list', 'jobs'); }
     getJobsStatus() { return this.send('list', 'jobs_status'); }
     getAutomationHealth() { return this.send('list', 'automation_health'); }
+    getPoolCapacity() { return this.send('list', 'pool_capacity'); }
+    getServiceReconciliation() { return this.send('list', 'service_reconciliation'); }
+    getFullBackups() { return this.send('list', 'full_backup'); }
+    createFullBackup() { return this.send('update', 'full_backup', 'create'); }
+    previewFullBackup(name) { return this.send('update', 'full_backup', 'preview', { name }); }
+    restoreFullBackup(previewToken) { return this.send('update', 'full_backup', 'apply', { previewToken }); }
+    beginSyncPreview(deviceId) { return this.send('list', 'sync_preview', 'begin', { deviceId }); }
+    stepSyncPreview(previewToken) { return this.send('list', 'sync_preview', 'step', { previewToken }); }
+    applySyncPreview(previewToken, mode) { return this.send('update', 'sync_preview', 'apply', { previewToken, mode }); }
     searchServiceDiagnostics(query) { return this.send('list', 'service_diagnostics', 'search', { query }); }
     inspectService(serviceId) { return this.send('list', 'service_diagnostics', 'inspect', { serviceId }); }
     getProvisioningVerifications() { return this.send('list', 'provisioning_verification'); }
@@ -256,8 +281,8 @@ class ApiService {
     verifyCrmNetworkServices(serviceIds) { return this.send('list', 'crm_network_resolution', 'verify', { serviceIds }); }
     previewCrmNetworkChange(data) { return this.send('resolve', 'crm_network_conflicts', 'preview', data); }
     applyCrmNetworkChange(previewToken) { return this.send('resolve', 'crm_network_conflicts', 'apply', { previewToken }); }
-    previewNetworkCleanup(serviceIds, source = 'stored') { return this.send('cleanup', source === 'crm_snapshot' ? 'crm_network_conflicts' : 'network_conflicts', 'preview', { serviceIds }); }
-    applyNetworkCleanup(previewToken, serviceIds, source = 'stored') { return this.send('cleanup', source === 'crm_snapshot' ? 'crm_network_conflicts' : 'network_conflicts', 'apply', { previewToken, serviceIds }); }
+    previewNetworkCleanup(serviceIds, source = 'stored') { return this.send('cleanup', source === 'job_blocker' ? 'job_reservation' : source === 'crm_snapshot' ? 'crm_network_conflicts' : 'network_conflicts', 'preview', { serviceIds }); }
+    applyNetworkCleanup(previewToken, serviceIds, source = 'stored') { return this.send('cleanup', source === 'job_blocker' ? 'job_reservation' : source === 'crm_snapshot' ? 'crm_network_conflicts' : 'network_conflicts', 'apply', { previewToken, serviceIds }); }
     getBackups() { return this.send('list', 'backups'); }
     createBackup() { return this.send('update', 'system', 'backup'); }
     restoreBackup(name) { return this.send('update', 'system', 'restore', { name }); }

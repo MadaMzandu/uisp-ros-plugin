@@ -52,12 +52,15 @@ class ApiIP
     private array $allocationProofs=[];
     private bool $readOnly;
     private bool $ignoreCurrentReservation;
+    private ?array $readContext = null;
 
     /** Read-only instances validate a prospective command build without acquiring ownership. */
-    public function __construct(bool $readOnly = false, bool $ignoreCurrentReservation = false)
+    public function __construct(bool $readOnly = false, bool $ignoreCurrentReservation = false, ?array $readContext = null)
     {
         $this->readOnly = $readOnly;
         $this->ignoreCurrentReservation = $readOnly && $ignoreCurrentReservation;
+        if ($readContext !== null && !$readOnly) throw new InvalidArgumentException('Read context requires a read-only allocator');
+        $this->readContext = $readContext;
     }
 
     public function assign($sid,$device=[],$ipv6=false,?object $config=null,?array $reset=null): ?string
@@ -124,7 +127,7 @@ class ApiIP
                 // Own applied/prepared resources remain occupied until the queued change succeeds.
                 foreach ([$existing,$intent['previous']] as $previous) if ($previous)
                     $this->usedRanges[]=$this->range($previous,$ipv6);
-                if (is_file('data/jobs.db')) foreach (myJobQueue()->reservedAddresses($ipv6) as $row) {
+                foreach ($this->durableAddresses($ipv6) as $row) {
                     if ((int)($row['id']??0)!==(int)$sid) continue;
                     $previous=$row[$ipv6 ? 'address6' : 'address'] ?? $row['address'] ?? null;
                     if ($previous) $this->usedRanges[]=$this->range((string)$previous,$ipv6);
@@ -320,7 +323,7 @@ class ApiIP
             $rows=$database->selectCustom($sql,[':id'=>(int)$sid]) ?? [];
             foreach($rows as $row){
                 if($row['address']===null || $row['address']==='') continue;
-                if ($source==='cache' && (!isset($devices[(int)$row['device']]) || myJobQueue()->isServiceBlocked((int)$row['id']))) continue;
+                if ($source==='cache' && (!isset($devices[(int)$row['device']]) || $this->blockedService((int)$row['id']))) continue;
                 try {
                     $address=$row['address'];
                     if ($source==='cache') {
@@ -349,9 +352,9 @@ class ApiIP
         }
         // Applied or partially prepared operations may still own their old address on a router.
         // Replacing network's desired address does not release those durable reservations.
-        if (is_file('data/jobs.db')) {
+        if ($this->readContext !== null || is_file('data/jobs.db')) {
             require_once __DIR__ . '/api_job_queue.php';
-            foreach (myJobQueue()->reservedAddresses($ipv6) as $row) {
+            foreach ($this->durableAddresses($ipv6) as $row) {
                 if ((int)($row['id'] ?? 0) === (int)$sid) continue;
                 $address = $row[$field] ?? $row['address'] ?? null;
                 if ($address) {
@@ -492,8 +495,17 @@ class ApiIP
         return $merged;
     }
 
-    private function db(): ApiSqlite { return mySqlite(); }
-    private function cache(): ApiSqlite { return myCache(); }
+    private function durableAddresses(bool $ipv6): array
+    {
+        if ($this->readContext !== null) return $this->readContext[$ipv6 ? 'reserved6' : 'reserved4'] ?? [];
+        return is_file('data/jobs.db') ? myJobQueue()->reservedAddresses($ipv6) : [];
+    }
+    private function blockedService(int $sid): bool
+    {
+        return $this->readContext !== null ? isset($this->readContext['blocked'][$sid]) : myJobQueue()->isServiceBlocked($sid);
+    }
+    private function db(): ApiSqlite { return $this->readContext['db'] ?? mySqlite(); }
+    private function cache(): ApiSqlite { return $this->readContext['cache'] ?? myCache(); }
     private function conf(): object
     {
         if(empty($this->_conf)) $this->_conf=$this->db()->readConfig();

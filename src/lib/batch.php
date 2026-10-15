@@ -26,10 +26,10 @@ class Batch
     public function outcomes(): array { return $this->submissionOutcomes; }
 
     /** Validate every replacement family before an automatic wrong-site CRM clear. */
-    public function validateSiteAddressReplacement(array $cleared): void
+    public function validateSiteAddressReplacement(array $cleared, bool $releasesReservation = true): void
     {
         $candidate=$this->snapshot($cleared,'update');
-        (new MtData())->validateBeforeCleanup($candidate,$candidate['_plan'],true);
+        (new MtData())->validateBeforeCleanup($candidate,$candidate['_plan'],$releasesReservation);
     }
 
     /** Validate the exact effective SQL rates while the caller's save transaction can still roll back. */
@@ -106,6 +106,52 @@ class Batch
             if ($sid<1) throw new InvalidArgumentException('Invalid service ID');
             $enqueue=fn(): array => $this->enqueueEntries([$item], 'update');
             $keys=array_merge($keys,$queue->ownsServiceLock($sid) ? $enqueue() : $queue->withServiceLock($sid,$enqueue));
+        }
+        return $keys;
+    }
+
+    /** Server-only reviewed synchronization: freeze allocation before durable enqueue. */
+    public function queueReviewed(array $service, callable $verify, bool $forceReconnect = false): array
+    {
+        $sid = (int)($service['id'] ?? 0);
+        if ($sid < 1) throw new InvalidArgumentException('Invalid service ID');
+        $queue = myJobQueue();
+        $enqueue = function () use ($service, $verify, $forceReconnect, $queue): array {
+            if ($queue->isServiceBlocked((int)$service['id']) && empty($service['_clear_terminal']))
+                throw new RuntimeException('sync_preview_state_changed');
+            return $this->db()->transaction(function () use ($service, $verify, $forceReconnect, $queue): array {
+                $priorForce = $this->forceReconnect; $this->forceReconnect = $forceReconnect;
+                try {
+                    $groups = $this->find_services([$service], 'update'); $entries = [];
+                    foreach ($groups as $services) foreach ($services as $item) {
+                        $snapshot = $this->snapshot($item, 'update');
+                        $snapshot['batch'] = 'reviewed-' . (int)$snapshot['id'];
+                        $device = $this->operationDevice($snapshot);
+                        $snapshot = $this->prepareSnapshotCommands($snapshot, $device, 'update');
+                        if ($verify($snapshot) !== true) throw new RuntimeException('sync_preview_state_changed');
+                        $applied = $queue->appliedSnapshot((int)$snapshot['id']);
+                        if ($applied && !$this->sameAccountIdentity($applied, $snapshot)) {
+                            $applied['_event_id'] = $snapshot['_event_id'] ?? null;
+                            $entries[] = ['snapshot'=>$this->snapshot($applied, 'delete'), 'operation'=>'delete'];
+                        }
+                        $entries[] = ['snapshot'=>$snapshot, 'operation'=>'update'];
+                    }
+                    return $entries ? $queue->enqueueBatch($entries) : [];
+                } finally { $this->forceReconnect = $priorForce; }
+            });
+        };
+        return $queue->ownsServiceLock($sid) ? $enqueue() : $queue->withServiceLock($sid, $enqueue);
+    }
+
+    /** Fresh terminal-state reviews enqueue cleanup through the ordinary ordered worker. */
+    public function queue_deletions(array $ids): array
+    {
+        $keys=[]; $queue=myJobQueue();
+        foreach ($ids as $item) {
+            $sid=(int)(is_array($item)?($item['id']??0):$item);
+            if ($sid<1) throw new InvalidArgumentException('Invalid service ID');
+            $enqueue=fn():array=>$this->enqueueEntries([$item],'delete');
+            $keys=array_merge($keys,$queue->ownsServiceLock($sid)?$enqueue():$queue->withServiceLock($sid,$enqueue));
         }
         return $keys;
     }
@@ -964,43 +1010,45 @@ class Batch
         }
     }
 
+    /** The same effective rates used by execution, without schema refresh or writes. */
+    public static function previewPlans(ApiSqlite $database): array
+    {
+    // Normalize legacy optional blanks in a read-only subquery BEFORE SQLite can
+    // coerce them to numeric zero and accidentally generate the full guaranteed rate.
+    $columns = ['id','name','last','created','uploadSpeed','downloadSpeed'];
+    foreach (['ratio','priorityUpload','priorityDownload','uploadOverride','downloadOverride',
+        'limitUpload','limitDownload','burstUpload','burstDownload','threshUpload','threshDownload','timeUpload','timeDownload'] as $field) {
+        $columns[] = "CASE WHEN typeof($field)='text' AND trim($field,char(9)||char(10)||char(11)||char(12)||char(13)||' ')='' THEN NULL ELSE $field END AS $field";
+    }
+    $normalized = 'SELECT ' . implode(',', $columns) . ' FROM plans';
+    $st =[
+        'SELECT id,name,ratio,uls AS uploadSpeed,dls AS downloadSpeed,IFNULL(priorityUpload,8) as priorityUpload,',
+        'IFNULL(priorityDownload,8) as priorityDownload,IFNULL(timeUpload,1) as timeUpload,',
+        'IFNULL(timeDownload,1) as timeDownload,last,created,',
+        'plans.uploadSpeed AS _sourceUploadSpeed,plans.downloadSpeed AS _sourceDownloadSpeed,',
+        'plans.uploadOverride AS _sourceUploadOverride,plans.downloadOverride AS _sourceDownloadOverride,',
+        'plans.limitUpload AS _sourceLimitUpload,plans.limitDownload AS _sourceLimitDownload,',
+        'plans.burstUpload AS _sourceBurstUpload,plans.burstDownload AS _sourceBurstDownload,',
+        'plans.threshUpload AS _sourceThreshUpload,plans.threshDownload AS _sourceThreshDownload,',
+        'CASE WHEN IFNULL(limitUpload,0) = 0 THEN 0 ELSE (uls * 1000000) - ((limitUpload * uls * 1000000) / 100) END as limitUpload,',
+        'CASE WHEN IFNULL(limitDownload,0) = 0 THEN 0 ELSE (dls * 1000000) - ((limitDownload * dls * 1000000) / 100) end as limitDownload, ',
+        'CASE WHEN IFNULL(threshUpload,0) = 0 THEN 0 ELSE (uls * 1000000) - ((threshUpload * uls * 1000000) / 100) END as threshUpload,',
+        'CASE WHEN IFNULL(threshDownload,0) = 0 THEN 0 ELSE (dls * 1000000) - ((threshDownload * dls * 1000000) / 100) END as threshDownload,',
+        'CASE WHEN IFNULL(burstUpload,0) = 0 THEN 0 ELSE (uls * 1000000) + ((burstUpload * uls * 1000000) / 100) END as burstUpload,',
+        'CASE WHEN IFNULL(burstDownload,0) = 0 THEN 0 ELSE (dls * 1000000) + ((burstDownload * dls* 1000000) / 100) END as burstDownload',
+        'FROM (SELECT *,IFNULL(uploadOverride,uploadSpeed) AS uls,',
+        'IFNULL(downloadOverride,downloadSpeed) AS dls FROM (' . $normalized . ')) AS plans'
+
+    ];
+        $result = [];
+        foreach ($database->selectCustom(implode(' ', $st)) ?? [] as $plan) $result[$plan['id']] = $plan;
+        return $result;
+    }
+
     private function find_plans(bool $fresh = false): array
     {
-        if ($fresh) $this->_plans = null;
-        if($this->_plans === null){
-            $this->_plans = [];
-            // Normalize legacy optional blanks in a read-only subquery BEFORE SQLite can
-            // coerce them to numeric zero and accidentally generate the full guaranteed rate.
-            $columns = ['id','name','last','created','uploadSpeed','downloadSpeed'];
-            foreach (['ratio','priorityUpload','priorityDownload','uploadOverride','downloadOverride',
-                'limitUpload','limitDownload','burstUpload','burstDownload','threshUpload','threshDownload','timeUpload','timeDownload'] as $field) {
-                $columns[] = "CASE WHEN typeof($field)='text' AND trim($field,char(9)||char(10)||char(11)||char(12)||char(13)||' ')='' THEN NULL ELSE $field END AS $field";
-            }
-            $normalized = 'SELECT ' . implode(',', $columns) . ' FROM plans';
-            $st =[
-                'SELECT id,name,ratio,uls AS uploadSpeed,dls AS downloadSpeed,IFNULL(priorityUpload,8) as priorityUpload,',
-                'IFNULL(priorityDownload,8) as priorityDownload,IFNULL(timeUpload,1) as timeUpload,',
-                'IFNULL(timeDownload,1) as timeDownload,last,created,',
-                'plans.uploadSpeed AS _sourceUploadSpeed,plans.downloadSpeed AS _sourceDownloadSpeed,',
-                'plans.uploadOverride AS _sourceUploadOverride,plans.downloadOverride AS _sourceDownloadOverride,',
-                'plans.limitUpload AS _sourceLimitUpload,plans.limitDownload AS _sourceLimitDownload,',
-                'plans.burstUpload AS _sourceBurstUpload,plans.burstDownload AS _sourceBurstDownload,',
-                'plans.threshUpload AS _sourceThreshUpload,plans.threshDownload AS _sourceThreshDownload,',
-                'CASE WHEN IFNULL(limitUpload,0) = 0 THEN 0 ELSE (uls * 1000000) - ((limitUpload * uls * 1000000) / 100) END as limitUpload,',
-                'CASE WHEN IFNULL(limitDownload,0) = 0 THEN 0 ELSE (dls * 1000000) - ((limitDownload * dls * 1000000) / 100) end as limitDownload, ',
-                'CASE WHEN IFNULL(threshUpload,0) = 0 THEN 0 ELSE (uls * 1000000) - ((threshUpload * uls * 1000000) / 100) END as threshUpload,',
-                'CASE WHEN IFNULL(threshDownload,0) = 0 THEN 0 ELSE (dls * 1000000) - ((threshDownload * dls * 1000000) / 100) END as threshDownload,',
-                'CASE WHEN IFNULL(burstUpload,0) = 0 THEN 0 ELSE (uls * 1000000) + ((burstUpload * uls * 1000000) / 100) END as burstUpload,',
-                'CASE WHEN IFNULL(burstDownload,0) = 0 THEN 0 ELSE (dls * 1000000) + ((burstDownload * dls* 1000000) / 100) END as burstDownload',
-                'FROM (SELECT *,IFNULL(uploadOverride,uploadSpeed) AS uls,',
-                'IFNULL(downloadOverride,downloadSpeed) AS dls FROM (' . $normalized . ')) AS plans'
-
-            ];
-            $plans = $this->db()->selectCustom(implode(' ',$st)) ?? [];
-            foreach ($plans as $plan){
-                $this->_plans[$plan['id']] = $plan; }
-        }
-        return $this->_plans ;
+        if ($fresh || $this->_plans === null) $this->_plans = self::previewPlans($this->db());
+        return $this->_plans;
     }
 
     private function find_services(array $ids, $action): array

@@ -1491,8 +1491,24 @@ async function checkCrmNetworkMonitorPanel() {
         await jobs.navigate('jobs'); const jobHtml = jobs.tables.get('#jobs-table tbody').children[0].innerHTML;
         assert(!jobHtml.includes('network_address_conflict:') && jobHtml.includes('reservado por el servicio 509') && jobHtml.includes('IPv6'));
         assert(jobHtml.includes('/crm/client/service/509') && jobHtml.includes('noopener noreferrer'));
+        assert(jobHtml.includes('Trabajo solicitante: servicio #501.') && jobHtml.includes('/crm/client/service/501') && jobHtml.includes('Servicio con reserva #509'), 'The requesting job and protected reservation must be distinguished explicitly');
         assert.equal(jobs.calls.filter(call => call.changeType !== 'list').length, 0, 'A valid ownership conflict must never trigger an automatic repair or deletion from the panel');
     }
+    const relatedJobs = recoveryPanelFixture({ initialReplies: new Map([['list/jobs', envelope({ Q989: { serviceId: 7279, state: 'pending', username: 'customer@48781',
+        error: 'network_address_conflict: requested_service=7279 blocking_service=9807 source=reserved family=IPv4', relatedServices: [
+            { serviceId: 7279, clientId: 48781 }, { serviceId: 9807, clientId: 29 }, { serviceId: 44, clientId: attack }
+        ] } })]]) });
+    await relatedJobs.navigate('jobs');
+    const relatedDescription = relatedJobs.tables.get('#jobs-table tbody').children[0].querySelector('.job-description');
+    const clientLinks = relatedDescription.children.filter(child => child.href);
+    assert.deepEqual(clientLinks.map(link => link.href), ['https://fixture.invalid/crm/client/48781', 'https://fixture.invalid/crm/client/29']);
+    assert(clientLinks[1].textContent.includes('9807') && clientLinks[1].textContent.includes('29'), 'Blocker client must remain distinct from the requester username');
+    assert(clientLinks.every(link => link.rel === 'noopener noreferrer'));
+    const reservationButton = relatedDescription.children.find(child => child.textContent === 'Revisar reserva del servicio #9807');
+    assert(reservationButton, 'A pending IP blocker needs an explicit reservation review action');
+    for (const listener of reservationButton.listeners.get('click') || []) await listener(); await flush();
+    assert(relatedJobs.calls.some(call => call.target === 'job_reservation' && call.action === 'preview' && call.data.serviceIds[0] === 9807));
+    assert(!relatedJobs.calls.some(call => call.action === 'apply'), 'Opening blocker review cannot release a reservation');
     for (const error of ['network_address_conflict: requested_service=502 blocking_service=509 source=reserved family=IPv4',
         'network_address_conflict: requested_service=501 blocking_service=9007199254740999 source=cache family=IPv4',
         'network_address_conflict: requested_service=501 blocking_service=509 source=input family=IPv4']) {
@@ -2328,7 +2344,7 @@ async function checkNetworkRecoveryPanel() {
     assert.deepEqual(plain(healthy.diagnostics()[0].data), {}, 'Reactive recovery reads must not request live CRM verification');
     const malformed = recoveryPanelFixture({ bootstrap: '{', details }); await flush();
     assert.equal(malformed.nodes.get('btn-cache').disabled, false, 'An invalid optional bootstrap must not break normal navigation');
-    assert.equal((markup.match(/(?:src|href)="(?:js|css)\/[^"?]+\?v=2\.0\.51"/g) || []).length, 6, 'Every panel asset must use the new revision to invalidate UISP browser caches');
+    assert.equal((markup.match(/(?:src|href)="(?:js|css)\/[^"?]+\?v=2\.0\.52"/g) || []).length, 7, 'Every panel asset must use the new revision to invalidate UISP browser caches');
     assert(!markup.includes('v=2.0.45'));
     assert(apiSource.includes("'alert-triangle':"), 'The conflict warning must have its own local warning icon');
 }
@@ -3024,6 +3040,18 @@ async function checkLanguagePresentation() {
     assert.equal(evaluate('api.downloadUrl("backup-1")'), 'https://fixture.invalid/crm/_plugins/ros-plugin/public.php?download=backup-1');
     assert.throws(() => evaluate('api.downloadUrl("../config.json")'));
     assert.throws(() => evaluate('api.downloadUrl("backup-1evil")'));
+    await evaluate('api.uploadFullBackup({name:"fixture.zip"})');
+    assert.deepEqual(requests.at(-1).options.body.values.map(item => item[0]), ['workflow', 'fullBackup']);
+    const fullName = 'full-backup-20261015T120000Z-' + 'a'.repeat(32) + '.zip';
+    assert.equal(evaluate(`api.downloadUrl(${JSON.stringify(fullName)})`), 'https://fixture.invalid/crm/_plugins/ros-plugin/public.php?download=' + fullName);
+    evaluate('globalThis.restoredApi = new ApiService(); restoredApi.requireReload()');
+    const beforeBlocked = requests.length;
+    for (const action of ['restoredApi.saveConfig({site:"changed"})', 'restoredApi.restoreFullBackup("a".repeat(64))',
+        'restoredApi.uploadBackup({name:"fixture.db"})', 'restoredApi.uploadFullBackup({name:"fixture.zip"})'])
+        assert.equal((await evaluate(action)).error, true, 'Stale controls remained writable after a full restore');
+    assert.equal(requests.length, beforeBlocked, 'Restored state must require reload before any further write');
+    await evaluate('restoredApi.getJobs()');
+    assert.equal(requests.length, beforeBlocked + 1, 'Restore lock must preserve consultation');
     evaluate('window.location.href = "https://fixture.invalid/crm/_plugins/ros-plugin/public/panel_v2/index.php"');
     assert.equal(evaluate('new ApiService().endpoint'), '/crm/_plugins/ros-plugin/public.php');
     assert(evaluate('api.isAccepted({status:"accepted"})'));

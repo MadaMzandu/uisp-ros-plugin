@@ -46,7 +46,10 @@ class ApiJobQueue
         CREATE TABLE IF NOT EXISTS service_tombstones (service_id INTEGER PRIMARY KEY, version INTEGER NOT NULL);
         CREATE TABLE IF NOT EXISTS service_event_locks (service_id INTEGER PRIMARY KEY,
             owner TEXT NOT NULL, owner_pid INTEGER NOT NULL, lease_until INTEGER NOT NULL);
-        CREATE TABLE IF NOT EXISTS queue_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)');
+        CREATE TABLE IF NOT EXISTS queue_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS webhook_fresh_reviews (service_id INTEGER PRIMARY KEY,
+            attempts INTEGER NOT NULL DEFAULT 0, next_attempt INTEGER NOT NULL, last_error TEXT NOT NULL,
+            received TEXT NOT NULL, updated TEXT NOT NULL)');
         $columns = array_column($this->query('PRAGMA table_info(service_versions)'), 'name');
         foreach (['applied_identity', 'applied_payload'] as $column) {
             if (!in_array($column, $columns, true)) { $this->db->exec('ALTER TABLE service_versions ADD COLUMN ' . $column . ' TEXT'); }
@@ -101,6 +104,49 @@ class ApiJobQueue
     public function enqueue(array $snapshot, string $operation = 'update'): string
     {
         return $this->enqueueBatch([['snapshot' => $snapshot, 'operation' => $operation]])[0];
+    }
+
+    public function deferFreshReview(int $serviceId,string $reason): void
+    {
+        if ($serviceId<1) throw new InvalidArgumentException('Invalid service ID');
+        $reason=$this->freshReviewReason($reason);
+        $this->withAdministrativeLock(fn()=>$this->transaction(function() use($serviceId,$reason):void {
+            $now=date('c');
+            $this->execute('INSERT INTO webhook_fresh_reviews(service_id,attempts,next_attempt,last_error,received,updated)
+                VALUES(:sid,0,:next,:reason,:now,:now) ON CONFLICT(service_id) DO UPDATE SET last_error=excluded.last_error,updated=excluded.updated',
+                ['sid'=>$serviceId,'next'=>time()+15,'reason'=>$reason,'now'=>$now]);
+        }));
+    }
+
+    public function nextFreshReview(): ?array
+    {
+        $rows=$this->query('SELECT service_id,attempts,next_attempt,last_error FROM webhook_fresh_reviews WHERE next_attempt<=:now ORDER BY next_attempt,service_id LIMIT 1',['now'=>time()]);
+        return $rows[0]??null;
+    }
+
+    public function hasFreshReview(int $serviceId): bool
+    { return $this->query('SELECT service_id FROM webhook_fresh_reviews WHERE service_id=:sid',['sid'=>$serviceId])!==[]; }
+
+    public function clearFreshReview(int $serviceId): void
+    {
+        $this->withAdministrativeLock(fn()=>$this->execute('DELETE FROM webhook_fresh_reviews WHERE service_id=:sid',['sid'=>$serviceId]));
+    }
+
+    public function backoffFreshReview(int $serviceId,string $reason): void
+    {
+        $reason=$this->freshReviewReason($reason);
+        $this->withAdministrativeLock(fn()=>$this->transaction(function() use($serviceId,$reason):void {
+            $rows=$this->query('SELECT attempts FROM webhook_fresh_reviews WHERE service_id=:sid',['sid'=>$serviceId]); if (!$rows) return;
+            $attempt=min(20,(int)$rows[0]['attempts']+1);
+            $this->execute('UPDATE webhook_fresh_reviews SET attempts=:attempt,next_attempt=:next,last_error=:reason,updated=:now WHERE service_id=:sid',
+                ['sid'=>$serviceId,'attempt'=>$attempt,'next'=>time()+min(900,15*(2**min(6,$attempt))), 'reason'=>$reason,'now'=>date('c')]);
+        }));
+    }
+
+    private function freshReviewReason(string $reason): string
+    {
+        return in_array($reason,['webhook_state_unconfirmed','webhook_service_absent','webhook_fresh_state_unavailable','webhook_fresh_state_invalid','webhook_fresh_review_blocked'],true)
+            ?$reason:'webhook_fresh_state_unavailable';
     }
 
     public function close(): void
@@ -1145,7 +1191,7 @@ class ApiJobQueue
         ]));
     }
 
-    private function collectAddresses(array &$result, int $serviceId, array $snapshot, bool $ipv6, bool $includePrior): void
+    public static function collectAddresses(array &$result, int $serviceId, array $snapshot, bool $ipv6, bool $includePrior): void
     {
         $values = [$snapshot['address'] ?? null, $snapshot['address6'] ?? null,
             $snapshot['network']['address'] ?? null, $snapshot['network']['address6'] ?? null];

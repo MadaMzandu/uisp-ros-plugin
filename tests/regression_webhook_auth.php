@@ -93,14 +93,18 @@ class ApiUispClient {
 PHP);
 file_put_contents($directory . '/lib/api_setup.php', <<<'PHP'
 <?php
-if (!is_file(__DIR__ . '/../accepted-mode-enabled')) {
-    file_put_contents(__DIR__ . '/../setup-called', 'unexpected');
-    throw new RuntimeException('Unauthorized setup called');
+// api_full_backup.php imports setup declarations before authentication so it can
+// recover an interrupted replacement. Importing a declaration is not setup execution.
+function run_setup(): void {
+    if (!is_file(__DIR__ . '/../accepted-mode-enabled')) {
+        file_put_contents(__DIR__ . '/../setup-called', 'unexpected');
+        throw new RuntimeException('Unauthorized setup called');
+    }
+    file_put_contents(__DIR__ . '/../accepted-mode-entered', 'controlled');
+    http_response_code(200);
+    respond('controlled_webhook_flow');
+    exit;
 }
-file_put_contents(__DIR__ . '/../accepted-mode-entered', 'controlled');
-http_response_code(200);
-respond('controlled_webhook_flow');
-exit;
 PHP);
 file_put_contents($directory . '/router.php', '<?php set_include_path(__DIR__ . "/lib" . PATH_SEPARATOR . get_include_path()); require __DIR__ . "/public.php";');
 $process = null;
@@ -118,7 +122,7 @@ try {
         if ($socket !== false) { fclose($socket); $ready = true; break; }
         usleep(20000);
     }
-    checkWebhook($ready, 'Isolated PHP HTTP server did not become ready');
+    checkWebhook($ready, 'Isolated PHP HTTP server did not become ready: ' . substr((string)@file_get_contents($directory . '/server-error.log'),0,2048));
     $request = static function (object $body, array $headers = [], string $query = '', string $method = 'POST', string $contentType = 'application/json') use ($address): array {
         $httpHeaders = ['Content-Type: ' . $contentType];
         foreach ($headers as $name => $value) $httpHeaders[] = $name . ': ' . $value;

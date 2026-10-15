@@ -7,6 +7,7 @@ const vm = require('node:vm');
 const panel = path.join(__dirname, '../src/public/panel_v2');
 const source = fs.readFileSync(path.join(panel, 'js/i18n.js'), 'utf8');
 const operations = fs.readFileSync(path.join(panel, 'js/operations.js'), 'utf8');
+const workflows = fs.readFileSync(path.join(panel, 'js/workflows.js'), 'utf8');
 const markup = fs.readFileSync(path.join(panel, 'index.php'), 'utf8');
 const calls = [];
 const context = vm.createContext({
@@ -59,6 +60,14 @@ const used = new Set(required);
 for (const match of operations.matchAll(/\bt\('([^'\n]+)'/g)) used.add(match[1]);
 for (const match of operations.matchAll(/'([^'\n]+)'/g))
     if (/^[A-ZÁÉÍÓÚÑ]/.test(match[1])) used.add(match[1]);
+for (const match of workflows.matchAll(/\bt\('([^'\n]+)'/g)) used.add(match[1]);
+for (const match of workflows.matchAll(/'([^'\n]+)'/g))
+    if (/^[A-ZÁÉÍÓÚÑ]/.test(match[1]) && match[1] !== 'Escape') used.add(match[1]);
+used.add('Recarga el panel antes de hacer cambios sobre el estado restaurado.');
+used.add('Revisar sincronización');
+used.add('Trabajo solicitante: servicio #{id}.');
+used.add('Servicio solicitante #{id}');
+used.add('Servicio con reserva #{id}');
 const decode = text => text.replace(/&quot;/g, '"').replace(/&amp;/g, '&').replace(/&#39;/g, "'");
 for (const match of markup.matchAll(/\bdata-i18n(?:-(?:placeholder|title|aria-label))?="([^"]+)"/g)) used.add(decode(match[1]));
 const tokens = text => [...text.matchAll(/\{([a-zA-Z][a-zA-Z0-9_]*)\}/g)].map(match => match[1]).sort();

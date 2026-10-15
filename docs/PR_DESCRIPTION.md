@@ -1,10 +1,28 @@
 ## Summary
 
-Candidate **2.4.36** adds bounded RouterOS read-after-write confirmation, read-only service diagnostics comparing UISP/expected/router state, and observed scheduler/webhook/queue health. Execution and confirmation have separate outcomes, so an unavailable observation cannot replay a completed mutation. The previous ownership and IP corrections remain included.
+Candidate **2.4.37** adds a reviewed synchronization workflow, fresh authoritative webhook state with a durable review inbox, bounded automatic reconciliation, complete private backup/restore and exact IPv4/IPv6 pool capacity. Proven changes are queued through the normal worker; ambiguous ownership remains a per-service incident. The previous RouterOS confirmation, diagnostics, automation health, ownership and IP corrections remain included.
 
 The cumulative changes include the panel work from [PR #89](https://github.com/MadaMzandu/uisp-ros-plugin/pull/89), durable provisioning, webhook handling and recovery tools. Provisioning uses the native RouterOS API with optional TLS.
 
 **The full English changelog and webhook setup guide are included below, not only linked.** Historical entries identify behavior superseded by later revisions; the summary describes the current implementation.
+
+## Candidate 2.4.37: reviewed synchronization, fresh state, reconciliation and full backup
+
+**Review synchronization** prepares a router preview containing unchanged services, differences and cases requiring review. Bounded UISP and RouterOS reads do not refresh cache, reserve addresses, change CRM/router state or run jobs. It shows IPv4/IPv6, checked fields, reconnections and, for a move, the previous and destination routers. **Review only** closes without applying. **Apply differences** queues proven changes; **Force reconnection** also includes verified unchanged accounts. Application rechecks identity and current state, then queues one service at a time through the normal worker for a subsequent scheduled pass. Cancelling stops subsequent requests and preserves the outcome of an already submitted request. Unknown evidence, manual/foreign accounts and concurrent changes do not authorize overwrites.
+
+**Automatic difference review** runs after jobs: at most one service per minute, with a persistent fair cursor and an eight-second budget. It compares fresh UISP, applied state and the observed account. Automatic corrections require a proven owned account on the same router, complete evidence, no active operation and unchanged versions/configuration. Ambiguous cases remain service incidents without stopping unrelated work. System can disable the review or its automatic application. The initial scope does not adopt manual accounts, perform arbitrary migrations or release addresses merely because a client is archived or a service page is absent.
+
+New webhooks fetch the service's current UISP representation under its service lock before updating local data or scheduling work. Older events cannot restore their frozen attributes or status. If an explicit lifecycle action contradicts the observed state, or evidence is unavailable, a bounded durable inbox stores only the service identity for a fresh scheduled review. That review fetches current state instead of replaying the old action/body. UUID deduplication remains. This avoids stale snapshots without inventing a chronological source revision or assuming immediate UISP API consistency.
+
+**System → Full backups** creates, downloads or uploads a private ZIP containing the supported databases, queue, cache and operational state, including credentials. Existing `data.db` SQLite backups remain separate. Full restoration requires a count preview, explicit confirmation and a token bound to current state. The token is consumed before mutation; restoration creates a complete pre-restore backup and journals replacements so startup can roll back an interrupted swap. The current host's SDK integration is preserved rather than imported from the archive. Restoration does not undo CRM or RouterOS commands: restored pending jobs may run on the next scheduler pass. An uncertain response requires reload and a new review; neither the token nor stale forms may replay writes. The result offers the pre-restore backup for download.
+
+**Devices → Pool capacity** reads IPv4/IPv6 capacity on demand using exact decimal-string counts: usable total, assigned, retained, excluded and free. Overlapping intervals are unioned, and protected historical addresses remain occupied. Shared pools, low capacity and exhaustion are flagged; unavailable or incomplete sources remain unknown. IPv6 counts use the displayed client prefix. This read never allocates or reserves addresses and does not guarantee capacity until normal job preparation.
+
+Job errors link the requesting and blocking services, plus their stored clients when a unique association exists. A PPP username suffix never establishes a client relationship. A blocking service returning verified HTTP 404 can be reviewed through the explicit cleanup flow, retaining its guards, maintenance exclusion, backup and confirmation. Archiving a client or deleting a job alone does not release valid reservations, applied ownership or protected resources.
+
+IP conflict errors distinguish the requesting job from the service holding the reservation and link to both records. An old requester does not authorize releasing a current service assignment.
+
+The broader compact redesign and notification center remain deferred until the final stage. **2.4.37 validation passed:** 62 isolated suites, syntax checks for 65 first-party PHP files, and installer verification of 379 entries, 146 first-party files and 13 locked dependencies. Report: `dist/verification-2.4.37.json`. SHA-256: `1284c74f580d8e792479694ebb0df97f1f055b033577c72999e62e7ba386adc7`. Browser checks covered desktop/mobile, Spanish/English and light/dark themes with synthetic fixtures; no production UISP or RouterOS changes were performed.
 
 ## Candidate 2.4.36: RouterOS confirmation, service diagnostics and automation health
 
@@ -229,14 +247,16 @@ An explicit **Allow webhooks without a secret (compatibility)** checkbox preserv
 
 ## Upgrade essentials
 
-1. Preserve the previous ZIP and private copies of `data.db`, `jobs.db`, and configuration. Panel backups cover `data.db` only.
+1. Preserve the previous ZIP and private copies of `data.db`, `jobs.db`, and configuration. Legacy SQLite backups cover `data.db` only; full ZIP backups now include the supported queue, cache and operational state.
 2. Pause old workers/deliveries while replacing the package and wait for active requests to finish.
-3. Install 2.4.36 and reload the panel. If duplicate addresses pause migration, use the panel views in consultation mode, review the diagnostic, and explicitly verify affected owners in UISP. Use Review cleanup to preview eligible obsolete reservations, confirm the selection, preserve its backup, and reload. Resolve remaining assignments and complete migration before resuming workers or deliveries. IPs must be globally unique across services and routers; the panel does not release stale reservations automatically.
+3. Install 2.4.37 and reload the panel. If duplicate addresses pause migration, use the panel views in consultation mode, review the diagnostic, and explicitly verify affected owners in UISP. Use Review cleanup to preview eligible obsolete reservations, confirm the selection, preserve its backup, and reload. Resolve remaining assignments and complete migration before resuming workers or deliveries. IPs must be globally unique across services and routers; the panel does not release stale reservations automatically.
 4. Configure a matching webhook secret at both ends, or explicitly select compatibility mode. Installing the package does not update an existing UISP endpoint URL.
 5. Verify a fresh event and its provisioning outcome. A successful HTTP response or empty pending-jobs list alone does not establish the final RouterOS traffic policy.
-6. Apply service jobs or synchronize the selected router to migrate profiles. **Manual per-router synchronization reconnects its managed PPP/Hotspot sessions.** Existing suspension-profile firewall behavior remains the operator's configuration.
+6. Apply service jobs or synchronize the selected router to migrate profiles. **Review first, then choose Apply differences or Force reconnection explicitly.** Both queue work for the normal worker rather than running the entire router inline. Existing suspension-profile firewall behavior remains the operator's configuration.
 
 ## Validation and scope
+
+- **2.4.37 validation passed:** 62 isolated suites, syntax checks for 65 first-party PHP files, and installer verification of 379 entries, 146 first-party files and 13 locked dependencies. Report: `dist/verification-2.4.37.json`. SHA-256: `1284c74f580d8e792479694ebb0df97f1f055b033577c72999e62e7ba386adc7`. Browser checks covered desktop/mobile, Spanish/English and light/dark themes with synthetic fixtures; no production UISP or RouterOS changes were performed.
 
 - **2.4.36 validation passed:** 54 isolated suites, syntax checks for 58 first-party PHP files, and installer verification of 371 entries, 138 first-party files and 13 locked dependencies. Current report: `dist/verification-2.4.36.json`. SHA-256: `e56d016e13804415acfca3400588c729fa41dc895332f105e47998f25fe47508`. Browser checks cover desktop/mobile, Spanish/English and light/dark themes with synthetic fixtures; no production UISP or RouterOS changes were performed. The report retains the initial contention-test failure and its subsequent check against the identical ZIP.
 
@@ -270,7 +290,7 @@ An explicit **Allow webhooks without a secret (compatibility)** checkbox preserv
 2.4.19 SHA-256: 9be1f9102bf835f04e9bcc9e7c459bc567555425ce27763fe06341ed02b7118f
 ```
 
-The changelog also records remaining limits, including disabled NMS topology writes, no cross-service connection pooling, and outstanding broader RouterOS readback verification. Historical test results do not imply complete validation of the current release.
+The changelog also records remaining limits, including disabled NMS topology writes, no cross-service connection pooling, and remaining ambiguous ownership/migration cases outside automatic reconciliation. Broader visual redesign and the notification center remain deferred. Historical test results do not imply complete validation of the current release.
 
 ## Webhook setup guide
 
@@ -394,9 +414,27 @@ Check the relevant RouterOS logging topics and the actual profile/session state.
 
 [Español](docs/MEJORAS.md) · [PR description](docs/PR_DESCRIPTION.md) · [Webhook setup and rationale](docs/WEBHOOK_SETUP_EN.md)
 
-This revision combines [dhanielsnieto's changes in PR #89](https://github.com/MadaMzandu/uisp-ros-plugin/pull/89) with the subsequent fixes prepared in this repository. The comparison starts at `7ca8dc8`; the original PR ends at `056b89f`. The current candidate is **2.4.36**. The operator confirmed archived-plan speed recovery in their 2.4.19 installation. That confirmation covers this historical scenario; the remaining UISP and RouterOS integration scenarios still require their own checks before production readiness can be established.
+This revision combines [dhanielsnieto's changes in PR #89](https://github.com/MadaMzandu/uisp-ros-plugin/pull/89) with the subsequent fixes prepared in this repository. The comparison starts at `7ca8dc8`; the original PR ends at `056b89f`. The current candidate is **2.4.37**. The operator confirmed archived-plan speed recovery in their 2.4.19 installation. That confirmation covers this historical scenario; the remaining UISP and RouterOS integration scenarios still require their own checks before production readiness can be established.
 
 The plugin connects UISP CRM to MikroTik through the **native RouterOS API**, normally on port `8728`, or `8729` with TLS. The panel manages that integration; it does not switch the transport to SSH, WinBox, or REST.
+
+## Candidate 2.4.37: reviewed synchronization, fresh state, reconciliation and full backup
+
+**Review synchronization** prepares a router preview containing unchanged services, differences and cases requiring review. Bounded UISP and RouterOS reads do not refresh cache, reserve addresses, change CRM/router state or run jobs. It shows IPv4/IPv6, checked fields, reconnections and, for a move, the previous and destination routers. **Review only** closes without applying. **Apply differences** queues proven changes; **Force reconnection** also includes verified unchanged accounts. Application rechecks identity and current state, then queues one service at a time through the normal worker for a subsequent scheduled pass. Cancelling stops subsequent requests and preserves the outcome of an already submitted request. Unknown evidence, manual/foreign accounts and concurrent changes do not authorize overwrites.
+
+**Automatic difference review** runs after jobs: at most one service per minute, with a persistent fair cursor and an eight-second budget. It compares fresh UISP, applied state and the observed account. Automatic corrections require a proven owned account on the same router, complete evidence, no active operation and unchanged versions/configuration. Ambiguous cases remain service incidents without stopping unrelated work. System can disable the review or its automatic application. The initial scope does not adopt manual accounts, perform arbitrary migrations or release addresses merely because a client is archived or a service page is absent.
+
+New webhooks fetch the service's current UISP representation under its service lock before updating local data or scheduling work. Older events cannot restore their frozen attributes or status. If an explicit lifecycle action contradicts the observed state, or evidence is unavailable, a bounded durable inbox stores only the service identity for a fresh scheduled review. That review fetches current state instead of replaying the old action/body. UUID deduplication remains. This avoids stale snapshots without inventing a chronological source revision or assuming immediate UISP API consistency.
+
+**System → Full backups** creates, downloads or uploads a private ZIP containing the supported databases, queue, cache and operational state, including credentials. Existing `data.db` SQLite backups remain separate. Full restoration requires a count preview, explicit confirmation and a token bound to current state. The token is consumed before mutation; restoration creates a complete pre-restore backup and journals replacements so startup can roll back an interrupted swap. The current host's SDK integration is preserved rather than imported from the archive. Restoration does not undo CRM or RouterOS commands: restored pending jobs may run on the next scheduler pass. An uncertain response requires reload and a new review; neither the token nor stale forms may replay writes. The result offers the pre-restore backup for download.
+
+**Devices → Pool capacity** reads IPv4/IPv6 capacity on demand using exact decimal-string counts: usable total, assigned, retained, excluded and free. Overlapping intervals are unioned, and protected historical addresses remain occupied. Shared pools, low capacity and exhaustion are flagged; unavailable or incomplete sources remain unknown. IPv6 counts use the displayed client prefix. This read never allocates or reserves addresses and does not guarantee capacity until normal job preparation.
+
+Job errors link the requesting and blocking services, plus their stored clients when a unique association exists. A PPP username suffix never establishes a client relationship. A blocking service returning verified HTTP 404 can be reviewed through the explicit cleanup flow, retaining its guards, maintenance exclusion, backup and confirmation. Archiving a client or deleting a job alone does not release valid reservations, applied ownership or protected resources.
+
+IP conflict errors distinguish the requesting job from the service holding the reservation and link to both records. An old requester does not authorize releasing a current service assignment.
+
+The broader compact redesign and notification center remain deferred until the final stage. **2.4.37 validation passed:** 62 isolated suites, syntax checks for 65 first-party PHP files, and installer verification of 379 entries, 146 first-party files and 13 locked dependencies. Report: `dist/verification-2.4.37.json`. SHA-256: `1284c74f580d8e792479694ebb0df97f1f055b033577c72999e62e7ba386adc7`. Browser checks covered desktop/mobile, Spanish/English and light/dark themes with synthetic fixtures; no production UISP or RouterOS changes were performed.
 
 ## Candidate 2.4.36: RouterOS confirmation, service diagnostics and automation health
 
@@ -865,7 +903,7 @@ Later production evidence identified missing tokens and a URL pasted as the secr
 
 ## Installation and validation readiness
 
-The current version is 2.4.36. Its validation status appears at the beginning of this changelog. Archived-plan recovery confirmation belongs to 2.4.19 and retains its historical scope. CRM warnings keep other jobs available: current duplicate addresses can be corrected explicitly, and a freshly verified ended service can have its exact historical assignment reviewed without editing its CRM history. **Review cleanup** separately previews eligible obsolete local reservations with a private backup; pending work, unresolved recovery, and recorded applied ownership still protect their reservations. Backups remain downloadable from **System** after reload. Only the separate duplicate-reservation preflight that prevents safe migration pauses other writes and provisioning; it requires resolving those stored conflicts and reloading. The [real-environment test guide](docs/PRUEBAS_REALES.md) contains 195 scenarios for the remaining checks.
+The current version is 2.4.37. Its validation status appears at the beginning of this changelog. Archived-plan recovery confirmation belongs to 2.4.19 and retains its historical scope. CRM warnings keep other jobs available: current duplicate addresses can be corrected explicitly, and a freshly verified ended service can have its exact historical assignment reviewed without editing its CRM history. **Review cleanup** separately previews eligible obsolete local reservations with a private backup; pending work, unresolved recovery, and recorded applied ownership still protect their reservations. Backups remain downloadable from **System** after reload. Only the separate duplicate-reservation preflight that prevents safe migration pauses other writes and provisioning; it requires resolving those stored conflicts and reloading. The [real-environment test guide](docs/PRUEBAS_REALES.md) contains 226 scenarios for the remaining checks.
 
 ### Historical 2.4.17 result
 
@@ -887,7 +925,7 @@ Version 2.4.16 tests cancellation of unattempted native removals, dependent-job 
 
 Historical SHA-256 for 2.4.16: `e02d1697e13d1fd5a708cf5849b781ae2229c4bae234087bf720fe54b0f8850b`.
 
-1. Retain the previous installer and private copies of `data/data.db` and `data/jobs.db`. Panel backups contain `data.db`; **they do not include the `jobs.db` queue**.
+1. Retain the previous installer and private copies of `data/data.db` and `data/jobs.db`. Legacy SQLite panel backups contain `data.db` only. Since 2.4.37, full ZIP backups also preserve the supported queue, cache and operational state.
 2. Pause workers and existing deliveries while replacing the package. Check the migration before resuming them.
 3. Check webhook mode. By default, store only the key in `webhookSecret` and send it from UISP as well; the plugin does not modify the endpoint. To operate without a key, explicitly enable compatibility mode as described in the [guide](docs/WEBHOOK_SETUP_EN.md).
 4. If web PHP retains the old entry point with `opcache.validate_timestamps=0`, invalidate its cache or restart that service. The CLI and browser reloads do not refresh web OPcache.
@@ -898,9 +936,10 @@ Local regressions use PHP 8.5.11, temporary databases, mocks, and local sockets.
 
 ## Known outstanding work
 
+- Visual redesign is deferred until the final stage: compact elements across views and a notification center for warnings, retaining access to details and queue priority while 2.4.36 is tested and functional work continues.
 - Physical removal of an individual suspension queue with unexpected dependencies can remain deferred; 2.4.36 reports a required retained resource as unconfirmed instead of presenting verified removal.
-- Periodic reconciliation between UISP, applied state, and observed RouterOS state.
-- Ordering distinct events delivered out of order using a reliable source revision; deduplicating the same UUID does not solve this case.
+- Broaden periodic review beyond proven owned PPP/Hotspot accounts with no active work; migrations, adoptions and partial evidence retain separate review.
+- Chronological ordering of distinct events still requires a reliable source revision. Fresh reads and the 2.4.37 pending-review inbox avoid applying stale snapshots without inventing that revision or assuming immediate UISP consistency.
 - NMS topology writes remain disabled because earlier code could delete other services' nodes. Reads remain supported. Re-enabling writes requires a persistent `serviceId → deviceId` relationship and verified ownership.
 - Real-environment testing across the installation's UISP/RouterOS versions, certificates, and network policies.
 - Native-speaker review of the new translations.

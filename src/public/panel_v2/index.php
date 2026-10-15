@@ -13,8 +13,8 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     
     <!-- Custom CSS -->
-    <script src="js/theme.js?v=2.0.51"></script>
-    <link rel="stylesheet" href="css/style.css?v=2.0.51">
+    <script src="js/theme.js?v=2.0.52"></script>
+    <link rel="stylesheet" href="css/style.css?v=2.0.52">
 </head>
 <body>
 
@@ -235,6 +235,10 @@
                     </div>
                 </div>
                 
+                <section class="system-panel" id="pool-capacity-section" data-parent-view="devices" style="display: none;">
+                    <div class="conflicts-heading"><div><h3 data-i18n="Capacidad de IP por Site">Capacidad de IP por Site</h3><p class="form-note" data-i18n="Direcciones y prefijos disponibles según las reservas del plugin. Los pools compartidos no se suman entre Sites.">Direcciones y prefijos disponibles según las reservas del plugin. Los pools compartidos no se suman entre Sites.</p></div><button type="button" class="btn btn-secondary" id="refresh-pool-capacity" data-i18n="Refrescar">Refrescar</button></div>
+                    <p class="form-note" id="pool-capacity-status" role="status" aria-live="polite"></p><div class="operations-result-grid" id="pool-capacity-list"></div>
+                </section>
                 <!-- View Plans -->
                 <div id="view-plans" class="view-section" style="display: none;">
                     <div class="list-toolbar">
@@ -351,6 +355,15 @@
 
         <!-- View System -->
         <section id="view-system" class="view-section" style="display: none;">
+            <section class="system-panel" aria-labelledby="service-reconciliation-heading">
+                <div class="conflicts-heading"><div><h3 id="service-reconciliation-heading" data-i18n="Revisión automática de diferencias">Revisión automática de diferencias</h3><p class="form-note" data-i18n="Revisa servicios gradualmente. Las correcciones comprobadas pasan a la cola; los casos ambiguos quedan para revisión individual.">Revisa servicios gradualmente. Las correcciones comprobadas pasan a la cola; los casos ambiguos quedan para revisión individual.</p></div><button type="button" class="btn btn-secondary" id="refresh-service-reconciliation" data-i18n="Refrescar">Refrescar</button></div>
+                <div class="operations-actions"><label><input type="checkbox" id="service-reconciliation-enabled"><span data-i18n="Revisión automática">Revisión automática</span></label><label><input type="checkbox" id="service-reconciliation-auto"><span data-i18n="Corregir casos comprobados">Corregir casos comprobados</span></label><button type="button" class="btn btn-secondary" id="save-service-reconciliation" data-i18n="Guardar cambios">Guardar cambios</button></div>
+                <p class="form-note" id="service-reconciliation-status" role="status" aria-live="polite"></p><div id="service-reconciliation-list" class="operations-result-grid"></div>
+            </section>
+            <section class="system-panel" aria-labelledby="full-backups-heading">
+                <div class="conflicts-heading"><div><h3 id="full-backups-heading" data-i18n="Respaldos completos">Respaldos completos</h3><p class="form-note" data-i18n="Incluyen configuración, credenciales del plugin, cola, estado aplicado y recuperaciones. La integración con este servidor UISP se conserva al restaurar.">Incluyen configuración, credenciales del plugin, cola, estado aplicado y recuperaciones. La integración con este servidor UISP se conserva al restaurar.</p></div><div class="operations-actions"><button type="button" class="btn btn-secondary" id="refresh-full-backups" data-i18n="Refrescar">Refrescar</button><button type="button" class="btn btn-primary" id="create-full-backup" data-i18n="Crear respaldo completo">Crear respaldo completo</button><button type="button" class="btn btn-secondary" id="upload-full-backup" data-i18n="Revisar archivo ZIP">Revisar archivo ZIP</button><input type="file" id="full-backup-file" accept=".zip,application/zip" hidden></div></div>
+                <p class="form-note" id="full-backup-status" role="status" aria-live="polite"></p><div class="operations-result-grid" id="full-backup-list"></div>
+            </section>
             <section class="system-panel" aria-labelledby="automation-health-title">
                 <div class="conflicts-heading"><div><h2 id="automation-health-title" data-i18n="Salud de la automatización">Salud de la automatización</h2><p class="form-note" data-i18n="Actividad observada del proceso automático, webhooks y cola. Una ejecución manual no cuenta como ejecución programada.">Actividad observada del proceso automático, webhooks y cola. Una ejecución manual no cuenta como ejecución programada.</p></div><button type="button" id="refresh-automation-health" class="btn btn-secondary" data-i18n="Refrescar">Refrescar</button></div>
                 <p id="automation-health-status" class="form-note" role="status" aria-live="polite"></p>
@@ -421,6 +434,19 @@
     </div>
 
     <!-- Modals -->
+    <div class="modal-overlay" id="sync-preview-modal" role="dialog" aria-modal="true" aria-labelledby="sync-preview-heading" style="display: none;">
+        <div class="modal workflow-dialog"><div class="modal-header"><h3 id="sync-preview-heading" data-i18n="Vista previa de sincronización">Vista previa de sincronización</h3><button type="button" class="close-modal" aria-label="Cerrar" data-i18n-aria-label="Cerrar"><i data-feather="x"></i></button></div><div class="modal-body">
+            <p class="form-note" data-i18n="Sólo revisar consulta UISP y RouterOS. Aplicar diferencias programa cambios comprobados. Forzar reconexión incluye las cuentas verificadas aunque no tengan diferencias.">Sólo revisar consulta UISP y RouterOS. Aplicar diferencias programa cambios comprobados. Forzar reconexión incluye las cuentas verificadas aunque no tengan diferencias.</p>
+            <p class="form-note" data-i18n="La comparación incluye los campos observables. La contraseña de RouterOS queda sin comprobar.">La comparación incluye los campos observables. La contraseña de RouterOS queda sin comprobar.</p>
+            <p id="sync-preview-status" class="form-note" role="status" aria-live="polite"></p><div class="operations-result-grid" id="sync-preview-list"></div>
+        </div><div class="modal-footer"><button type="button" class="btn btn-secondary" id="sync-review-only" data-i18n="Sólo revisar">Sólo revisar</button><button type="button" class="btn btn-secondary" id="sync-preview-reconnect" disabled data-i18n="Forzar reconexión">Forzar reconexión</button><button type="button" class="btn btn-primary" id="sync-preview-apply" disabled data-i18n="Aplicar diferencias">Aplicar diferencias</button></div></div>
+    </div>
+    <div class="modal-overlay" id="full-restore-modal" role="dialog" aria-modal="true" aria-labelledby="full-restore-heading" style="display: none;">
+        <div class="modal workflow-dialog"><div class="modal-header"><h3 id="full-restore-heading" data-i18n="Revisar restauración completa">Revisar restauración completa</h3><button type="button" class="close-modal" aria-label="Cerrar" data-i18n-aria-label="Cerrar"><i data-feather="x"></i></button></div><div class="modal-body">
+            <p class="form-note" data-i18n="La restauración sustituye los datos locales y guarda antes un respaldo. Los trabajos restaurados podrán ejecutarse en la siguiente pasada automática.">La restauración sustituye los datos locales y guarda antes un respaldo. Los trabajos restaurados podrán ejecutarse en la siguiente pasada automática.</p><p id="full-restore-status" class="form-note" role="status" aria-live="polite"></p><div id="full-restore-summary" class="workflow-grid"></div>
+            <label class="workflow-confirm"><input type="checkbox" id="full-restore-confirm"><span data-i18n="Confirmo restaurar también la cola y el historial de este respaldo.">Confirmo restaurar también la cola y el historial de este respaldo.</span></label>
+        </div><div class="modal-footer"><button type="button" class="btn btn-secondary close-modal" data-i18n="Cerrar">Cerrar</button><button type="button" class="btn btn-secondary" id="reload-after-full-restore" style="display: none;" data-i18n="Recargar panel">Recargar panel</button><button type="button" class="btn btn-primary" id="apply-full-restore" disabled data-i18n="Restaurar respaldo completo">Restaurar respaldo completo</button></div></div>
+    </div>
     <div id="job-recovery-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="job-recovery-title" style="display: none;">
         <div class="modal crm-ip-edit-dialog">
             <div class="modal-header"><h3 id="job-recovery-title" data-i18n="Revisar recuperación">Revisar recuperación</h3><button type="button" class="close-modal" aria-label="Cerrar" data-i18n-aria-label="Cerrar"><i data-feather="x"></i></button></div>
@@ -746,9 +772,10 @@
     </div>
 
     <!-- Scripts -->
-    <script src="js/i18n.js?v=2.0.51"></script>
-    <script src="js/api.js?v=2.0.51"></script>
-    <script src="js/operations.js?v=2.0.51"></script>
-    <script src="js/app.js?v=2.0.51"></script>
+    <script src="js/i18n.js?v=2.0.52"></script>
+    <script src="js/api.js?v=2.0.52"></script>
+    <script src="js/operations.js?v=2.0.52"></script>
+    <script src="js/workflows.js?v=2.0.52"></script>
+    <script src="js/app.js?v=2.0.52"></script>
 </body>
 </html>

@@ -594,8 +594,8 @@ PHP);
             static $trimmer;
             return $trimmer ??= new class {
                 public function trim($type,$request): array {
-                    $entity=(array)($request->extraData->entity??new stdClass());
-                    unset($entity['attributes']);
+                    $entity=json_decode(json_encode($request->extraData->entity??$request),true);
+                    unset($entity['attributes'],$entity['servicePlanId']);
                     $data=['entity'=>$entity];
                     if(isset($request->extraData->entityBeforeEdit)) {
                         $data['previous']=(array)$request->extraData->entityBeforeEdit;
@@ -614,22 +614,31 @@ PHP);
         return (object)['entity'=>'service','entityId'=>90,'changeType'=>$action,'uuid'=>$uuid,
             'extraData'=>(object)['entity'=>(object)['id'=>90,'clientId'=>90]]];
     };
+    function jobsLifecycleAction(object $request): ApiAction {
+        $fresh=new ApiWebhookFreshness(static function() use($request): object {
+            $sid=(int)$request->entityId; $row=myCache()->singleQuery('SELECT * FROM services WHERE id=?',true,[$sid])?:[];
+            $network=myCache()->singleQuery('SELECT address,address6 FROM network WHERE id=?',true,[$sid])?:[];
+            return (object)array_replace($row,['id'=>$sid,'status'=>['suspend'=>3,'unsuspend'=>1,'delete'=>2][$request->changeType]??1,
+                'servicePlanId'=>null,'attributes'=>[],'network'=>$network]);
+        });
+        return new ApiAction($request,$fresh);
+    }
     $suspendRequest=$lifecycle('suspend','alias-suspend');
-    $suspendAction=new ApiAction($suspendRequest); $suspendAction->exec();
+    $suspendAction=jobsLifecycleAction($suspendRequest); $suspendAction->exec();
     checkJobs(!$suspendAction->status()->error && (int)mySqlite()->singleQuery('SELECT status FROM services WHERE id=90')===3,
         'Explicit suspension did not preserve credentials and apply the suspended state');
-    $resumeAction=new ApiAction($lifecycle('unsuspend','alias-resume')); $resumeAction->exec();
+    $resumeAction=jobsLifecycleAction($lifecycle('unsuspend','alias-resume')); $resumeAction->exec();
     checkJobs(!$resumeAction->status()->error && (int)mySqlite()->singleQuery('SELECT status FROM services WHERE id=90')===1,
         'Explicit reactivation failed');
     $beforeReplay=count(MT::$writes);
-    (new ApiAction($suspendRequest))->exec();
+    (jobsLifecycleAction($suspendRequest))->exec();
     checkJobs(count(MT::$writes)===$beforeReplay && (int)myCache()->singleQuery('SELECT status FROM services WHERE id=90')===1,
         'A duplicate old UUID repeated router writes or overwrote newer desired state');
     $invalidRequest=$lifecycle('delete','invalid-id'); $invalidRequest->extraData->entity->id='90 OR 1=1';
     $invalidRejected=false;
-    try { (new ApiAction($invalidRequest))->exec(); } catch(InvalidArgumentException $error) { $invalidRejected=true; }
+    try { (jobsLifecycleAction($invalidRequest))->exec(); } catch(InvalidArgumentException $error) { $invalidRejected=true; }
     checkJobs($invalidRejected && count(MT::$writes)===$beforeReplay, 'An invalid webhook ID was coerced to a real service');
-    $deleteAction=new ApiAction($lifecycle('delete','alias-delete')); $deleteAction->exec();
+    $deleteAction=jobsLifecycleAction($lifecycle('delete','alias-delete')); $deleteAction->exec();
     checkJobs(!$deleteAction->status()->error && !mySqlite()->singleQuery('SELECT id FROM services WHERE id=90')
         && !myCache()->singleQuery('SELECT id FROM services WHERE id=90') && !myCache()->singleQuery('SELECT id FROM network WHERE id=90'),
         'Explicit deletion did not clear both cached service and network state');
@@ -637,7 +646,7 @@ PHP);
     myCache()->insert(['id'=>91,'clientId'=>91,'device'=>20,'username'=>'thin','password'=>'private','status'=>1], 'services');
     myCache()->insert(['id'=>91,'address'=>'192.0.2.91','address6'=>null], 'network');
     $thinRequest=(object)['entity'=>'service','entityId'=>'91','changeType'=>'delete','uuid'=>'thin-delete'];
-    $thinAction=new ApiAction($thinRequest); $thinAction->exec();
+    $thinAction=jobsLifecycleAction($thinRequest); $thinAction->exec();
     checkJobs(!$thinAction->status()->error && strpos($thinAction->status()->message,'(91)')!==false
         && !myCache()->singleQuery('SELECT id FROM services WHERE id=91') && !myCache()->singleQuery('SELECT id FROM network WHERE id=91'),
         'A thin deletion webhook did not recover the cached service identity and client ID');

@@ -24,10 +24,13 @@ file_put_contents($directory . '/vendor/autoload.php', <<<'PHP'
 namespace Ubnt\UcrmPluginSdk\Service;
 class UcrmApi {
     public static array $calls = [];
+    public static array $services = [];
     public static function create() { return new self(); }
     public function get($path, $options = []) {
         self::$calls[] = $path;
         if ($path === 'clients/70') return ['id'=>70,'firstName'=>'Fresh','lastName'=>'Client','companyName'=>'Fixture Company'];
+        if (preg_match('#^clients/services/([1-9][0-9]*)$#D', $path, $match) && isset(self::$services[(int)$match[1]]))
+            return self::$services[(int)$match[1]];
         throw new \RuntimeException('Unexpected network request in second audit fixture: ' . $path);
     }
 }
@@ -55,6 +58,18 @@ require 'lib/api_setup.php';
 require 'lib/api_action.php';
 require 'lib/api_trim.php';
 require 'lib/api_update.php';
+function secondAuditFreshService(int $id, int $clientId, int $status): void {
+    // Independent authoritative GET response; partial or stale webhook fields are not the source of truth.
+    \Ubnt\UcrmPluginSdk\Service\UcrmApi::$services[$id] = (object)[
+        'id'=>$id,'clientId'=>$clientId,'status'=>$status,'servicePlanId'=>1,'uploadSpeed'=>20,'downloadSpeed'=>50,
+        'attributes'=>[
+            (object)['key'=>'device','value'=>'Fixture Router'],
+            (object)['key'=>'username','value'=>'fixture-'.$id],
+            (object)['key'=>'password','value'=>'fixture'],
+            (object)['key'=>'ipAddress','value'=>'192.0.2.'.$id],
+        ],
+    ];
+}
 try {
     $apiSqlite = new ApiSqlite('data/data.db');
     $apiSqlite->exec(file_get_contents('includes/schema.sql'));
@@ -86,6 +101,7 @@ try {
     $beforeTransfer=count(MT::$writes);
     $transfer=(object)['entity'=>'service','entityId'=>90,'changeType'=>'edit','uuid'=>'client-transfer-service-90',
         'extraData'=>(object)['entity'=>(object)['id'=>90,'clientId'=>71]]];
+    secondAuditFreshService(90,71,1);
     $action=new ApiAction($transfer); $action->exec();
     secondAuditCheck(!$action->status()->error && $apiJobQueue->appliedSnapshot(90)['clientId']===71,
         'Moving a service to another client lost its new ownership');
@@ -99,6 +115,8 @@ try {
     foreach([91=>['end',2],92=>['delete',1],93=>['edit',2],94=>['edit',5],95=>['edit',8]] as $id=>$terminal) {
         $event=(object)['entity'=>'service','entityId'=>$id,'changeType'=>$terminal[0],'uuid'=>'terminal-event-service-'.$id,
             'extraData'=>(object)['entity'=>(object)['id'=>$id,'clientId'=>70,'status'=>$terminal[1]]]];
+        // Deletion delivery may carry its prior active state; the current service confirms termination.
+        secondAuditFreshService($id,70,$terminal[0]==='delete'?2:$terminal[1]);
         $action=new ApiAction($event); $action->exec();
         secondAuditCheck($action->status()->error,'Offline terminal event did not retain a failed cleanup: '.$terminal[0].'/'.$terminal[1]);
     }
@@ -125,6 +143,7 @@ try {
     foreach([91,92,93,94,95] as $id) secondAuditCheck($apiJobQueue->appliedSnapshot($id)===[], 'A stale cache bypassed the durable terminal state');
     $activate=(object)['entity'=>'service','entityId'=>91,'changeType'=>'activate','uuid'=>'explicit-reactivation-service-91',
         'extraData'=>(object)['entity'=>(object)['id'=>91,'clientId'=>70,'status'=>1]]];
+    secondAuditFreshService(91,70,1);
     $action=new ApiAction($activate); $action->exec();
     secondAuditCheck(!$action->status()->error && ($apiJobQueue->appliedSnapshot(91)['status'] ?? null)===1,
         'A later explicit UISP activation could not clear the terminal marker');
@@ -176,6 +195,7 @@ try {
     secondAuditCheck($apiJobQueue->pending($legacyUpdate),'The uncertain legacy update was discarded instead of held for a fresh UISP state');
     $activate->entityId=96; $activate->uuid='explicit-reactivation-service-96';
     $activate->extraData->entity->id=96;
+    secondAuditFreshService(96,70,1);
     $action=new ApiAction($activate); $action->exec();
     secondAuditCheck(!$action->status()->error && !$apiJobQueue->isServiceBlocked(96)
         && ($apiJobQueue->appliedSnapshot(96)['status'] ?? null)===1,

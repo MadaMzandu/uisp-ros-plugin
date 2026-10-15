@@ -187,7 +187,7 @@ final class ApiSiteAddressPolicy
         }
     }
 
-    private static function foreignAddresses(array $service, array $device, array $configuration, array $devices): array
+    public static function foreignAddresses(array $service, array $device, array $configuration, array $devices): array
     {
         $candidates = [];
         foreach (['address' => false, 'address6' => true] as $field => $ipv6) {

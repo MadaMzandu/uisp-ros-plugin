@@ -11,14 +11,16 @@ final class ApiServiceDiagnostics
     private string $cachePath;
     private string $jobsPath;
     private float $deadline = 0;
+    private ?float $observationDeadline;
     private const FIELDS = ['username','site','address','address6','profile','plan_id','status','ownership'];
 
     public function __construct(?callable $request = null, ?callable $routerReader = null,
         string $dataPath = 'data/data.db', string $cachePath = 'data/cache.db',
-        string $jobsPath = 'data/jobs.db', ?callable $clock = null)
+        string $jobsPath = 'data/jobs.db', ?callable $clock = null, ?float $observationDeadline = null)
     {
         $this->request = $request; $this->routerReader = $routerReader; $this->dataPath = $dataPath;
         $this->cachePath = $cachePath; $this->jobsPath = $jobsPath; $this->clock = $clock;
+        $this->observationDeadline = $observationDeadline;
     }
 
     public function search(string $query): array
@@ -61,7 +63,7 @@ final class ApiServiceDiagnostics
     public function inspect(int $serviceId): array
     {
         if ($serviceId<1) throw new InvalidArgumentException('invalid_service_id');
-        $this->deadline = microtime(true)+12;
+        $this->deadline = min(microtime(true)+12,$this->observationDeadline ?? INF);
         $result = ['service_id'=>$serviceId,'client_id'=>null,'client_name'=>null,'checked_at'=>$this->stamp(),
             'uisp'=>$this->emptySource('uisp_unavailable'),'expected'=>$this->emptySource('local_state_unavailable'),
             'router'=>$this->emptySource('router_not_inspected'),'comparisons'=>[],

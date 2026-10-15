@@ -1,5 +1,6 @@
 <?php
 include_once 'batch.php';
+require_once __DIR__ . '/api_webhook_freshness.php';
 
 class ApiAction
 {
@@ -10,6 +11,24 @@ class ApiAction
     private array $resultData = [];
     private ?string $diagnosticEventId = null;
     private array $diagnosticServiceIds = [];
+    private ?ApiWebhookFreshness $freshness;
+    private bool $freshReview = false;
+    private bool $queueOnly = false;
+    private bool $forceReconnect = false;
+    private $freshGuard = null;
+    private $queueSink = null;
+
+    /** Reconcile a fresh UISP representation; no invented webhook action or delivery UUID is retained. */
+    public function reconcileService(int $sid, bool $queueOnly = true, bool $forceReconnect = false, ?callable $guard = null, ?callable $queueSink = null): array
+    {
+        if ($sid < 1) throw new InvalidArgumentException('Invalid service ID');
+        $this->freshReview=true; $this->queueOnly=$queueOnly; $this->forceReconnect=$forceReconnect; $this->freshGuard=$guard; $this->queueSink=$queueSink;
+        try {
+            $this->exec((object)['entity'=>'service','entityId'=>$sid,'changeType'=>'edit',
+                'extraData'=>(object)['entity'=>(object)['id'=>$sid]]]);
+            return $this->result();
+        } finally { $this->freshReview=false; $this->queueOnly=false; $this->forceReconnect=false; $this->freshGuard=null; $this->queueSink=null; }
+    }
 
     public function exec($request = null)
     {
@@ -41,7 +60,7 @@ class ApiAction
                 $done = myJobQueue()->withClientLock($clientId, fn(): bool => $this->processWebhook($eventId));
             }
             $action = $this->action();
-            $name = $this->name();
+            $name = $this->resultData['provisioning']==='awaiting_fresh_state' ? 'Service #' . (int)($this->resultData['serviceId']??0) : $this->name();
             $message = "{$action}_success $name" ;
             if(!$done){
                 $message = "{$action}_failed $name";
@@ -51,8 +70,8 @@ class ApiAction
             $this->status->message = $message;
             $this->updateResultEntity();
             $this->updateJobResult();
-            if (!$done) $this->resultData['provisioning'] = $this->resultData['jobCounts']['pending'] > 0 ? 'pending' : 'failed';
-            MyLog()->Append(['event' => 'webhook_result'] + $this->resultData, LOG_INFO);
+            if (!$done && $this->resultData['provisioning'] !== 'awaiting_fresh_state') $this->resultData['provisioning'] = $this->resultData['jobCounts']['pending'] > 0 ? 'pending' : 'failed';
+            MyLog()->Append(['event' => $this->freshReview ? 'service_fresh_review_result' : 'webhook_result'] + $this->resultData, LOG_INFO);
         } catch (Throwable $error) {
             $this->updateResultEntity();
             // Diagnostic failures must never obscure the original processing failure.
@@ -85,10 +104,52 @@ class ApiAction
                 $this->resultData['provisioning'] = 'cancelled';
                 return true;
             }
+            if ($serviceId !== null) {
+                $fresh=($this->freshness ?? new ApiWebhookFreshness())->current($serviceId,$this->action());
+                if ($fresh['reason']!==null || $fresh['missing']) return $this->deferFresh($serviceId,$fresh['reason']??'webhook_service_absent');
+                $current=myTrimmer()->trim('service',$fresh['entity'])['entity'];
+                // A UUID is a delivery receipt, not proof that its queued intent is still current.
+                if (!$this->sameFreshIntent($current,$this->normalizedEntity??[]))
+                    return $this->deferFresh($serviceId,'webhook_state_unconfirmed');
+            }
             myJobQueue()->runSelected($existing);
             return $this->batchOutcome(myJobQueue()->completed($existing), 'duplicate_completed');
         }
-        $data = myTrimmer()->trim($this->type(), $this->request);
+        $missing=false;
+        if ($serviceId!==null) {
+            $previous=$this->req()->extraData->entityBeforeEdit ?? null;
+            if ($previous!==null && (!is_object($previous) || (isset($previous->id)&&filter_var($previous->id,FILTER_VALIDATE_INT)!==$serviceId)))
+                throw new InvalidArgumentException('Previous and current service IDs differ');
+            $fresh=($this->freshness ?? new ApiWebhookFreshness())->current($serviceId,$this->freshReview?'review':$this->action());
+            if ($fresh['reason']!==null) return $this->deferFresh($serviceId,$fresh['reason']);
+            $missing=$fresh['missing'];
+            if ($missing) {
+                if ($this->freshGuard!==null) return $this->deferFresh($serviceId,'webhook_fresh_review_blocked',false);
+                $cached=$this->cachedService($serviceId);
+                if (!$cached) {
+                    foreach (myJobQueue()->resourceSnapshots($serviceId) as $snapshot) {
+                        if ((int)($snapshot['id']??0)===$serviceId && $this->positiveId($snapshot['clientId']??null)!==null) {
+                            $cached=array_intersect_key($snapshot,array_flip(['id','clientId','device','planId','status','username','password','mac','duid','iaid','hotspot','callerId','network']));
+                            break;
+                        }
+                    }
+                }
+                if (!$cached) {
+                    myJobQueue()->clearFreshReview($serviceId);
+                    $this->normalizedEntity=['id'=>$serviceId];
+                    $this->resultData['provisioning']='ignored_unmanaged';
+                    return true;
+                }
+                $this->request=clone $this->req(); $this->request->changeType='delete';
+                $data=['entity'=>array_replace($cached,['id'=>$serviceId,'status'=>2]),'previous'=>$cached];
+            } else {
+                // Do not merge entityBeforeEdit from an unordered delivery into current desired state.
+                $this->request=clone $this->req(); $this->request->extraData=(object)['entity'=>$fresh['entity']];
+                $this->hydratedBillingState=true;
+                $this->updateRoutingResult();
+                $data=myTrimmer()->trim('service',$fresh['entity']);
+            }
+        } else $data = myTrimmer()->trim($this->type(), $this->request);
         if (!$data || !isset($data['entity'])) { throw new InvalidArgumentException('Unsupported webhook entity'); }
         if ($serviceId !== null) {
             if (isset($data['entity']['clientId'])) {
@@ -96,34 +157,19 @@ class ApiAction
                 if (!$clientId || $clientId < 1) { throw new InvalidArgumentException('Invalid client ID'); }
                 $data['entity']['clientId'] = $clientId;
             }
-            if (isset($data['previous']['id']) && filter_var($data['previous']['id'], FILTER_VALIDATE_INT) !== $serviceId) {
-                throw new InvalidArgumentException('Previous and current service IDs differ');
-            }
             $cached = $this->cachedService($serviceId);
-            $raw = $this->entity();
-            $attributeNetwork = property_exists($raw, 'attributes') ? ($data['entity']['network'] ?? []) : [];
-            if (!property_exists($raw, 'attributes')) {
-                foreach (['device','username','password','mac','duid','iaid','hotspot','callerId','network'] as $field) { unset($data['entity'][$field]); }
-            }
-            $known = $this->mergeServiceState($data['previous'] ?? [], $cached);
-            $data['entity'] = $this->mergeServiceState($known, $data['entity'], ['id' => $serviceId]);
-            $deleting = in_array($this->action(), ['delete','end'], true);
-            $states = ['suspend' => 3, 'unsuspend' => 1, 'suspend_cancel' => 1, 'activate' => 1, 'end' => 2];
-            $missingStatus = !array_key_exists('status', $data['entity']) && !isset($states[$this->action()]);
-            $missingPlan = !$deleting && !array_key_exists('planId', $data['entity']);
-            $missingIdentity = !$known && !property_exists($raw, 'attributes');
-            if (!isset($data['entity']['clientId']) || $missingPlan || $missingStatus || $missingIdentity) {
-                $hydrated = $this->completeService($serviceId);
-                $this->hydratedBillingState = $this->validBillingState($hydrated['status'] ?? null);
-                $data['entity'] = $this->mergeServiceState($hydrated, $data['entity']);
-            }
+            if ($this->freshGuard!==null && ($this->freshGuard)($data['entity'],myJobQueue()->appliedSnapshot($serviceId))!==true)
+                return $this->deferFresh($serviceId,'webhook_fresh_review_blocked',false);
+            if (!$missing) $data['entity']=array_replace(['uploadSpeed'=>null,'downloadSpeed'=>null],$data['entity']);
+            $attributeNetwork = !$missing ? ($data['entity']['network'] ?? []) : [];
+            if ($cached) $data['previous']=$cached;
+            $data['entity']=$this->mergeServiceState($cached,$data['entity']);
+            $data['entity']['id']=$serviceId;
             $clientId = filter_var($data['entity']['clientId'] ?? null, FILTER_VALIDATE_INT);
             if (!$clientId || $clientId < 1) { throw new InvalidArgumentException('Invalid client ID'); }
             $data['entity']['clientId'] = $clientId;
-            if (isset($data['previous'])) { $data['previous'] = $this->mergeServiceState($known, $data['previous']); }
-            if ($this->action() === 'edit' && !isset($data['previous']) && $cached) { $data['previous'] = $cached; }
             if ($attributeNetwork && !in_array($this->action(), ['delete','end'], true)) {
-                $beforeNetwork = $data['previous']['network'] ?? $known['network'] ?? [];
+                $beforeNetwork = $data['previous']['network'] ?? [];
                 $appliedNetwork = myJobQueue()->appliedSnapshot($serviceId)['network'] ?? [];
                 foreach (['address','address6'] as $field) {
                     if (!array_key_exists($field,$attributeNetwork) || $attributeNetwork[$field] !== null) continue;
@@ -137,13 +183,6 @@ class ApiAction
                     ];
                 }
             }
-            if (isset($states[$this->action()])) { $data['entity']['status'] = $states[$this->action()]; }
-            if ($this->action() === 'delete') {
-                $data['entity'] = array_replace($cached, $data['previous'] ?? [], $data['entity']);
-                foreach (['device','username','mac','duid','iaid','hotspot','network'] as $field) {
-                    if (($data['entity'][$field] ?? null) === null && isset($cached[$field])) { $data['entity'][$field] = $cached[$field]; }
-                }
-            }
             if (!in_array($this->action(), ['delete','end'], true)
                 && in_array((int)($data['entity']['status'] ?? -1), [1,3,4,7], true)
                 && $this->managedIdentity($data['entity'])) {
@@ -152,6 +191,17 @@ class ApiAction
                 // after fresh UISP identity checks, before saving desired state
                 // or preparing any router cleanup/replacement operation.
                 require_once __DIR__ . '/api_site_address_policy.php';
+                if ($this->queueOnly) {
+                    // Background review is a bounded read + enqueue operation. CRM
+                    // repairs and plan hydration remain explicit normal operations.
+                    [$configuration,$devices]=ApiSiteAddressPolicy::stored('data/data.db');
+                    $device=$devices[(int)$data['entity']['device']]??null;
+                    $planId=(int)($data['entity']['planId']??0);
+                    $plan=$planId>0?mySqlite()->singleQuery('SELECT * FROM plans WHERE id=?',true,[$planId]):null;
+                    if ($device===null || ApiSiteAddressPolicy::foreignAddresses($data['entity'],$device,$configuration,$devices)
+                        || ($planId>0 && ApiPlanCatalog::needsHydration($plan?:null)))
+                        return $this->deferFresh($serviceId,'webhook_fresh_review_blocked');
+                }
                 $data['entity'] = ApiSiteAddressPolicy::reconcile($data['entity'], null, null, 'data/data.db',
                     fn(array $replacement) => $this->batch()->validateSiteAddressReplacement($replacement));
             }
@@ -161,18 +211,32 @@ class ApiAction
             }
         }
         $this->normalizedEntity = $data['entity'];
-        return $this->route($data);
+        $done=$this->route($data);
+        if ($done && $serviceId!==null) myJobQueue()->clearFreshReview($serviceId);
+        return $done;
     }
 
-    private function completeService(int $id): array
+    private function deferFresh(int $sid,string $reason,bool $retain=true): bool
     {
-        // A thin event with no prior state must not invent a plan or provision from empty attributes.
-        $service = $this->ucrm()->get('clients/services/' . $id);
-        if (!is_object($service) || filter_var($service->id ?? null, FILTER_VALIDATE_INT) !== $id
-            || !property_exists($service, 'attributes') || !property_exists($service, 'servicePlanId')) {
-            throw new RuntimeException('incomplete_service_event');
+        if ($retain) myJobQueue()->deferFreshReview($sid,$reason);
+        $this->normalizedEntity=['id'=>$sid];
+        $this->resultData['provisioning']='awaiting_fresh_state';
+        $this->resultData['reason']=$reason;
+        return false;
+    }
+
+    private function sameFreshIntent(array $current,array $snapshot): bool
+    {
+        foreach (['id','clientId','device','status','planId','username','password','mac','duid','iaid','hotspot','callerId','uploadSpeed','downloadSpeed'] as $field) {
+            $left=$current[$field]??null; $right=$snapshot[$field]??null;
+            if (in_array($field,['username','password','mac','duid','iaid','callerId'],true)) {
+                if ($left!==$right) return false;
+            } elseif (($left===null||$right===null)?$left!==$right:$left!=$right) return false;
         }
-        return myTrimmer()->trim('service', $service)['entity'];
+        foreach (['address','address6'] as $field) {
+            if (($current['network'][$field]??null)!==($snapshot['network'][$field]??null)) return false;
+        }
+        return true;
     }
 
     /** Omitted families are partial state; explicit NULLs replace that family. */
@@ -249,6 +313,7 @@ class ApiAction
     private function edit($data): bool
     {
         $entity = $data['entity'] ;
+        if ($this->queueOnly && ($this->forceReconnect || $this->queueSink!==null)) return $this->set($entity,'edit');
         $previous = $data['previous'] ?? [];
         $diff = $this->changes($entity,$previous);
         $changes = array_keys($diff);
@@ -270,6 +335,7 @@ class ApiAction
         elseif($upgrade)
         { //changes requiring previous delete
             if (!$previous || !$this->managedIdentity($previous)) { return $this->set($entity, 'insert'); }
+            if ($this->queueOnly) return $this->set($entity,'edit');
             MyLog()->Append(["Update edit requires delete changes: ",$changes,$this->entity()->id]);
             $dev = $entity['device'] ?? null ;
             $user = $entity['username'] ?? $entity['mac'] ?? null ;
@@ -317,7 +383,7 @@ class ApiAction
         }
         foreach (['username','password','mac','hotspot','duid','iaid','callerId','uploadSpeed','downloadSpeed'] as $field)
             if (array_key_exists($field,$entity) && !array_key_exists($field,$applied)) return false;
-        if ($this->needsAppliedReconciliation($entity)) return false;
+        if ($this->needsAppliedReconciliation($entity,false)) return false;
         $principal = filter_var($entity['mac'] ?? '', FILTER_VALIDATE_MAC) ? 'ip/dhcp-server/lease'
             : (empty($entity['hotspot']) ? 'ppp/secret' : 'ip/hotspot/user');
         $accounts = array_filter($applied['_commands'], static function (array $command) use ($principal,$sid,$entity): bool {
@@ -410,7 +476,7 @@ class ApiAction
         return $this->hydratedBillingState || (is_object($raw) && property_exists($raw, 'status') && $this->validBillingState($raw->status));
     }
 
-    private function needsAppliedReconciliation(array $entity): bool
+    private function needsAppliedReconciliation(array $entity,bool $checkMetadata=true): bool
     {
         if (!empty($entity['_network_reset'])) return true;
         $sid = (int) $entity['id'];
@@ -439,7 +505,7 @@ class ApiAction
             $actual = $applied['network'][$field] ?? $applied[$field] ?? null;
             if ($entity['network'][$field] != $actual) return true;
         }
-        return false;
+        return $checkMetadata && in_array((int)($entity['status']??-1),[1,3],true) && !$this->completedBillingEdit($entity);
     }
 
     private function name(): string
@@ -466,6 +532,7 @@ class ApiAction
         $q = 'select company,firstName,lastName from clients where id=:id';
         $client = myCache()->singleQuery($q,true,['id' => $id]);
         if($client){ return $client; }
+        if ($this->queueOnly) return ['company'=>null,'firstName'=>null,'lastName'=>null];
         return $this->get_client($id);
     }
 
@@ -515,7 +582,13 @@ class ApiAction
         $data = array_replace($entity,$client);
         $data['action'] = $action ;
         $data['_clear_terminal'] = true;
-        if (in_array($action, ['suspend','unsuspend','suspend_cancel','activate'], true)) $data['_force_reconnect'] = true;
+        if ($this->forceReconnect || in_array($action, ['suspend','unsuspend','suspend_cancel','activate'], true)) $data['_force_reconnect'] = true;
+        if ($this->queueOnly) {
+            if ($this->queueSink!==null) ($this->queueSink)($data);
+            else $this->batch()->queue_accounts([$data]);
+            $this->resultData['provisioning']='queued';
+            return true;
+        }
         return $this->batchOutcome($this->batch()->set_accounts([$data]));
     }
 
@@ -538,6 +611,11 @@ class ApiAction
         $desired = $this->normalizedEntity ?? $entity;
         if (in_array($this->action(), ['delete','end'], true)) $desired['status'] = 2;
         if (!$this->save($desired)) return false;
+        if ($this->queueOnly) {
+            $this->batch()->queue_deletions($deletions);
+            $this->resultData['provisioning']='queued';
+            return true;
+        }
         if($this->batch()->del_accounts($deletions)){
             return $this->batchOutcome($this->unsave($entity), 'cleared');
         }
@@ -547,6 +625,7 @@ class ApiAction
 
     private function requestCredentials(array $entity): bool
     {
+        if ($this->queueOnly) return $this->deferFresh((int)$entity['id'],'webhook_fresh_review_blocked');
         if (!$this->is_auto($entity)) throw new InvalidArgumentException('service_credentials_missing');
         myAttr()->set_user((int) $entity['id'], (int) $entity['clientId']);
         $this->resultData['provisioning'] = 'credentials_requested';
@@ -650,6 +729,8 @@ class ApiAction
     private function safeErrorCode(Throwable $error): string
     {
         $known = ['service_credentials_missing','service_site_not_configured','incomplete_service_event',
+            'webhook_state_unconfirmed','webhook_service_absent','webhook_fresh_state_unavailable',
+            'webhook_fresh_state_invalid','webhook_fresh_review_blocked',
             'invalid_service_attribute_value','credential_attribute_missing','credential_update_failed',
             'site_address_device_changed','site_address_mapping_unknown','site_address_identity_changed',
             'site_address_site_changed','site_address_evidence_unknown','site_address_changed',
@@ -868,9 +949,10 @@ class ApiAction
 
     private function ucrm(): ApiUcrm { return new ApiUcrm(); }
 
-    public function __construct($data = null)
+    public function __construct($data = null, ?ApiWebhookFreshness $freshness = null)
     {
         $this->request = $data ;
         $this->status = new stdClass();
+        $this->freshness = $freshness;
     }
 }

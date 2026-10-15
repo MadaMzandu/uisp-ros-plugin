@@ -4,6 +4,9 @@ include_once 'api_job_queue.php';
 
 class ApiTrim
 {// trim request to min and map to db fields
+    private ?ApiAttributes $readAttributes = null;
+
+    public function __construct(?ApiAttributes $attributes = null) { $this->readAttributes = $attributes; }
 
     public function trim($type, $request): ?array
     {
@@ -101,7 +104,7 @@ class ApiTrim
 
     private function attrs(): ApiAttributes
     {
-        return myAttr();
+        return $this->readAttributes ?? myAttr();
     }
 
 }

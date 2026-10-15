@@ -17,8 +17,9 @@ final class ApiPanelRecovery
             ApiNetworkCleanup::download($query['download']);
             return true;
         }
-        $crmSource = ($request->target ?? '') === 'crm_network_conflicts';
-        if (!in_array($request->target ?? '', ['network_conflicts', 'crm_network_conflicts'], true) || !empty($request->entity)) {
+        $jobSource = ($request->target ?? '') === 'job_reservation';
+        $crmSource = $jobSource || ($request->target ?? '') === 'crm_network_conflicts';
+        if (!in_array($request->target ?? '', ['network_conflicts', 'crm_network_conflicts', 'job_reservation'], true) || !empty($request->entity)) {
             throw new InvalidArgumentException('invalid_cleanup_target');
         }
         $action = $request->action ?? null;
@@ -26,7 +27,12 @@ final class ApiPanelRecovery
         $data = $request->data ?? null;
         if (!is_object($data) || !is_array($data->serviceIds ?? null)) throw new InvalidArgumentException('invalid_cleanup_service_ids');
         if (is_file('data/data.db')) (new ApiSetup())->assertCompatible();
-        if ($crmSource && $action === 'preview') {
+        if ($jobSource && $action === 'preview') {
+            require_once __DIR__.'/api_job_context.php';
+            if (count($data->serviceIds)!==1 || !is_int($data->serviceIds[0]) || $data->serviceIds[0]<1
+                || !(new ApiJobContext())->isBlockingReservation($data->serviceIds[0])) throw new InvalidArgumentException('invalid_job_reservation_review');
+        }
+        if ($crmSource && !$jobSource && $action === 'preview') {
             require_once __DIR__ . '/api_crm_network_resolution.php';
             if (!(new ApiCrmNetworkResolution())->canReviewCleanup($data->serviceIds)) throw new InvalidArgumentException('crm_resolution_service_not_found');
         }

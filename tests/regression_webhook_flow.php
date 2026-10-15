@@ -19,11 +19,20 @@ file_put_contents($directory . '/vendor/autoload.php', <<<'PHP'
 namespace Ubnt\UcrmPluginSdk\Service;
 class UcrmApi {
     public static array $services = [];
+    public static array $requests = [];
     public static array $patches = [];
     public static function create() { return new self(); }
     public function get($path, $options = []) {
         if ($path === 'custom-attributes') return [['key'=>'pppoeUsername','id'=>228],['key'=>'pppoePassword','id'=>229]];
-        if (preg_match('#^clients/services/([1-9][0-9]*)$#D', $path, $match) && isset(self::$services[(int)$match[1]])) return self::$services[(int)$match[1]];
+        if (preg_match('#^clients/services/([1-9][0-9]*)$#D', $path, $match)) {
+            $request=self::$requests[(int)$match[1]]??null;
+            if ($request!==null) {
+                $entity=clone $request->extraData->entity;
+                $entity->status=['suspend'=>3,'unsuspend'=>1,'suspend_cancel'=>1,'activate'=>1,'end'=>2,'delete'=>2][$request->changeType]??$entity->status;
+                return $entity;
+            }
+            if (isset(self::$services[(int)$match[1]])) return self::$services[(int)$match[1]];
+        }
         throw new \RuntimeException('Fixture network prohibited');
     }
     public function patch($path, $data = []) {
@@ -84,9 +93,11 @@ try {
             'uploadSpeed'=>5,'downloadSpeed'=>25,'attributes'=>$attrs($site,$user)];
         $extra = (object)['entity'=>$entity];
         if ($before !== null) { $extra->entityBeforeEdit = clone $entity; $extra->entityBeforeEdit->status = $before; }
-        return (object)['entity'=>'service','entityId'=>(string)$id,'changeType'=>$change,
+        $request=(object)['entity'=>'service','entityId'=>(string)$id,'changeType'=>$change,
             'uuid'=>'FLOW-PRIVATE-UUID-' . ++$sequence, 'extraData'=>$extra,
             'url'=>'https://fixture.invalid/?webhookToken=TOKEN-PRIVATE'];
+        \Ubnt\UcrmPluginSdk\Service\UcrmApi::$requests[$id]=$request;
+        return $request;
     };
     $execute = static function (object $request): ApiAction {
         $action = new ApiAction($request); $action->exec(); return $action;
@@ -104,7 +115,7 @@ try {
         flowCheck($result['jobCounts']['known']>0 && $result['jobCounts']['completed']===$result['jobCounts']['known']
             && $result['jobCounts']['pending']===0 && $queue->completed($result['jobKeys']), 'Applied diagnostic did not verify its jobs');
     };
-    // Generic service.edit payload uses billing status, while explicit suspend/unsuspend names override it.
+    // The fixture's GET confirms lifecycle transitions independently from the thin delivery body.
     $suspend = $execute($request(1420,'edit',3,1)); $assertApplied($suspend,3);
     flowCheck($secret(MT::$writes)['profile']==='fixture-suspended', 'service.edit status3 did not suspend the PPP profile');
     $resume = $execute($request(1420,'edit',1,3)); $assertApplied($resume,1);

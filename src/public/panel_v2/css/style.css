@@ -514,6 +514,16 @@ details.config-section[open] > summary.config-section-header::after { content: '
 .operations-history h3 { font-size: .92rem; }
 .operations-history-row { font-size: .8rem; margin: 10px 0; color: var(--text-muted); }
 .operations-issues { border-left: 3px solid var(--warning-border); padding: 10px 12px; margin-top: 16px; font-size: .82rem; }
+.workflow-dialog { width: min(1100px, calc(100vw - 28px)); max-width: 1100px; max-height: calc(100vh - 32px); }
+.workflow-dialog .modal-body { overflow-y: auto; }
+.workflow-dialog .modal-footer { flex-wrap: wrap; }
+#pool-capacity-section { margin-top: 20px; }
+.workflow-confirm { display: flex; align-items: flex-start; gap: 8px; margin: 18px 0; }
+.workflow-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.workflow-grid article { min-width: 0; overflow-wrap: anywhere; }
+.workflow-grid dl, .workflow-card dl { margin: 8px 0; font-size: .8rem; }
+.workflow-card dd { margin: 3px 0 10px; overflow-wrap: anywhere; }
+.workflow-card .operations-actions { margin-top: auto; }
 .operations-checks { width: 100%; font-size: .78rem; margin-top: 12px; }
 .operations-checks summary { cursor: pointer; color: var(--primary); }
 .operations-checks > div { padding: 12px 0; border-bottom: 1px solid var(--border); }
@@ -521,6 +531,7 @@ details.config-section[open] > summary.config-section-header::after { content: '
 .operations-checks dt { color: var(--text-muted); margin-bottom: 4px; }
 .operations-checks dd { margin: 0; }
 @media (max-width: 700px) {
+    .workflow-grid { grid-template-columns: minmax(0, 1fr); }
     .automation-health-grid { grid-template-columns: minmax(0, 1fr); }
     .operations-source-status { grid-template-columns: minmax(0, 1fr); }
     .operations-source-status > div { flex-direction: row; flex-wrap: wrap; align-items: center; }

@@ -6,6 +6,7 @@ class ApiSqlite
 {
 
     private string $path;
+    private bool $readOnly = false;
     private ?SQLite3 $_db = null;
     private int $transactionDepth = 0;
 
@@ -263,8 +264,8 @@ class ApiSqlite
     private function db(): SQLite3
     {
         if(empty($this->_db)){
-            $this->_db = new SQLite3($this->path);
-            $this->_db->busyTimeout(5000);
+            $this->_db = new SQLite3($this->path, $this->readOnly ? SQLITE3_OPEN_READONLY : SQLITE3_OPEN_READWRITE | SQLITE3_OPEN_CREATE);
+            $this->_db->busyTimeout($this->readOnly ? 250 : 5000);
             $this->_db->enableExceptions(true);
         }
         return $this->_db ;
@@ -315,7 +316,7 @@ class ApiSqlite
 
     public function lastInsertId(): int { return $this->db()->lastInsertRowID(); }
 
-    public function __construct($path = null) { $this->path = $path ?? 'data/data.db';}
+    public function __construct($path = null, bool $readOnly = false) { $this->path = $path ?? 'data/data.db'; $this->readOnly = $readOnly; }
 
 }
 

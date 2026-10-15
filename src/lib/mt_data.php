@@ -4,6 +4,22 @@ include_once 'data.php';
 class MtData extends Data
 {
     private ?ApiIP $validationAddresses = null;
+    private ?ApiSqlite $previewDatabase = null;
+    private ?ApiSqlite $previewCache = null;
+
+    /** Build the ordinary desired commands without acquiring reservations or refreshing cache. */
+    public static function previewCommands(array $service, array $plan, ApiIP $addresses, ApiSqlite $database, ApiSqlite $cache): array
+    {
+        $builder = new self(); $builder->validationAddresses = $addresses;
+        $builder->previewDatabase = $database; $builder->previewCache = $cache;
+        $service['_plan'] = $plan;
+        $data = $builder->get_data($service, $plan); $commands = [];
+        foreach (['pool','parents','profiles','queues','accounts','dhcp6','disconn'] as $key) if (isset($data[$key])) $commands[] = $data[$key];
+        return self::safePreparedCommands($service, $commands, 'update');
+    }
+
+    protected function db(): ApiSqlite { return $this->previewDatabase ?? parent::db(); }
+    protected function dbCache(): ApiSqlite { return $this->previewCache ?? parent::dbCache(); }
 
     /** Exercise the exact command-builder address paths before retiring a live account. */
     public function validateBeforeCleanup(array $service, array $plan, bool $releasesReservation): void

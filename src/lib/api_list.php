@@ -183,7 +183,8 @@ class ApiList
     private function list_jobs(): array
     {
         require_once __DIR__ . '/api_job_queue.php';
-        return myJobQueue()->list();
+        require_once __DIR__ . '/api_job_context.php';
+        return (new ApiJobContext())->enrich(myJobQueue()->list());
     }
 
     private function list_backups(): array

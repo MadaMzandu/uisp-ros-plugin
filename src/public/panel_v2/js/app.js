@@ -71,6 +71,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let loadingCount = 0;
     let languageLoad = 0;
     let recoveryReadOnly = false;
+    let restoredRequiresReload = false;
     let recoveryDetails = null;
     let recoveryLoading = false;
     let verifyingService = null;
@@ -324,9 +325,9 @@ document.addEventListener('DOMContentLoaded', () => {
     function markRecoveryWrite(button) {
         if (!button) return button;
         button.dataset.recoveryWrite = 'true';
-        if (recoveryReadOnly) {
+        if (recoveryReadOnly || restoredRequiresReload) {
             button.disabled = true;
-            button.title = t('Los cambios están pausados hasta corregir las IP duplicadas.');
+            button.title = t(restoredRequiresReload ? 'Recarga el panel antes de hacer cambios sobre el estado restaurado.' : 'Los cambios están pausados hasta corregir las IP duplicadas.');
         }
         return button;
     }
@@ -341,7 +342,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function applyRecoveryControls() {
-        if (!recoveryReadOnly) return;
+        if (!recoveryReadOnly && !restoredRequiresReload) return;
         for (const id of recoveryWriteIds) markRecoveryWrite(byId(id));
         for (const control of document.querySelectorAll('[data-recovery-write]')) markRecoveryWrite(control);
         for (const control of document.querySelectorAll('[data-recovery-router-read]')) markRecoveryRouterRead(control);
@@ -1332,7 +1333,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (cleanupBusy || verifyingService !== null || verifyingClient !== null || crmVerifyBusy || crmEditBusy || cleanupRequiresReload || !cleanupModal) return;
         const ids = [...new Set(serviceIds.map(Number))].filter(id => Number.isSafeInteger(id) && id > 0).slice(0, 3);
         if (!ids.length) return;
-        cleanupBusy = true; cleanupPreview = null; cleanupBoxes = []; cleanupSource = source === 'crm_snapshot' ? source : 'stored';
+        cleanupBusy = true; cleanupPreview = null; cleanupBoxes = []; cleanupSource = ['crm_snapshot', 'job_blocker'].includes(source) ? source : 'stored';
         cleanupFamily = ['IPv4', 'IPv6'].includes(family) ? family : null;
         cleanupGroup = cleanupSource === 'crm_snapshot' ? crmMonitorReport?.conflicts.find(group => group.family === cleanupFamily
             && group.owners.some(owner => ids.includes(owner.service_id))) || null : null;
@@ -1430,7 +1431,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (cleanupSource === 'stored' || recoveryReadOnly) cleanupRemainingCount = result.duplicate_groups;
             cleanupBoxes.forEach(box => { box.disabled = true; });
             const summary = document.createElement('p');
-            translatedText(summary, cleanupSource === 'crm_snapshot' && !recoveryReadOnly
+            translatedText(summary, cleanupSource !== 'stored' && !recoveryReadOnly
                 ? result.removed_service_ids.length === 1 ? 'Se limpiaron las reservas locales de {count} servicio. La verificación del CRM se muestra por separado.'
                     : 'Se limpiaron las reservas locales de {count} servicios. La verificación del CRM se muestra por separado.'
                 : 'Se retiraron las asignaciones de {count} servicios. Quedan {remaining} conflictos de IP.', { count: result.removed_service_ids.length, remaining: result.duplicate_groups });
@@ -1907,6 +1908,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function closeModals() {
+        globalThis.PanelWorkflows?.close?.();
         for (const modal of [deviceModal, planModal, orphanModal, cleanupModal]) if (modal) modal.style.display = 'none';
         if (crmEditModal && !crmEditBusy) {
             crmEditModal.style.display = 'none'; crmEditGeneration++; crmEditTarget = null; crmEditOutcome = null; resetCrmEditPreview(); updateCrmEditorControls();
@@ -1934,6 +1936,7 @@ document.addEventListener('DOMContentLoaded', () => {
         clearJobsRefreshTimer();
         currentView = view;
         globalThis.PanelOperations?.onView(view);
+        globalThis.PanelWorkflows?.onView(view);
         translatedText(byId('page-title'), { devices: 'Dispositivos administrados', plans: 'Planes', config: 'Configuración', jobs: 'Trabajos', system: 'Sistema', network_conflicts: 'Conflictos de IP', diagnostics: 'Diagnóstico por servicio' }[view] || title);
         document.querySelectorAll('.nav-item').forEach(nav => nav.classList.toggle('active', nav.dataset.view === view));
         document.querySelectorAll('.view-section').forEach(section => {
@@ -1975,6 +1978,7 @@ document.addEventListener('DOMContentLoaded', () => {
         switchView('jobs', 'Trabajos');
     });
     byId('btn-recheck-conflicts')?.addEventListener('click', reloadPanel);
+    byId('reload-after-full-restore')?.addEventListener('click', reloadPanel);
 
     async function renderDevices() {
         const sequence = ++devicesRequestSequence;
@@ -1987,6 +1991,7 @@ document.addEventListener('DOMContentLoaded', () => {
     async function syncDevice(device) {
         const id = Number(device.id);
         if (!Number.isSafeInteger(id) || id < 1 || recoveryReadOnly || deviceSyncs.has(id)) return;
+        if (globalThis.PanelWorkflows?.previewSync) return globalThis.PanelWorkflows.previewSync(device);
         const name = `${String(device.name || id).slice(0, 200)} (#${id})`;
         deviceSyncs.set(id, 'confirming');
         renderDevicesTable();
@@ -2045,7 +2050,7 @@ document.addEventListener('DOMContentLoaded', () => {
             actions.append(
                 actionButton('Ver cuentas huérfanas', 'users', () => { if (!deviceSyncs.has(id)) return viewOrphans(device.id); }, 'secondary', { routerRead: true }),
                 actionButton(recoveryReadOnly ? 'Ver dispositivo' : 'Editar dispositivo', 'edit-2', () => { if (!deviceSyncs.has(id)) openDeviceModal(device); }, 'secondary', { loading: false }),
-                actionButton('Sincronizar y reconectar cuentas', 'refresh-cw', () => syncDevice(device), 'secondary', { loading: false, write: true }),
+                actionButton(globalThis.PanelWorkflows ? 'Revisar sincronización' : 'Sincronizar y reconectar cuentas', 'refresh-cw', () => syncDevice(device), 'secondary', { loading: false, write: !globalThis.PanelWorkflows, routerRead: !!globalThis.PanelWorkflows }),
                 actionButton('Vaciar cuentas administradas', 'x-circle', async () => {
                     if (deviceSyncs.has(id)) return;
                     if (!await confirmAction(t('¿Eliminar todas las cuentas administradas por el plugin de este MikroTik?'))) return;
@@ -2874,8 +2879,11 @@ document.addEventListener('DOMContentLoaded', () => {
             const source = 'La IP o prefijo {family} solicitado ya está reservado por el servicio {id}. Revisa ambas asignaciones en UISP.';
             const params = { family: collision[4], id: Number(collision[2]) };
             const url = safeCrmUrl('/crm/client/service/' + collision[2], 'service');
-            return `<span data-i18n="${html(source)}" data-i18n-values="${html(JSON.stringify(params))}">${html(t(source, params))}</span>`
-                + (url ? ` <a class="conflict-link" href="${html(url)}" target="_blank" rel="noopener noreferrer">${html(t('Servicio #{id}', { id: params.id }))}</a>` : '');
+            const requested = { id: Number(collision[1]) }, requestLabel = 'Trabajo solicitante: servicio #{id}.';
+            const requesterUrl = safeCrmUrl('/crm/client/service/' + collision[1], 'service');
+            return `<span data-i18n="${html(requestLabel)}" data-i18n-values="${html(JSON.stringify(requested))}">${html(t(requestLabel, requested))}</span> <span data-i18n="${html(source)}" data-i18n-values="${html(JSON.stringify(params))}">${html(t(source, params))}</span>`
+                + (requesterUrl ? ` <a class="conflict-link" href="${html(requesterUrl)}" target="_blank" rel="noopener noreferrer" data-i18n="Servicio solicitante #{id}" data-i18n-values="${html(JSON.stringify(requested))}">${html(t('Servicio solicitante #{id}', requested))}</a>` : '')
+                + (url ? ` <a class="conflict-link" href="${html(url)}" target="_blank" rel="noopener noreferrer" data-i18n="Servicio con reserva #{id}" data-i18n-values="${html(JSON.stringify({ id: params.id }))}">${html(t('Servicio con reserva #{id}', { id: params.id }))}</a>` : '');
         }
         const match = /^invalid_network_address: requested_service=([1-9]\d{0,14}) blocking_service=([1-9]\d{0,14}) source=(input|reserved|applied) family=(IPv4|IPv6)$/.exec(error);
         if (!match || !Number.isSafeInteger(Number(match[1])) || !Number.isSafeInteger(Number(match[2])) || Number(match[1]) !== Number(serviceId)) return null;
@@ -2931,6 +2939,23 @@ document.addEventListener('DOMContentLoaded', () => {
             checkbox.addEventListener('change', updateJobSelection);
             const repair = jobNetworkRepairTarget(error, job.serviceId ?? job.id);
             const diagnosticId = Number(job.serviceId ?? job.id);
+            const collision = /^network_address_conflict: requested_service=([1-9]\d*) blocking_service=([1-9]\d*) source=(?:reserved|cache|applied) family=(IPv[46])$/.exec(error);
+            if (collision && Number(collision[1]) === diagnosticId && Number.isSafeInteger(Number(collision[2]))) {
+                const review = document.createElement('button'); review.type = 'button'; review.className = 'btn btn-secondary job-repair-button';
+                translatedText(review, 'Revisar reserva del servicio #{id}', { id: Number(collision[2]) });
+                review.disabled = cleanupBusy || cleanupRequiresReload;
+                review.addEventListener('click', () => previewCleanup([Number(collision[2])], 'job_blocker', collision[3]));
+                row.querySelector('.job-description').appendChild(review);
+            }
+            for (const related of (Array.isArray(job.relatedServices) ? job.relatedServices : []).slice(0, 3)) {
+                const service = Number(related.serviceId), client = Number(related.clientId);
+                if (!Number.isSafeInteger(service) || service < 1 || !Number.isSafeInteger(client) || client < 1) continue;
+                const url = safeCrmUrl('/crm/client/' + client, 'client'); if (!url) continue;
+                const link = document.createElement('a'); link.className = 'conflict-link job-repair-button';
+                link.href = url; link.target = '_blank'; link.rel = 'noopener noreferrer';
+                link.textContent = t('Servicio #{id}', { id: service }) + ' · ' + t('Cliente #{id}', { id: client });
+                row.querySelector('.job-description').appendChild(link);
+            }
             if (globalThis.PanelOperations && Number.isSafeInteger(diagnosticId) && diagnosticId > 0) {
                 const diagnostic = document.createElement('button'); diagnostic.type = 'button'; diagnostic.className = 'btn btn-secondary job-repair-button';
                 translatedText(diagnostic, 'Diagnóstico por servicio');
@@ -3463,6 +3488,20 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!/^Q[1-9]\d*$/.test(key)) return;
         jobReviewRequested = key;
         switchView('jobs', 'Trabajos');
+    } });
+    globalThis.PanelWorkflows?.mount({ api, notify, navigate: (view, serviceId) => {
+        if (view === 'diagnostics' && Number.isSafeInteger(serviceId) && serviceId > 0) globalThis.PanelOperations?.openService(serviceId);
+        else switchView(view, view);
+    }, reviewJob: key => {
+        if (!/^Q[1-9]\d*$/.test(key)) return;
+        jobReviewRequested = key; switchView('jobs', 'Trabajos');
+    }, onApplied: (result) => {
+        if (result?.requiresReload) {
+            restoredRequiresReload = true; api.requireReload?.();
+            clearJobsRefreshTimer(); applyRecoveryControls(); return;
+        }
+        refreshJobsStatus();
+        if (currentView === 'jobs') renderJobs();
     } });
     PanelUtils.replaceIcons();
     api.onRecovery?.(applyRecovery);
