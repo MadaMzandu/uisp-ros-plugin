@@ -8,6 +8,7 @@ require_once __DIR__ . '/api_job_queue.php';
 require_once __DIR__ . '/api_shared_resources.php';
 require_once __DIR__ . '/api_plan_catalog.php';
 require_once __DIR__ . '/api_site_address_policy.php';
+require_once __DIR__ . '/api_router_ownership.php';
 
 class Batch
 {
@@ -429,6 +430,26 @@ class Batch
         $service['batch'] = $batchId;
         $delete = $operation === 'delete';
         $queuesOnly = in_array($operation, ['queues_remove', 'queues_set'], true);
+        if ($operation === 'update') {
+            $refresh = ApiSiteAddressPolicy::refreshForExecution($service, (array)$device, null, 'data/data.db',
+                fn(array $candidate) => $this->validateSiteAddressReplacement($candidate));
+            if ($refresh['changed']) {
+                $next = $queue->preserveReplacedAddresses($service, $refresh['snapshot']);
+                if (isset($service['_commands'])) {
+                    // Replace addresses in the same named resources; never lose a
+                    // partially written account or introduce untracked cleanup.
+                    $next = $this->db()->transaction(function () use ($next, $service, $device, $operation): array {
+                        unset($next['_commands'], $next['_pool_allocations']);
+                        $next = $this->prepareSnapshotCommands($next, $device, $operation);
+                        $next['_commands'] = $this->preservePreparedGuards($service['_commands'], $next['_commands'], $service);
+                        if ($this->resourceFootprint(MtData::safePreparedCommands($service, $service['_commands'], $operation))
+                            !== $this->resourceFootprint($next['_commands'])) throw new RuntimeException('site_address_resources_changed');
+                        return $next;
+                    });
+                }
+                $service = $queue->freezePrepared($job, $next);
+            }
+        }
         if (in_array($operation, ['update','delete'], true)) {
             $debts = $queue->cancellationCleanups($job);
             if ($operation === 'update' && !isset($service['_commands'])) {
@@ -529,39 +550,7 @@ class Batch
             $queue->confirmCleanup($job, $cleanup);
         }
         if (!isset($service['_commands'])) {
-            $service['_device'] = (array) $device;
-            $api = new MtData();
-            $plan = $service['_plan'] ?? $this->make_plan($service);
-            // A dual-stack build either acquires every requested family or leaves
-            // the previous reservations intact. No cleanup/write follows a failed build.
-            $data = $this->db()->transaction(fn(): array => $api->get_data($service, $plan));
-            unset($service['_pool_allocations']);
-            $allocations=$api->poolAllocations();
-            if ($allocations) $service['_pool_allocations']=$allocations;
-            if (!$queuesOnly && !isset($data['accounts'])) {
-                if (!$delete) { throw new RuntimeException('No account could be prepared; verify its credentials and IP pool'); }
-                $account = $this->deleteIdentity($service);
-                if ($account === null) { throw new RuntimeException('No account identity is available for deletion'); }
-                $data['accounts'] = $account;
-            }
-            $keys = $queuesOnly ? ['queues'] : ['pool', 'parents', 'profiles', 'queues', 'accounts', 'dhcp6', 'disconn'];
-            if ($delete) { $keys = array_merge(array_reverse(array_diff($keys, ['disconn'])), ['disconn']); }
-            $service['_commands'] = [];
-            foreach ($keys as $key) {
-                if (!isset($data[$key])) { continue; }
-                $command = $data[$key];
-                $command['batch'] = $batchId;
-                if ($delete || $operation === 'queues_remove') { $command['action'] = 'remove'; }
-                $service['_commands'][] = $command;
-            }
-            $service['_commands'] = MtData::safePreparedCommands($service, $service['_commands'], $operation);
-            if ($operation==='update') {
-                $allocations=$this->retainPoolAllocationProofs($service,$service['_commands'],$allocations);
-                if ($allocations) $service['_pool_allocations']=$allocations;
-            }
-            // Address reservations are durable before any RouterOS command is sent.
-            $this->ip_flush();
-            if ($delete) { $service['_delete_frozen'] = true; }
+            $service = $this->db()->transaction(fn(): array => $this->prepareSnapshotCommands($service, $device, $operation));
             $service = $queue->freezePrepared($job, $service);
         }
         $commands = MtData::safePreparedCommands($service, $service['_commands'], $operation);
@@ -608,7 +597,7 @@ class Batch
                         $service['_commands'] = $prepared;
                         $service = $queue->freezePrepared($job, $service);
                     }
-                } : null);
+                } : null, [], $operation === 'update' ? $service : null);
             elseif (!$queuesOnly) throw new RuntimeException('No router commands were prepared for this service');
         });
         $this->batch_failed = [];
@@ -621,6 +610,47 @@ class Batch
             else { $this->save_batch($services); }
         }
         return true;
+    }
+
+    private function prepareSnapshotCommands(array $service, object $device, string $operation): array
+    {
+        $batchId = $service['batch'];
+        $delete = $operation === 'delete';
+        $queuesOnly = in_array($operation, ['queues_remove', 'queues_set'], true);
+        $service['_device'] = (array) $device;
+        $api = new MtData();
+        $plan = $service['_plan'] ?? $this->make_plan($service);
+        // A dual-stack build either acquires every requested family or leaves
+        // the previous reservations intact. No cleanup/write follows a failed build.
+        $data = $api->get_data($service, $plan);
+        unset($service['_pool_allocations']);
+        $allocations=$api->poolAllocations();
+        if ($allocations) $service['_pool_allocations']=$allocations;
+        if (!$queuesOnly && !isset($data['accounts'])) {
+            if (!$delete) { throw new RuntimeException('No account could be prepared; verify its credentials and IP pool'); }
+            $account = $this->deleteIdentity($service);
+            if ($account === null) { throw new RuntimeException('No account identity is available for deletion'); }
+            $data['accounts'] = $account;
+        }
+        $keys = $queuesOnly ? ['queues'] : ['pool', 'parents', 'profiles', 'queues', 'accounts', 'dhcp6', 'disconn'];
+        if ($delete) { $keys = array_merge(array_reverse(array_diff($keys, ['disconn'])), ['disconn']); }
+        $service['_commands'] = [];
+        foreach ($keys as $key) {
+            if (!isset($data[$key])) { continue; }
+            $command = $data[$key];
+            $command['batch'] = $batchId;
+            if ($delete || $operation === 'queues_remove') { $command['action'] = 'remove'; }
+            $service['_commands'][] = $command;
+        }
+        $service['_commands'] = MtData::safePreparedCommands($service, $service['_commands'], $operation);
+        if ($operation==='update') {
+            $allocations=$this->retainPoolAllocationProofs($service,$service['_commands'],$allocations);
+            if ($allocations) $service['_pool_allocations']=$allocations;
+        }
+        // Address reservations are durable before any RouterOS command is sent.
+        $this->ip_flush();
+        if ($delete) { $service['_delete_frozen'] = true; }
+        return $service;
     }
 
     private function operationDevice(array $service): object
@@ -643,19 +673,92 @@ class Batch
         return $device;
     }
 
-    private function writeCommands(object $device, array $commands, ?callable $beforeWrite = null, array $cancellationGuards = []): void
+    private function writeCommands(object $device, array $commands, ?callable $beforeWrite = null, array $cancellationGuards = [], ?array $ownershipService = null): void
     {
         // Different plans can still collide on the same account or DHCP identity.
         // Serialize lookup + ownership checks + mutation for this physical endpoint.
-        myJobQueue()->withResourceLock(ApiSharedResources::endpointIdentity($device), function () use ($device, $commands, $beforeWrite, $cancellationGuards): void {
+        myJobQueue()->withResourceLock(ApiSharedResources::endpointIdentity($device), function () use ($device, $commands, $beforeWrite, $cancellationGuards, $ownershipService): void {
             $api = $this->device_api($device->type ?? 'mikrotik');
-            $written = $cancellationGuards ? $api->do_cancellation_cleanup($device, $commands, $cancellationGuards)
+            $write = fn() => $cancellationGuards ? $api->do_cancellation_cleanup($device, $commands, $cancellationGuards)
                 : $api->do_batch($device, $commands, $beforeWrite);
+            if ($ownershipService !== null && method_exists($api, 'withOwnershipResolver')) {
+                $verifier = new ApiRouterOwnership($ownershipService, (array)$device);
+                $proofs = [];
+                $resolve = function (array $command, array $row) use ($verifier, $device, &$proofs): bool {
+                    $key = hash('sha256', json_encode($command, JSON_THROW_ON_ERROR));
+                    if (!isset($proofs[$key])) $proofs[$key] = $verifier->authorize($command, $row);
+                    if (!$verifier->matches($proofs[$key], $command, $row, (array)$device))
+                        throw new RuntimeException('router_ownership_record_changed');
+                    return true;
+                };
+                $written = $api->withOwnershipResolver($resolve, $write);
+            } else $written = $write();
             $failed = $api->failed() ?? [];
             if ($failed || $written !== count($commands)) {
                 throw new RuntimeException($failed ? implode('; ', array_map('strval', $failed)) : 'Not every router command completed');
             }
         });
+    }
+
+    /** An address refresh cannot erase evidence of partial profile creation or a pending reconnect. */
+    private function preservePreparedGuards(array $previous, array $next, array $service): array
+    {
+        $indices = [];
+        foreach ($next as $index => $command) $indices[$this->resourceFootprint([$command])[0]][] = $index;
+        $seen = [];
+        foreach ($previous as $command) {
+            $bootstrap = ($command['_bootstrap_suspension'] ?? false) === true;
+            $active = in_array(trim($command['path'] ?? '', '/'), ['ppp/active', 'ip/hotspot/active'], true);
+            if (!$bootstrap && !$active) continue;
+            if ($active) {
+                // Apply the same identity upgrade as safePreparedCommands to legacy snapshots.
+                $command['_service_id'] = (int)$service['id'];
+                $command['_client_id'] = (int)($service['clientId'] ?? 0);
+            }
+            $identity = $this->resourceFootprint([$command])[0];
+            if (isset($seen[$identity]) || count($indices[$identity] ?? []) !== 1)
+                throw new RuntimeException('site_address_prepared_guard_changed');
+            $seen[$identity] = true; $index = $indices[$identity][0];
+            if ($bootstrap) {
+                if (($next[$index]['_bootstrap_suspension'] ?? false) !== true
+                    || !is_array($command['_suspension_configuration'] ?? null)
+                    || $command['_suspension_configuration'] !== ($next[$index]['_suspension_configuration'] ?? null)
+                    || !is_bool($command['_bootstrap_required'] ?? null))
+                    throw new RuntimeException('site_address_prepared_guard_changed');
+                $next[$index]['_bootstrap_required'] = $command['_bootstrap_required'] || ($next[$index]['_bootstrap_required'] ?? false) === true;
+                if (array_key_exists('local-address', $command) && $command['local-address'] !== null) {
+                    if (trim($command['path'], '/') !== 'ppp/profile' || !is_string($command['local-address'])
+                        || !filter_var($command['local-address'], FILTER_VALIDATE_IP, FILTER_FLAG_IPV4))
+                        throw new RuntimeException('site_address_prepared_guard_changed');
+                    $next[$index]['local-address'] = $command['local-address'];
+                }
+            }
+            if ($active) {
+                if (array_key_exists('_reconnect_required', $command)) {
+                    if (!is_bool($command['_reconnect_required'])) throw new RuntimeException('site_address_prepared_guard_changed');
+                    $next[$index]['_reconnect_required'] = $command['_reconnect_required'] || ($next[$index]['_reconnect_required'] ?? false) === true;
+                }
+                if (array_key_exists('_profile_revision', $command)) {
+                    if (!is_int($command['_profile_revision']) || $command['_profile_revision'] < 0)
+                        throw new RuntimeException('site_address_prepared_guard_changed');
+                    $next[$index]['_profile_revision'] = $command['_profile_revision'];
+                }
+            }
+        }
+        return $next;
+    }
+
+    private function resourceFootprint(array $commands): array
+    {
+        $result = [];
+        foreach ($commands as $command) {
+            $identity = ['path' => trim($command['path'] ?? '', '/')];
+            foreach (['name','mac-address','duid','iaid','server','_owner','_service_id','_client_id','action'] as $field)
+                $identity[$field] = $command[$field] ?? null;
+            $result[] = json_encode($identity, JSON_THROW_ON_ERROR);
+        }
+        sort($result);
+        return $result;
     }
 
     private function deleteIdentity(array $service): ?array

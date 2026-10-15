@@ -115,6 +115,22 @@ try {
         $statement=$database->prepare($sql);$statement->bindValue(1,json_encode($partial));$statement->execute()->finalize();$statement->close();
     }
     $blocked('different_resources');
+    // A held previous address is not proven current merely by repeating it in applied/debt/source metadata.
+    foreach (['source','debt','all'] as $location) {
+        $seed(); $partial=$snapshot; $partial['_previous_addresses']=['10.77.0.90','2001:db8:90::/64'];
+        $statements=$location==='source'?['UPDATE jobs SET payload=? WHERE id=17']:
+            ($location==='debt'?['UPDATE cancellation_cleanups SET payload=?']:
+                ['UPDATE service_versions SET applied_payload=?','UPDATE jobs SET payload=? WHERE id=17','UPDATE cancellation_cleanups SET payload=?']);
+        foreach($statements as $sql) {
+            $statement=$database->prepare($sql); $statement->bindValue(1,json_encode($partial)); $statement->execute()->finalize(); $statement->close();
+        }
+        $blocked('different_resources');
+    }
+    $seed(); $partial=$snapshot; $partial['_previous_addresses']=['10.77.0.11'];
+    foreach(['UPDATE service_versions SET applied_payload=?','UPDATE jobs SET payload=? WHERE id=17','UPDATE cancellation_cleanups SET payload=?'] as $sql) {
+        $statement=$database->prepare($sql); $statement->bindValue(1,json_encode($partial)); $statement->execute()->finalize(); $statement->close();
+    }
+    jobRecoveryCheck(is_string($api->preview(17)['previewToken']), 'A previous hold covered by the actual current account prevented duplicate consolidation');
     $seed(); $partial=$safeSnapshot; $partial['_commands']=[];
     $statement=$database->prepare('UPDATE cancellation_cleanups SET payload=?'); $statement->bindValue(1,json_encode($partial)); $statement->execute()->finalize(); $statement->close(); $blocked('current_ownership_unknown');
     $seed(); $partial=$snapshot; $partial['_prior_network']=['address'=>'10.77.0.90'];

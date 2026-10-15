@@ -322,6 +322,27 @@ try {
             ($reason==='bad-identity'?'queue_unknown':'queue_recovery')));
     }
 
+    // Superseded command addresses still protect a potentially live account until completion.
+    foreach (['pending','cancelled','superseded','debt','retained'] as $storage) {
+        foreach (['address'=>'192.0.2.11','address6'=>'2001:db8:14::/48'] as $family=>$held) {
+            $reset(); $case=repairFixture($root,'previous-hold-'.$storage.'-'.$family);
+            $snapshot=['id'=>91,'clientId'=>191,'_previous_addresses'=>[$held]];
+            if ($storage==='debt') repairDebt($case,91,$snapshot);
+            elseif ($storage==='retained') repairRetained($case,91,$snapshot,'source');
+            else {
+                repairJob($case,91,$snapshot);
+                repairSql($case['jobs'],"UPDATE jobs SET status='".$storage."'");
+            }
+            repairBlocked($factory($case),$family==='address'?$choose11:$choose14,'address_in_use');
+        }
+    }
+    $reset(); $case=repairFixture($root,'own-different-previous-hold');
+    repairDebt($case,11,['id'=>11,'clientId'=>111,'address'=>'192.0.2.11','_previous_addresses'=>['192.0.2.99']]);
+    repairBlocked($factory($case),$choose11,'queue_recovery');
+    $reset(); $case=repairFixture($root,'own-compatible-previous-hold');
+    repairDebt($case,11,['id'=>11,'clientId'=>111,'address'=>'192.0.2.11','_previous_addresses'=>['192.0.2.11']]);
+    repairCheck(count($factory($case)->preview($choose11)['candidates'])===1,'Compatible own held IP blocked local malformed-value repair');
+
     foreach (['address_in_use','valid_local_reservation','pending_address_changed','pending_identity_changed','queue_recovery','applied_ownership',
         'queue_busy','queue_unknown','crm_address_unknown','identity_changed','crm_ownership_unknown'] as $reason) {
         $reset(); $case = repairFixture($root,$reason); $caseApi = $factory($case); $baseline = repairRows($case['data']);

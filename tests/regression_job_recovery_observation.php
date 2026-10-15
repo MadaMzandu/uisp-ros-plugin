@@ -189,6 +189,16 @@ try {
     $seed(); $partial=$snapshot; $partial['_prior_network']=['address'=>'10.77.0.99'];$partial['_prior_identity']=$identity;
     $statement=$queue->prepare('UPDATE cancellation_cleanups SET payload=?');$statement->bindValue(1,json_encode($partial));$statement->execute()->finalize();$statement->close();
     recoveryObservationCheck($api->preview(17)['previewToken']===null,'A retained row released an unobserved prior reservation');
+    foreach (['jobs','cancellation_cleanups'] as $table) {
+        $seed(); $partial=$snapshot; $partial['_previous_addresses']=['10.77.0.99','2001:db8:99::/64'];
+        $statement=$queue->prepare('UPDATE '.$table.' SET payload=?');$statement->bindValue(1,json_encode($partial));$statement->execute()->finalize();$statement->close();
+        $calls=[]; $heldPreview=$api->preview(17);
+        recoveryObservationCheck($heldPreview['previewToken']===null && $heldPreview['blocked'][0]['reason']==='router_snapshot_incomplete'
+            && $calls===[], 'An address-only previous hold was released without an actual observable resource');
+    }
+    $seed(); $partial=$snapshot; $partial['_previous_addresses']=['10.77.0.11'];
+    $statement=$queue->prepare('UPDATE jobs SET payload=? WHERE id=17');$statement->bindValue(1,json_encode($partial));$statement->execute()->finalize();$statement->close();
+    recoveryObservationCheck(is_string($api->preview(17)['previewToken']), 'An old hold covered by the exact observed absent principal could not be resolved');
     $seed(); $preview=$api->preview(17); $database->exec("UPDATE devices SET password='NEW_PRIVATE_PASSWORD' WHERE id=7");
     try { $api->apply($preview['previewToken']); throw new RuntimeException('Credential/config drift accepted'); }
     catch(InvalidArgumentException $expected) { recoveryObservationCheck(in_array($expected->getMessage(),['recovery_state_changed','router_observation_unavailable'],true),'Unexpected device race result'); }

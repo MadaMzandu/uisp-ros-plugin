@@ -426,7 +426,8 @@ final class ApiNetworkRepair
                         if ($job['status'] === 'pending') $pending++;
                     } elseif (in_array($job['status'], ['pending','cancelled','superseded'], true)) {
                         // Prepared commands and uncleared snapshots retain their ownership.
-                        if (array_key_exists('_commands', $payload)) $this->payloadOwnership($owner, $payload, $id, $fields);
+                        if (array_key_exists('_commands', $payload) || array_key_exists('_previous_addresses', $payload))
+                            $this->payloadOwnership($owner, $payload, $id, $fields);
                         if (!(int) $job['prior_cleared'] && isset($payload['_prior_network'])) $this->payloadOwnership($owner,
                             ['network' => $payload['_prior_network']], $id, $fields,
                             $job['operation'] === 'update' && !isset($appliedOwners[$owner])
@@ -540,6 +541,7 @@ final class ApiNetworkRepair
         }
         $values = ['address' => [$payload['address'] ?? null, $payload['network']['address'] ?? null],
             'address6' => [$payload['address6'] ?? null, $payload['network']['address6'] ?? null]];
+        foreach ($this->previousAddresses($payload) as $value) $values[strpos($value, ':') === false ? 'address' : 'address6'][] = $value;
         if ($includePrior) foreach (['address','address6'] as $field) $values[$field][] = $payload['_prior_network'][$field] ?? null;
         if (array_key_exists('_commands', $payload)) {
             if (!is_array($payload['_commands']) || !$payload['_commands']) throw new InvalidArgumentException('queue_recovery');
@@ -591,6 +593,7 @@ final class ApiNetworkRepair
             || !hash_equals($this->jobIdentity($payload), $payload['_prior_identity']))) throw new InvalidArgumentException('queue_recovery');
         if (isset($payload['_prior_network']) && !is_array($payload['_prior_network'])) throw new InvalidArgumentException('queue_unknown');
         if (isset($payload['network']) && !is_array($payload['network'])) throw new InvalidArgumentException('queue_unknown');
+        $previous = $this->previousAddresses($payload);
         foreach ($fields as $entry) {
             $field = $entry['field'];
             foreach ($requireCurrentDesired ? [$payload[$field] ?? null, $payload['network'][$field] ?? null] : [] as $desired) {
@@ -606,6 +609,11 @@ final class ApiNetworkRepair
                 if (!in_array($prior, array_column($entry['saved'], 'value'), true) && ($range === null || $candidate === null || $range !== $candidate)) {
                     throw new InvalidArgumentException('queue_recovery');
                 }
+            }
+            foreach ($previous as $value) {
+                if ((strpos($value, ':') === false ? 'address' : 'address6') !== $field) continue;
+                $candidate = $entry['current_address'] === null ? null : $this->range($entry['current_address'], $field);
+                if ($candidate === null || $this->range($value, $field) !== $candidate) throw new InvalidArgumentException('queue_recovery');
             }
         }
     }
@@ -623,7 +631,9 @@ final class ApiNetworkRepair
             $field = $entry['field'];
             if ($entry['current_address'] === null) throw new InvalidArgumentException('applied_ownership');
             $candidate = $this->range($entry['current_address'], $field); $owned = 0;
-            foreach ([$payload[$field] ?? null, $payload['network'][$field] ?? null] as $value) {
+            $protected = array_filter($this->previousAddresses($payload), static fn(string $value): bool =>
+                (strpos($value, ':') === false ? 'address' : 'address6') === $field);
+            foreach (array_merge([$payload[$field] ?? null, $payload['network'][$field] ?? null], $protected) as $value) {
                 if ($value === null || $value === '') continue;
                 if ($this->range($value, $field) !== $candidate) throw new InvalidArgumentException('applied_ownership');
             }
@@ -666,8 +676,8 @@ final class ApiNetworkRepair
     private function payloadOwnership(int $owner, array $payload, int $id, array $fields, bool $unpreparedPrior = false): void
     {
         if (isset($payload['network']) && !is_array($payload['network'])) throw new InvalidArgumentException('queue_unknown');
-        $values = [$payload['address'] ?? null, $payload['address6'] ?? null,
-            $payload['network']['address'] ?? null, $payload['network']['address6'] ?? null];
+        $values = array_merge([$payload['address'] ?? null, $payload['address6'] ?? null,
+            $payload['network']['address'] ?? null, $payload['network']['address6'] ?? null], $this->previousAddresses($payload));
         if (isset($payload['_commands']) && !is_array($payload['_commands'])) throw new InvalidArgumentException('queue_unknown');
         foreach ($payload['_commands'] ?? [] as $command) {
             if (!is_array($command)) throw new InvalidArgumentException('queue_unknown');
@@ -696,6 +706,19 @@ final class ApiNetworkRepair
                 }
             }
         }
+    }
+
+    /** Address-only holds survive command replacement and are real local ownership. */
+    private function previousAddresses(array $payload): array
+    {
+        if (!array_key_exists('_previous_addresses', $payload)) return [];
+        $values = $payload['_previous_addresses'];
+        if (!is_array($values) || count($values) > 1000 || ($values && array_keys($values) !== range(0, count($values) - 1)))
+            throw new InvalidArgumentException('queue_unknown');
+        foreach ($values as $value) if (!is_string($value) || $value === ''
+            || $this->range($value, strpos($value, ':') === false ? 'address' : 'address6') === null)
+            throw new InvalidArgumentException('applied_address_unknown');
+        return $values;
     }
 
     private function payload($value): array

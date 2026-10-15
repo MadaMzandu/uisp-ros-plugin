@@ -1,4 +1,4 @@
-# Pruebas reales del candidato 2.4.33
+# Pruebas reales del candidato 2.4.34
 
 Las pruebas automatizadas usan bases temporales, transportes simulados y sockets locales. Esta lista comprueba la integración **UISP → plugin → API nativa de RouterOS** en una copia de UISP y un CHR/router con clientes de prueba. Registrar versiones de UISP, PHP y RouterOS, así como ID del servicio, plan, trabajo, estado e IP/prefijo en cada caso.
 
@@ -377,6 +377,12 @@ Desde 2.4.13, **Sincronizar y reconectar cuentas** en Dispositivos reconecta sie
 | 169 | Sincronizar tras perder el webhook que vació una IP fija; repetir luego la sincronización. | La primera solicita otra dirección y la segunda reutiliza la nueva sin rotaciones sucesivas. |
 | 170 | Usar una IP manual fuera de todos los pools o un valor UISP cambiado durante la comprobación. | No la vacía por la regla de otro Site; una evidencia cambiante impide la escritura automática. |
 | 171 | Crear una intención nueva tras fallar un update cuya limpieza ya está confirmada y que no preparó comandos nuevos. Comparar con limpieza incompleta y con comandos congelados. | El primero se sustituye sin repetir limpieza; los otros mantienen su orden y no se sobrescriben. |
+| 172 | Reintentar un trabajo preparado con una IP del pool de otro Site. | Consulta UISP, confirma el vaciado y usa el pool del destino; conserva la IP anterior hasta completar todos los comandos. |
+| 173 | Interrumpir el transporte después de reservar el reemplazo y reintentar; luego repetir con una IP manual nueva introducida en UISP entre intentos. | Mantiene el reemplazo cuando UISP sigue vacío; respeta el valor manual nuevo sin volver a vaciarlo. |
+| 174 | Usar un comentario RouterOS del mismo cliente con un servicio anterior terminado o HTTP 404 real, con usuario y Site actuales confirmados. | Actualiza la misma cuenta y su comentario al servicio actual; conserva respaldo privado sin contraseña. |
+| 175 | Repetir con servicio anterior vigente, otro cliente, cuenta manual, lectura 403/timeout o trabajo anterior ejecutable. | No adopta la cuenta. Trabajos muestra el motivo y los servicios identificados; otras cuentas continúan. |
+| 176 | Cambiar la fila RouterOS entre verificación y escritura o intentar reutilizar el permiso en una eliminación. | Rechaza el registro cambiado y conserva la protección de borrados; el permiso no persiste entre ejecuciones. |
+| 177 | Corregir una IP ajena en un trabajo suspendido parcialmente preparado y con configuración de pools actualizada. | Conserva las comprobaciones del perfil de suspensión creado y las reservas anteriores; el reemplazo usa la política actual verificada. |
 
 ## Diagnosticar una conexión pendiente
 

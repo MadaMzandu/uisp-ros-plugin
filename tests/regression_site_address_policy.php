@@ -60,7 +60,10 @@ try {
         $preflights++; $configuration = mySqlite()->readConfig();
         foreach ($fields as $field) {
             $allocator = new ApiIP(true, true);
-            $value = $allocator->assign($cleared['id'], $device, $field === 'address6', $configuration, $cleared['_network_reset'][$field]);
+            $fixed = array_key_exists($field, $cleared) ? $cleared[$field] : ($cleared['network'][$field] ?? null);
+            if (is_string($fixed) && $fixed !== '') {
+                $allocator->set($cleared['id'], $fixed, $field === 'address6'); $value = $fixed;
+            } else $value = $allocator->assign($cleared['id'], $device, $field === 'address6', $configuration, $cleared['_network_reset'][$field]);
             if ($value === null) throw new RuntimeException('fixture pool full');
         }
     };
@@ -138,9 +141,91 @@ try {
     policyCheck(count($patches) === $patchesBefore + 1, 'An unconfirmed attempt blindly repeated its CRM PATCH');
     $writeMode = 'rejected'; $current = $fresh(46, 'New Site', '192.0.2.46'); $rejected = $service; $rejected['id'] = 46; $rejected['network']['address'] = '192.0.2.46';
     policyError(static fn() => $call($rejected), 'site_address_write_rejected');
+
+    // Work frozen before the policy existed must refresh its IP intent before replaying old commands.
+    $writeMode = 'success'; $current = $fresh(48, 'New Site', '192.0.2.48');
+    $prepared = $service; $prepared['id'] = 48; $prepared['network']['address'] = '192.0.2.48';
+    $prepared['password'] = 'PRIVATE-ACCOUNT-PASSWORD'; $prepared['_plan'] = ['id' => 12,'uploadSpeed' => 9,'downloadSpeed' => 31];
+    $prepared['_commands'] = [['path' => '/ppp/secret','name' => 'fixture-account','remote-address' => '192.0.2.48',
+        '_service_id' => 48,'_client_id' => 17,'profile' => 'fixture-profile','password' => 'PRIVATE-ACCOUNT-PASSWORD']];
+    $refresh = static fn(array $value): array => ApiSiteAddressPolicy::refreshForExecution($value, null, $request, 'data/data.db', $preflight);
+    $patchesBefore = count($patches); $updated = $refresh($prepared);
+    policyCheck($updated['changed'] && $updated['snapshot']['network']['address'] === null
+        && $updated['snapshot']['_network_reset']['address']['previous'] === '192.0.2.48'
+        && $updated['snapshot']['_commands'] === $prepared['_commands'] && $updated['snapshot']['_plan'] === $prepared['_plan']
+        && $updated['snapshot']['password'] === $prepared['password'] && count($patches) === $patchesBefore + 1,
+        'A prepared foreign-Site update retained its old IP intent or lost protected resources/credentials');
+    $updatedAgain = $refresh($prepared);
+    policyCheck($updatedAgain['snapshot']['_network_reset'] === $updated['snapshot']['_network_reset']
+        && count($patches) === $patchesBefore + 1, 'Refreshing an old prepared job rotated its reset or repeated the CRM clearing');
+
+    // A newer fixed UISP choice wins over the older queued IP without erasing the new value.
+    $current = $fresh(49, 'New Site', '198.51.100.49'); $manualRetry = $prepared; $manualRetry['id'] = 49;
+    $manualRetry['network']['address'] = '192.0.2.49'; $manualRetry['_commands'][0]['_service_id'] = 49;
+    $manualRetry['_commands'][0]['remote-address'] = '192.0.2.49';
+    $manualRetry['_network_reset']['address'] = ['generation' => str_repeat('c', 32),'previous' => '192.0.2.49'];
+    $patchesBefore = count($patches); $manualUpdated = $refresh($manualRetry);
+    policyCheck($manualUpdated['changed'] && $manualUpdated['snapshot']['network']['address'] === '198.51.100.49'
+        && !isset($manualUpdated['snapshot']['_network_reset']['address']) && count($patches) === $patchesBefore,
+        'A stale retry erased or ignored the newer manual UISP IP');
+    $current = $fresh(49, 'New Site', '198.51.100.49'); $reads = 0;
+    $beforeSecondGet = static function () use (&$current, $fresh): void { $current = $fresh(49, 'New Site', '198.51.100.50'); };
+    policyError(static fn() => $refresh($manualRetry), 'site_address_changed'); $beforeSecondGet = null;
+    policyCheck(count($patches) === $patchesBefore, 'A concurrent manual IP edit was cleared during queued-work refresh');
+
+    // Automatic jobs may carry the previous IP only inside their frozen principal command.
+    $automatic = $prepared; $automatic['id'] = 50; $automatic['network'] = ['address' => null,'address6' => null];
+    $automatic['_commands'][0]['_service_id'] = 50; $automatic['_commands'][0]['remote-address'] = '192.0.2.50';
+    $automatic['_commands'][0]['remote-ipv6-prefix'] = '2001:db8:2:50::/64';
+    $current = $fresh(50, 'New Site', null); $automaticUpdated = $refresh($automatic);
+    policyCheck($automaticUpdated['changed'] && $automaticUpdated['snapshot']['network']['address'] === null
+        && $automaticUpdated['snapshot']['network']['address6'] === null
+        && $automaticUpdated['snapshot']['_network_reset']['address']['previous'] === '192.0.2.50'
+        && !isset($automaticUpdated['snapshot']['_network_reset']['address6']),
+        'An old automatic command retained its foreign IP or changed the healthy other family');
+    $healthy = $automatic; $healthy['_commands'][0]['remote-address'] = '198.51.100.50'; $callsBefore = count($calls);
+    policyCheck($refresh($healthy) === ['snapshot' => $healthy,'changed' => false] && count($calls) === $callsBefore,
+        'An ordinary in-pool prepared job triggered unnecessary remote reconciliation');
+    $existingReset = $healthy; $existingReset['id'] = 51; $existingReset['_commands'][0]['_service_id'] = 51;
+    $existingReset['_network_reset']['address'] = ['generation' => str_repeat('d', 32),'previous' => '192.0.2.51'];
+    $current = $fresh(51, 'New Site', null); $existingResult = $refresh($existingReset);
+    policyCheck($existingResult === ['snapshot' => $existingReset,'changed' => false],
+        'First verification of an already prepared attribute clear changed its reset generation');
+    $callsBefore = count($calls);
+    $unowned = $automatic; $unowned['_commands'][0]['_service_id'] = 999;
+    policyCheck($refresh($unowned) === ['snapshot' => $unowned,'changed' => false] && count($calls) === $callsBefore,
+        'An unrelated prepared principal was accepted as evidence for IP replacement');
+
+    // A DHCPv6 automatic prefix may also exist only in its frozen binding command.
+    $apiSqlite->saveConfig(['mac_addr_attr' => 'mac']);
+    $catalog[] = ['id' => 5,'key' => 'mac','attributeType' => 'service'];
+    $binding = $service; $binding['id'] = 52; $binding['mac'] = '02:00:00:00:00:52';
+    $binding['duid'] = '00:03:00:01:02:00:00:00:00:52'; $binding['iaid'] = '0x05';
+    $binding['network'] = ['address' => '198.51.100.52','address6' => null];
+    $binding['_commands'] = [['path' => '/ipv6/dhcp-server/binding','duid' => '0x00030001020000000052', 'iaid' => 5,
+        'address' => '2001:db8:1:52::/64','_service_id' => 52,'_client_id' => 17]];
+    $current = $fresh(52, 'New Site', '198.51.100.52');
+    $current['attributes'][] = ['key' => 'mac','customAttributeId' => 5,'value' => '02:00:00:00:00:52'];
+    $bindingResult = $refresh($binding);
+    policyCheck($bindingResult['changed'] && $bindingResult['snapshot']['network']['address6'] === null
+        && $bindingResult['snapshot']['_network_reset']['address6']['previous'] === '2001:db8:1:52::/64'
+        && $bindingResult['snapshot']['network']['address'] === '198.51.100.52',
+        'A guarded prepared DHCPv6 binding kept its foreign prefix or changed IPv4');
+    $callsBefore = count($calls); $wrongBinding = $binding; $wrongBinding['_commands'][0]['iaid'] = 6;
+    policyCheck($refresh($wrongBinding) === ['snapshot' => $wrongBinding,'changed' => false] && count($calls) === $callsBefore,
+        'A binding belonging to a different IAID supplied foreign-prefix evidence');
+    $wrongBinding = $binding; $wrongBinding['_commands'][0]['duid'] = '0x00030001020000000099';
+    policyCheck($refresh($wrongBinding) === ['snapshot' => $wrongBinding,'changed' => false] && count($calls) === $callsBefore,
+        'A binding belonging to a different DUID supplied foreign-prefix evidence');
+    $failedRead = static function (): void { throw new RuntimeException('fixture unavailable'); };
+    $patchesBefore = count($patches); $beforeFailedRead = $prepared;
+    policyError(static fn() => ApiSiteAddressPolicy::refreshForExecution($prepared, null, $failedRead, 'data/data.db', $preflight),
+        'site_address_verification_unavailable');
+    policyCheck($prepared === $beforeFailedRead && count($patches) === $patchesBefore,
+        'Unavailable current UISP evidence mutated the original pending command or cleared CRM');
     $private = implode('', array_map('file_get_contents', glob('data/site-address-policy-*.json')));
     policyCheck(strpos($private,'PRIVATE-') === false && strpos($private,'password') === false, 'Policy receipts contain customer/router credentials');
-    echo "Site address policy passed: numeric IPv4/IPv6 Site pools, valid global/manual exceptions, fresh UISP ownership/Site/principal checks, exact IP-only clearing, real read-only replacement preflight, stable/new-move receipts and safe ambiguous/rejected writes.\n";
+    echo "Site address policy passed: numeric IPv4/IPv6 Site pools, fresh UISP identity checks, exact clearing, safe preflight, stable receipts, prepared retry refresh, authoritative newer manual IP and healthy-family preservation.\n";
 } finally {
     if (isset($apiSqlite)) $apiSqlite->close(); if (isset($apiSqliteCache)) $apiSqliteCache->close(); chdir($original); set_include_path($include);
     $resolved = realpath($directory); $temporaryRoot = realpath(sys_get_temp_dir());

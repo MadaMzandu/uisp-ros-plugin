@@ -502,6 +502,31 @@ try {
     checkRouter(in_array('/ppp/profile/set',$owner->recording->words,true)
         && !array_filter($owner->recording->words,static function($w){ return strpos($w,'=_owner=')===0; }),'Managed profile update lost ownership or leaked internal command metadata');
 
+    // A request-scoped reassociation must reread the account, update in place,
+    // reject drift, and never authorize a later deletion or unrelated invocation.
+    $relink=['path'=>'/ppp/secret','name'=>'fixture-relink','comment'=>'71 - Fixture - 501',
+        '_service_id'=>501,'_client_id'=>71,'remote-address'=>'198.51.100.2'];
+    $legacyRow=['.id'=>'*A1','name'=>'fixture-relink','comment'=>'71 - Fixture - 499'];
+    $writer=new OwnershipTestMT(); $checks=0;
+    $resolver=function(array $command,array $row) use($relink,$legacyRow,&$checks): bool {
+        $checks++; return $command===$relink && $row===$legacyRow;
+    };
+    $writer->recording->answers=[[$legacyRow],[$legacyRow],[]];
+    $writer->withOwnershipResolver($resolver,fn()=>$writer->execute($relink));
+    checkRouter($checks===2 && in_array('/ppp/secret/set',$writer->recording->words,true)
+        && in_array('=.id=*A1',$writer->recording->words,true),'Verified reassociation did not reread and set the same account');
+    $writer->recording->words=[]; $writer->recording->answers=[[$legacyRow]];
+    expectRouterError(fn()=>$writer->execute($relink),'Ownership permission escaped its request scope');
+    checkRouter(!in_array('/ppp/secret/set',$writer->recording->words,true),'Expired ownership permission mutated an account');
+    $drift=array_replace($legacyRow,['.id'=>'*A2']);
+    $writer->recording->words=[]; $writer->recording->answers=[[$legacyRow],[$drift]];
+    expectRouterError(fn()=>$writer->withOwnershipResolver($resolver,fn()=>$writer->execute($relink)),'Changed account accepted stale reassociation proof');
+    checkRouter(!in_array('/ppp/secret/set',$writer->recording->words,true),'Reassociation drift was detected after writing');
+    $writer->recording->words=[]; $writer->recording->answers=[[$legacyRow]]; $checks=0;
+    expectRouterError(fn()=>$writer->withOwnershipResolver($resolver,fn()=>$writer->execute($relink+['action'=>'remove'])),
+        'Reassociation permission authorized deletion of another service account');
+    checkRouter($checks===0 && !in_array('/ppp/secret/remove',$writer->recording->words,true),'Deletion invoked the update-only resolver');
+
     // A failed edit must keep the old applied address and the new prepared address reserved.
     mkdir($temp . '/data');
     chdir($temp);

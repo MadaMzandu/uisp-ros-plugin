@@ -2810,6 +2810,58 @@ document.addEventListener('DOMContentLoaded', () => {
             return 'Puerto accesible sólo comprueba que el puerto responde. Revisa usuario, contraseña, permisos de API y TLS del dispositivo.';
         return null;
     }
+    function jobOwnershipDiagnostic(error, serviceId) {
+        const retry = 'Al ejecutar de nuevo, el plugin comprobará UISP y reasociará la cuenta automáticamente sólo si el servicio anterior terminó o ya no existe.';
+        if (error === 'router_ownership_record_changed') return { parts: [{ source: 'La cuenta del router cambió durante la comprobación. Se requiere verificarla de nuevo.', params: {} },
+            { source: retry, params: {} }], links: [] };
+        if (error === 'The matching RouterOS account or queue belongs to another service or was created manually') {
+            return { parts: [{ source: 'La cuenta o cola del router tiene otro vínculo de servicio o fue creada manualmente. Revisa el vínculo en UISP y ejecuta de nuevo para comprobarlo.', params: {} },
+                { source: retry, params: {} }], links: [] };
+        }
+        if (typeof error !== 'string') return null;
+        const match = /^router_ownership_conflict: current_service=([1-9]\d{0,14}) previous_service=(0|[1-9]\d{0,14}) reason=([a-z_]+)$/.exec(error);
+        if (!match || !Number.isSafeInteger(Number(match[1])) || !Number.isSafeInteger(Number(match[2]))
+            || Number(match[1]) !== Number(serviceId) || match[1] === match[2]) return null;
+        const reasons = {
+            identity_unverified: 'No se pudo confirmar la identidad de la cuenta del router. Revisa el usuario y su vínculo con el cliente en UISP.',
+            router_changed: 'La configuración del router cambió. Sincroniza de nuevo el servicio con los datos actuales de UISP.',
+            mapping_unverified: 'No se pudieron comprobar los atributos de Site y usuario. Revisa su configuración en el plugin.',
+            client_unverified: 'No se pudo confirmar que el cliente esté vigente en UISP. Revisa su ficha antes de reintentar.',
+            target_unverified: 'No se pudo comprobar el servicio actual en UISP. Revisa su ficha antes de reintentar.',
+            target_changed: 'El servicio actual cambió en UISP. Sincronízalo de nuevo para usar su estado y sus atributos actuales.',
+            previous_unverified: 'No se pudo comprobar el servicio anterior en UISP. Su vínculo con la cuenta se conserva.',
+            previous_active: 'El servicio anterior sigue vigente en UISP. Revisa ambas fichas y corrige el vínculo antes de reintentar.',
+            previous_job_pending: 'El servicio anterior tiene un trabajo pendiente sobre esta cuenta. Revisa ese trabajo antes de reintentar.',
+            queue_unverified: 'No se pudieron comprobar los trabajos del servicio anterior. Su vínculo con la cuenta se conserva.',
+            previous_changed: 'El estado del servicio anterior cambió durante la comprobación. Su vínculo con la cuenta se conserva.',
+            catalog_incomplete: 'No se pudo completar la comprobación de los servicios en UISP.',
+            peer_site_unverified: 'Otro servicio tiene el mismo usuario y no se pudo comprobar su Site. Revisa sus atributos en UISP.',
+            account_claimed: 'Otro servicio vigente usa esta misma cuenta en el router. Revisa los usuarios y Sites en UISP antes de reintentar.',
+            verification_unavailable: 'No se pudo completar la verificación con UISP. La cuenta conserva su vínculo anterior.',
+            backup_failed: 'No se pudo guardar el respaldo del vínculo anterior. Revisa el espacio y los permisos de la carpeta de datos del plugin.',
+            record_changed: 'La cuenta del router cambió durante la comprobación. Se requiere verificarla de nuevo.'
+        };
+        if (!Object.prototype.hasOwnProperty.call(reasons, match[3]) || match[2] === '0' && match[3] !== 'identity_unverified') return null;
+        const current = Number(match[1]), previous = Number(match[2]), parts = [], links = [];
+        if (previous) {
+            parts.push({ source: 'La cuenta del servicio #{current} sigue vinculada al servicio #{previous} en el router.', params: { current, previous } });
+            links.push({ id: current, label: 'Servicio actual #{id}' }, { id: previous, label: 'Servicio anterior #{id}' });
+        }
+        parts.push({ source: reasons[match[3]], params: {} });
+        if (['previous_unverified', 'previous_changed', 'catalog_incomplete', 'verification_unavailable', 'record_changed', 'queue_unverified'].includes(match[3]))
+            parts.push({ source: retry, params: {} });
+        return { parts, links };
+    }
+    function jobOwnershipErrorMarkup(error, serviceId) {
+        const detail = jobOwnershipDiagnostic(error, serviceId);
+        if (!detail) return null;
+        const parts = detail.parts.map(({ source, params }) => `<span data-i18n="${html(source)}" data-i18n-values="${html(JSON.stringify(params))}">${html(t(source, params))}</span>`);
+        for (const link of detail.links) {
+            const url = safeCrmUrl('/crm/client/service/' + link.id, 'service');
+            if (url) parts.push(`<a class="conflict-link" href="${html(url)}" target="_blank" rel="noopener noreferrer" data-i18n="${html(link.label)}" data-i18n-values="${html(JSON.stringify({ id: link.id }))}">${html(t(link.label, { id: link.id }))}</a>`);
+        }
+        return parts.join(' ');
+    }
     function jobNetworkErrorMarkup(error, serviceId) {
         const collision = /^network_address_conflict: requested_service=([1-9]\d{0,14}) blocking_service=([1-9]\d{0,14}) source=(reserved|cache|applied) family=(IPv4|IPv6)$/.exec(error);
         if (collision && Number.isSafeInteger(Number(collision[1])) && Number.isSafeInteger(Number(collision[2])) && Number(collision[1]) === Number(serviceId)) {
@@ -2853,7 +2905,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const descriptionValues = { action: t(job.action || 'update'), id: job.serviceId ?? job.id ?? '', device: job.deviceId ?? job.device ?? '', user: job.username || job.mac || '' };
             const description = t(descriptionKey, descriptionValues);
             const error = job.error ? typeof job.error === 'object' ? JSON.stringify(job.error) : String(job.error) : '';
-            const networkError = jobNetworkErrorMarkup(error, job.serviceId ?? job.id);
+            const explainedError = jobOwnershipErrorMarkup(error, job.serviceId ?? job.id) ?? jobNetworkErrorMarkup(error, job.serviceId ?? job.id);
             const connectionHelp = jobConnectionHelp(error);
             const stateKey = job.state === 'pending' ? 'Pendiente' : job.state === 'running' ? 'En ejecución' : 'Estado desconocido';
             const attempts = Number.isSafeInteger(job.attempts) && job.attempts >= 0 ? job.attempts : 0;
@@ -2861,7 +2913,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 ? ` · <span data-i18n="Próximo intento">${html(t('Próximo intento'))}</span>: <span data-date="${html(job.nextRetry)}">${html(formatDate(job.nextRetry))}</span>` : '';
             row.innerHTML = `<td class="job-description"><span data-i18n="${html(descriptionKey)}" data-i18n-values="${html(JSON.stringify(descriptionValues))}">${html(description)}</span>
                 <br><small class="text-muted">${html(job.jobId || key)} · <span data-i18n="${html(stateKey)}">${html(t(stateKey))}</span> · <span data-i18n="Intentos: {count}" data-i18n-values="${html(JSON.stringify({ count: attempts }))}">${html(t('Intentos: {count}', { count: attempts }))}</span>${nextRetry}</small>
-                ${error ? `<br><span class="job-error"><span data-i18n="Último error">${html(t('Último error'))}</span>: ${networkError ?? html(error)}</span>` : ''}
+                ${error ? `<br><span class="job-error"><span data-i18n="Último error">${html(t('Último error'))}</span>: ${explainedError ?? html(error)}</span>` : ''}
                 ${connectionHelp ? `<br><small class="text-muted" data-i18n="${html(connectionHelp)}">${html(t(connectionHelp))}</small>` : ''}
                 ${jobNoteMarkup(jobReason(job), 'Bloqueado')}
                 ${jobNoteMarkup(job.canDelete === false ? jobReason(job, true) : null, 'No se puede eliminar')}
@@ -2948,8 +3000,10 @@ document.addEventListener('DOMContentLoaded', () => {
             const reason = note ? t(note[0], note[1]) : t(action === 'delete' ? 'No se pudo eliminar el trabajo.'
                 : result && result.attempted !== false ? 'El intento falló.' : 'Pendiente; no se intentó.');
             const lastError = action === 'run' && typeof result?.error === 'string' && result.error ? result.error : job.error;
+            const ownership = jobOwnershipDiagnostic(lastError, job.serviceId ?? job.id);
+            const explainedError = ownership ? ownership.parts.map(({ source, params }) => t(source, params)).join(' ') : String(lastError).slice(0, 500);
             const detail = t('{job}: {reason}', { job: key, reason })
-                + (lastError ? ' ' + t('Último error: {message}', { message: String(lastError).slice(0, 500) }) : '');
+                + (lastError ? ' ' + t('Último error: {message}', { message: explainedError }) : '');
             if (details++ < 8) parts.push(detail);
             const help = jobConnectionHelp(lastError);
             if (help && !connectionHelp.has(help)) { connectionHelp.add(help); parts.push(t(help)); }

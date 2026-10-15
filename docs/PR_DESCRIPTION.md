@@ -1,8 +1,20 @@
 ## Summary
 
-This PR brings the panel improvements from [PR #89](https://github.com/MadaMzandu/uisp-ros-plugin/pull/89) together with a durable provisioning queue, explicit webhook authentication modes, reliable suspension/reactivation handling, archived-plan recovery, and panel consultation during paused migrations, reviewed cleanup of obsolete IP reservations, and independent client archival diagnostics, retained navigation on reload, and comparison of current CRM IPs, automatic nonblocking CRM duplicate warnings, safe reuse of unchanged reservations, reviewed CRM IP corrections, and simultaneous device synchronization with row progress. Candidate **2.4.33** uses the native RouterOS API with optional TLS.
+Candidate **2.4.34** fixes retries that kept a previous Site's IP and accounts still marked with an obsolete service ID. Prepared jobs now recheck authoritative IP intent before writing, while verified same-client accounts can be reassociated in place when the previous service has ended or is absent. Failures explain the specific ownership conflict and link the relevant services.
+
+The cumulative changes include the panel work from [PR #89](https://github.com/MadaMzandu/uisp-ros-plugin/pull/89), durable provisioning, webhook handling and recovery tools. Provisioning uses the native RouterOS API with optional TLS.
 
 **The full English changelog and webhook setup guide are included below, not only linked.** Historical entries identify behavior superseded by later revisions; the summary describes the current implementation.
+
+## Candidate 2.4.34: correct queued foreign-Site IPs and obsolete account links
+
+Already-prepared jobs recheck a foreign-Site address against fresh UISP state before replaying router commands. They clear only that IP attribute and prepare a destination-pool address when the old value remains; a newer manual UISP address takes precedence. Allocation remains stable across retries, and previous addresses stay protected until the full update succeeds. Rebuilding preserves resource identity, the service plan and credentials.
+
+A PPP/Hotspot account marked with another service of the same client can be updated in place after fresh checks confirm the current service, username and Site, and a terminal or explicitly HTTP-404 previous service. Other owners and executable jobs are checked; a private password-free backup precedes permission, and the exact router record is reread before writing. An active previous service, an unmarked/manual account, another client or failed evidence retains protection. Jobs explain the specific reason and link both service IDs.
+
+After installation, the next scheduled retry or **Run** in Jobs uses this correction. Configured plan speeds are preserved. Tests use synthetic fixtures; each production account still needs its UISP/RouterOS result checked.
+
+**2.4.34 validation passed:** 47 isolated suites, syntax checks for 55 first-party PHP files, and installer verification of 367 entries, 134 first-party files and 13 locked dependencies. Current report: `dist/verification-2.4.34.json`. SHA-256: `851d250ef1c9124e4bc86564f72fe5099dada37ec16fc682f1536a8eb2141be1`.
 
 ## Candidate 2.4.33: fresh pool addresses after an IP clear or Site move
 
@@ -354,9 +366,71 @@ Check the relevant RouterOS logging topics and the actual profile/session state.
 
 [Español](docs/MEJORAS.md) · [PR description](docs/PR_DESCRIPTION.md) · [Webhook setup and rationale](docs/WEBHOOK_SETUP_EN.md)
 
-This revision combines [dhanielsnieto's changes in PR #89](https://github.com/MadaMzandu/uisp-ros-plugin/pull/89) with the subsequent fixes prepared in this repository. The comparison starts at `7ca8dc8`; the original PR ends at `056b89f`. The current candidate is **2.4.33**. The operator confirmed archived-plan speed recovery in their 2.4.19 installation. That confirmation covers this historical scenario; the remaining UISP and RouterOS integration scenarios still require their own checks before production readiness can be established.
+This revision combines [dhanielsnieto's changes in PR #89](https://github.com/MadaMzandu/uisp-ros-plugin/pull/89) with the subsequent fixes prepared in this repository. The comparison starts at `7ca8dc8`; the original PR ends at `056b89f`. The current candidate is **2.4.34**. The operator confirmed archived-plan speed recovery in their 2.4.19 installation. That confirmation covers this historical scenario; the remaining UISP and RouterOS integration scenarios still require their own checks before production readiness can be established.
 
 The plugin connects UISP CRM to MikroTik through the **native RouterOS API**, normally on port `8728`, or `8729` with TLS. The panel manages that integration; it does not switch the transport to SSH, WinBox, or REST.
+
+## Candidate 2.4.34: correct queued foreign-Site IPs and obsolete account links
+
+Already-prepared jobs recheck a foreign-Site address against fresh UISP state before replaying router commands. They clear only that IP attribute and prepare a destination-pool address when the old value remains; a newer manual UISP address takes precedence. Allocation remains stable across retries, and previous addresses stay protected until the full update succeeds. Rebuilding preserves resource identity, the service plan and credentials.
+
+A PPP/Hotspot account marked with another service of the same client can be updated in place after fresh checks confirm the current service, username and Site, and a terminal or explicitly HTTP-404 previous service. Other owners and executable jobs are checked; a private password-free backup precedes permission, and the exact router record is reread before writing. An active previous service, an unmarked/manual account, another client or failed evidence retains protection. Jobs explain the specific reason and link both service IDs.
+
+After installation, the next scheduled retry or **Run** in Jobs uses this correction. Configured plan speeds are preserved. Tests use synthetic fixtures; each production account still needs its UISP/RouterOS result checked.
+
+**2.4.34 validation passed:** 47 isolated suites, syntax checks for 55 first-party PHP files, and installer verification of 367 entries, 134 first-party files and 13 locked dependencies. Current report: `dist/verification-2.4.34.json`. SHA-256: `851d250ef1c9124e4bc86564f72fe5099dada37ec16fc682f1536a8eb2141be1`.
+
+## Candidate 2.4.33: fresh pool addresses after an IP clear or Site move
+
+An explicitly cleared UISP IP now replaces cached desired state and requests another address from the effective destination pool. A durable allocation generation keeps that choice stable across retries and paired events. IPv4 and IPv6 replacement preparation succeeds together before router changes; later synchronization also recognizes a missed clear webhook from the last confirmed fixed desired value.
+
+When an explicit address is outside the destination pool and belongs to another configured Site pool, the plugin freshly validates the service, client, Site, attribute and current IP. It checks replacement capacity before clearing only that IP attribute and confirms the clear by reading UISP again. A manual address outside all configured pools is unaffected by this rule. Other services' reservations remain protected. Exhausted capacity or changed evidence fails only the affected service and preserves its previous router account.
+
+Scheduled IP export respects a different current UISP value. Publishing into an empty field requires a current applied pool-allocation proof and a one-time generation receipt, consumed before PATCH so an uncertain response cannot replay an old address. Unconfirmed CRM-edit holds remain active. Valid address conflicts now identify the blocking service and source separately from malformed-address errors.
+
+A new synchronization can replace an obsolete pending intent with no new prepared commands when its earlier cleanup is already confirmed, without repeating that cleanup. Incomplete cleanups and prepared commands retain ordering. After upgrading, synchronize the service or router again to create current intent; retrying an old job preserves its earlier snapshot.
+
+**2.4.33 validation passed:** 45 isolated suites, syntax checks for 54 first-party PHP files, and installer verification of 366 entries, 133 first-party files and 13 locked dependencies. Current report: `dist/verification-2.4.33.json`. SHA-256: `6aa920f75a8b03745711e9d2f07d294f03bbd4ff218fe022d4c6f177e4163384`. Tests use synthetic fixtures, temporary databases and simulated/local transports; no production UISP or RouterOS changes were performed.
+
+## Candidate 2.4.32: automatic checks and explicit recovery outcomes
+
+The scheduler checks malformed local reservations and recoveries before running jobs, outside worker locks. Each pass reviews at most one service/family and one recovery within a 12-second budget, using persistent fair cursors. It applies only proven local repairs against fresh UISP evidence and redundant/fully observed-absent recovery resolution, with backups and revalidation. It never automatically preserves or force-discards uncertain history, PATCHes CRM, or disconnects accounts from this review. Failed checks do not abort other jobs.
+
+A malformed peer reservation is informational and cannot stop another service’s allocation. Its row remains visible for repair; valid cached, applied and historical resource addresses remain exclusive. An invalid address belonging to the current service fails only that service.
+
+A compatible recovery no longer prevents repairing a malformed local field. Its records and valid addresses remain unchanged; differing valid ownership, conflicting identities and incompatible executable work remain protected. Replacement address preparation is checked before update cleanups so an invalid replacement address cannot cause cleanup first and validation failure afterward.
+
+**Keep resources and close review** freshly validates the same service/client in UISP and backs up the queue before moving exact historical records into protected storage. Valid addresses, device references and shared-resource membership remain held through restarts and source-history compaction. These records are excluded from executable cancelled cleanups on later updates and remain visible separately. This closes a local review; it does not prove that the router is empty or synchronized and does not release historical IPs.
+
+**Discard local record** explicitly removes only the selected cancelled or preserved history, including when UISP is unavailable. Local preview, service/job confirmation, a single-use token, concurrency checks and a private coherent backup precede deletion. Current jobs, applied ownership, current reservations, CRM and routers remain unchanged. The review warns that historical resources may remain on the router and their IPs may become reusable when this protection is removed. It is never automatic and does not clear current ownership conflicts.
+
+The executable queue comes first; compact recovery cards follow directly below in one, two or three columns depending on available space. Confirmed outcomes refresh the list and indicator. Specific incomplete-history diagnostics expose safe metadata only.
+
+**2.4.32 validation passed:** 42 isolated suites, syntax checks for 53 first-party PHP files, and installer verification of 365 entries, 132 first-party files and 13 locked dependencies. Current report: `dist/verification-2.4.32.json`. SHA-256: `2d679a68b6d77f3f11ca3d9006ebaa056f102f2b31c1e408b9733875e37fee0c`. Browser checks use synthetic fixtures; no production UISP or RouterOS changes were performed.
+
+## Candidate 2.4.31: dismiss warnings and repair reservations retained by cancelled jobs
+
+All three top warnings can be dismissed and restored with **Show warnings**. Dismissal lasts within the tab using only coarse counts/state, without storing client identities, IPs or credentials. Poll timestamps and navigation do not reopen it; relevant count/error changes or clearing and recurrence do. Sidebar badges, detail views and paused-migration write protections remain active.
+
+Malformed-reservation repair distinguishes pending work from cancelled/superseded intent. A cancelled unprepared update without recovery debt no longer blocks solely because its requested IP is obsolete or malformed. Its bytes and valid reservations stay intact, while identity, prior ownership, applied resources and the selected address family remain guarded. A different active pending intent is still protected and exposes its job ID/state with navigation to review it. Repair never revives, rewrites or runs cancelled jobs. A real-queue regression verifies that an unrelated service resumes after local corrections while cancelled operations remain unattempted.
+
+**Compare with UISP and router** retains exact redundant-copy consolidation and adds read-only observation when recorded applied ownership is insufficient. Router queries use only exact filtered `print` requests with limited properties, following the [RouterOS API documentation](https://help.mikrotik.com/docs/spaces/ROS/pages/47579160/API). They never provision, adopt, remove or disconnect resources. The recorded endpoint must still match the configured device; current credentials are used. Review shows device/path/selector and present/absent/unknown evidence. Absence resolution requires every retained resource and prior reservation to be represented and observed absent, repeats observation under the concurrency guards, backs up `jobs.db` and marks only that cancelled source job cleaned. Applied ownership, CRM and routers remain unchanged. Present/shared resources, changed authority, incomplete history and failed reads remain protected; partial observation never establishes absence. Deleted operations do not run in a hidden queue.
+
+Old generated previews, helper scripts, screenshots and reports are removed from the working folder. The repository's historical installer is replaced with the verified current one. Reproducible tools, tests, source, documentation and runtime dependencies remain; `dist` contains only current delivery/verification files and a separate screenshot directory.
+
+**2.4.31 validation passed:** 40 isolated suites, syntax checks for 52 first-party PHP files, and installer verification of 364 entries, 131 first-party files and 13 locked dependencies. Current report: `dist/verification-2.4.31.json`. SHA-256: `48da9d4bd968068f1e85323ae63c39409f98e85ce1b7bad78fefb34306824cab`. Browser checks use synthetic fixtures; no production CRM or RouterOS changes were performed.
+
+## Candidate 2.4.30: review retained recoveries and explain rejected UISP edits
+
+The indicator distinguishes executable jobs from retained recovery records. An empty executable queue now shows **Pending recoveries**, while mixed state shows **Jobs and recoveries**. **Review** opens **Services in recovery** inside Jobs, with service, known client, source job and device identifiers. Listing reads existing local storage without initializing/importing the queue or querying CRM/router; failed reads remain explicitly unavailable.
+
+**Review recovery** freshly checks the UISP identity/status and compares retained snapshots with recorded applied state. Resolution is offered only for exact redundant copies, with a private ten-minute review, explicit confirmation, fresh evidence, concurrency barriers and a coherent private `jobs.db` backup. It issues no router commands and preserves services, addresses, plans, cache, applied ownership and job rows. Confirmed results refresh both inventory and counts. Different resources, distinct previous reservations, unknown identities, active work and incomplete evidence remain protected with an explanation. This local consolidation does not replace physical reconciliation of old resources; do not run a bulk synchronization merely to hide a count. The recovery backup is downloadable from the result or System and is separate from restorable `data.db` backups.
+
+Malformed-reservation repair now handles a failed initial provisioning that saved a reservation before saving the local service/client. Fresh exact UISP service/client reads are required; conflicting local/cached identities and durable ownership remain blockers. It never creates or fills in a service row, changing only reviewed malformed fields. Cancelled/superseded unprepared updates without recovery debt may remain unchanged when the same fresh identity/address and prior-reservation checks succeed; their rows are neither modified nor counted as pending. Blocked results expose the safe diagnostic stage and known client IDs, distinguishing missing local metadata from unavailable reads or a different owner. A malformed identity or HTTP 404 without established local ownership stays protected.
+
+CRM IP edits distinguish accepted, explicitly rejected and unconfirmed requests. Safe HTTP status/reason diagnostics retain no private response bodies. **Verify again** remains read-only and never replays a PATCH; a later observed matching value does not turn the original rejection into a confirmed write. Ended services are never reactivated to force editing. Reviewed historical assignments retain their CRM IP and exclude only that exact ended service/client/family/attribute/value from actionable conflicts; reactivation or changed evidence revokes the exception. Historical classification alone does not establish removal of RouterOS resources.
+
+**2.4.30 validation passed:** 39 isolated suites, syntax checks for 51 first-party PHP files, and installer verification covering 363 entries, 130 first-party files, and 13 locked dependencies. Current report: `dist/verification-2.4.30.json`. SHA-256: `a285440ef37b0abbc2d45ef5f5648cedee0859e6bb238ab29fced06f9c0abf96`. Browser checks used synthetic fixtures for empty executable queues with listed recoveries, confirmed consolidation, refreshed counts, preserved differing resources and conflicting-client diagnostics in Spanish/English and dark/light themes. No production CRM or RouterOS changes were performed.
 
 ## Candidate 2.4.29: repair malformed local reservations and show pending work
 
@@ -739,7 +813,7 @@ Later production evidence identified missing tokens and a URL pasted as the secr
 
 ## Installation and validation readiness
 
-The current version is 2.4.33. Its validation status appears at the beginning of this changelog. Archived-plan recovery confirmation belongs to 2.4.19 and retains its historical scope. CRM warnings keep other jobs available: current duplicate addresses can be corrected explicitly, and a freshly verified ended service can have its exact historical assignment reviewed without editing its CRM history. **Review cleanup** separately previews eligible obsolete local reservations with a private backup; pending work, unresolved recovery, and recorded applied ownership still protect their reservations. Backups remain downloadable from **System** after reload. Only the separate duplicate-reservation preflight that prevents safe migration pauses other writes and provisioning; it requires resolving those stored conflicts and reloading. The [real-environment test guide](docs/PRUEBAS_REALES.md) contains 171 scenarios for the remaining checks.
+The current version is 2.4.33. Its validation status appears at the beginning of this changelog. Archived-plan recovery confirmation belongs to 2.4.19 and retains its historical scope. CRM warnings keep other jobs available: current duplicate addresses can be corrected explicitly, and a freshly verified ended service can have its exact historical assignment reviewed without editing its CRM history. **Review cleanup** separately previews eligible obsolete local reservations with a private backup; pending work, unresolved recovery, and recorded applied ownership still protect their reservations. Backups remain downloadable from **System** after reload. Only the separate duplicate-reservation preflight that prevents safe migration pauses other writes and provisioning; it requires resolving those stored conflicts and reloading. The [real-environment test guide](PRUEBAS_REALES.md) contains 171 scenarios for the remaining checks.
 
 ### Historical 2.4.17 result
 

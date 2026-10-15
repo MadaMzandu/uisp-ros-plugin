@@ -18,6 +18,16 @@ class MT extends Device
     private ?string $ownedLocalFallback = null;
     private ?string $connectionFailure = null;
     private array $cancellationBootstrapGuards = [];
+    private $ownershipResolver = null;
+
+    /** Permission exists only during this verified update, never in a stored command. */
+    public function withOwnershipResolver(callable $resolver, callable $operation)
+    {
+        $previous = $this->ownershipResolver;
+        $this->ownershipResolver = $resolver;
+        try { return $operation(); }
+        finally { $this->ownershipResolver = $previous; }
+    }
 
     protected function write($post)
     {
@@ -724,6 +734,18 @@ class MT extends Device
                     if (!isset($record[$field]) || strcasecmp((string)$record[$field], (string)$data[$field]) !== 0) {
                         $canAdopt = false; break;
                     }
+                }
+            }
+            if (!$owned && !$canAdopt && $this->ownershipResolver !== null
+                && in_array($path, ['ppp/secret','ip/hotspot/user'], true) && ($data['action'] ?? '') !== 'remove') {
+                $canAdopt = ($this->ownershipResolver)($data, $record) === true;
+                if ($canAdopt) {
+                    // UISP verification may take time. Re-read the exact account
+                    // before permitting either preflight or the actual set.
+                    $fresh = $this->read($data['path'], $filter);
+                    $canAdopt = is_array($fresh) && count($fresh) === 1
+                        && ($this->ownershipResolver)($data, $fresh[0]) === true;
+                    if (!$canAdopt) throw new RuntimeException('router_ownership_record_changed');
                 }
             }
             if (!$owned && !$canAdopt) throw new RuntimeException('The matching RouterOS account or queue belongs to another service or was created manually');

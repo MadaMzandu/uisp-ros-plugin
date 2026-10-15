@@ -478,6 +478,7 @@ final class ApiJobRecovery
         // must be covered by an ordinary applied address before a debt copy can
         // disappear, including legacy snapshots retained before normalization.
         if (!$this->priorCovered($applied, $covered)) return null;
+        if (!$this->previousCovered($source, $covered)) return null;
         if (empty($job['prior_cleared']) && isset($source['_prior_network'])) {
             if (!is_array($source['_prior_network'])) return null;
             foreach ($source['_prior_network'] as $field => $value) if (!in_array($field, ['address','address6'], true)
@@ -553,6 +554,19 @@ final class ApiJobRecovery
         if (isset($sourceSnapshot['_cleanup']) && empty($job['cleanup_done'])) {
             if (!is_array($sourceSnapshot['_cleanup'])) $this->incomplete('snapshot', 'missing_frozen_commands', 'cleanup');
             $snapshots[] = $sourceSnapshot['_cleanup'];
+        }
+        // Address holds left by a partially written replacement cannot prove
+        // their own safety. Require actual frozen resources with the same owner.
+        foreach (array_merge($snapshots, [$sourceSnapshot]) as $owner) {
+            if (!array_key_exists('_previous_addresses', $owner)) continue;
+            $covered = ['address' => [], 'address6' => []];
+            foreach ($snapshots as $snapshot) {
+                if (!hash_equals($this->resourceIdentity($owner), $this->resourceIdentity($snapshot))) continue;
+                foreach ($this->addresses(['_commands' => $snapshot['_commands'] ?? []]) as $field => $values)
+                    $covered[$field] = array_merge($covered[$field], $values);
+            }
+            if (!$this->previousCovered($owner, $covered))
+                $this->incomplete('prior_reservations', 'uncovered_prior_address', 'source');
         }
         // Releasing a cancelled source also releases its prior reservations. Every
         // prior value must be represented by a retained frozen resource snapshot.
@@ -655,6 +669,7 @@ final class ApiJobRecovery
         if (self::id($sourceSnapshot['id'] ?? null) !== $sid || self::id($sourceSnapshot['clientId'] ?? null) !== $clientId
             || !in_array($sourceSnapshot['action'] ?? 'update', ['update','queues_set'], true)
             || array_key_exists('_delete_frozen', $sourceSnapshot)) throw new InvalidArgumentException('different_resources');
+        if (!$this->previousCovered($sourceSnapshot, $appliedAddresses)) throw new InvalidArgumentException('different_resources');
         if (isset($sourceSnapshot['_commands']) && $this->resourceProjection($sourceSnapshot) !== $projection)
             throw new InvalidArgumentException('different_resources');
         if (isset($sourceSnapshot['_cleanup']) && empty($job['cleanup_done'])
@@ -758,11 +773,26 @@ final class ApiJobRecovery
 
     private function priorCovered(array $snapshot, array $covered): bool
     {
+        if (!$this->previousCovered($snapshot, $covered)) return false;
         if (!array_key_exists('_prior_network', $snapshot)) return true;
         if (!is_array($snapshot['_prior_network'])) return false;
         foreach ($snapshot['_prior_network'] as $field => $value) {
             if (!in_array($field, ['address','address6'], true) || ($value !== null && $value !== ''
                 && (!is_string($value) || !in_array($value, $covered[$field], true)))) return false;
+        }
+        return true;
+    }
+
+    /** Check old holds against real current/frozen addresses, never against themselves. */
+    private function previousCovered(array $snapshot, array $covered): bool
+    {
+        if (!array_key_exists('_previous_addresses', $snapshot)) return true;
+        $values = $snapshot['_previous_addresses'];
+        if (!is_array($values) || count($values) > 1000 || ($values && array_keys($values) !== range(0, count($values) - 1))) return false;
+        foreach ($values as $value) {
+            if (!is_string($value) || $value === '') return false;
+            $field = strpos($value, ':') === false ? 'address' : 'address6';
+            if (!in_array($value, $covered[$field] ?? [], true)) return false;
         }
         return true;
     }

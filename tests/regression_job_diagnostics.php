@@ -125,6 +125,14 @@ try {
     $queue->run([$invalidKey],static fn(): bool=>false);
     $events=diagnosticsEntries(); $entry=$events[count($events)-1];
     diagnosticsCheck($entry['deviceId']===null && $entry['operation']==='update', 'Invalid device input leaked into the diagnostic');
+    $ownershipKey=$queue->enqueue($snapshot(450));
+    $queue->run([$ownershipKey],static function (): bool {
+        throw new RuntimeException('router_ownership_conflict: current_service=450 previous_service=449 reason=previous_active');
+    });
+    $events=diagnosticsEntries(); $entry=$events[count($events)-1];
+    diagnosticsCheck($entry['errorCode']==='router_ownership_conflict' && $entry['requestedServiceId']===450
+        && $entry['previousServiceId']===449 && $entry['ownershipReason']==='previous_active',
+        'Account ownership diagnostic lost its safe current/previous service IDs and reason');
     $logs=file_get_contents('data/plugin.log');
     foreach (['PRIVATE-','192.0.2.44','fixture.invalid','ARBITRARY-EXCEPTION-VALUE','ORDINARY-DEBUG-MUST-STAY-HIDDEN',
         '/ppp/secret','username=','password='] as $private) diagnosticsCheck(strpos($logs,$private)===false,

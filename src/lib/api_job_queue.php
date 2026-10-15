@@ -324,6 +324,17 @@ class ApiJobQueue
         return array_values($rows);
     }
 
+    /** Hold replaced IPs until an in-place update succeeds, including interrupted retries and cancellation. */
+    public function preserveReplacedAddresses(array $previous, array $next): array
+    {
+        $addresses = [];
+        foreach ([false, true] as $ipv6) $this->collectAddresses($addresses, (int)$previous['id'], $previous, $ipv6, true);
+        $values = $previous['_previous_addresses'] ?? [];
+        foreach ($addresses as $row) $values[] = $row['address'] ?? $row['address6'];
+        $next['_previous_addresses'] = array_values(array_unique($values));
+        return $next;
+    }
+
     public function list(): array
     {
         $rows = $this->query("SELECT * FROM jobs WHERE status IN ('pending','running') ORDER BY id");
@@ -900,7 +911,7 @@ class ApiJobQueue
                     $applied = $this->payload($current);
                     // Confirmed state needs only current resources, never completed
                     // old-router cleanup or a one-time forced reconnect request.
-                    unset($applied['_cleanup'], $applied['_prior_network'], $applied['_prior_identity'], $applied['_force_reconnect']);
+                    unset($applied['_cleanup'], $applied['_prior_network'], $applied['_prior_identity'], $applied['_force_reconnect'], $applied['_previous_addresses']);
                     $this->execute('UPDATE service_versions SET applied_identity=:identity,applied_payload=:payload WHERE service_id=:sid',
                         ['identity' => $current['identity'], 'payload' => $this->encode($applied), 'sid' => (int) $current['service_id']]);
                 } elseif ($current['operation'] === 'delete') {
@@ -933,13 +944,15 @@ class ApiJobQueue
                 'serviceId'=>(int)$job['service_id'], 'deviceId'=>$device===false ? null : $device,
                 'operation'=>$operation, 'attempts'=>(int)$attempt['attempts'],
                 'nextRetry'=>date('c',(int)$attempt['nextRetry']), 'errorCode'=>$this->safeFailureCode($error),
-            ] + $this->networkFailureContext($error),LOG_ERR);
+            ] + $this->networkFailureContext($error) + $this->ownershipFailureContext($error),LOG_ERR);
         } catch (Throwable $ignored) {}
     }
 
     private function safeFailureCode(string $error): string
     {
         if ($this->networkFailureContext($error)) return strpos($error, 'network_address_conflict:') === 0 ? 'network_address_conflict' : 'invalid_network_address';
+        if ($this->ownershipFailureContext($error)) return 'router_ownership_conflict';
+        if (in_array($error, ['router_ownership_record_changed', 'site_address_resources_changed', 'site_address_prepared_guard_changed'], true)) return $error;
         foreach (['router_session_profile_missing','router_session_profile_lookup_failed',
             'router_session_profile_ambiguous','router_session_profile_invalid_identity',
             'router_session_profile_bootstrap_failed','router_session_profile_bootstrap_invalid_configuration',
@@ -964,6 +977,19 @@ class ApiJobQueue
         if (isset($known[$error])) return $known[$error];
         if (strpos($error,'invalid_provisioning_number:')===0) return 'invalid_provisioning_number';
         return 'provisioning_failed';
+    }
+
+    private function ownershipFailureContext(string $error): array
+    {
+        if (!preg_match('/^router_ownership_conflict: current_service=([0-9]+) previous_service=([0-9]+) reason=([a-z_]{1,48})$/D', $error, $match)) return [];
+        if (!in_array($match[3], ['account_claimed','backup_failed','catalog_incomplete','client_unverified',
+            'identity_unverified','mapping_unverified','peer_site_unverified','previous_active','previous_changed',
+            'previous_job_pending','previous_unverified','queue_unverified','router_changed','target_changed',
+            'target_unverified','verification_unavailable'], true)) return [];
+        $current = filter_var($match[1], FILTER_VALIDATE_INT, ['options'=>['min_range'=>0]]);
+        $previous = filter_var($match[2], FILTER_VALIDATE_INT, ['options'=>['min_range'=>0]]);
+        if ($current === false || $previous === false) return [];
+        return ['requestedServiceId'=>$current, 'previousServiceId'=>$previous, 'ownershipReason'=>$match[3]];
     }
 
     private function networkFailureContext(string $error): array
@@ -1101,6 +1127,7 @@ class ApiJobQueue
     {
         $values = [$snapshot['address'] ?? null, $snapshot['address6'] ?? null,
             $snapshot['network']['address'] ?? null, $snapshot['network']['address6'] ?? null];
+        foreach ($snapshot['_previous_addresses'] ?? [] as $previous) $values[] = $previous;
         if ($includePrior) {
             $values[] = $snapshot['_prior_network']['address'] ?? null;
             $values[] = $snapshot['_prior_network']['address6'] ?? null;

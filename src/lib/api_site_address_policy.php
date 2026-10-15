@@ -4,8 +4,59 @@ require_once __DIR__ . '/api_network_address_evidence.php';
 /** Clear only a freshly verified foreign-Site address before requesting a new pool allocation. */
 final class ApiSiteAddressPolicy
 {
-    public static function reconcile(array $service, ?array $expectedDevice = null, ?callable $request = null,
+    /** Refresh only foreign-Site IP intent before an old queued update can replay it. */
+    public static function refreshForExecution(array $service, ?array $expectedDevice = null, ?callable $request = null,
         string $dataPath = 'data/data.db', ?callable $preflight = null): array
+    {
+        [$configuration, $devices] = self::stored($dataPath);
+        $did = self::id($service['device'] ?? null);
+        if ($did === null || !isset($devices[$did])) return ['snapshot' => $service, 'changed' => false];
+        $candidate = $service; $derived = [];
+        $foreign = self::foreignAddresses($service, $devices[$did], $configuration, $devices);
+        foreach (self::preparedAddresses($service) as $field => $value) {
+            if (isset($foreign[$field])) continue;
+            $withCommand = $service; unset($withCommand[$field]); $withCommand['network'][$field] = $value;
+            $commandForeign = self::foreignAddresses($withCommand, $devices[$did], $configuration, $devices);
+            if (!isset($commandForeign[$field])) continue;
+            unset($candidate[$field]); $candidate['network'][$field] = $value; $derived[$field] = true;
+            $foreign[$field] = $commandForeign[$field];
+        }
+        foreach (['address', 'address6'] as $field) {
+            $literal = array_key_exists($field, $service) ? $service[$field] : ($service['network'][$field] ?? null);
+            $reset = $service['_network_reset'][$field] ?? null;
+            if (isset($foreign[$field]) || ($literal !== null && $literal !== '') || !is_array($reset)
+                || !is_string($reset['previous'] ?? null) || !is_string($reset['generation'] ?? null)
+                || preg_match('/^[a-f0-9]{32}$/D', $reset['generation']) !== 1) continue;
+            $withPrevious = $service; unset($withPrevious[$field]); $withPrevious['network'][$field] = $reset['previous'];
+            $resetForeign = self::foreignAddresses($withPrevious, $devices[$did], $configuration, $devices);
+            if (!isset($resetForeign[$field])) continue;
+            unset($candidate[$field]); $candidate['network'][$field] = $reset['previous']; $foreign[$field] = $resetForeign[$field];
+        }
+        if (!$foreign)
+            return ['snapshot' => $service, 'changed' => false];
+        $refreshed = self::reconcile($candidate, $expectedDevice, $request, $dataPath, $preflight, true);
+        // Keep the exact account identity, credentials, status and prepared resource evidence.
+        // The queue owns invalidating/rebuilding commands while retaining their old resources.
+        $next = $service;
+        if (isset($service['_config']) && is_array($service['_config']) && isset($refreshed['_config']))
+            $next['_config'] = $refreshed['_config'];
+        foreach (['address', 'address6'] as $field) {
+            $value = array_key_exists($field, $refreshed) ? $refreshed[$field] : ($refreshed['network'][$field] ?? null);
+            $before = array_key_exists($field, $service) ? $service[$field] : ($service['network'][$field] ?? null);
+            $newReset = $refreshed['_network_reset'][$field] ?? null; $oldReset = $service['_network_reset'][$field] ?? null;
+            if ($value !== $before || is_array($newReset) !== is_array($oldReset)
+                || ($newReset['previous'] ?? null) !== ($oldReset['previous'] ?? null)
+                || ($newReset['generation'] ?? null) !== ($oldReset['generation'] ?? null)) {
+                unset($next[$field]); $next['network'][$field] = $value;
+                if (isset($refreshed['_network_reset'][$field])) $next['_network_reset'][$field] = $refreshed['_network_reset'][$field];
+                else unset($next['_network_reset'][$field]);
+            }
+        }
+        return ['snapshot' => $next, 'changed' => $next !== $service || (bool) array_intersect_key($derived, $foreign)];
+    }
+
+    public static function reconcile(array $service, ?array $expectedDevice = null, ?callable $request = null,
+        string $dataPath = 'data/data.db', ?callable $preflight = null, bool $refreshAddress = false): array
     {
         [$configuration, $devices] = self::stored($dataPath);
         $sid = self::id($service['id'] ?? null); $client = self::id($service['clientId'] ?? null); $did = self::id($service['device'] ?? null);
@@ -14,19 +65,12 @@ final class ApiSiteAddressPolicy
         if ($expectedDevice !== null && (self::id($expectedDevice['id'] ?? null) !== $did
             || self::endpoint($expectedDevice) !== self::endpoint($device))) throw new RuntimeException('site_address_device_changed');
         $candidates = [];
-        foreach (['address' => false, 'address6' => true] as $field => $ipv6) {
-            $literal = array_key_exists($field, $service) ? $service[$field] : ($service['network'][$field] ?? null);
-            if (!is_string($literal) || trim($literal) === '') continue;
-            try { $address = self::address($literal, $ipv6, $device); }
-            catch (Throwable $ignored) { continue; }
-            $own = self::pools($service, $device, $configuration, $ipv6);
-            if (self::contained($address, $own)) continue;
-            foreach ($devices as $peerId => $peer) {
-                if ($peerId === $did) continue;
-                if (self::contained($address, self::pools($service, $peer, $configuration, $ipv6, true))) {
-                    $candidates[$field] = ['previous' => $address, 'generation' => bin2hex(random_bytes(16))]; break;
-                }
-            }
+        foreach (self::foreignAddresses($service, $device, $configuration, $devices) as $field => $address) {
+            $existing = $service['_network_reset'][$field] ?? null;
+            $generation = is_array($existing) && ($existing['previous'] ?? null) === $address
+                && is_string($existing['generation'] ?? null) && preg_match('/^[a-f0-9]{32}$/D', $existing['generation']) === 1
+                ? $existing['generation'] : bin2hex(random_bytes(16));
+            $candidates[$field] = ['previous' => $address, 'generation' => $generation];
         }
         if (!$candidates) return $service;
         $call = static function (string $path, string $method = 'get', array $data = []) use ($request) {
@@ -49,9 +93,16 @@ final class ApiSiteAddressPolicy
             if (self::id($freshClient['id'] ?? null) !== $client
                 || !in_array($freshClient['isArchived'] ?? null, [false, 0, '0'], true)) throw new RuntimeException('site_address_identity_changed');
             $evidence = ApiNetworkAddressEvidence::parse($fresh, $mapping);
+            $overrides = [];
             foreach ($candidates as $field => &$intent) {
                 if ($mapping[$field] === null || !$evidence[$field]['known']) throw new RuntimeException('site_address_evidence_unknown');
-                if ($evidence[$field]['value'] !== null && $evidence[$field]['value'] !== $intent['previous']) throw new RuntimeException('site_address_changed');
+                if ($evidence[$field]['value'] !== null && $evidence[$field]['value'] !== $intent['previous']) {
+                    if (!$refreshAddress) throw new RuntimeException('site_address_changed');
+                    $current = $service; unset($current[$field]); $current['network'][$field] = $evidence[$field]['value'];
+                    $foreign = self::foreignAddresses($current, $device, $configuration, $devices);
+                    if (!isset($foreign[$field])) { $overrides[$field] = $evidence[$field]['value']; continue; }
+                    $intent = ['previous' => $foreign[$field], 'generation' => bin2hex(random_bytes(16))];
+                }
                 $receipt = self::receipt($sid, $field, dirname($dataPath));
                 if ($receipt !== null) {
                     if ($receipt['client_id'] !== $client || $receipt['device_id'] !== $did || $receipt['attribute'] !== $mapping[$field]
@@ -64,13 +115,25 @@ final class ApiSiteAddressPolicy
                 }
             }
             unset($intent);
+            foreach ($overrides as $field => $value) unset($candidates[$field]);
             $cleared = $service;
+            if (isset($cleared['_config']) && is_array($cleared['_config'])) {
+                // Classification and rebuilding must use the same effective allocation policy.
+                // Preserve billing, credentials and every unrelated frozen configuration field.
+                foreach (['router_ppp_pool', 'ppp_pool', 'excl_addr'] as $key) {
+                    if (array_key_exists($key, $configuration)) $cleared['_config'][$key] = $configuration[$key];
+                    else unset($cleared['_config'][$key]);
+                }
+            }
+            foreach ($overrides as $field => $value) {
+                unset($cleared[$field], $cleared['_network_reset'][$field]); $cleared['network'][$field] = $value;
+            }
             foreach ($candidates as $field => $intent) {
                 unset($cleared[$field]); $cleared['network'][$field] = null; $cleared['_network_reset'][$field] = $intent;
             }
             // The exact builder must prove replacement availability before any CRM attribute is removed.
             if ($preflight === null) throw new RuntimeException('site_address_preflight_unavailable');
-            try { $preflight($cleared, array_keys($candidates), $device); }
+            try { $preflight($cleared, array_keys($candidates + $overrides), $device); }
             catch (Throwable $failure) { throw new RuntimeException('site_address_pool_unavailable', 0, $failure); }
             foreach ($candidates as $field => $intent) {
                 if ($evidence[$field]['value'] === null) {
@@ -116,11 +179,69 @@ final class ApiSiteAddressPolicy
             if (!self::currentPrincipal($confirmed, $service, $catalog, $configuration, $finalDevices)) throw new RuntimeException('site_address_identity_changed');
             $confirmedEvidence = ApiNetworkAddressEvidence::parse($confirmed, $mapping);
             foreach ($candidates as $field => $intent) if (!$confirmedEvidence[$field]['known'] || $confirmedEvidence[$field]['value'] !== null) throw new RuntimeException('site_address_changed');
+            foreach ($overrides as $field => $value) if (!$confirmedEvidence[$field]['known'] || $confirmedEvidence[$field]['value'] !== $value) throw new RuntimeException('site_address_changed');
             return $cleared;
         } catch (Throwable $failure) {
             if (strpos($failure->getMessage(), 'site_address_') === 0) throw $failure;
             throw new RuntimeException('site_address_verification_unavailable', 0, $failure);
         }
+    }
+
+    private static function foreignAddresses(array $service, array $device, array $configuration, array $devices): array
+    {
+        $candidates = [];
+        foreach (['address' => false, 'address6' => true] as $field => $ipv6) {
+            $literal = array_key_exists($field, $service) ? $service[$field] : ($service['network'][$field] ?? null);
+            if (!is_string($literal) || trim($literal) === '') continue;
+            try { $address = self::address($literal, $ipv6, $device); }
+            catch (Throwable $ignored) { continue; }
+            if (self::contained($address, self::pools($service, $device, $configuration, $ipv6))) continue;
+            foreach ($devices as $peerId => $peer) {
+                if ($peerId === (int) $device['id']) continue;
+                if (self::contained($address, self::pools($service, $peer, $configuration, $ipv6, true))) {
+                    $candidates[$field] = $address; break;
+                }
+            }
+        }
+        return $candidates;
+    }
+
+    private static function preparedAddresses(array $service): array
+    {
+        $addresses = [];
+        foreach ($service['_commands'] ?? [] as $command) {
+            if (!is_array($command) || ($command['action'] ?? '') === 'remove'
+                || self::id($command['_service_id'] ?? null) !== self::id($service['id'] ?? null)
+                || self::id($command['_client_id'] ?? null) !== self::id($service['clientId'] ?? null)) continue;
+            $path = trim($command['path'] ?? '', '/'); $fields = [];
+            if (in_array($path, ['ppp/secret', 'ip/hotspot/user'], true)
+                && is_string($service['username'] ?? null) && ($command['name'] ?? null) === $service['username'])
+                $fields = $path === 'ppp/secret' ? ['address' => 'remote-address', 'address6' => 'remote-ipv6-prefix'] : ['address' => 'address'];
+            elseif ($path === 'ip/dhcp-server/lease' && filter_var($service['mac'] ?? '', FILTER_VALIDATE_MAC)
+                && strcasecmp($command['mac-address'] ?? '', $service['mac']) === 0) $fields = ['address' => 'address'];
+            elseif ($path === 'ipv6/dhcp-server/binding' && self::duid($service['duid'] ?? $service['mac'] ?? null) !== null
+                && self::duid($command['duid'] ?? null) === self::duid($service['duid'] ?? $service['mac'] ?? null)
+                && self::iaid($command['iaid'] ?? null) !== null
+                && self::iaid($command['iaid']) === self::iaid($service['iaid'] ?? 1)) $fields = ['address6' => 'address'];
+            foreach ($fields as $field => $key) if (is_string($command[$key] ?? null) && $command[$key] !== '') $addresses[$field][$command[$key]] = true;
+        }
+        $result = [];
+        foreach ($addresses as $field => $values) if (count($values) === 1) $result[$field] = array_key_first($values);
+        return $result;
+    }
+
+    private static function duid($value): ?string
+    {
+        if (!is_string($value)) return null;
+        $value = preg_replace('/[:\s-]/', '', strtolower($value)); $value = preg_replace('/^0x/', '', $value);
+        return preg_match('/^(?:[0-9a-f]{2}){6,}$/D', $value) === 1 ? $value : null;
+    }
+
+    private static function iaid($value): ?int
+    {
+        if (is_string($value) && preg_match('/^0x[0-9a-f]+$/iD', $value)) $value = hexdec($value);
+        if (!is_numeric($value) || (float)$value < 0 || (float)$value > 4294967295 || (float)$value !== floor((float)$value)) return null;
+        return (int)$value;
     }
 
     /** Minimal current facts for the scheduled exporter; no stale router allocation may target a changed Site/user. */

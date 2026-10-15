@@ -2,6 +2,16 @@
 
 [Complete English changelog](docs/CHANGELOG_EN.md) · [Texto completo para el PR](docs/PR_DESCRIPTION.md) · [Webhook setup and rationale](docs/WEBHOOK_SETUP_EN.md) · [Mejoras en español](docs/MEJORAS.md)
 
+## Candidato 2.4.34 — corregir reintentos con IP de otro Site y vínculos de cuentas anteriores
+
+Los trabajos ya preparados comprueban de nuevo en UISP una IP perteneciente a otro Site antes de ejecutar sus comandos. Si sigue siendo ajena al destino, vacían únicamente ese atributo y preparan una dirección del pool correspondiente. Si UISP ya tiene una IP manual nueva, la respetan. Se conserva la elección entre reintentos y la reserva anterior hasta confirmar el cambio completo. La corrección mantiene la identidad de los recursos existentes, el plan y las credenciales del servicio.
+
+Una cuenta PPP/Hotspot cuyo comentario conserva otro servicio del mismo cliente puede actualizarse en el mismo registro cuando UISP confirma el servicio actual, su usuario y Site, y que el servicio anterior terminó o ya no existe mediante HTTP 404 comprobado. Se comprueban otros propietarios y trabajos ejecutables, se guarda un respaldo privado sin contraseñas y se relee el registro exacto antes de escribir. Un servicio anterior vigente, una cuenta manual o de otro cliente y una consulta fallida mantienen la protección. Los errores muestran el motivo y enlaces al servicio actual y anterior.
+
+Después de instalar esta versión, los pendientes pueden corregirse en su siguiente reintento programado o con **Ejecutar** en Trabajos. Los cambios normales de estado y las velocidades configuradas conservan su comportamiento. La validación usa datos sintéticos; el resultado de cada cuenta real debe comprobarse en UISP y RouterOS.
+
+Validación 2.4.34 aprobada: **47 suites aisladas**, sintaxis de **55 archivos PHP propios** y verificación de 367 entradas, 134 archivos propios y 13 dependencias fijadas. Informe actual: `dist/verification-2.4.34.json`. SHA-256: `851d250ef1c9124e4bc86564f72fe5099dada37ec16fc682f1536a8eb2141be1`.
+
 ## Candidato 2.4.33 — IP nueva al vaciar el atributo y al cambiar de Site
 
 Un atributo IP vaciado en UISP sustituye el valor anterior de la caché. El plugin solicita otra dirección del pool efectivo del Site; conserva esa elección en reintentos y eventos duplicados. Las familias IPv4/IPv6 se resuelven juntas antes de preparar cambios del router. Una sincronización posterior también detecta el vaciado aunque no haya llegado el webhook, usando el último valor fijo confirmado.

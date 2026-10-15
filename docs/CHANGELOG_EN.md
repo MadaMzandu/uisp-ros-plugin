@@ -2,9 +2,19 @@
 
 [Español](MEJORAS.md) · [PR description](PR_DESCRIPTION.md) · [Webhook setup and rationale](WEBHOOK_SETUP_EN.md)
 
-This revision combines [dhanielsnieto's changes in PR #89](https://github.com/MadaMzandu/uisp-ros-plugin/pull/89) with the subsequent fixes prepared in this repository. The comparison starts at `7ca8dc8`; the original PR ends at `056b89f`. The current candidate is **2.4.33**. The operator confirmed archived-plan speed recovery in their 2.4.19 installation. That confirmation covers this historical scenario; the remaining UISP and RouterOS integration scenarios still require their own checks before production readiness can be established.
+This revision combines [dhanielsnieto's changes in PR #89](https://github.com/MadaMzandu/uisp-ros-plugin/pull/89) with the subsequent fixes prepared in this repository. The comparison starts at `7ca8dc8`; the original PR ends at `056b89f`. The current candidate is **2.4.34**. The operator confirmed archived-plan speed recovery in their 2.4.19 installation. That confirmation covers this historical scenario; the remaining UISP and RouterOS integration scenarios still require their own checks before production readiness can be established.
 
 The plugin connects UISP CRM to MikroTik through the **native RouterOS API**, normally on port `8728`, or `8729` with TLS. The panel manages that integration; it does not switch the transport to SSH, WinBox, or REST.
+
+## Candidate 2.4.34: correct queued foreign-Site IPs and obsolete account links
+
+Already-prepared jobs recheck a foreign-Site address against fresh UISP state before replaying router commands. They clear only that IP attribute and prepare a destination-pool address when the old value remains; a newer manual UISP address takes precedence. Allocation remains stable across retries, and previous addresses stay protected until the full update succeeds. Rebuilding preserves resource identity, the service plan and credentials.
+
+A PPP/Hotspot account marked with another service of the same client can be updated in place after fresh checks confirm the current service, username and Site, and a terminal or explicitly HTTP-404 previous service. Other owners and executable jobs are checked; a private password-free backup precedes permission, and the exact router record is reread before writing. An active previous service, an unmarked/manual account, another client or failed evidence retains protection. Jobs explain the specific reason and link both service IDs.
+
+After installation, the next scheduled retry or **Run** in Jobs uses this correction. Configured plan speeds are preserved. Tests use synthetic fixtures; each production account still needs its UISP/RouterOS result checked.
+
+**2.4.34 validation passed:** 47 isolated suites, syntax checks for 55 first-party PHP files, and installer verification of 367 entries, 134 first-party files and 13 locked dependencies. Current report: `dist/verification-2.4.34.json`. SHA-256: `851d250ef1c9124e4bc86564f72fe5099dada37ec16fc682f1536a8eb2141be1`.
 
 ## Candidate 2.4.33: fresh pool addresses after an IP clear or Site move
 
