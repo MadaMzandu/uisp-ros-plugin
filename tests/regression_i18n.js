@@ -121,12 +121,17 @@ for (const code of codes) {
         'Ejecutar procesa también los trabajos anteriores del mismo servicio. Eliminar cancela los pendientes sin cambiar el router y conserva información para una futura sincronización. Los trabajos en ejecución deben terminar primero.',
         '¿Eliminar {count} trabajos pendientes? Se detendrán sus reintentos sin cambiar el router. Se conservará información para una futura sincronización. Las retiradas seleccionadas también cancelarán sus trabajos dependientes.'])
         assert(ui.i18n.has(key, code), 'Detailed job operation explanation is missing in ' + code + ': ' + key);
-    for (const key of ['Sincronizar y reconectar cuentas',
+    for (const key of ['Sincronizar ahora', 'Revisar diferencias', 'Sincronizando… {processed} de {total}',
+        'La sincronización se interrumpió. Revisa Trabajos antes de volver a intentarlo.', 'Sincronizar y reconectar cuentas',
         '¿Sincronizar las cuentas administradas de este MikroTik y reconectar todas sus sesiones PPP/Hotspot?',
         'Sincronización y reconexión completadas.']) {
         assert(ui.i18n.has(key, code), 'Router reconnection action is missing in ' + code + ': ' + key);
         if (code !== 'es') assert.notEqual(ui.i18n.t(key), key, 'Router reconnection action was not translated in ' + code);
     }
+    for (const key of ['device_sync_router_unavailable', 'device_sync_router_ambiguous', 'device_sync_catalog_unavailable',
+        'device_sync_configuration_changed', 'device_sync_configuration_missing', 'device_sync_expired', 'device_sync_invalid_token',
+        'device_sync_busy', 'device_sync_storage_unavailable', 'device_sync_limit', 'device_sync_session_limit', 'invalid_device_sync_request'])
+        assert.notEqual(ui.i18n.t(key), key, 'Immediate sync error exposed its internal code in ' + code);
     for (const key of [
         'El comentario de la cuenta del servicio #{current} indica el servicio #{previous}. Ese ID debe comprobarse con UISP.',
         'Servicio indicado #{id}',

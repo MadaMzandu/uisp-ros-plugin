@@ -19,9 +19,11 @@ file_put_contents($directory . '/vendor/autoload.php', <<<'PHP'
 namespace Ubnt\UcrmPluginSdk\Service;
 class UcrmApi {
     public static array $requests=[];
+    public static array $client=['id'=>70,'isArchived'=>false,'firstName'=>'Fixture','lastName'=>'Client'];
     public static function create() { return new self(); }
     public function get($path,$options=[]) {
-        if ($path==='clients/70') return ['id'=>70,'isArchived'=>false];
+        if ($path==='clients/70') return self::$client;
+        if ($path==='clients/services') return array_map(fn($id)=>$this->get('clients/services/'.$id),array_keys(self::$requests));
         if (preg_match('#^clients/services/([1-9][0-9]*)$#D',$path,$match) && isset(self::$requests[(int)$match[1]])) {
             $request=self::$requests[(int)$match[1]]; $entity=clone $request->extraData->entity;
             $entity->status=['suspend'=>3,'unsuspend'=>1,'suspend_cancel'=>1,'activate'=>1,'end'=>2,'delete'=>2][$request->changeType]??$entity->status;
@@ -422,6 +424,47 @@ try {
         && $queue->appliedSnapshot(91)['username']==='ram-renamed'
         && $queue->selectionStatus([$foreignKey])[$foreignKey]['attempts']===0,
         'Immediate migration bypassed its previous failure/cleanup or mutated another service');
+    // A fresh immediate manual force is distinct from a no-op edit, including a completed paired billing edit.
+    $makeRequest('edit',1)->extraData->entity->attributes[1]->value='ram-renamed';
+    $forceFresh=static function(string $message,?callable $names=null) use($queue):array {
+        $GLOBALS['billingCatalogue']['ppp/active']=[['.id'=>'*fresh-force','name'=>'ram-renamed'],['.id'=>'*fresh-other','name'=>'other-ram-user']];
+        $start=count($GLOBALS['billingAdapters']);$action=new ApiAction();
+        $result=$action->reconcileService(91,false,true,null,null,$names);$writes=[];$disconnects=[];
+        foreach(array_slice($GLOBALS['billingAdapters'],$start)as$adapter)foreach($adapter->recording->sentences as$sentence){
+            if(in_array($sentence[0]??'', ['/ppp/secret/add','/ppp/secret/set'],true))$writes[]=$sentence;
+            if(($sentence[0]??'')==='/ppp/active/remove')$disconnects[]=$sentence;
+        }
+        billingCheck(!$action->status()->error&&$result['provisioning']==='applied'&&count($writes)===1&&$writes[0][0]==='/ppp/secret/set'
+            &&count($disconnects)===1&&$queue->completed($result['jobKeys'])
+            &&$GLOBALS['billingCatalogue']['ppp/active']===[['.id'=>'*fresh-other','name'=>'other-ram-user']],$message);
+        billingCheck(!isset($queue->appliedSnapshot(91)['_force_reconnect']),'Fresh force persisted into its applied baseline');
+        return$result;
+    };
+    $forceFresh('An unchanged freshly reviewed immediate force did not write and reconnect exactly once');
+    $apiSqliteCache->execute('UPDATE services SET status=3 WHERE id=91');
+    $forceFresh('A completed paired billing edit suppressed an explicit freshly reviewed force');
+    $apiSqliteCache->execute('UPDATE clients SET firstName=?,lastName=? WHERE id=70',['Obsolete','Cache']);
+    $names=static fn(int$cid):?array=>$cid===70?['company'=>null,'firstName'=>'Current','lastName'=>'Customer','username'=>'must-not-replace-identity']:null;
+    $forceFresh('Fresh client names prevented a reviewed immediate force from applying',$names);
+    $account=array_values(array_filter($GLOBALS['billingCatalogue']['ppp/secret'],static fn($row)=>($row['name']??null)==='ram-renamed'))[0];
+    billingCheck($account['comment']==='70 - Current Customer - 91'&&!in_array('must-not-replace-identity',array_column($GLOBALS['billingCatalogue']['ppp/secret'],'name'),true),
+        'Fresh client names did not reach RouterOS or replaced provisioning identity fields');
+    // The new device-sync endpoint uses its actual default ApiAction/Batch/MT applier, not an injected enqueue stub.
+    require 'lib/api_device_sync.php';
+    \Ubnt\UcrmPluginSdk\Service\UcrmApi::$client=['id'=>70,'isArchived'=>false,'firstName'=>'Current','lastName'=>'Customer'];
+    $GLOBALS['billingCatalogue']['ppp/active']=[['.id'=>'*device-force','name'=>'ram-renamed'],['.id'=>'*device-other','name'=>'other-ram-user']];
+    $start=count($GLOBALS['billingAdapters']);$deviceSync=new ApiDeviceSync();$sync=$deviceSync->begin(10);
+    for($pass=0;!$sync['done']&&$pass<5;$pass++)$sync=$deviceSync->step($sync['syncToken']);
+    $writes=$accountSentences($start);$disconnects=[];
+    foreach(array_slice($GLOBALS['billingAdapters'],$start)as$adapter)foreach($adapter->recording->sentences as$sentence)
+        if(($sentence[0]??'')==='/ppp/active/remove')$disconnects[]=$sentence;
+    billingCheck($sync['done']&&$sync['requested']===1&&$sync['completed']===1&&$sync['failed']===0
+        &&count($writes)===1&&$writes[0][0]==='/ppp/secret/set'&&in_array('=comment=70 - Current Customer - 91',$writes[0],true)
+        &&count($disconnects)===1&&$GLOBALS['billingCatalogue']['ppp/active']===[['.id'=>'*device-other','name'=>'other-ram-user']]
+        &&$queue->selectionStatus([$foreignKey])[$foreignKey]['attempts']===0,
+        'Default device synchronization failed to apply fresh names and scoped reconnect or ran another router');
+    $start=count($GLOBALS['billingAdapters']);$deviceSync->step($sync['syncToken']);
+    billingCheck(count($GLOBALS['billingAdapters'])===$start,'A completed device-sync cursor repeated router writes');
     echo "Billing RouterOS checks passed: real pipeline, billing transitions, scoped reconnects, protected deletion, ordered immediate/duplicate webhook recovery, failed prerequisite barriers, bounded versions, migration cleanup, suspension bootstrap and reactivation.\n";
 } finally {
     if (isset($queue)) $queue->close();

@@ -12,7 +12,7 @@ final class ApiPanelWorkflows
             if ($method!=='POST' || array_keys($files)!==['fullBackup'] || array_keys($post)!==['workflow']) throw new InvalidArgumentException('invalid_full_backup_request');
             respond('full_backup_preview',false,(new ApiFullBackup())->previewUpload($files['fullBackup'])); return true;
         }
-        if ($method!=='POST' || !$request || !in_array($request->target??null,['full_backup','pool_capacity','service_reconciliation','sync_preview','service_lifecycle'],true)) return false;
+        if ($method!=='POST' || !$request || !in_array($request->target??null,['full_backup','pool_capacity','service_reconciliation','sync_preview','device_sync','service_lifecycle'],true)) return false;
         if (!empty($request->entity) || !is_object($request->data??null)) throw new InvalidArgumentException('invalid_workflow_request');
         $data=$request->data; $keys=array_keys(get_object_vars($data)); $action=$request->action??'list'; $type=$request->changeType??null;
         $result=null;
@@ -34,6 +34,28 @@ final class ApiPanelWorkflows
             elseif ($type==='update' && $action==='preview' && $keys===['name'] && is_string($data->name)) $result=$api->preview($data->name);
             elseif ($type==='update' && $action==='apply' && $keys===['previewToken'] && is_string($data->previewToken)) $result=$api->apply($data->previewToken);
             else throw new InvalidArgumentException('invalid_full_backup_request');
+        } elseif ($request->target==='device_sync') {
+            require_once __DIR__.'/api_device_sync.php';
+            $begin=$type==='update' && $action==='begin' && $keys===['deviceId'] && is_int($data->deviceId) && $data->deviceId>0;
+            $step=$type==='update' && $action==='step' && $keys===['syncToken'] && is_string($data->syncToken);
+            if (!$begin && !$step) throw new InvalidArgumentException('invalid_device_sync_request');
+            if (is_file('data/data.db')) {
+                $setup=new ApiSetup(); $setup->assertCompatible();
+                // Direct synchronization must retain the migration pause that
+                // the ordinary router route checks before initializing jobs.
+                $setup->assertNetworkAddressesUnique();
+            }
+            require_once __DIR__.'/api_job_queue.php';
+            $api=new ApiDeviceSync();
+            try { $result=myJobQueue()->withAdministrativeLock(fn():array=>$begin?$api->begin($data->deviceId):$api->step($data->syncToken)); }
+            catch (RuntimeException $error) {
+                $code=$error->getMessage();
+                if (!in_array($code,['device_sync_router_unavailable','device_sync_router_ambiguous','device_sync_configuration_missing',
+                    'device_sync_configuration_changed','device_sync_catalog_unavailable','device_sync_storage_unavailable',
+                    'device_sync_limit','device_sync_session_limit','device_sync_busy','device_sync_expired'],true)) throw $error;
+                http_response_code(in_array($code,['device_sync_configuration_changed','device_sync_busy','device_sync_expired'],true)?409:503);
+                respond($code,true,[]); return true;
+            }
         } elseif ($request->target==='sync_preview') {
             require_once __DIR__.'/api_sync_preview.php'; $api=new ApiSyncPreview();
             if ($type==='list' && $action==='begin' && $keys===['deviceId'] && is_int($data->deviceId) && $data->deviceId>0) $result=$api->begin($data->deviceId);

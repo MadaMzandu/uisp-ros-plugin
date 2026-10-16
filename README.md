@@ -2,6 +2,20 @@
 
 [Complete English changelog](docs/CHANGELOG_EN.md) · [Texto completo para el PR](docs/PR_DESCRIPTION.md) · [Webhook setup and rationale](docs/WEBHOOK_SETUP_EN.md) · [Mejoras en español](docs/MEJORAS.md)
 
+## Candidato 2.4.39 — sincronización inmediata y revisión opcional
+
+**Sincronizar ahora** vuelve a ser la acción principal por router. Consulta el catálogo actual de UISP, descubre servicios nuevos del Site y aplica uno por uno en ese momento, con progreso visible; no obliga a pasar por una comparación previa ni espera la próxima ejecución programada. Reaplica las cuentas administradas y fuerza sus reconexiones PPP/Hotspot, incluso sin diferencias. **Revisar diferencias** es una acción secundaria independiente: compara sin escribir y permite programar después las diferencias comprobadas o la reconexión revisada. Esas acciones de la vista previa mantienen su ejecución posterior mediante la cola.
+
+La ejecución directa confirma otra vez el servicio, su Site y el cliente actual antes de aplicar; conserva la identidad anterior para tramitar un traslado mediante la migración normal. Cada petición procesa una página de catálogo o un servicio, con resultados individuales y protección de mantenimiento/restauración. Un fallo de un cliente no impide intentar los siguientes. Los trabajos que fallen al aplicar conservan sus reintentos normales; una consulta sin evidencia no autoriza escribir. Una respuesta incierta no se repite automáticamente, evitando reconexiones duplicadas. Cerrar o recargar la página detiene los siguientes pasos del recorrido; los trabajos ya enviados conservan su estado.
+
+Se corrige la revisión que rechazaba clientes por `isArchived = NULL` en una caché actualizada desde versiones anteriores. La autoridad es el cliente exacto consultado en UISP, con archivo explícitamente descartado; la caché desconocida, antigua o ausente no veta esa consulta. Un cliente archivado actualmente, una identidad incorrecta o una API fallida mantienen la protección. La aplicación de la vista previa vuelve a verificar ese estado.
+
+Al mover un servicio, una IP fuera del pool destino que pertenece a otro Site configurado se vacía mediante la política existente y se solicita otra del pool destino. Una IP válida en destino puede conservarse; una IP manual fuera de todos los pools no se descarta por esa regla. Antes de retirar la cuenta anterior se valida el reemplazo; el traslado mantiene el orden de baja del origen y alta del destino. Si la aplicación al destino falla después de retirar el origen, queda pendiente de reintento: no se promete un traslado sin interrupción. Las cuentas manuales o de otros propietarios y las reservas vigentes continúan protegidas.
+
+El icono de **Configuración** utiliza un engranaje con dientes y centro circular, también con los SVG locales del panel.
+
+Validación 2.4.39 aprobada: **64 suites aisladas**, sintaxis de **67 archivos PHP propios**, 381 entradas del instalador, 148 archivos propios y 13 dependencias fijadas. Informe: `dist/verification-2.4.39.json`. SHA-256: `dc7bcf7cb12ff783ab114c331522069968917ad20bbf6b4295a3ec8030d0dc36`. La comprobación visual sintética incluye acciones separadas, progreso, modal móvil, español/inglés, temas claro/oscuro y el nuevo engranaje. No se ejecutaron cambios en UISP ni RouterOS de producción.
+
 ## Candidato 2.4.38 — retirar intenciones de servicios dados de baja y ordenar Sistema
 
 La cola consulta el estado actual en UISP antes de volver a aplicar intenciones antiguas. Un servicio terminado, obsoleto o inactivo (`2`, `5`, `8`), un cliente cuyo archivo está confirmado o un servicio ausente mediante HTTP 404 comprobado permiten retirar sus pendientes anteriores. **Suspendido (`3`) conserva su cuenta y asignación**: no se trata como una baja. Una ficha que no abre, una caché antigua o el sufijo de un usuario PPPoE no prueban por sí solos ninguna de esas situaciones.

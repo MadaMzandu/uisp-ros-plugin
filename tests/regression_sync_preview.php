@@ -34,8 +34,8 @@ try {
         $row['.id']='*'.dechex(++$index);$router[$path][]=$row;
     }
     $router['ip/address']=[['.id'=>'*F','address'=>'192.0.2.1/24','disabled'=>'false','dynamic'=>'false','invalid'=>'false']];
-    $requests=[];$readCount=0;$now=time();
-    $request=static function(string $path)use(&$requests,&$raw){$requests[]=$path;if(strpos($path,'clients/services?')===0)return[$raw];if($path==='clients/services/42')return$raw;if($path==='clients/7')return(object)['id'=>7,'isArchived'=>false];throw new RuntimeException('PRIVATE-NETWORK');};
+    $requests=[];$readCount=0;$now=time();$currentClient=(object)['id'=>7,'isArchived'=>false];$clientFailure=false;
+    $request=static function(string $path)use(&$requests,&$raw,&$currentClient,&$clientFailure){$requests[]=$path;if(strpos($path,'clients/services?')===0)return[$raw];if($path==='clients/services/42')return$raw;if($path==='clients/7'){if($clientFailure)throw new RuntimeException('PRIVATE-NETWORK');return$currentClient;}throw new RuntimeException('PRIVATE-NETWORK');};
     $reader=static function(object$device,string$path,array$filter,float$deadline)use(&$router,&$readCount):array{$readCount++;$rows=$router[trim($path,'/')]??[];return array_values(array_filter($rows,static function(array$row)use($filter):bool{foreach($filter as$key=>$value)if((string)($row[$key]??'')!==(string)$value)return false;return true;}));};
     $api=new ApiSyncPreview($request,$reader,null,'data/data.db','data/cache.db','data/jobs.db',static function()use(&$now){return$now;});
     $before=previewHashes();$begin=$api->begin(1);previewCheck(!$begin['done']&&!$begin['catalogComplete'],'Preview omitted live catalog stage');
@@ -45,6 +45,32 @@ try {
     previewCheck(previewHashes()===$before&&!is_file('data/jobs.db'),'Read-only preview initialized or mutated business state');
     previewCheck(strpos(json_encode([$begin,$catalog,$review]),'PRIVATE')===false,'Preview disclosed credentials');
     $fields=$review['items'][0]['fields'];previewCheck(in_array('rate-limit',array_column($fields,'field'),true)&&in_array('remote-address',array_column($fields,'field'),true),'Preview did not compare effective rates/address');
+    // A live client is authoritative; incomplete or stale cache lifecycle fields cannot veto its exact read.
+    foreach([null,1]as$cachedArchive){
+        $cache->execute('UPDATE clients SET isArchived=? WHERE id=7',[$cachedArchive]);$requestStart=count($requests);$unchanged=previewHashes();
+        $begin=$api->begin(1);$api->step($begin['previewToken']);$review=$api->step($begin['previewToken']);
+        previewCheck(in_array('clients/7',array_slice($requests,$requestStart),true),'Cached lifecycle vetoed the live client read');
+        previewCheck($review['items'][0]['state']==='unchanged','Live active client remained blocked by stale cache: '.json_encode($review));
+        previewCheck(previewHashes()===$unchanged,'Client lifecycle observation mutated business data');
+    }
+    $cache->execute('DELETE FROM clients WHERE id=7');$unchanged=previewHashes();
+    $currentClient=(object)['id'=>7,'isArchived'=>false,'firstName'=>'Fixture','lastName'=>'Client'];
+    $begin=$api->begin(1);$api->step($begin['previewToken']);$review=$api->step($begin['previewToken']);
+    previewCheck($review['items'][0]['state']==='unchanged','Live client without a cached row could not be reviewed: '.json_encode($review));
+    previewCheck(previewHashes()===$unchanged,'Live client observation populated the cache');
+    $cache->insert(['id'=>7,'firstName'=>'Fixture','lastName'=>'Client','isArchived'=>0],'clients');
+    // A favourable cache never substitutes for current archive state, exact identity, or a successful UISP read.
+    foreach([(object)['id'=>7,'isArchived'=>true],(object)['id'=>8,'isArchived'=>false],(object)['id'=>'7invalid','isArchived'=>false],(object)['id'=>7.9,'isArchived'=>false],(object)['id'=>7],null]as$invalidClient){
+        $currentClient=$invalidClient;$count=$readCount;$unchanged=previewHashes();
+        $begin=$api->begin(1);$api->step($begin['previewToken']);$review=$api->step($begin['previewToken']);
+        previewCheck($review['items'][0]['state']==='blocked','An unconfirmed live client passed the preview');
+        previewCheck($readCount===$count&&previewHashes()===$unchanged,'Unconfirmed client reached RouterOS or mutated business data');
+    }
+    $currentClient=(object)['id'=>7,'isArchived'=>false];$clientFailure=true;$count=$readCount;$unchanged=previewHashes();
+    $begin=$api->begin(1);$api->step($begin['previewToken']);$review=$api->step($begin['previewToken']);
+    previewCheck($review['items'][0]['state']==='blocked'&&$readCount===$count&&previewHashes()===$unchanged&&strpos(json_encode($review),'PRIVATE')===false,'A failed live client read passed, touched RouterOS, or disclosed transport details');
+    $clientFailure=false;$before=previewHashes();
+    $now+=3600;$api->begin(1);$now-=3600; // Prune independent observation sessions before the apply scenarios.
     // A rate-only discrepancy is a real change; external/ambiguous ownership stays blocked even in forced mode.
     $router['ppp/profile'][0]['rate-limit']='1M/1M';$begin=$api->begin(1);$api->step($begin['previewToken']);$review=$api->step($begin['previewToken']);
     previewCheck($review['items'][0]['state']==='changes'&&$review['items'][0]['reconnect']===true,'Rate-only change was not proposed');
@@ -75,6 +101,9 @@ try {
     $queue=myJobQueue();$applyCount=0;
     $applier=static function(int$sid,bool$force,callable$guard,callable$sink)use($request,&$applyCount):array{$applyCount++;return(new ApiAction(null,new ApiWebhookFreshness($request)))->reconcileService($sid,true,$force,$guard,$sink);};
     $api=new ApiSyncPreview($request,$reader,$applier,'data/data.db','data/cache.db','data/jobs.db',static function()use(&$now){return$now;});
+    $stale=$api->begin(1);$api->step($stale['previewToken']);$api->step($stale['previewToken']);$currentClient=(object)['id'=>7,'isArchived'=>true];
+    $blocked=$api->applyStep($stale['previewToken'],'differences');previewCheck($blocked['state']==='blocked'&&$queue->list()===[]&&$db->selectAddress(42)===null,'Client archived after review still enqueued changes');
+    $currentClient=(object)['id'=>7,'isArchived'=>false];
     $stale=$api->begin(1);$api->step($stale['previewToken']);$api->step($stale['previewToken']);
     foreach($raw->attributes as$attribute)if($attribute->key==='pppoePassword')$attribute->value='PRIVATE-NEW';
     $blocked=$api->applyStep($stale['previewToken'],'differences');previewCheck($blocked['state']==='blocked'&&$queue->list()===[]&&$db->selectAddress(42)===null,'Fresh intent drift wrote stale work');
@@ -90,7 +119,12 @@ try {
     $rejected=$normalized;$rejected['network']=['address'=>null,'address6'=>null];$rejected+=['company'=>null,'firstName'=>'Fixture','lastName'=>'Client'];
     previewReject(fn()=>(new Batch())->queueReviewed($rejected,static fn()=>false),'Mismatched prepared commands were enqueued');
     previewCheck($db->selectAddress(42)===null&&$queue->list()===[],'Rejected frozen commands left a reservation or job');
+    $now+=3600;$api->begin(1);$now-=3600;
+    $cache->execute('UPDATE clients SET firstName=?,lastName=? WHERE id=7',['Obsolete','Cache']);
+    $currentClient=(object)['id'=>7,'isArchived'=>false,'firstName'=>'Fixture','lastName'=>'Client'];
     $begin=$api->begin(1);$api->step($begin['previewToken']);$review=$api->step($begin['previewToken']);$proposed=$review['items'][0]['newAddress'];
+    previewCheck($review['items'][0]['clientName']==='Fixture Client','Preview preferred cached names over its live client');
+    $cache->execute('DELETE FROM clients WHERE id=7');
     $applied=$api->applyStep($begin['previewToken'],'differences');
     previewCheck($applied['state']==='queued'&&count($applied['jobKeys'])===1,'Real apply did not enqueue the reviewed plan: '.json_encode($applied));
     $queue=myJobQueue();$jobs=$queue->list();$job=$jobs[$applied['jobKeys'][0]];
@@ -98,7 +132,8 @@ try {
     $jobsDb=new ApiSqlite('data/jobs.db',true);$payload=json_decode($jobsDb->singleQuery('SELECT payload FROM jobs WHERE service_id=42'),true);$jobsDb->close();
     previewCheck(isset($payload['_commands'])&&count($payload['_commands'])>1,'Reviewed enqueue deferred allocation until future execution');
     $account=array_values(array_filter($payload['_commands'],static fn($c)=>trim($c['path'],'/')==='ppp/secret'))[0];
-    previewCheck($account['remote-address']===$proposed&&$account['password']==='PRIVATE-ACCOUNT','Frozen queued commands lost the reviewed allocation or normal credentials');
+    previewCheck($account['remote-address']===$proposed&&$account['password']==='PRIVATE-ACCOUNT'&&$account['comment']==='7 - Fixture Client - 42','Frozen queued commands lost the reviewed allocation, live client name, or normal credentials');
+    previewCheck($cache->singleQuery('SELECT id FROM clients WHERE id=7')===null,'A reviewed enqueue required populating the client cache');
     previewCheck($cache->singleQuery('SELECT uploadSpeed IS NULL AND downloadSpeed IS NULL FROM services WHERE id=42')===1,'Preview apply revived omitted cached speed overrides');
     $count=$applyCount;$again=$api->applyStep($begin['previewToken'],'differences');previewCheck($again['done']&&$again['state']==='complete'&&$applyCount===$count,'Transport retry enqueued an item twice');
     previewCheck(strpos(json_encode([$applied,$again]),'PRIVATE')===false,'Apply result disclosed credentials');

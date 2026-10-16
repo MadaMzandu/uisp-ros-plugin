@@ -1,6 +1,12 @@
-# Pruebas reales del candidato 2.4.38
+# Pruebas reales del candidato 2.4.39
 
 Las pruebas automatizadas usan bases temporales, transportes simulados y sockets locales. Esta lista comprueba la integración **UISP → plugin → API nativa de RouterOS** en una copia de UISP y un CHR/router con clientes de prueba. Registrar versiones de UISP, PHP y RouterOS, así como ID del servicio, plan, trabajo, estado e IP/prefijo en cada caso.
+
+## Comprobar sincronización inmediata en 2.4.39
+
+Los casos 243–251 comprueban el botón principal **Sincronizar ahora**, la revisión secundaria y la consulta del cliente vigente. La ejecución directa intenta aplicar durante el recorrido; la vista previa conserva la programación posterior de sus cambios revisados. Una recarga interrumpe los siguientes pasos del panel, sin cancelar los trabajos ya enviados. No declarar estos casos aprobados en producción por las regresiones sintéticas.
+
+Validación 2.4.39 aprobada: **64 suites aisladas**, sintaxis de **67 archivos PHP propios**, 381 entradas del instalador, 148 archivos propios y 13 dependencias fijadas. Informe: `dist/verification-2.4.39.json`. SHA-256: `dc7bcf7cb12ff783ab114c331522069968917ad20bbf6b4295a3ec8030d0dc36`. La comprobación visual sintética incluye acciones separadas, progreso, modal móvil, español/inglés, temas claro/oscuro y el nuevo engranaje. No se ejecutaron cambios en UISP ni RouterOS de producción.
 
 ## Comprobar bajas y reservas en 2.4.38
 
@@ -506,3 +512,13 @@ Después de suspender y reconectar, comprobar posición **y contadores** de la c
 Los perfiles/padres antiguos y el pool `uisp-pool` no se borran automáticamente. Revisar manualmente sus dependencias, targets, límites y posición después de migrar los servicios; un objeto anterior puede seguir limitando tráfico aunque el nuevo sea correcto.
 
 Si el piloto falla, pausar worker/webhook y conservar datos/errores sin credenciales. Volver requiere el paquete y respaldos compatibles, junto con una copia coherente de `jobs.db` y el router. `jobs.db` conserva también los registros privados de recursos de trabajos cancelados; no borrarla para vaciar la tabla. Restaurar SQLite no deshace comandos ya ejecutados en RouterOS. Una base 2.4.17 será rechazada por código anterior; no desactivar esa comprobación para forzar el regreso.
+
+| 243 | Pulsar Sincronizar ahora con cuentas administradas sin cambios y sesiones PPP/Hotspot activas. | Consulta UISP actual, reaplica y reconecta en ese recorrido sin abrir vista previa ni esperar cron; muestra progreso y resultados. |
+| 244 | Crear o mover un servicio al Site sin refrescar previamente la caché y sincronizar destino. | El catálogo descubre el servicio; confirma el estado exacto y mantiene la identidad previa para migrar. |
+| 245 | Cambiar Site conservando una IP de otro Site y repetir con pool destino agotado. | Con capacidad comprueba/vacía el atributo y usa el pool destino. Sin capacidad no retira la cuenta anterior por esta fase previa. |
+| 246 | Revisar diferencias con cliente de caché NULL, archivado antiguo o fila ausente y cliente UISP vigente. | Revisa con el cliente actual; no modifica caché, cola ni router. Archivo real, identidad contradictoria y fallo API conservan el bloqueo individual. |
+| 247 | Archivar al cliente entre revisión y Aplicar diferencias. | La nueva comprobación impide programar la actualización anterior. |
+| 248 | Sincronizar con un servicio fallido y otro válido; incluir un servicio de otro Site y una cuenta ajena. | Continúa el válido, informa el fallo, respeta alcance/propiedad y conserva los pendientes aplicables para reintento. |
+| 249 | Duplicar clic, perder una respuesta, cambiar configuración o restaurar durante el recorrido. | Bloquea duplicados, no repite automáticamente una reconexión incierta, invalida contexto cambiado y conserva la exclusión de restauración. |
+| 250 | Ver en móvil y seis idiomas las acciones principal/secundaria, y entrar con sólo lectura o recarga obligatoria. | Controles compactos/accesibles; la revisión permanece disponible sólo con sus permisos y la sincronización exige escritura, sin escapar a la recarga. |
+| 251 | Con una migración pausada por direcciones duplicadas, llamar también directamente a la nueva ruta de sincronización. | Conserva la pausa antes de inicializar trabajos o consultar/aplicar cuentas; el permiso de escritura no sustituye la reparación de esa migración. |

@@ -2011,26 +2011,48 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function syncDevice(device) {
         const id = Number(device.id);
-        if (!Number.isSafeInteger(id) || id < 1 || recoveryReadOnly || deviceSyncs.has(id)) return;
-        if (globalThis.PanelWorkflows?.previewSync) return globalThis.PanelWorkflows.previewSync(device);
+        if (!Number.isSafeInteger(id) || id < 1 || recoveryReadOnly || restoredRequiresReload || deviceSyncs.has(id)) return;
         const name = `${String(device.name || id).slice(0, 200)} (#${id})`;
         deviceSyncs.set(id, 'confirming');
         renderDevicesTable();
         try {
             if (!await confirmAction(t('¿Sincronizar las cuentas administradas de este MikroTik y reconectar todas sus sesiones PPP/Hotspot?'))) return;
-            if (recoveryReadOnly) return;
-            deviceSyncs.set(id, 'running');
+            if (recoveryReadOnly || restoredRequiresReload) return;
+            deviceSyncs.set(id, { state: 'running', processed: 0, total: null });
             crmLocalAssignmentProofs.clear();
             if (currentView === 'devices') renderDevicesTable();
-            completed(await api.send('update', 'system', 'insert', { type: 'device', id }),
-                t('Sincronización ejecutada. Revisa la confirmación en Trabajos.'), name);
+            let response = checked(await api.beginDeviceSync(id)), syncToken = null, processed = 0, total = null, applying = false, catalogScanned = -1, steps = 0;
+            while (true) {
+                const progress = response.data;
+                if (!progress || !/^[a-f0-9]{64}$/.test(progress.syncToken) || syncToken !== null && progress.syncToken !== syncToken
+                    || typeof progress.done !== 'boolean' || !['catalog', 'applying', 'complete'].includes(progress.phase)
+                    || progress.done !== (progress.phase === 'complete')
+                    || !['processed', 'total', 'requested', 'completed', 'failed', 'catalogScanned'].every(key => Number.isSafeInteger(progress[key]) && progress[key] >= 0)
+                    || progress.processed > progress.total || progress.processed < processed
+                    || progress.requested > progress.processed || progress.done && progress.processed !== progress.total
+                    || progress.completed + progress.failed > progress.requested
+                    || applying && progress.phase === 'catalog' || applying && progress.total !== total
+                    || applying && !progress.done && progress.processed <= processed
+                    || progress.catalogScanned < catalogScanned || progress.phase === 'catalog' && progress.catalogScanned <= catalogScanned)
+                    throw new Error(t('Respuesta inválida del servidor.'));
+                syncToken = progress.syncToken; processed = progress.processed; total = progress.total;
+                catalogScanned = progress.catalogScanned;
+                applying = applying || progress.phase !== 'catalog';
+                deviceSyncs.set(id, { state: 'running', processed, total });
+                if (currentView === 'devices') renderDevicesTable();
+                if (progress.done) break;
+                if (++steps > 21000 || recoveryReadOnly || restoredRequiresReload) throw new Error(t('La sincronización se interrumpió. Revisa Trabajos antes de volver a intentarlo.'));
+                response = checked(await api.stepDeviceSync(syncToken));
+            }
+            completed(response, t('Sincronización ejecutada. Revisa la confirmación en Trabajos.'), name);
             try { await renderDevices(); }
             catch (_) {
                 notify(t('Equipo {name}: {message}', { name, message: t('No se pudo actualizar el estado del equipo.') }), 'error');
             }
         } catch (error) {
             notify(t('Equipo {name}: {message}', { name,
-                message: t('Error: {message}', { message: t(error?.message || 'No se pudo completar la operación.') }) }), 'error');
+                message: [t('Error: {message}', { message: t(error?.message || 'No se pudo completar la operación.') }),
+                    deviceSyncs.get(id)?.state === 'running' ? t('La sincronización se interrumpió. Revisa Trabajos antes de volver a intentarlo.') : ''].filter(Boolean).join(' ') }), 'error');
         } finally {
             deviceSyncs.delete(id);
             if (currentView === 'devices') renderDevicesTable();
@@ -2058,7 +2080,10 @@ document.addEventListener('DOMContentLoaded', () => {
             const row = document.createElement('tr');
             const id = Number(device.id);
             const busy = deviceSyncs.has(id);
-            const syncing = deviceSyncs.get(id) === 'running';
+            const progress = deviceSyncs.get(id);
+            const syncing = progress?.state === 'running';
+            const progressSource = syncing && progress.total > 0 ? 'Sincronizando… {processed} de {total}' : 'Sincronizando…';
+            const progressValues = { processed: progress?.processed ?? 0, total: progress?.total ?? 0 };
             row.dataset.deviceId = String(id);
             row.classList.toggle('device-sync-active', syncing);
             row.setAttribute('aria-busy', syncing ? 'true' : 'false');
@@ -2066,12 +2091,17 @@ document.addEventListener('DOMContentLoaded', () => {
             const deviceStatus = device.status == null ? 'Sin comprobar' : online ? 'Puerto accesible' : 'Desconectado';
             row.innerHTML = `<td>${html(device.id)}</td><td>${html(device.name)}</td><td>${html(device.ip)}</td>
                 <td>${html(device.users ?? 0)}</td><td><span class="badge badge-${device.status == null ? 'neutral' : online ? 'success' : 'danger'}" data-i18n="${deviceStatus}">${html(t(deviceStatus))}</span>
-                ${syncing ? `<span class="device-sync-progress" role="status"><span class="device-sync-spinner" aria-hidden="true"></span><span data-i18n="Sincronizando…">${html(t('Sincronizando…'))}</span></span>` : ''}</td><td class="row-actions"></td>`;
+                ${syncing ? `<span class="device-sync-progress" role="status"><span class="device-sync-spinner" aria-hidden="true"></span><span data-i18n="${html(progressSource)}" data-i18n-values="${html(JSON.stringify(progressValues))}">${html(t(progressSource, progressValues))}</span></span>` : ''}</td><td class="row-actions"></td>`;
             const actions = row.querySelector('.row-actions');
             actions.append(
                 actionButton('Ver cuentas huérfanas', 'users', () => { if (!deviceSyncs.has(id)) return viewOrphans(device.id); }, 'secondary', { routerRead: true }),
                 actionButton(recoveryReadOnly ? 'Ver dispositivo' : 'Editar dispositivo', 'edit-2', () => { if (!deviceSyncs.has(id)) openDeviceModal(device); }, 'secondary', { loading: false }),
-                actionButton(globalThis.PanelWorkflows ? 'Revisar sincronización' : 'Sincronizar y reconectar cuentas', 'refresh-cw', () => syncDevice(device), 'secondary', { loading: false, write: !globalThis.PanelWorkflows, routerRead: !!globalThis.PanelWorkflows }),
+                actionButton('Sincronizar ahora', 'refresh-cw', () => syncDevice(device), 'primary', { loading: false, write: true }),
+                ...(typeof globalThis.PanelWorkflows?.previewSync === 'function' ? [
+                    actionButton('Revisar diferencias', 'search', () => {
+                        if (!deviceSyncs.has(id) && !restoredRequiresReload) return globalThis.PanelWorkflows.previewSync(device);
+                    }, 'secondary', { loading: false, routerRead: true })
+                ] : []),
                 actionButton('Vaciar cuentas administradas', 'x-circle', async () => {
                     if (deviceSyncs.has(id)) return;
                     if (!await confirmAction(t('¿Eliminar todas las cuentas administradas por el plugin de este MikroTik?'))) return;

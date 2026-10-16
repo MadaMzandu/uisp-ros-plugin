@@ -60,6 +60,7 @@ $q=new ApiJobQueue('data/jobs.db',null);$q->close();
         check(initialized.returncode == 0, 'Could not initialize isolated queue: ' + initialized.stdout + initialized.stderr)
         with closing(sqlite3.connect(directory / 'data/data.db')) as db, db:
             db.execute("INSERT INTO devices(id,name,ip,user,password,pool) VALUES(1,'Before restore','192.0.2.1','fixture','PRIVATE-ROUTER','192.0.2.0/24')")
+            db.execute("INSERT INTO devices(id,name,ip,user,password,pool) VALUES(2,'Empty fixture','192.0.2.2','fixture','PRIVATE-ROUTER','198.51.100.0/24')")
             db.execute("INSERT INTO services(id,clientId,device,status) VALUES(9807,29,1,2)")
             db.execute("INSERT INTO network(id,address) VALUES(9807,'192.0.2.50')")
             db.execute("INSERT INTO network(id,address) VALUES(771,'192.0.2.51')")
@@ -113,6 +114,8 @@ $q=new ApiJobQueue('data/jobs.db',null);$q->close();
                     for origin in (None, 'http://other.invalid'):
                         check(request(operation(target), origin=origin)[0] == 403, 'Workflow read accepted a foreign/missing origin')
                 writes = [operation('full_backup', 'create', change='update'),
+                          operation('device_sync', 'begin', {'deviceId': 1}, 'update'),
+                          operation('device_sync', 'step', {'syncToken': 'f' * 64}, 'update'),
                           operation('full_backup', 'apply', {'previewToken': 'f' * 64}, 'update'),
                           operation('sync_preview', 'apply', {'previewToken': 'f' * 64, 'mode': 'differences'}, 'update'),
                           operation('service_lifecycle', 'apply', {'previewToken': 'f' * 64}, 'update'),
@@ -123,6 +126,10 @@ $q=new ApiJobQueue('data/jobs.db',null);$q->close();
                 for body in [operation('pool_capacity', values={'write': True}),
                              operation('service_reconciliation', change='update'),
                              operation('sync_preview', 'begin', {'deviceId': '1'}),
+                             operation('device_sync', 'begin', {'deviceId': 1}),
+                             operation('device_sync', 'begin', {'deviceId': '1'}, 'update'),
+                             operation('device_sync', 'begin', {'deviceId': 1, 'force': True}, 'update'),
+                             operation('device_sync', 'step', {'syncToken': 1}, 'update'),
                              operation('sync_preview', 'apply', {'previewToken': 'f'*64, 'mode': 'anything'}, 'update'),
                              operation('full_backup', 'preview', {'name': '../../config.json'}, 'update'),
                              operation('service_lifecycle', 'preview', {'serviceId': '771'}),
@@ -131,6 +138,18 @@ $q=new ApiJobQueue('data/jobs.db',null);$q->close();
                     check(request(body)[0] == 400, 'Invalid workflow request accepted: ' + str(body))
                 check(not (directory / 'setup-called').exists() and not (directory / 'cache-sync-called').exists(),
                       'Read/validation workflows entered normal provisioning bootstrap')
+
+                status, body, _ = request(operation('device_sync', 'begin', {'deviceId': 2}, 'update'))
+                check(status == 200 and body['status'] == 'ok' and body['data']['phase'] == 'catalog',
+                      'Immediate device synchronization could not start: ' + str(body))
+                sync_token = body['data']['syncToken']
+                status, body, _ = request(operation('device_sync', 'step', {'syncToken': sync_token}, 'update'))
+                check(status == 200 and body['data']['done'] and body['data']['requested'] == 0,
+                      'An empty router did not finish without running unrelated services: ' + str(body))
+                check('PRIVATE' not in json.dumps(body), 'Synchronization exposed fixture credentials')
+                status, body, _ = request(operation('device_sync', 'begin', {'deviceId': 999}, 'update'))
+                check(status == 503 and body['message'] == 'device_sync_router_unavailable' and 'PRIVATE' not in json.dumps(body),
+                      'A known synchronization failure lost its safe actionable code: ' + str(body))
 
                 status, body, _ = request(operation('service_lifecycle', 'preview', {'serviceId': 42}), role='view')
                 check(status == 200 and body['status'] == 'ok' and body['data']['state'] == 'active' and not body['data']['eligible'],
@@ -170,7 +189,7 @@ $q=new ApiJobQueue('data/jobs.db',null);$q->close();
                 with closing(sqlite3.connect(directory / 'data/data.db')) as db, db:
                     db.execute("UPDATE devices SET name='Changed' WHERE id=1")
                 status, body, _ = request(operation('full_backup', 'preview', {'name': name}, 'update'))
-                check(status == 200 and body['data']['candidate']['devices'] == 1 and 'PRIVATE' not in json.dumps(body), 'Full backup preview failed or leaked credentials')
+                check(status == 200 and body['data']['candidate']['devices'] == 2 and 'PRIVATE' not in json.dumps(body), 'Full backup preview failed or leaked credentials')
                 token = body['data']['previewToken']
                 status, body, _ = request(operation('full_backup', 'apply', {'previewToken': token}, 'update'))
                 check(status == 200 and body['data']['requiresReload'], 'Full restore failed: ' + str(body))
@@ -185,6 +204,18 @@ $q=new ApiJobQueue('data/jobs.db',null);$q->close();
                 status, body, _ = request(raw=upload, content_type='multipart/form-data; boundary=' + boundary)
                 check(status == 200 and body['data']['previewToken'] and not body['data']['routerChanges'], 'Multipart full backup did not stop at preview: ' + str(body))
                 check(not (directory / 'setup-called').exists() and not (directory / 'cache-sync-called').exists(), 'Workflow routes executed provisioning bootstrap')
+                with closing(sqlite3.connect(directory / 'data/data.db')) as db, db:
+                    db.execute('DROP INDEX unique_address')
+                    db.executemany('INSERT INTO network(id,address) VALUES(?,?)', [(8801, '192.0.2.123'), (8802, '192.0.2.123')])
+                    db.execute("UPDATE config SET value='2.4.38' WHERE key='version'")
+                with closing(sqlite3.connect(directory / 'data/jobs.db')) as db:
+                    before_jobs = db.execute('SELECT service_id,operation,status,payload FROM jobs ORDER BY id').fetchall()
+                status, body, _ = request(operation('device_sync', 'begin', {'deviceId': 2}, 'update'))
+                check(status == 400 and body.get('recovery', {}).get('readOnly') is True and body['data']['duplicate_groups'] == 1,
+                      'Immediate synchronization bypassed the paused duplicate-address migration: ' + str(body))
+                with closing(sqlite3.connect(directory / 'data/jobs.db')) as db:
+                    check(db.execute('SELECT service_id,operation,status,payload FROM jobs ORDER BY id').fetchall() == before_jobs,
+                          'A paused migration initialized synchronization work')
                 print('Workflow HTTP passed: authenticated reads, strict writes, origin checks, orphan reservation review with backup, complete restore/download/upload preview and one-use tokens.')
             finally:
                 server.terminate()

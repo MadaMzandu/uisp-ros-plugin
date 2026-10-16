@@ -670,7 +670,7 @@ function contentionFixture(disableContention, translated = false) {
 
 function recoveryPanelFixture({ bootstrap, details, storage, storageBlocked = false, mobile = false,
     initialReplies = new Map(), url = 'https://fixture.invalid/crm/_plugins/ros-plugin/public.php?page=panel', raf = false, exposeRenderers = false,
-    navigationType = 'reload', legacyNavigationType } = {}) {
+    navigationType = 'reload', legacyNavigationType, workflows } = {}) {
     const nodes = new Map(Array.from(markup.matchAll(/\bid="([^"]+)"/g), match => [match[1], new Element(match[1])]));
     const closeButtons = Array.from(markup.matchAll(/<button\b[^>]*class="[^"]*\bclose-modal\b[^"]*"/g), () => new Element());
     const views = ['devices', 'plans', 'config', 'jobs', 'system', 'network_conflicts'];
@@ -740,6 +740,7 @@ function recoveryPanelFixture({ bootstrap, details, storage, storageBlocked = fa
     };
     const localContext = vm.createContext({
         URL, FormData: FixtureFormData, document: localDocument,
+        ...(workflows ? { PanelWorkflows: workflows } : {}),
         ...(navigationType !== null ? { performance: { getEntriesByType: name => name === 'navigation' ? [{ type: navigationType }] : [] } }
             : legacyNavigationType !== undefined ? { performance: { navigation: { type: legacyNavigationType } } } : {}),
         window: { innerHeight: 500, location: { href: url, reload() { reloads++; } },
@@ -809,13 +810,28 @@ function recoveryPanelFixture({ bootstrap, details, storage, storageBlocked = fa
 async function checkNonblockingDeviceSync() {
     const devices = [{ id: 1, name: 'Router A', ip: '192.0.2.1', status: 1, users: 1 },
         { id: 2, name: 'Router B', ip: '192.0.2.2', status: 1, users: 2 }];
+    const reviewed = [];
     const fixture = recoveryPanelFixture({ exposeRenderers: true,
+        workflows: { mount() {}, onView() {}, previewSync(device) { reviewed.push(device.id); } },
         initialReplies: new Map([['list/devices', { status: 'ok', error: false, data: devices }]]) });
     await flush();
     const rows = () => fixture.tables.get('#devices-table tbody').children;
     const row = id => rows().find(item => Number(item.dataset.deviceId) === id);
     const buttons = id => row(id).querySelector('.row-actions').children;
-    const syncCalls = () => fixture.calls.filter(call => call.target === 'system' && call.action === 'insert');
+    const syncCalls = () => fixture.calls.filter(call => call.target === 'device_sync' && call.action === 'begin');
+    const reviewButton = id => buttons(id).find(button => button['aria-label'] === 'Revisar diferencias');
+    assert.equal(buttons(1)[2].className, 'btn btn-primary row-action', 'Immediate sync remains the primary router action');
+    assert.equal(buttons(1)[2].dataset.recoveryWrite, 'true');
+    assert.equal(buttons(1)[2].dataset.recoveryRouterRead, undefined);
+    const oldReview = reviewButton(1);
+    assert.equal(oldReview.className, 'btn btn-secondary row-action');
+    assert.equal(oldReview.dataset.recoveryRouterRead, 'true');
+    assert.equal(oldReview.dataset.recoveryWrite, undefined, 'Review must remain a consultation action');
+    const beforeReview = fixture.calls.length;
+    await oldReview.fire('click');
+    assert.deepEqual(reviewed, [1]);
+    assert.equal(fixture.calls.length, beforeReview, 'Opening a review cannot submit direct synchronization');
+    assert(!fixture.document.body.children.some(node => node.className === 'confirm-overlay'), 'Review does not ask to reconnect sessions');
     const confirm = async accept => {
         const dialog = fixture.document.body.children.find(node => node.className === 'confirm-overlay');
         assert(dialog, 'Synchronization must preserve its reconnection confirmation');
@@ -823,7 +839,10 @@ async function checkNonblockingDeviceSync() {
         await flush();
     };
     const pending = new Map([[1, deferred()], [2, deferred()]]);
-    fixture.reply('update/system', payload => pending.get(payload.data.id).promise);
+    const protocol = (id, data = {}) => ({ status: 'ok', error: false, data: { syncToken: String(id).repeat(64),
+        phase: 'applying', done: false, processed: 0, total: 2, requested: 0, completed: 0, failed: 0, catalogScanned: 2, ...data } });
+    fixture.reply('update/device_sync', payload => payload.action === 'begin'
+        ? protocol(payload.data.deviceId) : pending.get(Number(payload.data.syncToken[0])).promise);
     const loaderWrites = fixture.nodes.get('loader').styleWrites.length;
     const oldFirst = buttons(1)[2];
     const first = oldFirst.fire('click');
@@ -839,10 +858,12 @@ async function checkNonblockingDeviceSync() {
     assert(row(1).innerHTML.includes('Sincronizando…'));
     assert.equal(row(1)['aria-busy'], 'true');
     assert(buttons(1).every(button => button.disabled), 'Only the active router controls are disabled');
+    await oldReview.fire('click'); await reviewButton(1).fire('click');
+    assert.deepEqual(reviewed, [1], 'A stale or rebuilt review button cannot inspect a router while its sync is running');
     assert(buttons(2).every(button => !button.disabled), 'Another router must remain available');
     const second = buttons(2)[2].fire('click');
     await flush(); await confirm(true);
-    assert.deepEqual(syncCalls().map(call => call.data.id), [1, 2], 'Different router requests may overlap');
+    assert.deepEqual(syncCalls().map(call => call.data.deviceId), [1, 2], 'Different router requests may overlap');
     assert(row(2).innerHTML.includes('device-sync-spinner'));
     assert.deepEqual(displayWrites(fixture.nodes.get('loader'), loaderWrites), [], 'Synchronization never opens the global loading overlay');
     fixture.nodes.get('search-devices').value = 'Router A';
@@ -859,8 +880,8 @@ async function checkNonblockingDeviceSync() {
     await fixture.navigate('devices');
     assert(row(1).innerHTML.includes('device-sync-spinner'));
     assert(row(2).innerHTML.includes('device-sync-spinner'), 'Busy state survives navigation back to Devices');
-    pending.get(2).resolve({ status: 'failed', error: true, message: 'provisioning_incomplete',
-        data: { requested: 2, completed: 1, failed: 1, failures: [{ serviceId: 42 }] } });
+    pending.get(2).resolve(protocol(2, { phase: 'complete', done: true, processed: 2,
+        requested: 2, completed: 1, failed: 1, failures: [{ serviceId: 42 }] }));
     await second; await flush();
     assert(!row(2).innerHTML.includes('device-sync-spinner'));
     assert(buttons(2).every(button => !button.disabled));
@@ -869,7 +890,7 @@ async function checkNonblockingDeviceSync() {
     assert.equal(partial.role, 'alert');
     assert.match(partial.children[0].textContent, /Router B \(#2\).*1 de 2/);
     await fixture.navigate('jobs');
-    pending.get(1).resolve({ status: 'ok', error: false, data: { requested: 1, completed: 1, failed: 0 } });
+    pending.get(1).resolve(protocol(1, { phase: 'complete', done: true, processed: 2, requested: 1, completed: 1, failed: 0 }));
     await first; await flush();
     assert.equal(fixture.nodes.get('view-jobs').style.display, 'block', 'A background completion cannot force navigation');
     assert.equal(fixture.nodes.get('view-devices').style.display, 'none');
@@ -881,6 +902,8 @@ async function checkNonblockingDeviceSync() {
     await flush(); await confirm(false); await canceled;
     assert.equal(syncCalls().length, beforeCancel);
     assert(buttons(1).every(button => !button.disabled));
+    await reviewButton(1).fire('click');
+    assert.deepEqual(reviewed, [1, 1], 'Review becomes available again after synchronization completes');
 
     // Independent completion refreshes can return out of order. Preserve the
     // latest requested inventory rather than letting a slow earlier read win.
@@ -896,6 +919,85 @@ async function checkNonblockingDeviceSync() {
     await olderRead;
     assert.equal(row(1), latestRow, 'A late inventory response cannot overwrite the newer device refresh');
     assert.equal(rows().length, 1);
+}
+
+async function checkDeviceSyncReviewGuards() {
+    let reviewed = 0, mounted;
+    const workflows = { mount(options) { mounted = options; }, onView() {}, previewSync() { reviewed++; } };
+    const details = { duplicate_groups: 1, conflicts: [] };
+    const recovery = recoveryPanelFixture({ bootstrap: { readOnly: true, details }, details, workflows });
+    await flush();
+    const actions = fixture => fixture.tables.get('#devices-table tbody').children[0].querySelector('.row-actions').children;
+    const button = (fixture, label) => actions(fixture).find(item => item['aria-label'] === label);
+    const sync = button(recovery, 'Sincronizar ahora'), review = button(recovery, 'Revisar diferencias');
+    assert(sync.disabled && review.disabled, 'Recovery must protect both immediate writes and router review reads');
+    await sync.fire('click'); await review.fire('click');
+    assert.equal(reviewed, 0); assert.equal(recovery.writes().length, 0);
+    assert(!recovery.document.body.children.some(node => node.className === 'confirm-overlay'));
+
+    const restored = recoveryPanelFixture({ workflows }); await flush();
+    const staleSync = button(restored, 'Sincronizar ahora'), staleReview = button(restored, 'Revisar diferencias');
+    const pendingSync = staleSync.fire('click'); await flush();
+    const dialog = restored.document.body.children.find(node => node.className === 'confirm-overlay');
+    assert(dialog);
+    mounted.onApplied({ requiresReload: true });
+    await dialog.children[0].children[1].children[1].fire('click'); await pendingSync;
+    assert.equal(restored.writes().length, 0, 'A full restore during confirmation must prevent an immediate sync on stale state');
+    await staleReview.fire('click'); await staleSync.fire('click');
+    assert.equal(reviewed, 0, 'Restore reload requirements also protect stale preview controls');
+    assert(!restored.document.body.children.some(node => node.className === 'confirm-overlay'));
+}
+
+async function checkImmediateDeviceSyncProtocol() {
+    const syncToken = 'a'.repeat(64);
+    const progress = (overrides = {}) => ({ syncToken, phase: 'applying', done: false,
+        processed: 0, total: 2, requested: 0, completed: 0, failed: 0, catalogScanned: 2, ...overrides });
+    const envelope = data => ({ status: 'ok', error: false, data });
+    async function run(responses, initial = progress()) {
+        const fixture = recoveryPanelFixture(); await flush();
+        let step = 0;
+        fixture.reply('update/device_sync', payload => payload.action === 'begin' ? envelope(initial) : responses[step++]);
+        const sync = fixture.tables.get('#devices-table tbody').children[0].querySelector('.row-actions').children[2].fire('click');
+        await flush();
+        const dialog = fixture.document.body.children.find(node => node.className === 'confirm-overlay');
+        await dialog.children[0].children[1].children[1].fire('click'); await sync;
+        return { fixture, step, toast: fixture.nodes.get('notifications').lastElementChild,
+            writes: fixture.calls.filter(call => call.target === 'device_sync') };
+    }
+    const complete = progress({ phase: 'complete', done: true, processed: 2, requested: 2, completed: 2 });
+    const successful = await run([envelope(progress({ processed: 1, requested: 1, completed: 1 })), envelope(complete)]);
+    assert.equal(successful.step, 2, 'Immediate synchronization must keep applying until the final response');
+    assert.deepEqual(successful.writes.map(call => call.action), ['begin', 'step', 'step']);
+    assert(successful.writes.every(call => call.changeType === 'update'), 'A direct sync cannot be sent as a read-only preview');
+    assert.equal(successful.toast.role, 'status');
+    assert.match(successful.toast.children[0].textContent, /Sincronización ejecutada/);
+    const partial = await run([envelope(progress({ processed: 1, requested: 1, failed: 1 })),
+        envelope({ ...complete, completed: 1, failed: 1 })]);
+    assert.equal(partial.step, 2, 'One service failure must not stop the other services on the same router');
+    assert.equal(partial.toast.role, 'alert'); assert.match(partial.toast.children[0].textContent, /1 de 2 servicios completados/);
+    for (const malformed of [
+        { syncToken: 'b'.repeat(64), processed: 1 },
+        { syncToken: attack, processed: 1 },
+        { processed: 0 },
+        { processed: 1, total: 3 },
+        { processed: 1, requested: 3 },
+        { phase: 'complete', done: true, processed: 1 },
+        { phase: 'complete', done: false, processed: 2 },
+        { phase: 'catalog', processed: 0 },
+        { processed: 1, catalogScanned: 1 }
+    ]) {
+        const rejected = await run([envelope(progress(malformed)), envelope(complete)]);
+        assert.equal(rejected.step, 1, 'Invalid or stalled progress must stop without replaying its mutation token');
+        assert.equal(rejected.toast.role, 'alert');
+        assert(!rejected.toast.children[0].textContent.includes('Sincronización ejecutada'));
+        assert(!renderedMarkup(rejected.toast).includes('<img'));
+    }
+    const interrupted = await run([{ status: 'failed', error: true, message: 'fixture transport interrupted' }, envelope(complete)]);
+    assert.equal(interrupted.step, 1, 'Transport failure must never automatically retry a step that could have applied');
+    assert.match(interrupted.toast.children[0].textContent, /Revisa Trabajos antes de volver a intentarlo/);
+    const stalledCatalog = await run([envelope(progress({ phase: 'catalog', processed: 0, total: 0, catalogScanned: 0 }))],
+        progress({ phase: 'catalog', total: 0, catalogScanned: 0 }));
+    assert.equal(stalledCatalog.step, 1); assert.equal(stalledCatalog.toast.role, 'alert');
 }
 
 async function checkPendingJobsIndicator() {
@@ -2347,7 +2449,7 @@ async function checkNetworkRecoveryPanel() {
     assert.deepEqual(plain(healthy.diagnostics()[0].data), {}, 'Reactive recovery reads must not request live CRM verification');
     const malformed = recoveryPanelFixture({ bootstrap: '{', details }); await flush();
     assert.equal(malformed.nodes.get('btn-cache').disabled, false, 'An invalid optional bootstrap must not break normal navigation');
-    assert.equal((markup.match(/(?:src|href)="(?:js|css)\/[^"?]+\?v=2\.0\.53"/g) || []).length, 7, 'Every panel asset must use the new revision to invalidate UISP browser caches');
+    assert.equal((markup.match(/(?:src|href)="(?:js|css)\/[^"?]+\?v=2\.0\.54"/g) || []).length, 7, 'Every panel asset must use the new revision to invalidate UISP browser caches');
     assert(!markup.includes('v=2.0.45'));
     assert(apiSource.includes("'alert-triangle':"), 'The conflict warning must have its own local warning icon');
 }
@@ -3250,11 +3352,16 @@ async function checkLanguagePresentation() {
     ready();
     await flush();
     async function synchronizeDevice(response, accept, status = 200) {
-        responders.set('update/system/insert', response);
-        responseStatuses.set('update/system/insert', status);
+        const syncToken = 'a'.repeat(64);
+        responders.set('update/device_sync/begin', { status: 'ok', error: false, data: {
+            syncToken, phase: 'catalog', done: false, processed: 0, total: 0, requested: 0, completed: 0, failed: 0, catalogScanned: 0 } });
+        responders.set('update/device_sync/step', { ...response, data: { syncToken, phase: 'complete', done: true,
+            processed: 2, total: 2, catalogScanned: 2, ...response.data } });
+        responseStatuses.set('update/device_sync/step', status);
         const syncButton = tables.get('#devices-table tbody').children[0].querySelector('.row-actions').children[2];
-        assert.equal(syncButton.title, 'Sincronizar y reconectar cuentas');
-        assert.equal(syncButton['aria-label'], 'Sincronizar y reconectar cuentas');
+        assert.equal(syncButton.title, 'Sincronizar ahora');
+        assert.equal(syncButton['aria-label'], 'Sincronizar ahora');
+        assert.equal(syncButton.className, 'btn btn-primary row-action');
         const beforeRequests = requests.length;
         const running = syncButton.fire('click');
         await flush();
@@ -3265,15 +3372,16 @@ async function checkLanguagePresentation() {
         assert.equal(requests.length, beforeRequests, 'No router request may start before confirmation');
         await confirmation.children[0].children[1].children[accept ? 1 : 0].fire('click');
         await running;
-        const sent = requests.slice(beforeRequests).filter(request => request.payload?.target === 'system');
+        const sent = requests.slice(beforeRequests).filter(request => request.payload?.target === 'device_sync');
         if (accept) {
-            assert.equal(sent.length, 1);
-            assert.deepEqual(sent[0].payload, { changeType: 'update', target: 'system', action: 'insert', data: { type: 'device', id: 1 } },
-                'Router sync must preserve the device route without adding a UI force flag');
+            assert.equal(sent.length, 2);
+            assert.deepEqual(sent[0].payload, { changeType: 'update', target: 'device_sync', action: 'begin', data: { deviceId: 1 } });
+            assert.deepEqual(sent[1].payload, { changeType: 'update', target: 'device_sync', action: 'step', data: { syncToken } },
+                'Immediate synchronization must continue its authenticated token without a preview or a UI force flag');
         } else assert.equal(sent.length, 0, 'Canceling router reconnection must not issue provisioning requests');
         assert.equal(syncButton.disabled, false);
         assert.equal(elements.get('loader').style.display, 'none');
-        responseStatuses.delete('update/system/insert');
+        responseStatuses.delete('update/device_sync/step');
         return elements.get('notifications').lastElementChild;
     }
     const canceledNotifications = elements.get('notifications').children.length;
@@ -3282,16 +3390,17 @@ async function checkLanguagePresentation() {
     const syncSuccess = await synchronizeDevice({ status: 'ok', error: false, data: { requested: 2, completed: 2, failed: 0 } }, true);
     assert.equal(syncSuccess.role, 'status');
     assert(syncSuccess.children[0].textContent.includes('Sincronización ejecutada. Revisa la confirmación en Trabajos.'));
-    const syncPartial = await synchronizeDevice({ status: 'failed', error: true, message: 'provisioning_incomplete',
-        data: { requested: 2, completed: 1, failed: 1, failures: [{ serviceId: 1420, planId: 1 }] } }, true, 502);
+    const syncPartial = await synchronizeDevice({ status: 'ok', error: false,
+        data: { requested: 2, completed: 1, failed: 1, failures: [{ serviceId: 1420, planId: 1 }] } }, true);
     assert.equal(syncPartial.role, 'alert');
     assert.match(syncPartial.children[0].textContent, /1 de 2 servicios completados; 1 pendientes o con error/);
     assert(!syncPartial.children[0].textContent.includes('Sincronización ejecutada. Revisa la confirmación en Trabajos.'), 'Partial synchronization must not claim that all jobs completed');
-    const syncPending = await synchronizeDevice({ status: 'accepted', error: false, accepted: true, data: {} }, true);
-    assert.equal(syncPending.role, 'status');
-    assert(syncPending.children[0].textContent.includes('Solicitud aceptada.'));
-    assert(!syncPending.children[0].textContent.includes('Sincronización ejecutada. Revisa la confirmación en Trabajos.'), 'Pending synchronization must not claim completed reconnections');
-    responders.delete('update/system/insert');
+    const syncInvalid = await synchronizeDevice({ status: 'accepted', error: false, accepted: true, data: {} }, true);
+    assert.equal(syncInvalid.role, 'alert');
+    assert(!syncInvalid.children[0].textContent.includes('Sincronización ejecutada.'), 'An incomplete immediate-sync response cannot claim completed reconnections');
+    const syncFailed = await synchronizeDevice({ status: 'failed', error: true, message: 'fixture interrupted' }, true, 502);
+    assert.equal(syncFailed.role, 'alert'); assert.match(syncFailed.children[0].textContent, /fixture interrupted/);
+    responders.delete('update/device_sync/begin'); responders.delete('update/device_sync/step');
     const deviceRow = tables.get('#devices-table tbody').children[0];
     assert(deviceRow.innerHTML.includes('&lt;img'));
     assert(!deviceRow.innerHTML.includes('<img'));
@@ -4062,6 +4171,8 @@ async function checkLanguagePresentation() {
     await checkNumericPlanEditors();
     await checkJobsRefresh();
     await checkNonblockingDeviceSync();
+    await checkDeviceSyncReviewGuards();
+    await checkImmediateDeviceSyncProtocol();
     await checkPendingJobsIndicator();
     await checkWarningDismissals();
     await checkJobRecoveryResolutionPanel();

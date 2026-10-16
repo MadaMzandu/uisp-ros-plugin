@@ -17,17 +17,19 @@ class ApiAction
     private bool $forceReconnect = false;
     private $freshGuard = null;
     private $queueSink = null;
+    private $reviewClientNames = null;
 
     /** Reconcile a fresh UISP representation; no invented webhook action or delivery UUID is retained. */
-    public function reconcileService(int $sid, bool $queueOnly = true, bool $forceReconnect = false, ?callable $guard = null, ?callable $queueSink = null): array
+    public function reconcileService(int $sid, bool $queueOnly = true, bool $forceReconnect = false, ?callable $guard = null, ?callable $queueSink = null, ?callable $clientNames = null): array
     {
         if ($sid < 1) throw new InvalidArgumentException('Invalid service ID');
         $this->freshReview=true; $this->queueOnly=$queueOnly; $this->forceReconnect=$forceReconnect; $this->freshGuard=$guard; $this->queueSink=$queueSink;
+        $this->reviewClientNames=$clientNames;
         try {
             $this->exec((object)['entity'=>'service','entityId'=>$sid,'changeType'=>'edit',
                 'extraData'=>(object)['entity'=>(object)['id'=>$sid]]]);
             return $this->result();
-        } finally { $this->freshReview=false; $this->queueOnly=false; $this->forceReconnect=false; $this->freshGuard=null; $this->queueSink=null; }
+        } finally { $this->freshReview=false; $this->queueOnly=false; $this->forceReconnect=false; $this->freshGuard=null; $this->queueSink=null; $this->reviewClientNames=null; }
     }
 
     public function exec($request = null)
@@ -318,7 +320,7 @@ class ApiAction
         $diff = $this->changes($entity,$previous);
         $changes = array_keys($diff);
         $upgrade = array_intersect(['clientId','device','mac','username','hotspot','duid','iaid'],$changes);
-        if ($changes === ['status'] && $this->completedBillingEdit($entity)) {
+        if (!$this->forceReconnect && $changes === ['status'] && $this->completedBillingEdit($entity)) {
             // UISP can deliver suspend/unsuspend and its matching edit separately.
             // The first event already confirmed this exact state; preserve its cache
             // without issuing another account write or disconnect.
@@ -345,6 +347,7 @@ class ApiAction
                 if (!$this->save($entity)) { return false; }
                 $replacement = array_replace($entity, $client);
                 $replacement['_clear_terminal'] = true;
+                if ($this->forceReconnect) $replacement['_force_reconnect'] = true;
                 return $this->batchOutcome($this->batch()->migrate(array_replace($previous, $oldClient), $replacement));
             }
             return $this->delete($previous);
@@ -355,7 +358,7 @@ class ApiAction
         }
         else
         {//normal edit
-            if($changes || $this->needsAppliedReconciliation($entity))
+            if($changes || $this->forceReconnect || $this->needsAppliedReconciliation($entity))
             {//ignore network flapping
                 return $this->set($data['entity'],'edit');
             }
@@ -529,6 +532,11 @@ class ApiAction
         if(!$id){ $id = $this->entity()->clientId ?? $this->entity()->id ?? 0; }
         $id = filter_var($id, FILTER_VALIDATE_INT);
         if (!$id || $id < 1) { return ['company' => null, 'firstName' => null, 'lastName' => null]; }
+        if ($this->reviewClientNames!==null) {
+            $names=($this->reviewClientNames)($id);
+            if (is_array($names)) return array_replace(['company'=>null,'firstName'=>null,'lastName'=>null],
+                array_intersect_key($names,array_fill_keys(['company','firstName','lastName'],true)));
+        }
         $q = 'select company,firstName,lastName from clients where id=:id';
         $client = myCache()->singleQuery($q,true,['id' => $id]);
         if($client){ return $client; }

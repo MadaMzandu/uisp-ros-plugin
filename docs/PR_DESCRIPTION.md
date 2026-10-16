@@ -1,10 +1,24 @@
 ## Summary
 
-Candidate **2.4.38** prevents freshly confirmed retired services and archived clients from replaying obsolete provisioning. It retires old intent, schedules guarded resource cleanup before address reuse, and preserves current owners. The panel adds explicit requester review, opens Devices on a new visit, and groups full ZIP and legacy SQLite backups with distinct scope. Previous synchronization previews, fresh webhook handling, reconciliation, diagnostics and automation health remain included.
+Candidate **2.4.39** separates immediate router synchronization from optional difference review. The primary action fetches current UISP state and applies managed services with progress and immediate queue execution; the secondary action retains reviewed queuing. Preview eligibility now uses the exact live client's archive state instead of a nullable legacy cache flag. Previous lifecycle retirement, diagnostics, automation health, backups and reconciliation remain included.
 
 The cumulative changes include the panel work from [PR #89](https://github.com/MadaMzandu/uisp-ros-plugin/pull/89), durable provisioning, webhook handling and recovery tools. Provisioning uses the native RouterOS API with optional TLS.
 
 **The full English changelog and webhook setup guide are included below, not only linked.** Historical entries identify behavior superseded by later revisions; the summary describes the current implementation.
+
+## Candidate 2.4.39: immediate synchronization and optional review
+
+**Synchronize now** is the primary router action. It reads the current UISP catalog, discovers new services for the Site and applies each service immediately with progress, without a mandatory difference preview or waiting for cron. It reapplies managed accounts and forces their PPP/Hotspot reconnections even when settings already match. The separate secondary **Review differences** action remains read-only until the operator elects to queue proven differences or reviewed reconnections; these preview actions retain their subsequent worker execution.
+
+Direct synchronization revalidates the exact service, Site and current client before applying and preserves the previous identity for the normal migration path. Requests process one catalog page or service at a time and retain per-service outcomes and maintenance/restore protection. A single failure does not prevent subsequent services from being attempted. Application failures keep normal queue retries; unavailable evidence cannot authorize a write. An uncertain response is not replayed automatically to avoid duplicate reconnections. Closing or reloading the page stops subsequent traversal requests; previously submitted jobs retain their own state.
+
+Preview no longer rejects a live client before its UISP read merely because an upgraded cache has `isArchived = NULL`. Only the exact current client with an explicit non-archived state establishes eligibility. Unknown, stale or missing cache rows cannot veto that read. A currently archived client, incorrect identity or failed API remains protected, including revalidation between preview and application.
+
+A move retains the existing address policy: an address outside the destination pool but proven to belong to another configured Site is cleared and replaced from the destination pool. A valid destination address can remain; a manual address outside every configured pool is not discarded by this rule. Replacement preparation is validated before source removal, then migration performs source deletion followed by destination application. A destination failure after source removal remains pending for retry; uninterrupted migration is not guaranteed. Manual/foreign accounts and current owners' reservations remain protected.
+
+**Settings** uses a distinct toothed gear with a circular center, including the panel’s local SVG fallback.
+
+Validation for 2.4.39 passed: **64 isolated suites**, syntax checks for **67 first-party PHP files**, 381 archive entries, 148 first-party files and 13 locked dependencies. Report: `dist/verification-2.4.39.json`. SHA-256: `dc7bcf7cb12ff783ab114c331522069968917ad20bbf6b4295a3ec8030d0dc36`. Synthetic browser checks cover separate actions, progress, the mobile dialog, Spanish/English, light/dark themes and the settings gear. No production UISP or RouterOS changes were executed.
 
 ## Candidate 2.4.38: retire obsolete service intent and organize System
 
@@ -430,9 +444,23 @@ Check the relevant RouterOS logging topics and the actual profile/session state.
 
 [Español](docs/MEJORAS.md) · [PR description](docs/PR_DESCRIPTION.md) · [Webhook setup and rationale](docs/WEBHOOK_SETUP_EN.md)
 
-This revision combines [dhanielsnieto's changes in PR #89](https://github.com/MadaMzandu/uisp-ros-plugin/pull/89) with the subsequent fixes prepared in this repository. The comparison starts at `7ca8dc8`; the original PR ends at `056b89f`. The current candidate is **2.4.38**. The operator confirmed archived-plan speed recovery in their 2.4.19 installation. That confirmation covers this historical scenario; the remaining UISP and RouterOS integration scenarios still require their own checks before production readiness can be established.
+This revision combines [dhanielsnieto's changes in PR #89](https://github.com/MadaMzandu/uisp-ros-plugin/pull/89) with the subsequent fixes prepared in this repository. The comparison starts at `7ca8dc8`; the original PR ends at `056b89f`. The current candidate is **2.4.39**. The operator confirmed archived-plan speed recovery in their 2.4.19 installation. That confirmation covers this historical scenario; the remaining UISP and RouterOS integration scenarios still require their own checks before production readiness can be established.
 
 The plugin connects UISP CRM to MikroTik through the **native RouterOS API**, normally on port `8728`, or `8729` with TLS. The panel manages that integration; it does not switch the transport to SSH, WinBox, or REST.
+
+## Candidate 2.4.39: immediate synchronization and optional review
+
+**Synchronize now** is the primary router action. It reads the current UISP catalog, discovers new services for the Site and applies each service immediately with progress, without a mandatory difference preview or waiting for cron. It reapplies managed accounts and forces their PPP/Hotspot reconnections even when settings already match. The separate secondary **Review differences** action remains read-only until the operator elects to queue proven differences or reviewed reconnections; these preview actions retain their subsequent worker execution.
+
+Direct synchronization revalidates the exact service, Site and current client before applying and preserves the previous identity for the normal migration path. Requests process one catalog page or service at a time and retain per-service outcomes and maintenance/restore protection. A single failure does not prevent subsequent services from being attempted. Application failures keep normal queue retries; unavailable evidence cannot authorize a write. An uncertain response is not replayed automatically to avoid duplicate reconnections. Closing or reloading the page stops subsequent traversal requests; previously submitted jobs retain their own state.
+
+Preview no longer rejects a live client before its UISP read merely because an upgraded cache has `isArchived = NULL`. Only the exact current client with an explicit non-archived state establishes eligibility. Unknown, stale or missing cache rows cannot veto that read. A currently archived client, incorrect identity or failed API remains protected, including revalidation between preview and application.
+
+A move retains the existing address policy: an address outside the destination pool but proven to belong to another configured Site is cleared and replaced from the destination pool. A valid destination address can remain; a manual address outside every configured pool is not discarded by this rule. Replacement preparation is validated before source removal, then migration performs source deletion followed by destination application. A destination failure after source removal remains pending for retry; uninterrupted migration is not guaranteed. Manual/foreign accounts and current owners' reservations remain protected.
+
+**Settings** uses a distinct toothed gear with a circular center, including the panel’s local SVG fallback.
+
+Validation for 2.4.39 passed: **64 isolated suites**, syntax checks for **67 first-party PHP files**, 381 archive entries, 148 first-party files and 13 locked dependencies. Report: `dist/verification-2.4.39.json`. SHA-256: `dc7bcf7cb12ff783ab114c331522069968917ad20bbf6b4295a3ec8030d0dc36`. Synthetic browser checks cover separate actions, progress, the mobile dialog, Spanish/English, light/dark themes and the settings gear. No production UISP or RouterOS changes were executed.
 
 ## Candidate 2.4.38: retire obsolete service intent and organize System
 
@@ -933,7 +961,7 @@ Later production evidence identified missing tokens and a URL pasted as the secr
 
 ## Installation and validation readiness
 
-The current version is 2.4.38. Its validation status appears at the beginning of this changelog. Archived-plan recovery confirmation belongs to 2.4.19 and retains its historical scope. Fresh lifecycle evidence retires obsolete intent and queues guarded removal before releasing physically owned addresses. Unknown evidence remains an incident for that service. The separate local-cleanup review retains its limited scope and private backup. A duplicate-reservation migration barrier still requires resolving stored assignments and reloading. Backups remain downloadable from System. The [real-environment test guide](docs/PRUEBAS_REALES.md) contains 242 scenarios and does not claim production validation.
+The current version is 2.4.38. Its validation status appears at the beginning of this changelog. Archived-plan recovery confirmation belongs to 2.4.19 and retains its historical scope. Fresh lifecycle evidence retires obsolete intent and queues guarded removal before releasing physically owned addresses. Unknown evidence remains an incident for that service. The separate local-cleanup review retains its limited scope and private backup. A duplicate-reservation migration barrier still requires resolving stored assignments and reloading. Backups remain downloadable from System. The [real-environment test guide](PRUEBAS_REALES.md) contains 242 scenarios and does not claim production validation.
 
 ### Historical 2.4.17 result
 

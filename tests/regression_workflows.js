@@ -189,6 +189,7 @@ async function fullPreviewPaginationAndGuardedCounts() {
 async function apiReloadGuard() {
     const ui = fixture(); ui.api.requireReload(); const start = ui.requests.length;
     const writes = [() => ui.api.saveConfig({}), () => ui.api.saveDevice('edit', { id: 1 }), () => ui.api.savePlan({ id: 1 }), () => ui.api.rebuild(),
+        () => ui.api.beginDeviceSync(4), () => ui.api.stepDeviceSync(previewToken),
         () => ui.api.applySyncPreview(previewToken, 'differences'), () => ui.api.restoreFullBackup(previewToken), () => ui.api.createFullBackup(),
         () => ui.api.applyNetworkRepair(previewToken), () => ui.api.applyJobRecovery(previewToken), () => ui.api.uploadBackup({}), () => ui.api.uploadFullBackup({})];
     for (const write of writes) { const result = await write(); assert.equal(result.error, true, 'API accepted a stale-page write after restore'); }

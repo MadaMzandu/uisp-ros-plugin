@@ -95,18 +95,19 @@ final class ApiSyncPreview
             'done'=>$selected['processed']===$selected['total'],'state'=>'skipped','reason'=>$public['reason'],'jobKeys'=>[]];
         if ($public['state']==='blocked') { $result['state']='blocked'; return $result; }
         if ($mode==='differences' && $public['state']==='unchanged') return $result;
-        $state=$selected['session']; $this->deadline=microtime(true)+12; $guardPassed=false; $keys=[];
-        $guard=function(array $fresh,array $applied) use($sid,$state,$item,&$guardPassed):bool {
+        $state=$selected['session']; $this->deadline=microtime(true)+12; $guardPassed=false; $keys=[]; $clientNames=[];
+        $guard=function(array $fresh,array $applied) use($sid,$state,$item,&$guardPassed,&$clientNames):bool {
             try {
                 $this->assertConfiguration($state);
                 if ($this->intentHash($fresh)!==$item['intent'] || $this->hash($applied)!==$item['applied']) return false;
                 $current=$this->observe($sid,$state,$fresh,$applied);
                 $guardPassed=$current['public']['state']!=='blocked' && $current['commands']===$item['commands'] && $current['router']===$item['router'];
+                if ($guardPassed) $clientNames=$current['clientNames'];
                 return $guardPassed;
             } catch (Throwable $ignored) { return false; }
         };
-        $sink=function(array $fresh) use($item,$mode,&$keys):void {
-            $keys=(new Batch())->queueReviewed($fresh,fn(array $snapshot):bool=>$this->commandHash($snapshot['_commands']??[])===$item['commands'],$mode==='force_reconnect');
+        $sink=function(array $fresh) use($item,$mode,&$keys,&$clientNames):void {
+            $keys=(new Batch())->queueReviewed(array_replace($fresh,$clientNames),fn(array $snapshot):bool=>$this->commandHash($snapshot['_commands']??[])===$item['commands'],$mode==='force_reconnect');
         };
         try {
             if ($this->applier!==null) $response=($this->applier)($sid,$mode==='force_reconnect',$guard,$sink);
@@ -135,11 +136,17 @@ final class ApiSyncPreview
             if (!in_array((int)($service['status']??-1),[1,3,4,7],true)) return ['public'=>$this->blocked($sid,'sync_preview_service_inactive')];
             if (isset($queue['pending'][$sid]) || isset($queue['blocked'][$sid])) return ['public'=>$this->blocked($sid,'sync_preview_pending_work')];
             $client=$cache->singleQuery('SELECT * FROM clients WHERE id=?',true,[(int)$service['clientId']])??[];
-            if (!in_array($client['isArchived']??null,[0,'0',false],true)) return ['public'=>$this->blocked($sid,'sync_preview_client_unconfirmed')];
             $currentClient=$this->get('clients/'.(int)$service['clientId']);
-            if ((!is_object($currentClient)&&!is_array($currentClient)) || (int)(((array)$currentClient)['id']??0)!==(int)$service['clientId']
+            // Older cache rows intentionally retain an unknown archive flag. Only
+            // the exact live client can establish its current lifecycle state.
+            if ((!is_object($currentClient)&&!is_array($currentClient))
+                || is_bool(((array)$currentClient)['id']??null) || is_float(((array)$currentClient)['id']??null)
+                || filter_var(((array)$currentClient)['id']??null,FILTER_VALIDATE_INT,['options'=>['min_range'=>1]])!==(int)$service['clientId']
                 || !in_array(((array)$currentClient)['isArchived']??null,[0,'0',false],true)) return ['public'=>$this->blocked($sid,'sync_preview_client_unconfirmed')];
-            $service=array_replace($service,array_intersect_key($client,array_fill_keys(['company','firstName','lastName'],true)));
+            $names=array_fill_keys(['company','firstName','lastName'],true);
+            $currentClient=(array)$currentClient;
+            if (array_key_exists('companyName',$currentClient)) $currentClient['company']=$currentClient['companyName'];
+            $service=array_replace($service,array_intersect_key($client,$names),array_intersect_key($currentClient,$names));
             $service+=['company'=>null,'firstName'=>null,'lastName'=>null];
             $service['_device']=$devices[$did]; $service['_config']=$config; $service['action']='update'; $service['batch']='review';
             if (ApiSiteAddressPolicy::foreignAddresses($service,$devices[$did],$config,$devices)) return ['public'=>$this->blocked($sid,'sync_preview_foreign_site_address')];
@@ -204,12 +211,12 @@ final class ApiSyncPreview
             }
             $credentialChanged=isset($service['password']) && isset($applied['password']) ? $service['password']!==$applied['password'] : null;
             $changed=$changed||$credentialChanged===true||$migration;
-            $public=['serviceId'=>$sid,'clientId'=>(int)$service['clientId'],'clientName'=>self::safe(trim(implode(' ',array_filter([$client['company']??null,$client['firstName']??null,$client['lastName']??null])))),
+            $public=['serviceId'=>$sid,'clientId'=>(int)$service['clientId'],'clientName'=>self::safe(trim(implode(' ',array_filter([$service['company']??null,$service['firstName']??null,$service['lastName']??null])))),
                 'state'=>$changed?'changes':'unchanged','reason'=>null,'oldAddress'=>$old4,'newAddress'=>$new4,'oldAddress6'=>$old6,'newAddress6'=>$new6,
                 'reconnect'=>filter_var($service['mac']??'',FILTER_VALIDATE_MAC)?false:$changed,'credentialChange'=>$credentialChanged,'credentialsVerified'=>false,
                 'migration'=>$migration,'sourceDeviceId'=>$migration?(int)$applied['device']:null,'deviceId'=>$did,'fields'=>$fields,'checkedAt'=>gmdate('c',(int)$this->now())];
             return ['public'=>$public,'intent'=>$intent,'applied'=>$this->hash($applied),
-                'commands'=>$this->commandHash($commands),'router'=>$observation['fingerprint']];
+                'commands'=>$this->commandHash($commands),'router'=>$observation['fingerprint'],'clientNames'=>array_intersect_key($service,$names)];
         } finally { $db->close(); $cache->close(); }
     }
 
