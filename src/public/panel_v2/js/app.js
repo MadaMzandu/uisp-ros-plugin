@@ -13,6 +13,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const crmEditModal = byId('crm-ip-edit-modal');
     const repairModal = byId('network-repair-modal');
     const jobRecoveryModal = byId('job-recovery-modal');
+    const lifecycleModal = byId('service-lifecycle-modal');
     let notificationRegion = byId('notifications');
     let currentView = 'devices';
     let devicesCache = [];
@@ -55,6 +56,11 @@ document.addEventListener('DOMContentLoaded', () => {
     let jobRecoveryMode = 'resolve';
     let jobRecoveryGeneration = 0;
     let jobRecoveryFocusRequested = false;
+    let lifecycleTarget = null;
+    let lifecyclePreview = null;
+    let lifecycleLoading = false;
+    let lifecycleApplying = false;
+    let lifecycleGeneration = 0;
     let planContentionDisabled = null;
     let configCache = {};
     let configDraft = {};
@@ -143,6 +149,14 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function navigationStorage() { return globalThis.sessionStorage || globalThis.window?.sessionStorage; }
+    function isPanelReload() {
+        try {
+            const timing = globalThis.performance || globalThis.window?.performance;
+            const entry = timing?.getEntriesByType?.('navigation')?.[0];
+            if (entry) return entry.type === 'reload';
+            return timing?.navigation?.type === 1;
+        } catch (_) { return false; }
+    }
     // Dismissals are presentation preferences only. Persist coarse counts and
     // flags for this tab, never customer identities, addresses or poll times.
     const warningIds = ['network-warning', 'crm-network-warning', 'jobs-pending-warning'];
@@ -193,7 +207,9 @@ document.addEventListener('DOMContentLoaded', () => {
         if (visible) byId('dismiss-' + visible)?.focus({ preventScroll: true });
     });
     try {
-        const serialized = navigationStorage()?.getItem(navigationStorageKey);
+        // A new visit starts on Devices. Only an actual reload resumes the
+        // previous section; a saved Jobs view must not become the landing page.
+        const serialized = isPanelReload() ? navigationStorage()?.getItem(navigationStorageKey) : null;
         if (typeof serialized === 'string' && serialized.length <= 4096) {
             const saved = JSON.parse(serialized);
             if (saved?.version === navigationVersion && saved.scope === navigationScope && navigationViews.has(saved.view)
@@ -320,7 +336,7 @@ document.addEventListener('DOMContentLoaded', () => {
     globalThis.window?.addEventListener?.('pagehide', saveNavigation);
     globalThis.window?.addEventListener?.('beforeunload', saveNavigation);
     const recoveryWriteIds = new Set(['save-config-btn', 'sync-attrs-btn', 'save-device-btn', 'save-plan-btn',
-        'btn-run-jobs', 'btn-delete-jobs', 'btn-backup', 'btn-rebuild', 'btn-cache', 'btn-upload', 'btn-log-clear', 'plan-reset-invalid']);
+        'btn-run-jobs', 'btn-delete-jobs', 'btn-backup', 'btn-rebuild', 'btn-cache', 'btn-upload', 'btn-log-clear', 'plan-reset-invalid', 'apply-service-lifecycle']);
 
     function markRecoveryWrite(button) {
         if (!button) return button;
@@ -349,6 +365,7 @@ document.addEventListener('DOMContentLoaded', () => {
         for (const control of document.querySelectorAll('#device-form input, #device-form select, #plan-form input, #plan-form select, #config-form input, #config-form select, .burst-preset-btn'))
             control.disabled = true;
         updateConfigSaveStatus();
+        updateLifecycleControls();
     }
 
     function applyRecovery(state) {
@@ -1909,6 +1926,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function closeModals() {
         globalThis.PanelWorkflows?.close?.();
+        if (lifecycleModal && !lifecycleApplying) {
+            lifecycleModal.style.display = 'none'; lifecycleGeneration++; lifecycleTarget = null; lifecyclePreview = null; lifecycleLoading = false;
+            updateLifecycleControls();
+        }
         for (const modal of [deviceModal, planModal, orphanModal, cleanupModal]) if (modal) modal.style.display = 'none';
         if (crmEditModal && !crmEditBusy) {
             crmEditModal.style.display = 'none'; crmEditGeneration++; crmEditTarget = null; crmEditOutcome = null; resetCrmEditPreview(); updateCrmEditorControls();
@@ -2873,6 +2894,18 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         return parts.join(' ');
     }
+    function jobLifecycleErrorMarkup(error) {
+        const source = {
+            lifecycle_unavailable: 'No se pudo comprobar el estado actual en UISP. El trabajo se revisará en el próximo reintento automático.',
+            lifecycle_review_pending: 'La revisión del estado quedó pendiente para otra pasada automática.',
+            lifecycle_identity_changed: 'La identidad del cliente cambió. Revisa el servicio y su vínculo en UISP antes de retirar recursos.',
+            lifecycle_reactivated: 'UISP indica que el servicio volvió a estar vigente. Se conservaron sus recursos y se revisará su estado actual.',
+            lifecycle_router_identity_unknown: 'No se pudo identificar el router o la cuenta anterior. Revisa el usuario y el dispositivo del servicio.',
+            lifecycle_resources_unconfirmed: 'La baja anterior no se pudo confirmar en el router. Sus reservas se conservan hasta comprobar la limpieza.',
+            lifecycle_changed: 'El estado del servicio cambió durante la revisión. Se comprobará de nuevo antes de modificarlo.'
+        }[error];
+        return typeof source === 'string' ? `<span data-i18n="${html(source)}">${html(t(source))}</span>` : null;
+    }
     function jobNetworkErrorMarkup(error, serviceId) {
         const collision = /^network_address_conflict: requested_service=([1-9]\d{0,14}) blocking_service=([1-9]\d{0,14}) source=(reserved|cache|applied) family=(IPv4|IPv6)$/.exec(error);
         if (collision && Number.isSafeInteger(Number(collision[1])) && Number.isSafeInteger(Number(collision[2])) && Number(collision[1]) === Number(serviceId)) {
@@ -2903,6 +2936,98 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!match || !Number.isSafeInteger(Number(match[1])) || !Number.isSafeInteger(Number(match[2])) || Number(match[1]) !== Number(serviceId)) return null;
         return { serviceId: Number(match[2]), field: match[3] === 'IPv6' ? 'address6' : 'address' };
     }
+    function lifecycleReason(reason) {
+        return t({
+            active_service: 'El servicio sigue vigente en UISP. Se conserva su asignación.',
+            service_ended: 'UISP confirmó que el servicio terminó.',
+            client_archived: 'UISP confirmó que el cliente está archivado.',
+            service_not_found: 'UISP confirmó que el servicio no existe.',
+            lifecycle_changed: 'El estado del servicio cambió. Revisa nuevamente antes de retirar sus pendientes.',
+            lifecycle_router_cleanup_pending: 'La baja del router quedó programada. La IP se liberará al completar la limpieza.',
+            lifecycle_retired: 'Se retiraron los pendientes anteriores del servicio.'
+        }[reason] || 'No se pudo confirmar el estado actual en UISP. Vuelve a revisar.');
+    }
+    function updateLifecycleControls() {
+        if (byId('review-service-lifecycle')) byId('review-service-lifecycle').disabled = lifecycleLoading || lifecycleApplying || restoredRequiresReload;
+        if (byId('apply-service-lifecycle')) byId('apply-service-lifecycle').disabled = lifecycleLoading || lifecycleApplying || restoredRequiresReload
+            || recoveryReadOnly || lifecyclePreview?.eligible !== true;
+    }
+    function lifecycleIdentity(data) {
+        const details = byId('service-lifecycle-details'); details.replaceChildren();
+        const identity = document.createElement('p'); identity.className = 'cleanup-witnesses';
+        identity.appendChild(conflictLink(t('Servicio #{id}', { id: data.serviceId }), '/crm/client/service/' + data.serviceId, 'service'));
+        if (Number.isSafeInteger(data.clientId) && data.clientId > 0)
+            identity.appendChild(conflictLink(t('Cliente #{id}', { id: data.clientId }), '/crm/client/' + data.clientId, 'client'));
+        details.appendChild(identity);
+        if (Number.isInteger(data.status)) {
+            const state = document.createElement('p'); translatedText(state, 'Servicio: {state}', { state: repairServiceStatus(data.status) }); details.appendChild(state);
+        }
+    }
+    async function previewServiceLifecycle(serviceId) {
+        if (!lifecycleModal || lifecycleLoading || lifecycleApplying || restoredRequiresReload || !Number.isSafeInteger(serviceId) || serviceId < 1) return;
+        const generation = ++lifecycleGeneration;
+        lifecycleTarget = serviceId; lifecyclePreview = null; lifecycleLoading = true;
+        lifecycleModal.style.display = 'flex';
+        byId('apply-service-lifecycle').style.display = 'inline-flex';
+        byId('service-lifecycle-result').replaceChildren();
+        lifecycleIdentity({ serviceId }); translatedText(byId('service-lifecycle-status'), 'Consultando…'); updateLifecycleControls();
+        try {
+            const data = checked(await api.previewServiceLifecycle(serviceId)).data;
+            if (generation !== lifecycleGeneration || lifecycleTarget !== serviceId) return;
+            const eligibleReasons = ['service_ended', 'client_archived', 'service_not_found'];
+            if (!data || data.serviceId !== serviceId || !['active', 'retired', 'unknown'].includes(data.state)
+                || (data.clientId !== null && (!Number.isSafeInteger(data.clientId) || data.clientId < 1))
+                || (data.status !== null && (!Number.isInteger(data.status) || data.status < 0 || data.status > 8))
+                || typeof data.missing !== 'boolean' || typeof data.eligible !== 'boolean'
+                || (data.eligible && (data.state !== 'retired' || !eligibleReasons.includes(data.reason)
+                    || typeof data.previewToken !== 'string' || !/^[a-f0-9]{64}$/.test(data.previewToken) || !monitorDate(data.expiresAt))))
+                throw new Error('lifecycle_invalid');
+            lifecycleIdentity(data); lifecyclePreview = data;
+            byId('service-lifecycle-status').textContent = lifecycleReason(data.reason);
+            if (data.eligible) {
+                const note = document.createElement('p'); note.className = 'form-note';
+                translatedText(note, 'Se retirarán los pendientes anteriores de este servicio. Si quedan recursos en el router, se programará su baja antes de liberar la IP.');
+                const expiry = document.createElement('p'); expiry.className = 'form-note'; translatedText(expiry, 'Revisión válida hasta: {time}.', { time: formatDate(data.expiresAt) });
+                byId('service-lifecycle-details').append(note, expiry);
+            }
+        } catch (_) {
+            if (generation === lifecycleGeneration) {
+                lifecyclePreview = null; byId('service-lifecycle-status').textContent = lifecycleReason('lifecycle_unavailable');
+            }
+        } finally { if (generation === lifecycleGeneration) { lifecycleLoading = false; updateLifecycleControls(); } }
+    }
+    byId('review-service-lifecycle')?.addEventListener('click', () => { if (lifecycleTarget !== null) previewServiceLifecycle(lifecycleTarget); });
+    byId('apply-service-lifecycle')?.addEventListener('click', async () => {
+        if (lifecycleLoading || lifecycleApplying || recoveryReadOnly || restoredRequiresReload || lifecyclePreview?.eligible !== true) return;
+        const preview = lifecyclePreview, generation = lifecycleGeneration;
+        lifecyclePreview = null; lifecycleApplying = true; updateLifecycleControls();
+        translatedText(byId('service-lifecycle-status'), 'Consultando…');
+        try {
+            const data = checked(await api.applyServiceLifecycle(preview.previewToken)).data;
+            if (generation !== lifecycleGeneration) return;
+            if (!data || data.serviceId !== preview.serviceId || (data.clientId !== null && (!Number.isSafeInteger(data.clientId) || data.clientId < 1))
+                || !['active', 'retired', 'unknown'].includes(data.state) || typeof data.retired !== 'boolean' || typeof data.released !== 'boolean'
+                || !Number.isSafeInteger(data.queued) || data.queued < 0 || !Array.isArray(data.jobKeys)
+                || data.jobKeys.length > 100 || data.jobKeys.some(key => typeof key !== 'string' || !/^Q[1-9]\d*$/.test(key))
+                || (data.released && (!data.retired || data.queued > 0))) throw new Error('lifecycle_invalid');
+            byId('service-lifecycle-status').textContent = data.retired
+                ? t(data.queued > 0 ? 'La baja del router quedó programada. La IP se liberará al completar la limpieza.'
+                    : data.released ? 'Se retiraron los pendientes anteriores y se liberaron sus reservas locales.' : 'Se retiraron los pendientes anteriores del servicio.')
+                : lifecycleReason(data.reason);
+            const result = byId('service-lifecycle-result'); result.replaceChildren();
+            for (const key of [...new Set(data.jobKeys)]) {
+                const job = document.createElement('button'); job.type = 'button'; job.className = 'btn btn-secondary';
+                job.textContent = t('Baja programada') + ' · ' + key;
+                job.addEventListener('click', () => { jobReviewRequested = key; closeModals(); switchView('jobs', 'Trabajos'); }); result.appendChild(job);
+            }
+            byId('apply-service-lifecycle').style.display = 'none';
+            try { await refreshJobsStatus(); if (currentView === 'jobs') await renderJobs(); }
+            catch (_) { notify(t('No se pudo actualizar. Se conserva la última lectura.'), 'error'); }
+        } catch (error) {
+            if (generation === lifecycleGeneration) byId('service-lifecycle-status').textContent = error.message === 'lifecycle_changed'
+                ? lifecycleReason('lifecycle_changed') : t('No se confirmó el retiro. Revisa nuevamente antes de intentarlo.');
+        } finally { lifecycleApplying = false; updateLifecycleControls(); }
+    });
     function renderJobsTable(jobs) {
         const savedPosition = beforeTableUpdate('jobs');
         const selected = new Set(Array.from(document.querySelectorAll('.job-checkbox:checked'), checkbox => checkbox.value));
@@ -2919,7 +3044,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const descriptionValues = { action: t(job.action || 'update'), id: job.serviceId ?? job.id ?? '', device: job.deviceId ?? job.device ?? '', user: job.username || job.mac || '' };
             const description = t(descriptionKey, descriptionValues);
             const error = job.error ? typeof job.error === 'object' ? JSON.stringify(job.error) : String(job.error) : '';
-            const explainedError = jobOwnershipErrorMarkup(error, job.serviceId ?? job.id) ?? jobNetworkErrorMarkup(error, job.serviceId ?? job.id);
+            const lifecycleError = jobLifecycleErrorMarkup(error);
+            const explainedError = lifecycleError ?? jobOwnershipErrorMarkup(error, job.serviceId ?? job.id) ?? jobNetworkErrorMarkup(error, job.serviceId ?? job.id);
             const connectionHelp = jobConnectionHelp(error);
             const stateKey = job.state === 'pending' ? 'Pendiente' : job.state === 'running' ? 'En ejecución' : 'Estado desconocido';
             const attempts = Number.isSafeInteger(job.attempts) && job.attempts >= 0 ? job.attempts : 0;
@@ -2940,7 +3066,16 @@ document.addEventListener('DOMContentLoaded', () => {
             const repair = jobNetworkRepairTarget(error, job.serviceId ?? job.id);
             const diagnosticId = Number(job.serviceId ?? job.id);
             const collision = /^network_address_conflict: requested_service=([1-9]\d*) blocking_service=([1-9]\d*) source=(?:reserved|cache|applied) family=(IPv[46])$/.exec(error);
-            if (collision && Number(collision[1]) === diagnosticId && Number.isSafeInteger(Number(collision[2]))) {
+            const validCollision = collision && Number(collision[1]) === diagnosticId && Number.isSafeInteger(Number(collision[2]));
+            if ((validCollision || lifecycleError !== null) && Number.isSafeInteger(diagnosticId) && diagnosticId > 0
+                && lifecycleModal && typeof api.previewServiceLifecycle === 'function') {
+                const lifecycle = document.createElement('button'); lifecycle.type = 'button'; lifecycle.className = 'btn btn-secondary job-repair-button';
+                translatedText(lifecycle, 'Revisar servicio solicitante #{id}', { id: diagnosticId });
+                lifecycle.disabled = lifecycleApplying || restoredRequiresReload;
+                lifecycle.addEventListener('click', () => previewServiceLifecycle(diagnosticId));
+                row.querySelector('.job-description').appendChild(lifecycle);
+            }
+            if (validCollision) {
                 const review = document.createElement('button'); review.type = 'button'; review.className = 'btn btn-secondary job-repair-button';
                 translatedText(review, 'Revisar reserva del servicio #{id}', { id: Number(collision[2]) });
                 review.disabled = cleanupBusy || cleanupRequiresReload;

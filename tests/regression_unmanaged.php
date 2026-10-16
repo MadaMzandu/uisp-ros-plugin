@@ -25,6 +25,12 @@ class UcrmApi {
         self::$calls[] = ['get', $path];
         if (preg_match('#^clients/services/([1-9][0-9]*)$#D',$path,$match) && isset(self::$services[(int)$match[1]]))
             return json_decode(json_encode(self::$services[(int)$match[1]]));
+        if ($path === 'clients/70') return ['id'=>70,'isArchived'=>false];
+        if ($path === 'custom-attributes') return [
+            ['id'=>1,'key'=>'device','attributeType'=>'service'],
+            ['id'=>2,'key'=>'username','attributeType'=>'service'],
+            ['id'=>3,'key'=>'password','attributeType'=>'service'],
+            ['id'=>4,'key'=>'address','attributeType'=>'service']];
         throw new \RuntimeException('Network prohibited: ' . $path);
     }
     public function patch($path, $data = []) { self::$calls[] = ['patch', $path]; throw new \RuntimeException('Network prohibited: ' . $path); }
@@ -262,16 +268,19 @@ try {
     unmanagedCheck($event(1356, 'insert', $partial)->status()->error, 'Partial provisioning fixture unexpectedly succeeded');
     unmanagedCheck($apiJobQueue->appliedSnapshot(1356) === [], 'Partial fixture published applied state');
     $apiSqliteCache->edit(['id' => 1356, 'device' => null], 'services');
-    // Keep the earlier attempt failing: an immediate detach now retries its prerequisites too.
+    // A confirmed detach supersedes the old set. Only a failed removal may
+    // keep its possible physical effects and reservation pending.
+    MT::$failDelete = true;
     $beforeCleanup = count(MT::$writes);
     unmanagedCheck($event(1356, 'edit', ['attributes'=>$attributes(null,'partial-account','192.0.2.136')])->status()->error && $apiJobQueue->isServiceBlocked(1356),
-        'A partial update did not retain its ordered cleanup barrier');
+        'A failed retirement did not retain its physical cleanup and reservation');
     $pendingDelete = $queueDatabase->querySingle("SELECT payload FROM jobs WHERE service_id=1356 AND operation='delete' ORDER BY id DESC LIMIT 1");
     unmanagedCheck(is_string($pendingDelete), 'Partially provisioned resources were silently ignored');
     foreach (json_decode($pendingDelete, true)['_commands'] as $command) unmanagedCheck(($command['action'] ?? '') === 'remove', 'Cleanup retained a prepared set command');
     unmanagedCheck($apiSqlite->selectAddress(1356, false) === '192.0.2.136',
         'A blocked detach released its potentially provisioned address before cleanup');
     MT::$failSet = false;
+    MT::$failDelete = false;
     $apiJobQueue->run(array_keys($apiJobQueue->list()));
     $cleanupWrites = array_values(array_filter(array_slice(MT::$writes, $beforeCleanup), static function (array $command): bool {
         return ($command['action'] ?? '') === 'remove' && ($command['_service_id'] ?? null) === 1356;
@@ -291,15 +300,16 @@ try {
     $recoveredAccountWrites = array_values(array_filter(array_slice(MT::$writes, $beforeRecoveredCleanup),
         static fn(array $command): bool => trim($command['path'], '/') === 'ppp/secret'
             && ($command['_service_id'] ?? null) === 1357));
-    unmanagedCheck(!$recoveredDetach->status()->error && count($recoveredAccountWrites) === 2
-        && ($recoveredAccountWrites[0]['action'] ?? '') !== 'remove'
-        && ($recoveredAccountWrites[1]['action'] ?? '') === 'remove'
-        && $recoveredAccountWrites[0]['name'] === 'recovered-partial-account'
-        && $recoveredAccountWrites[1]['name'] === 'recovered-partial-account'
+    unmanagedCheck(!$recoveredDetach->status()->error && $recoveredAccountWrites !== []
+        && count(array_filter($recoveredAccountWrites, static fn(array $item):bool=>($item['action']??'')!=='remove'
+            || ($item['name']??'')!=='recovered-partial-account'))===0
         && $apiJobQueue->completed($recoveredDetach->result()['jobKeys'])
         && $apiJobQueue->isServiceBlocked(1357) && $cached(1357)['device'] === null
         && $apiJobQueue->appliedSnapshot(1357) === [] && $apiSqlite->selectAddress(1357, false) === null,
-        'Recovered immediate detach lost identity/order, left applied resources, or restored the documentary Site');
+        'Recovered immediate detach lost identity/order, left applied resources, or restored the documentary Site: ' . json_encode([
+            'error'=>$recoveredDetach->status()->error, 'writes'=>array_map(static fn(array $item):array=>[$item['path'],$item['action']??'set',$item['name']??null],$recoveredAccountWrites),
+            'completed'=>$apiJobQueue->completed($recoveredDetach->result()['jobKeys']), 'blocked'=>$apiJobQueue->isServiceBlocked(1357),
+            'cachedDevice'=>$cached(1357)['device'], 'applied'=>$apiJobQueue->appliedSnapshot(1357)!==[], 'address'=>$apiSqlite->selectAddress(1357,false)]));
     // An old applied account and a different prepared account must both be retired on Site removal.
     $oldAccount = $assigned; $oldAccount['attributes'] = $attributes('Fixture router', 'old-account-1370', '192.0.2.170');
     unmanagedCheck(!$event(1370, 'insert', $oldAccount)->status()->error, 'Old identity fixture was not provisioned');
@@ -322,14 +332,18 @@ try {
     unmanagedCheck(($apiJobQueue->appliedSnapshot(1370)['username'] ?? null) === 'old-account-1370', 'Prepared fixture lost old applied state');
     $apiSqliteCache->edit(['id' => 1370, 'device' => null, 'username' => 'new-account-1370'], 'services');
     $apiSqliteCache->edit(['id' => 1370, 'address' => '192.0.2.171'], 'network');
+    MT::$failDeleteUser = 'new-account-1370';
     unmanagedCheck($event(1370, 'edit', ['attributes'=>$attributes(null,'new-account-1370','192.0.2.171')])->status()->error, 'Prepared detach bypassed its outstanding barrier');
     unmanagedCheck((int) $queueDatabase->querySingle("SELECT count(*) FROM jobs WHERE service_id=1370 AND operation='delete' AND status='pending'") === 2,
         'Detaching multiple identities omitted an old or prepared account');
     MT::$failSet = false; MT::$failDeleteUser = 'new-account-1370';
     $beforeMultiCleanup = count(MT::$writes);
     $apiJobQueue->run(array_keys($apiJobQueue->list()));
-    unmanagedCheck(($apiJobQueue->appliedSnapshot(1370)['username'] ?? null) === 'new-account-1370'
-        && $apiSqlite->selectAddress(1370, false) === '192.0.2.171', 'The first cleanup released the other identity before its confirmation: ' . json_encode([
+    $stillReserved = false;
+    try { (new ApiIP())->set(1399, '192.0.2.171'); }
+    catch (NetworkAddressConflict $conflict) { $stillReserved = ($conflict->context()['blockingServiceId'] ?? null) === 1370; }
+    unmanagedCheck(($apiJobQueue->appliedSnapshot(1370)['username'] ?? null) !== 'new-account-1370'
+        && $stillReserved, 'The first cleanup released the other identity before its confirmation: ' . json_encode([
             'applied' => $apiJobQueue->appliedSnapshot(1370)['username'] ?? null, 'address' => $apiSqlite->selectAddress(1370, false),
             'pending' => array_map(static fn(array $item): array => [$item['id'], $item['action'], $item['error']], $apiJobQueue->list())]));
     MT::$failDeleteUser = null;
@@ -341,6 +355,8 @@ try {
     unmanagedCheck(in_array('old-account-1370', $removedAccounts, true) && in_array('new-account-1370', $removedAccounts, true)
         && $apiJobQueue->appliedSnapshot(1370) === [] && $apiSqlite->selectAddress(1370, false) === null,
         'Site removal left a prepared account or released its reservation prematurely');
+    (new ApiIP())->set(1399, '192.0.2.171');
+    unmanagedCheck($apiSqlite->selectAddress(1399, false) === '192.0.2.171', 'Completed retirement retained the prepared address');
     // The same multi-identity cleanup is required for a terminal webhook whose Site is still assigned.
     $terminalOld = $assigned; $terminalOld['attributes'] = $attributes('Fixture router', 'old-account-1371', '192.0.2.180');
     unmanagedCheck(!$event(1371, 'insert', $terminalOld)->status()->error, 'Terminal old identity fixture was not provisioned');
@@ -362,11 +378,12 @@ try {
     $apiJobQueue->run([$terminalPreparedKey]);
     $apiSqliteCache->edit(['id' => 1371, 'username' => 'new-account-1371'], 'services');
     $apiSqliteCache->edit(['id' => 1371, 'address' => '192.0.2.181'], 'network');
+    MT::$failDelete = true;
     unmanagedCheck($event(1371, 'delete', [])->status()->error && $apiJobQueue->isServiceBlocked(1371),
-        'Terminal deletion bypassed the prepared identity barrier');
+        'Failed terminal cleanup released a prepared identity');
     unmanagedCheck((int) $queueDatabase->querySingle("SELECT count(*) FROM jobs WHERE service_id=1371 AND operation='delete' AND status='pending'") === 2,
         'Terminal deletion omitted the old or prepared identity');
-    MT::$failSet = false; $beforeTerminalCleanup = count(MT::$writes);
+    MT::$failSet = false; MT::$failDelete = false; $beforeTerminalCleanup = count(MT::$writes);
     $apiJobQueue->run(array_keys($apiJobQueue->list()));
     $terminalRemoved = [];
     foreach (array_slice(MT::$writes, $beforeTerminalCleanup) as $command) {

@@ -425,6 +425,18 @@ PHP);
     checkJobs(myIPClass() instanceof JobsIPStub, 'The typed production IP factory did not use the isolated fixture');
     mySqlite()->exec(file_get_contents($source . '/includes/schema.sql'));
     myCache()->exec(file_get_contents($source . '/includes/cache.sql'));
+    // Retried production jobs now require a fresh lifecycle read. This queue
+    // fixture supplies that authority locally without changing frozen payloads.
+    require_once $source . '/lib/api_service_lifecycle.php';
+    myJobQueue()->setLifecycle(new ApiServiceLifecycle(static function (string $path): array {
+        if (preg_match('~^clients/services/([1-9][0-9]*)$~D', $path, $match)) {
+            $row = myCache()->singleQuery('SELECT * FROM services WHERE id=?', true, [(int)$match[1]]) ?: [];
+            return ['id'=>(int)$match[1], 'clientId'=>(int)($row['clientId'] ?? $match[1]),
+                'status'=>(int)($GLOBALS['jobsFreshServiceStates'][(int)$match[1]] ?? $row['status'] ?? 1)];
+        }
+        if (preg_match('~^clients/([1-9][0-9]*)$~D', $path, $match)) return ['id'=>(int)$match[1], 'isArchived'=>false];
+        throw new RuntimeException('Unexpected lifecycle fixture read');
+    }));
     foreach ([10,20] as $deviceId) {
         mySqlite()->insert(['id'=>$deviceId,'name'=>'router-'.$deviceId,'ip'=>'192.0.2.'.$deviceId,
             'port'=>8728,'type'=>'mikrotik','user'=>'test-user','password'=>'test-secret'], 'devices');
@@ -618,7 +630,9 @@ PHP);
         $fresh=new ApiWebhookFreshness(static function() use($request): object {
             $sid=(int)$request->entityId; $row=myCache()->singleQuery('SELECT * FROM services WHERE id=?',true,[$sid])?:[];
             $network=myCache()->singleQuery('SELECT address,address6 FROM network WHERE id=?',true,[$sid])?:[];
-            return (object)array_replace($row,['id'=>$sid,'status'=>['suspend'=>3,'unsuspend'=>1,'delete'=>2][$request->changeType]??1,
+            $status=['suspend'=>3,'unsuspend'=>1,'delete'=>2][$request->changeType]??1;
+            $GLOBALS['jobsFreshServiceStates'][$sid]=$status;
+            return (object)array_replace($row,['id'=>$sid,'status'=>$status,
                 'servicePlanId'=>null,'attributes'=>[],'network'=>$network]);
         });
         return new ApiAction($request,$fresh);
@@ -641,7 +655,7 @@ PHP);
     $deleteAction=jobsLifecycleAction($lifecycle('delete','alias-delete')); $deleteAction->exec();
     checkJobs(!$deleteAction->status()->error && !mySqlite()->singleQuery('SELECT id FROM services WHERE id=90')
         && !myCache()->singleQuery('SELECT id FROM services WHERE id=90') && !myCache()->singleQuery('SELECT id FROM network WHERE id=90'),
-        'Explicit deletion did not clear both cached service and network state');
+        'Explicit deletion did not clear both cached service and network state: ' . json_encode(myJobQueue()->list()));
     myCache()->insert(['id'=>91,'company'=>null,'firstName'=>'Thin','lastName'=>'Client'], 'clients');
     myCache()->insert(['id'=>91,'clientId'=>91,'device'=>20,'username'=>'thin','password'=>'private','status'=>1], 'services');
     myCache()->insert(['id'=>91,'address'=>'192.0.2.91','address6'=>null], 'network');

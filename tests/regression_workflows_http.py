@@ -42,7 +42,12 @@ def main() -> None:
         sdk = SDK.replace("if ($path==='custom-attributes')", """if ($path==='clients/services/9807') throw new \\GuzzleHttp\\Exception\\ClientException('PRIVATE-404',
                     new \\GuzzleHttp\\Psr7\\Request('GET','https://fixture.invalid'),new \\GuzzleHttp\\Psr7\\Response(404));
                 if ($path==='clients/services') return [];
+                if ($path==='clients/services/771') return ['id'=>771,'clientId'=>17,'status'=>2,'servicePlanId'=>9,'attributes'=>[]];
                 if ($path==='custom-attributes')""")
+        sdk = sdk.replace("'lastName'=>'Customer'];", "'lastName'=>'Customer','isArchived'=>false];")
+        # Bounded CRM readers inspect the SDK transport while this override still
+        # answers every GET locally; its HTTP handler must never be invoked.
+        sdk = sdk.replace("return new class {\n            public function get($path", "return new class {\n            protected $client;\n            public function __construct() { $this->client=new \\GuzzleHttp\\Client(['handler'=>function () { throw new \\RuntimeException('Fixture network prohibited'); }]); }\n            public function get($path")
         (directory / 'lib/api_uisp_client.php').write_text(sdk, encoding='utf-8')
         (directory / 'initialize.php').write_text("""<?php
 set_include_path(__DIR__.'/lib'.PATH_SEPARATOR.get_include_path());
@@ -57,6 +62,7 @@ $q=new ApiJobQueue('data/jobs.db',null);$q->close();
             db.execute("INSERT INTO devices(id,name,ip,user,password,pool) VALUES(1,'Before restore','192.0.2.1','fixture','PRIVATE-ROUTER','192.0.2.0/24')")
             db.execute("INSERT INTO services(id,clientId,device,status) VALUES(9807,29,1,2)")
             db.execute("INSERT INTO network(id,address) VALUES(9807,'192.0.2.50')")
+            db.execute("INSERT INTO network(id,address) VALUES(771,'192.0.2.51')")
         with closing(sqlite3.connect(directory / 'data/jobs.db')) as db, db:
             # A pending requester without any applied ownership for the obsolete blocker.
             db.execute("INSERT INTO jobs(service_id,version,operation,status,payload,identity,fingerprint,error,created,updated,next_attempt) VALUES(7279,1,'update','pending',?, 'fixture','fixture',?,1,1,1)",
@@ -109,6 +115,7 @@ $q=new ApiJobQueue('data/jobs.db',null);$q->close();
                 writes = [operation('full_backup', 'create', change='update'),
                           operation('full_backup', 'apply', {'previewToken': 'f' * 64}, 'update'),
                           operation('sync_preview', 'apply', {'previewToken': 'f' * 64, 'mode': 'differences'}, 'update'),
+                          operation('service_lifecycle', 'apply', {'previewToken': 'f' * 64}, 'update'),
                           operation('job_reservation', 'preview', {'serviceIds': [9807]}, 'cleanup')]
                 for body in writes:
                     check(request(body, role='view')[0] == 403, 'View role obtained workflow mutation permission')
@@ -118,10 +125,32 @@ $q=new ApiJobQueue('data/jobs.db',null);$q->close();
                              operation('sync_preview', 'begin', {'deviceId': '1'}),
                              operation('sync_preview', 'apply', {'previewToken': 'f'*64, 'mode': 'anything'}, 'update'),
                              operation('full_backup', 'preview', {'name': '../../config.json'}, 'update'),
+                             operation('service_lifecycle', 'preview', {'serviceId': '771'}),
+                             operation('service_lifecycle', 'preview', {'serviceId': 771, 'force': True}),
                              operation('job_reservation', 'preview', {'serviceIds': [48781]}, 'cleanup')]:
                     check(request(body)[0] == 400, 'Invalid workflow request accepted: ' + str(body))
                 check(not (directory / 'setup-called').exists() and not (directory / 'cache-sync-called').exists(),
                       'Read/validation workflows entered normal provisioning bootstrap')
+
+                status, body, _ = request(operation('service_lifecycle', 'preview', {'serviceId': 42}), role='view')
+                check(status == 200 and body['status'] == 'ok' and body['data']['state'] == 'active' and not body['data']['eligible'],
+                      'A live service was eligible for retirement: ' + str(body))
+                for role in ('none', 'client'):
+                    check(request(operation('service_lifecycle', 'preview', {'serviceId': 771}), role=role)[0] == 403,
+                          'Unauthorized lifecycle preview was accepted')
+                status, body, _ = request(operation('service_lifecycle', 'preview', {'serviceId': 771}), role='view')
+                check(status == 200 and body['data']['eligible'] and body['data']['previewToken'],
+                      'An ended service with only an old local reservation could not be reviewed: ' + str(body))
+                lifecycle_token = body['data']['previewToken']
+                status, body, _ = request(operation('service_lifecycle', 'apply', {'previewToken': lifecycle_token}, 'update'))
+                check(status == 200 and body['data']['retired'] and body['data']['released'],
+                      'The reviewed ended reservation was not released: ' + str(body))
+                check(request(operation('service_lifecycle', 'apply', {'previewToken': lifecycle_token}, 'update'))[0] == 400,
+                      'Lifecycle preview authorization was reusable')
+                with closing(sqlite3.connect(directory / 'data/data.db')) as db:
+                    check(db.execute('SELECT address FROM network WHERE id=771').fetchone() in (None, (None,)), 'Ended local reservation stayed occupied')
+                    check(db.execute('SELECT address FROM network WHERE id=9807').fetchone() == ('192.0.2.50',),
+                          'Retiring the requester changed the unrelated protected reservation')
 
                 status, body, _ = request(operation('job_reservation', 'preview', {'serviceIds': [9807]}, 'cleanup'))
                 check(status == 200 and body['status'] == 'ok' and len(body['data']['candidates']) == 1,

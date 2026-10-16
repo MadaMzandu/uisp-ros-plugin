@@ -12,7 +12,7 @@ final class ApiPanelWorkflows
             if ($method!=='POST' || array_keys($files)!==['fullBackup'] || array_keys($post)!==['workflow']) throw new InvalidArgumentException('invalid_full_backup_request');
             respond('full_backup_preview',false,(new ApiFullBackup())->previewUpload($files['fullBackup'])); return true;
         }
-        if ($method!=='POST' || !$request || !in_array($request->target??null,['full_backup','pool_capacity','service_reconciliation','sync_preview'],true)) return false;
+        if ($method!=='POST' || !$request || !in_array($request->target??null,['full_backup','pool_capacity','service_reconciliation','sync_preview','service_lifecycle'],true)) return false;
         if (!empty($request->entity) || !is_object($request->data??null)) throw new InvalidArgumentException('invalid_workflow_request');
         $data=$request->data; $keys=array_keys(get_object_vars($data)); $action=$request->action??'list'; $type=$request->changeType??null;
         $result=null;
@@ -20,6 +20,13 @@ final class ApiPanelWorkflows
             require_once __DIR__.'/api_pool_capacity.php'; $result=(new ApiPoolCapacity())->read();
         } elseif ($request->target==='service_reconciliation' && $type==='list' && $action==='list' && !$keys) {
             require_once __DIR__.'/api_service_reconciliation.php'; $result=(new ApiServiceReconciliation())->read();
+        } elseif ($request->target==='service_lifecycle') {
+            require_once __DIR__.'/api_service_lifecycle.php'; $api=new ApiServiceLifecycle();
+            if ($type==='list' && $action==='preview' && $keys===['serviceId'] && is_int($data->serviceId) && $data->serviceId>0) $result=$api->preview($data->serviceId);
+            elseif ($type==='update' && $action==='apply' && $keys===['previewToken'] && is_string($data->previewToken)) {
+                if (is_file('data/data.db')) (new ApiSetup())->assertCompatible();
+                $result=$api->apply($data->previewToken);
+            } else throw new InvalidArgumentException('invalid_service_lifecycle_request');
         } elseif ($request->target==='full_backup') {
             $api=new ApiFullBackup();
             if ($type==='list' && $action==='list' && !$keys) $result=$api->listing();

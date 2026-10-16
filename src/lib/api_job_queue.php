@@ -11,6 +11,78 @@ class ApiJobQueue
     private array $ownerLocks = [];
     private array $serviceOwners = [];
     private string $path;
+    private $lifecycle = null;
+
+    /** Server-side dependency injection; never populated from a panel or webhook payload. */
+    public function setLifecycle($reviewer): void { $this->lifecycle = $reviewer; }
+    public function lifecyclePaths(): array
+    { return ['data'=>dirname($this->path).'/data.db','cache'=>dirname($this->path).'/cache.db','jobs'=>$this->path]; }
+    public function lifecycleReviewer()
+    {
+        if ($this->lifecycle === null) {
+            require_once __DIR__.'/api_service_lifecycle.php';
+            $paths=$this->lifecyclePaths();
+            $this->lifecycle=new ApiServiceLifecycle(null,$paths['data'],$paths['cache'],$paths['jobs']);
+        }
+        return $this->lifecycle;
+    }
+
+    public function lifecycleMeta(string $key, ?array $value=null): ?array
+    {
+        if (!preg_match('/^(cursor|service:[1-9][0-9]*)$/D',$key)) throw new InvalidArgumentException('lifecycle_invalid');
+        $key='lifecycle:'.$key;
+        if ($value!==null) $this->withAdministrativeLock(fn()=>$this->writeLifecycleMeta($key,$value));
+        $rows=$this->query('SELECT value FROM queue_meta WHERE key=:key',['key'=>$key]);
+        return $rows ? json_decode($rows[0]['value'],true,32,JSON_THROW_ON_ERROR) : null;
+    }
+    private function writeLifecycleMeta(string $key,array $value): void
+    { $this->execute('INSERT INTO queue_meta(key,value) VALUES(:key,:value) ON CONFLICT(key) DO UPDATE SET value=excluded.value',['key'=>$key,'value'=>$this->encode($value)]); }
+
+    /** Fresh retirement supersedes obsolete desired work, preserving every possible physical effect. */
+    public function retireService(int $sid, array $snapshots, array $proof): array
+    {
+        if ($sid<1 || !$this->ownsServiceLock($sid) || ($proof['service_id']??null)!==$sid
+            || ($proof['state']??null)!=='retired') throw new InvalidArgumentException('lifecycle_invalid');
+        return $this->transaction(function () use ($sid,$snapshots,$proof): array {
+            if ($this->query("SELECT id FROM jobs WHERE service_id=:sid AND status='running'",['sid'=>$sid]))
+                throw new RuntimeException('lifecycle_service_busy');
+            $existing=$this->query("SELECT id,payload,version FROM jobs WHERE service_id=:sid AND operation='delete' AND status='pending' ORDER BY version",['sid'=>$sid]);
+            $keys=[]; $deleting=[];
+            foreach ($existing as $row) {
+                $snapshot=$this->payload($row);
+                $snapshot['_terminal']=true;
+                $snapshot['_lifecycle_retirement']=array_intersect_key($proof,array_flip(['service_id','client_id','reason','fingerprint','checked_at','identity_field']));
+                $this->execute("UPDATE jobs SET payload=:payload,error=NULL,next_attempt=0,updated=:now WHERE id=:id AND status='pending'",['id'=>$row['id'],'payload'=>$this->encode($snapshot),'now'=>date('c')]);
+                $keys[]='Q'.$row['id']; $deleting[$this->identity($snapshot)]=true;
+            }
+            foreach ($this->query("SELECT * FROM jobs WHERE service_id=:sid AND status='pending' AND operation IN ('update','queues_set')",['sid'=>$sid]) as $job) {
+                $this->retainCancellationCleanups($job);
+                $this->execute("UPDATE jobs SET status='superseded',error=NULL,next_attempt=0,updated=:now WHERE id=:id AND status='pending'",['id'=>$job['id'],'now'=>date('c')]);
+            }
+            // Preserved history is not immortal ownership after this service has ended.
+            foreach ($this->query('SELECT * FROM retained_resources WHERE service_id=:sid AND slot<>\'source\'',['sid'=>$sid]) as $row) {
+                $this->execute('INSERT OR IGNORE INTO cancellation_cleanups(source_job_id,service_id,source_version,slot,payload,identity) VALUES(:job,:sid,:version,:slot,:payload,:identity)',
+                    ['job'=>$row['source_job_id'],'sid'=>$sid,'version'=>$row['source_version'],'slot'=>$row['slot'],'payload'=>$row['payload'],'identity'=>$row['identity']]);
+            }
+            $latestDelete=$existing?max(array_column($existing,'version')):0;
+            $latestDebt=(int)$this->db->querySingle('SELECT max(source_version) FROM cancellation_cleanups WHERE service_id='.$sid);
+            if ($latestDebt>=$latestDelete) $deleting=[];
+            foreach ($snapshots as $snapshot) {
+                if ((int)($snapshot['id']??0)!==$sid) throw new InvalidArgumentException('lifecycle_invalid');
+                $snapshot['action']='delete'; $snapshot['_terminal']=true;
+                $snapshot['_lifecycle_retirement']=array_intersect_key($proof,array_flip(['service_id','client_id','reason','fingerprint','checked_at','identity_field']));
+                if (isset($deleting[$this->identity($snapshot)])) continue;
+                $keys[]=$this->insertJob($snapshot,'delete');
+            }
+            if (!$keys) {
+                $version=(int)$this->db->querySingle('SELECT version FROM service_versions WHERE service_id='.$sid);
+                $this->execute('INSERT INTO service_tombstones(service_id,version) VALUES(:sid,:version) ON CONFLICT(service_id) DO UPDATE SET version=excluded.version',['sid'=>$sid,'version'=>$version]);
+                $this->execute("UPDATE jobs SET status='cleaned',prior_cleared=1,cleanup_done=1,history_scrubbed=0 WHERE service_id=:sid AND status IN ('cancelled','superseded')",['sid'=>$sid]);
+            }
+            $this->writeLifecycleMeta('lifecycle:service:'.$sid,['state'=>$keys?'cleanup_pending':'retired','reason'=>$proof['reason'],'client_id'=>$proof['client_id']??null,'checked_at'=>$proof['checked_at'],'job_keys'=>$keys]);
+            return $keys;
+        });
+    }
 
     public function __construct(string $path = 'data/jobs.db', ?string $legacy = 'data/queue.json')
     {
@@ -325,6 +397,85 @@ class ApiJobQueue
         return $snapshots;
     }
 
+    /** Include uncertain legacy attempts even when they predate frozen command journals. */
+    public function lifecycleSnapshots(int $serviceId): array
+    {
+        $result=$this->resourceSnapshots($serviceId);
+        foreach ($this->query("SELECT payload,attempts,legacy_key,operation FROM jobs WHERE service_id=:sid AND status IN ('pending','cancelled','superseded')",['sid'=>$serviceId]) as $row) {
+            $snapshot=$this->payload($row);
+            if (!isset($snapshot['_commands']) && ((int)$row['attempts']>0 || $row['legacy_key']!==null || $row['operation']==='delete')) $result[]=$snapshot;
+        }
+        foreach($this->query("SELECT payload FROM retained_resources WHERE service_id=:sid AND slot='source'",['sid'=>$serviceId]) as $row) {
+            $snapshot=$this->payload($row);
+            if (!empty($snapshot['_prior_network']) || !empty($snapshot['_previous_addresses'])) $result[]=$snapshot;
+        }
+        return $result;
+    }
+
+    public function cancelRetirement(int $sid,bool $legacyTerminal=false): void
+    {
+        if (!$this->ownsServiceLock($sid)) throw new RuntimeException('lifecycle_service_busy');
+        $this->transaction(function () use($sid,$legacyTerminal): void {
+            $changed=false;
+            foreach($this->query("SELECT * FROM jobs WHERE service_id=:sid AND operation='delete' AND status='pending'",['sid'=>$sid]) as $job) {
+                $snapshot=$this->payload($job);
+                if (empty($snapshot['_lifecycle_retirement']) && (!$legacyTerminal || empty($snapshot['_terminal']))) continue;
+                $this->retainCancellationCleanups($job);
+                $this->execute("UPDATE jobs SET status='superseded',error=NULL,next_attempt=0,updated=:now WHERE id=:id AND status='pending'",['id'=>$job['id'],'now'=>date('c')]); $changed=true;
+            }
+            if ($changed) {
+                $this->execute('DELETE FROM service_tombstones WHERE service_id=:sid',['sid'=>$sid]);
+                $this->writeLifecycleMeta('lifecycle:service:'.$sid,['state'=>'reactivated','reason'=>'lifecycle_reactivated','checked_at'=>date('c'),'job_keys'=>[]]);
+            }
+        });
+    }
+
+    public function lifecycleMayRelease(array $job): bool
+    {
+        $current=$this->ownedCancellationJob($job); $sid=(int)$current['service_id'];
+        if (empty($this->payload($current)['_lifecycle_retirement'])) return false;
+        return !$this->query("SELECT id FROM jobs WHERE service_id=:sid AND id<>:id AND status IN ('pending','running') LIMIT 1",['sid'=>$sid,'id'=>$current['id']])
+            && !$this->query('SELECT id FROM cancellation_cleanups WHERE service_id=:sid LIMIT 1',['sid'=>$sid]);
+    }
+
+    private function lifecycleReviewBeforeClaim(?array &$selected,array &$attempted,array &$results,array &$reviewed,int &$budget,float $deadline): void
+    {
+        $paths=$this->lifecyclePaths();
+        if (!is_file($paths['data'])) return;
+        $where=$selected===null?' AND next_attempt<='.time():' AND id IN ('.implode(',',$selected).')';
+        if ($attempted) $where.=' AND id NOT IN ('.implode(',',$attempted).')';
+        foreach ($this->query("SELECT * FROM jobs WHERE status='pending' $where ORDER BY id LIMIT 10000") as $job) {
+            $sid=(int)$job['service_id']; if (isset($reviewed[$sid])) continue;
+            $reviewer=$this->lifecycleReviewer(); $snapshot=$this->payload($job);
+            $retiring=$job['operation']==='delete' && !empty($snapshot['_lifecycle_retirement']);
+            // Its guarded Batch execution performs a fresh check immediately before removal.
+            if ($retiring) continue;
+            $legacyTerminal=$job['operation']==='delete' && !empty($snapshot['_terminal']);
+            if (!$legacyTerminal && !$reviewer->requiresReview($job)) continue;
+            if ($budget<=0 || microtime(true)>=$deadline) {
+                $attempted[]=(int)$job['id'];
+                $results['Q'.$job['id']]=['success'=>false,'error'=>'lifecycle_review_pending'];
+                continue;
+            }
+            $reviewed[$sid]=true; $budget--;
+            try {
+                if ($retiring) { $reviewer->assertRetired($sid,$snapshot['_lifecycle_retirement']); continue; }
+                $review=$reviewer->withDeadline($deadline,fn()=>$legacyTerminal?$reviewer->reviewTerminal($sid,$this,!empty($snapshot['_lifecycle_billing']),$snapshot['_lifecycle_identity_field']??null):$reviewer->review($sid,$this));
+                if (($review['state']??'unknown')==='unknown') throw new RuntimeException('lifecycle_unavailable');
+                if ($selected!==null) foreach ($review['jobKeys']??[] as $key) $selected[]=(int)substr($key,1);
+                if ($selected!==null) $selected=array_values(array_unique($selected));
+            } catch (Throwable $error) {
+                $reason=in_array($error->getMessage(),['lifecycle_reactivated','lifecycle_identity_changed','lifecycle_router_identity_unknown','lifecycle_changed'],true)?$error->getMessage():'lifecycle_unavailable';
+                foreach ($this->query("SELECT id FROM jobs WHERE service_id=:sid AND status='pending'",['sid'=>$sid]) as $blocked) {
+                    $id=(int)$blocked['id']; $attempted[]=$id;
+                    $this->execute('UPDATE jobs SET error=:reason,next_attempt=:retry,updated=:now WHERE id=:id AND status=\'pending\'',['id'=>$id,'reason'=>$reason,'retry'=>time()+30,'now'=>date('c')]);
+                    $results['Q'.$id]=['success'=>false,'error'=>$reason];
+                }
+                if ($reason==='lifecycle_reactivated') $this->deferFreshReview($sid,'webhook_state_unconfirmed');
+            }
+        }
+    }
+
     public function canClearApplied(array $snapshot): bool
     {
         $rows = $this->query('SELECT applied_identity FROM service_versions WHERE service_id=:id', ['id' => (int) $snapshot['id']]);
@@ -555,7 +706,10 @@ class ApiJobQueue
         if ($selected === []) { return []; }
         $attempted = [];
         $results = [];
-        while ($job = $this->claim($selected, $attempted)) {
+        $reviewed=[]; $lifecycleBudget=8; $lifecycleDeadline=microtime(true)+8; $conflictBudget=8.0;
+        while (true) {
+            if ($executor===null) $this->lifecycleReviewBeforeClaim($selected,$attempted,$results,$reviewed,$lifecycleBudget,$lifecycleDeadline);
+            $job=$this->claim($selected,$attempted); if (!$job) break;
             $id = (int) $job['id'];
             $attempted[] = $id;
             $key = 'Q' . $id;
@@ -563,17 +717,35 @@ class ApiJobQueue
             try {
                 if ($executor === null) {
                     require_once __DIR__ . '/batch.php';
-                    $ok = (new Batch())->applySnapshot($this->payload($job), $job['operation'], $this, $job);
+                    $execute=fn()=>(new Batch())->applySnapshot($this->payload($job),$job['operation'],$this,$job);
+                    $snapshot=$this->payload($job);
+                    $sid=(int)$job['service_id'];
+                    $ok=!empty($snapshot['_lifecycle_retirement']) && !$this->ownsServiceLock($sid)
+                        ? $this->withServiceLock($sid,$execute) : $execute();
                 } else {
                     $ok = $executor($this->payload($job), $job['operation'], $job, $this);
                 }
                 if ($ok !== true) { $error = 'Operation did not complete'; }
             } catch (Throwable $exception) {
                 $error = $exception->getMessage();
+                if ($executor===null) {
+                    $conflictStarted=microtime(true);
+                    try {
+                        if ($conflictBudget>0 && $this->lifecycleReviewer()->resolveConflict($exception,$this,(int)$job['service_id'],microtime(true)+$conflictBudget)) {
+                            $current=$this->query("SELECT payload FROM jobs WHERE id=:id AND status='running' AND owner=:owner",['id'=>$job['id'],'owner'=>$job['owner']]);
+                            if ($current && (new Batch())->applySnapshot($this->payload($current[0]),$job['operation'],$this,$job)===true) $error=null;
+                        }
+                    } catch (Throwable $retryError) { $error=$retryError->getMessage(); }
+                    finally { $conflictBudget=max(0,$conflictBudget-(microtime(true)-$conflictStarted)); }
+                }
             }
             $failureAttempt = null;
             try { $owned = $this->finish($job, $error, $failureAttempt); }
             finally { $this->releaseOwner($job['owner']); }
+            if ($executor===null && $owned && $error==='lifecycle_reactivated') {
+                try { $this->lifecycleReviewer()->review((int)$job['service_id'],$this); $this->deferFreshReview((int)$job['service_id'],'webhook_state_unconfirmed'); }
+                catch (Throwable $ignored) {}
+            }
             if ($owned && $error !== null && $failureAttempt !== null) $this->logFailedAttempt($job,$error,$failureAttempt);
             $results[$key] = ['success' => $owned && $error === null, 'error' => $error];
         }
@@ -916,6 +1088,11 @@ class ApiJobQueue
         $jobId = $this->db->lastInsertRowID();
         // The intent marker and its cleanup job commit in the same SQLite transaction.
         if ($operation === 'delete' && !empty($snapshot['_terminal'])) {
+            // A terminal cleanup cannot wait forever behind an obsolete failed update.
+            foreach ($this->query("SELECT * FROM jobs WHERE service_id=:sid AND status='pending' AND operation IN ('update','queues_set')",['sid'=>$sid]) as $obsolete) {
+                $this->retainCancellationCleanups($obsolete);
+                $this->execute("UPDATE jobs SET status='superseded',error=NULL,next_attempt=0,updated=:now WHERE id=:id AND status='pending'",['id'=>$obsolete['id'],'now'=>$now]);
+            }
             $this->execute('INSERT INTO service_tombstones(service_id,version) VALUES(:sid,:version)
                 ON CONFLICT(service_id) DO UPDATE SET version=excluded.version', ['sid' => $sid, 'version' => $version]);
         } elseif ($operation === 'update' && !empty($snapshot['_clear_terminal'])) {
@@ -984,6 +1161,18 @@ class ApiJobQueue
                         ['identity' => $current['identity'], 'payload' => $this->encode($applied), 'sid' => (int) $current['service_id']]);
                 } elseif ($current['operation'] === 'delete') {
                     $this->releaseApplied((int) $current['service_id'], $current['identity']);
+                    $payload=$this->payload($current);
+                    if (!empty($payload['_lifecycle_retirement'])) {
+                        $sid=(int)$current['service_id'];
+                        $others=$this->query("SELECT id FROM jobs WHERE service_id=:sid AND id<>:id AND status IN ('pending','running')",['sid'=>$sid,'id'=>$current['id']]);
+                        if (!$others && !$this->query('SELECT id FROM cancellation_cleanups WHERE service_id=:sid LIMIT 1',['sid'=>$sid])) {
+                            $this->execute('DELETE FROM retained_resources WHERE service_id=:sid',['sid'=>$sid]);
+                            $this->execute('UPDATE service_versions SET applied_identity=NULL,applied_payload=NULL WHERE service_id=:sid',['sid'=>$sid]);
+                            $this->execute("UPDATE jobs SET status='cleaned',prior_cleared=1,cleanup_done=1,history_scrubbed=0 WHERE service_id=:sid AND status IN ('cancelled','superseded')",['sid'=>$sid]);
+                            $marker=$payload['_lifecycle_retirement'];
+                            $this->writeLifecycleMeta('lifecycle:service:'.$sid,['state'=>'retired','reason'=>'lifecycle_retired','client_id'=>$marker['client_id']??null,'checked_at'=>date('c'),'job_keys'=>[]]);
+                        }
+                    }
                 }
                 if (in_array($current['operation'], ['update','delete'], true)) {
                     $this->execute("UPDATE jobs SET status='cleaned',history_scrubbed=0,updated=:now
@@ -1018,6 +1207,9 @@ class ApiJobQueue
 
     private function safeFailureCode(string $error): string
     {
+        if (in_array($error,['lifecycle_unavailable','lifecycle_invalid','lifecycle_identity_changed','lifecycle_reactivated',
+            'lifecycle_router_identity_unknown','lifecycle_resources_unconfirmed','lifecycle_resources_remain',
+            'lifecycle_changed','lifecycle_service_busy','lifecycle_resource_limit','lifecycle_review_pending'],true)) return $error;
         if ($this->networkFailureContext($error)) return strpos($error, 'network_address_conflict:') === 0 ? 'network_address_conflict' : 'invalid_network_address';
         if ($this->ownershipFailureContext($error)) return 'router_ownership_conflict';
         if (in_array($error, ['router_ownership_record_changed', 'site_address_resources_changed', 'site_address_prepared_guard_changed'], true)) return $error;

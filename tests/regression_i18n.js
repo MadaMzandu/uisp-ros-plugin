@@ -68,6 +68,35 @@ for (const code of codes) {
         assert.notEqual(ui.i18n.t(error), error, 'Job failures must explain the queue outcome in ' + code);
         assert(ui.i18n.t(error).length > 40, 'Queue errors must direct users to the row details');
     }
+    for (const key of ['Respaldos del plugin', 'Respaldo completo (ZIP)',
+        'Copias anteriores y de limpieza (SQLite)',
+        'Copias de la base principal: configuración, dispositivos, planes y asignaciones. No incluyen la cola ni las recuperaciones. Las copias de limpieza sólo permiten descarga.',
+        'Crear copia SQLite', 'Restaurar archivo SQLite']) {
+        assert(ui.i18n.has(key, code), 'Backup scope is not translated in ' + code + ': ' + key);
+        if (code !== 'es') assert.notEqual(ui.i18n.t(key), key, 'Backup scope still falls back to Spanish in ' + code);
+    }
+    for (const key of ['Revisar servicio solicitante #{id}', 'Revisar estado del servicio',
+        'Revisa el estado actual del servicio solicitante en UISP antes de retirar sus trabajos pendientes.',
+        'La asignación del otro servicio se conserva.',
+        'Se retirarán los pendientes anteriores de este servicio. Si quedan recursos en el router, se programará su baja antes de liberar la IP.',
+        'Retirar pendientes del servicio', 'El servicio sigue vigente en UISP. Se conserva su asignación.',
+        'UISP confirmó que el servicio terminó.', 'UISP confirmó que el cliente está archivado.',
+        'UISP confirmó que el servicio no existe.', 'No se pudo confirmar el estado actual en UISP. Vuelve a revisar.',
+        'El estado del servicio cambió. Revisa nuevamente antes de retirar sus pendientes.',
+        'La baja del router quedó programada. La IP se liberará al completar la limpieza.',
+        'Se retiraron los pendientes anteriores y se liberaron sus reservas locales.',
+        'Se retiraron los pendientes anteriores del servicio.',
+        'No se confirmó el retiro. Revisa nuevamente antes de intentarlo.', 'Revisión válida hasta: {time}.', 'Baja programada',
+        'No se pudo comprobar el estado actual en UISP. El trabajo se revisará en el próximo reintento automático.',
+        'La revisión del estado quedó pendiente para otra pasada automática.',
+        'La identidad del cliente cambió. Revisa el servicio y su vínculo en UISP antes de retirar recursos.',
+        'UISP indica que el servicio volvió a estar vigente. Se conservaron sus recursos y se revisará su estado actual.',
+        'No se pudo identificar el router o la cuenta anterior. Revisa el usuario y el dispositivo del servicio.',
+        'La baja anterior no se pudo confirmar en el router. Sus reservas se conservan hasta comprobar la limpieza.',
+        'El estado del servicio cambió durante la revisión. Se comprobará de nuevo antes de modificarlo.']) {
+        assert(ui.i18n.has(key, code), 'Service retirement lacks a translation in ' + code + ': ' + key);
+        if (code !== 'es') assert.notEqual(ui.i18n.t(key), key, 'Service retirement still falls back to Spanish in ' + code);
+    }
     assert(ui.i18n.t('Intentos: {count}', { count: 12 }).includes('12'));
     for (const key of ['Pendiente', 'En ejecución', 'Estado desconocido', 'Próximo intento', 'Último error'])
         assert(ui.i18n.has(key, code), 'Job detail label is missing in ' + code + ': ' + key);

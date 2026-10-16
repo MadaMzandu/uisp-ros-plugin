@@ -28,7 +28,8 @@ class UcrmApi {
     public static function create() { return new self(); }
     public function get($path, $options = []) {
         self::$calls[] = $path;
-        if ($path === 'clients/70') return ['id'=>70,'firstName'=>'Fresh','lastName'=>'Client','companyName'=>'Fixture Company'];
+        if ($path === 'clients/70') return ['id'=>70,'firstName'=>'Fresh','lastName'=>'Client','companyName'=>'Fixture Company','isArchived'=>false];
+        if ($path === 'clients/71') return ['id'=>71,'firstName'=>'Transferred','lastName'=>'Client','isArchived'=>false];
         if (preg_match('#^clients/services/([1-9][0-9]*)$#D', $path, $match) && isset(self::$services[(int)$match[1]]))
             return self::$services[(int)$match[1]];
         throw new \RuntimeException('Unexpected network request in second audit fixture: ' . $path);
@@ -96,6 +97,7 @@ try {
         $apiSqliteCache->insert(['id'=>$id,'clientId'=>70,'device'=>10,'planId'=>1,'status'=>1,'username'=>'fixture-'.$id,'password'=>'fixture',
             'uploadSpeed'=>20,'downloadSpeed'=>50],'services');
         $apiSqliteCache->insert(['id'=>$id,'address'=>'192.0.2.'.$id],'network');
+        secondAuditFreshService($id,70,1);
         secondAuditCheck((new Batch())->set_accounts([$id]),'Initial fixture service was not established');
     }
     $beforeTransfer=count(MT::$writes);
@@ -151,6 +153,9 @@ try {
     $apiSqliteCache->insert(['id'=>96,'clientId'=>70,'device'=>10,'planId'=>1,'status'=>1,'username'=>'fixture-96','password'=>'fixture',
         'uploadSpeed'=>20,'downloadSpeed'=>50],'services');
     $apiSqliteCache->insert(['id'=>96,'address'=>'192.0.2.96'],'network');
+    // Automatic refresh still sees the active source snapshot. Only the explicit
+    // later activation may revoke the recovered legacy terminal intent.
+    secondAuditFreshService(96,70,1);
     secondAuditCheck((new Batch())->set_accounts([96]),'Legacy fixture account was not established');
     $legacy=$apiSqliteCache->singleQuery('SELECT services.*,clients.firstName,clients.lastName,clients.company FROM services
         LEFT JOIN clients ON services.clientId=clients.id WHERE services.id=96',true);
@@ -165,6 +170,7 @@ try {
         $apiSqliteCache->insert(['id'=>$id,'clientId'=>70,'device'=>10,'planId'=>1,'status'=>1,'username'=>'fixture-'.$id,'password'=>'fixture',
             'uploadSpeed'=>20,'downloadSpeed'=>50],'services');
         $apiSqliteCache->insert(['id'=>$id,'address'=>'192.0.2.'.$id],'network');
+        secondAuditFreshService($id,70,1);
         secondAuditCheck((new Batch())->set_accounts([$id]),'Completed legacy fixture account was not established');
         $finishedLegacy=$apiSqliteCache->singleQuery('SELECT services.*,clients.firstName,clients.lastName,clients.company FROM services
             LEFT JOIN clients ON services.clientId=clients.id WHERE services.id=?',true,[$id]);

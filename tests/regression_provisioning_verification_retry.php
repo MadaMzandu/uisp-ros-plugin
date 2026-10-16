@@ -58,7 +58,14 @@ try{
         if($action==='remove'){$service['action']='delete';$service['_delete_frozen']=true;}
         return $service;
     };
-    $queue=myJobQueue();$old=$make(1,'old-fixture');$oldKey=$queue->enqueue($old);$queue->runSelected([$oldKey],fn()=>true);
+    $queue=myJobQueue();
+    require_once 'lib/api_service_lifecycle.php';
+    $queue->setLifecycle(new ApiServiceLifecycle(static function(string $path):array {
+        if($path==='clients/services/42')return ['id'=>42,'clientId'=>17,'status'=>1];
+        if($path==='clients/17')return ['id'=>17,'isArchived'=>false];
+        throw new RuntimeException('Unexpected lifecycle fixture read');
+    }));
+    $old=$make(1,'old-fixture');$oldKey=$queue->enqueue($old);$queue->runSelected([$oldKey],fn()=>true);
     $new=$make(2,'new-fixture');$new['_cleanup']=$make(1,'old-fixture','remove');
     $key=$queue->enqueue($new);$first=$queue->runSelected([$key]);
     retryEvidenceCheck(!$first[$key]['success'],'Replacement failure was not retained');

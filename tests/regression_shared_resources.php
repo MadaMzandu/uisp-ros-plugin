@@ -29,7 +29,19 @@ mkdir($directory,0700);
 foreach(['lib','includes','data','vendor'] as $folder) mkdir($directory.'/'.$folder,0700);
 foreach(glob($source.'/lib/*.php') as $file) copy($file,$directory.'/lib/'.basename($file));
 foreach(glob($source.'/includes/*') as $file) if(is_file($file)) copy($file,$directory.'/includes/'.basename($file));
-file_put_contents($directory.'/vendor/autoload.php','<?php namespace Ubnt\\UcrmPluginSdk\\Service; class UcrmApi { public static function create(){return new self();} public function get(){throw new \\RuntimeException("Network prohibited in shared resource regression");} }');
+file_put_contents($directory.'/vendor/autoload.php', <<<'PHP'
+<?php
+namespace Ubnt\UcrmPluginSdk\Service;
+class UcrmApi {
+    public static function create() { return new self(); }
+    public function get($path, $options=[]) {
+        if ($path==='clients/70') return ['id'=>70,'isArchived'=>false];
+        if (preg_match('~^clients/services/(91|92|95|96|97)$~D',$path,$match))
+            return ['id'=>(int)$match[1],'clientId'=>70,'status'=>in_array((int)$match[1],[96,97],true)?2:1];
+        throw new \RuntimeException('Network prohibited in shared resource regression');
+    }
+}
+PHP);
 file_put_contents($directory.'/lib/mt.php', <<<'PHP'
 <?php
 class MT {

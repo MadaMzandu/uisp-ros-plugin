@@ -22,6 +22,20 @@ class MT extends Device
     private $verificationObserver = null;
     private array $verificationChecks = [];
     private ?float $verificationDeadline = null;
+    private bool $retirementScope = false;
+    private $retirementGuard = null;
+    private array $retirementSessions = [];
+    private array $retirementForeignAccounts = [];
+    private bool $retirementVerifying = false;
+
+    /** Internal terminal cleanup can observe a re-used identity without ever removing its new owner. */
+    public function withRetirementScope(callable $operation,?callable $guard=null)
+    {
+        $previous=[$this->retirementScope,$this->retirementGuard,$this->retirementSessions,$this->retirementForeignAccounts,$this->retirementVerifying];
+        $this->retirementScope=true; $this->retirementGuard=$guard; $this->retirementSessions=[]; $this->retirementForeignAccounts=[]; $this->retirementVerifying=false;
+        try { return $operation(); }
+        finally { [$this->retirementScope,$this->retirementGuard,$this->retirementSessions,$this->retirementForeignAccounts,$this->retirementVerifying]=$previous; }
+    }
 
     /** Evidence collection cannot alter execution success or leak into a subsequent batch. */
     public function withVerificationScope(callable $observer, callable $operation)
@@ -248,6 +262,7 @@ class MT extends Device
                 if ($beforeWrite !== null) $beforeWrite($prepared);
                 $this->batch = $prepared;
             }
+            if ($this->retirementScope && $this->retirementGuard!==null) ($this->retirementGuard)();
         } catch (Throwable $error) {
             if ($this->cancellationBootstrapGuards) $this->batch_failed['cancellation-bootstrap'] = $error->getMessage();
             $this->send_to_queue($error->getMessage());
@@ -273,6 +288,29 @@ class MT extends Device
                 if($id) $this->batch_success[$id] = $id;
                 $writes++;
             }
+        }
+        if ($this->retirementScope && $writes===count($this->batch) && !$this->batch_failed) {
+            // Acknowledgement alone is insufficient to release an address held by a retired account.
+            try {
+                $this->retirementVerifying=true;
+                foreach ($this->batch as $post) {
+                    if (($post['action']??null)!=='remove') continue;
+                    if (isset($post['_service_id'])) {
+                        if ($this->lookupOwnedRecords($post)) throw new RuntimeException('lifecycle_resources_remain');
+                    } elseif (preg_match('/^uisp-ros-plugin:(?:suspension|service-parent|service-profile):[1-9][0-9]*$/D',$post['_owner']??'')===1) {
+                        $rows=$this->read($post['path'],['name'=>$post['name']]);
+                        if (!is_array($rows)) throw new RuntimeException('lifecycle_resources_unconfirmed');
+                        foreach($rows as $row) {
+                            if (($row['comment']??null)===$post['_owner']) throw new RuntimeException('lifecycle_resources_remain');
+                            if (preg_match('/^uisp-ros-plugin:[a-z-]+:[1-9][0-9]*$/D',$row['comment']??'')!==1)
+                                throw new RuntimeException('lifecycle_resources_unconfirmed');
+                        }
+                    }
+                }
+            } catch (Throwable $error) {
+                $this->batch_failed['retirement']='lifecycle_resources_unconfirmed';
+                $writes=0;
+            } finally { $this->retirementVerifying=false; }
         }
         if ($this->verificationObserver!==null && $writes===count($this->batch) && !$this->batch_failed) {
             try { $api->withReadDeadline(microtime(true)+12,fn()=>($this->verificationObserver)($this->verificationChecks,fn($path,$filter)=>$this->read($path,$filter))); }
@@ -756,10 +794,20 @@ class MT extends Device
             $principal = $data;
             $principal['path'] = $path === 'ppp/active' ? '/ppp/secret' : '/ip/hotspot/user';
             $key = trim($principal['path'], '/') . ':' . $serviceId . ':' . ($data['name'] ?? '');
+            if ($this->retirementScope && array_key_exists($key,$this->sessionOwnership)) {
+                // Recheck the principal even after preflight; a re-used username cannot inherit permission to disconnect.
+                $this->lookupOwnedRecords($principal);
+            }
             if (!array_key_exists($key, $this->sessionOwnership)) {
                 $this->sessionOwnership[$key] = $this->lookupOwnedRecords($principal) !== [];
             }
-            if (!$this->sessionOwnership[$key]) return [];
+            if (!$this->sessionOwnership[$key]) {
+                if ($this->retirementScope && empty($this->retirementForeignAccounts[$key])) {
+                    $sessions=$this->read($data['path'],[$path==='ip/hotspot/active'?'user':'name'=>$data['name']]);
+                    if (!is_array($sessions) || $sessions) throw new RuntimeException('lifecycle_resources_unconfirmed');
+                }
+                return [];
+            }
         }
         $filter = [];
         if (isset($data['name']) && (string)$data['name'] !== '') $filter[$path === 'ip/hotspot/active' ? 'user' : 'name'] = $data['name'];
@@ -767,7 +815,14 @@ class MT extends Device
         if (!$filter) throw new RuntimeException('The RouterOS account has no verifiable identity');
         $read = $this->read($data['path'], $filter);
         if (!is_array($read)) throw new RuntimeException($this->error() ?: 'RouterOS account ownership lookup failed');
-        if ($active) return $read;
+        if ($active) {
+            if ($this->retirementScope && !$this->retirementVerifying) {
+                if (!array_key_exists($key,$this->retirementSessions)) $this->retirementSessions[$key]=array_column($read,'.id');
+                $ids=$this->retirementSessions[$key];
+                return array_values(array_filter($read,static fn(array $row): bool=>in_array($row['.id']??null,$ids,true)));
+            }
+            return $read;
+        }
         if (count($read) > 1) throw new RuntimeException('Multiple RouterOS records match the service identity');
         foreach ($read as $record) {
             $comment = (string)($record['comment'] ?? '');
@@ -796,7 +851,20 @@ class MT extends Device
                     if (!$canAdopt) throw new RuntimeException('router_ownership_record_changed');
                 }
             }
-            if (!$owned && !$canAdopt) throw new RuntimeException('The matching RouterOS account or queue belongs to another service or was created manually');
+            if (!$owned && !$canAdopt) {
+                // A well-formed, different owner proves this is no longer the retired service's row.
+                // Manual/unknown rows remain incidents; they never become a permission to erase or adopt.
+                if ($this->retirementScope && ($data['action']??null)==='remove'
+                    && preg_match('/^([1-9][0-9]*) - .+ - ([1-9][0-9]*)$/sD',$comment,$foreign)===1
+                    && ((int)$foreign[1]!==$clientId || (int)$foreign[2]!==$serviceId)) {
+                    if (in_array($path,['ppp/secret','ip/hotspot/user'],true)) {
+                        $key=$path.':'.$serviceId.':'.($data['name']??'');
+                        $this->sessionOwnership[$key]=false; $this->retirementForeignAccounts[$key]=true;
+                    }
+                    return [];
+                }
+                throw new RuntimeException('The matching RouterOS account or queue belongs to another service or was created manually');
+            }
             if (in_array($path, ['ppp/secret','ip/hotspot/user'], true)) {
                 $this->sessionOwnership[$path . ':' . $serviceId . ':' . ($data['name'] ?? '')] = true;
             }

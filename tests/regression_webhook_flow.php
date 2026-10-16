@@ -23,7 +23,9 @@ class UcrmApi {
     public static array $patches = [];
     public static function create() { return new self(); }
     public function get($path, $options = []) {
-        if ($path === 'custom-attributes') return [['key'=>'pppoeUsername','id'=>228],['key'=>'pppoePassword','id'=>229]];
+        if ($path === 'clients/70') return ['id'=>70,'isArchived'=>false];
+        if ($path === 'custom-attributes') return [['key'=>'pppoeSite','id'=>235,'attributeType'=>'service'],
+            ['key'=>'pppoeUsername','id'=>228,'attributeType'=>'service'],['key'=>'pppoePassword','id'=>229,'attributeType'=>'service']];
         if (preg_match('#^clients/services/([1-9][0-9]*)$#D', $path, $match)) {
             $request=self::$requests[(int)$match[1]]??null;
             if ($request!==null) {

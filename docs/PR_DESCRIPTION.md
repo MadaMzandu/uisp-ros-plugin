@@ -1,10 +1,24 @@
 ## Summary
 
-Candidate **2.4.37** adds a reviewed synchronization workflow, fresh authoritative webhook state with a durable review inbox, bounded automatic reconciliation, complete private backup/restore and exact IPv4/IPv6 pool capacity. Proven changes are queued through the normal worker; ambiguous ownership remains a per-service incident. The previous RouterOS confirmation, diagnostics, automation health, ownership and IP corrections remain included.
+Candidate **2.4.38** prevents freshly confirmed retired services and archived clients from replaying obsolete provisioning. It retires old intent, schedules guarded resource cleanup before address reuse, and preserves current owners. The panel adds explicit requester review, opens Devices on a new visit, and groups full ZIP and legacy SQLite backups with distinct scope. Previous synchronization previews, fresh webhook handling, reconciliation, diagnostics and automation health remain included.
 
 The cumulative changes include the panel work from [PR #89](https://github.com/MadaMzandu/uisp-ros-plugin/pull/89), durable provisioning, webhook handling and recovery tools. Provisioning uses the native RouterOS API with optional TLS.
 
 **The full English changelog and webhook setup guide are included below, not only linked.** Historical entries identify behavior superseded by later revisions; the summary describes the current implementation.
+
+## Candidate 2.4.38: retire obsolete service intent and organize System
+
+The queue reads current UISP state before replaying old provisioning intent. Freshly confirmed ended, obsolete or inactive services (`2`, `5`, `8`), archived clients, or service absence established by a verified HTTP 404 can retire their previous pending updates. **Suspended status `3` preserves its account and assignment** and is not treated as termination. A broken service-page link, stale cache or PPP username suffix alone proves none of these states.
+
+Reservations can be released locally when no possible physical resources remain. Applied state, prepared commands, uncertain older attempts and retained resources instead produce normal guarded removal jobs; addresses remain protected until cleanup is confirmed. Lifecycle and resource ownership are checked again before writing, preserving an account now owned by another service. Reactivation, contradictory identity or an unavailable API leaves a service-specific incident rather than authorizing deletion or overwrite of a current owner. Fair turns and bounded budgets do not guarantee clearing hundreds of services in one pass. Removing Site or the account identifier is verified as a separate configuration detachment; it is not confused with a reactivated billing termination and does not replay an obsolete update before cleanup.
+
+The scheduled review includes historical owners, and an actual allocator conflict can review its recorded owner before retrying allocation. Retaining a cancelled intent no longer makes its reservation permanent. For requester `7279` and reservation holder `9807`, fresh proof that `7279` ended or its client was archived retires that obsolete request while preserving the current `9807` assignment.
+
+**Review requesting service** opens explicit fresh evidence with links to the known service and client. **Retire service pending work** requires an eligible preview and a single-use token, then revalidates before changing the queue. Results distinguish released reservations from **Removal scheduled** and link to the removal jobs. An uncertain response consumes its permission and requires a new review. Finite error messages explain unavailable UISP, identity checks or unfinished router cleanup; unknown evidence cannot enable retirement. A paused migration retains its separate compatibility barrier.
+
+A new panel visit opens **Devices**. A real reload preserves the selected section and scroll position; a remembered Jobs section no longer changes the landing page. **System → Plugin backups** groups the full ZIP and previous/cleanup SQLite copies with explicit scope. ZIP preserves queue and operational state; legacy SQLite retains the primary-database scope and cleanup copies remain download-only. Backup actions no longer repeat in Utilities. New System sections are more compact; the general redesign and notification center remain outstanding.
+
+Automated/package validation: **63 isolated suites passed**, syntax checks for **66 first-party PHP files**, and verification of 380 archive entries, 147 first-party files and 13 locked dependencies. Report: `dist/verification-2.4.38.json`. SHA-256: `ebbb4de8aa1d0e6a14e0b8f89981639cbfab3e15956397c1edb72e6f90bcda73`. Synthetic browser checks cover desktop/mobile, Spanish/English and light/dark themes, including the dialog at 390 × 844. No production UISP or RouterOS state was changed; lifecycle cleanup and address reuse still require verification in the affected installation.
 
 ## Candidate 2.4.37: reviewed synchronization, fresh state, reconciliation and full backup
 
@@ -249,12 +263,14 @@ An explicit **Allow webhooks without a secret (compatibility)** checkbox preserv
 
 1. Preserve the previous ZIP and private copies of `data.db`, `jobs.db`, and configuration. Legacy SQLite backups cover `data.db` only; full ZIP backups now include the supported queue, cache and operational state.
 2. Pause old workers/deliveries while replacing the package and wait for active requests to finish.
-3. Install 2.4.37 and reload the panel. If duplicate addresses pause migration, use the panel views in consultation mode, review the diagnostic, and explicitly verify affected owners in UISP. Use Review cleanup to preview eligible obsolete reservations, confirm the selection, preserve its backup, and reload. Resolve remaining assignments and complete migration before resuming workers or deliveries. IPs must be globally unique across services and routers; the panel does not release stale reservations automatically.
+3. Install 2.4.38 and reload the panel. If duplicate addresses pause migration, use the panel views in consultation mode, review the diagnostic, and explicitly verify affected owners in UISP. Use Review cleanup to preview eligible obsolete reservations, confirm the selection, preserve its backup, and reload. Resolve remaining assignments and complete migration before resuming workers or deliveries. IPs must be globally unique across services and routers; paused migration retains its compatibility barrier, while the normal lifecycle workflow requires fresh evidence and confirmed physical cleanup before address reuse.
 4. Configure a matching webhook secret at both ends, or explicitly select compatibility mode. Installing the package does not update an existing UISP endpoint URL.
 5. Verify a fresh event and its provisioning outcome. A successful HTTP response or empty pending-jobs list alone does not establish the final RouterOS traffic policy.
 6. Apply service jobs or synchronize the selected router to migrate profiles. **Review first, then choose Apply differences or Force reconnection explicitly.** Both queue work for the normal worker rather than running the entire router inline. Existing suspension-profile firewall behavior remains the operator's configuration.
 
 ## Validation and scope
+
+- **2.4.38 automated/package validation:** **63 isolated suites passed**, syntax checks for **66 first-party PHP files**, and verification of 380 archive entries, 147 first-party files and 13 locked dependencies. Report: `dist/verification-2.4.38.json`. SHA-256: `ebbb4de8aa1d0e6a14e0b8f89981639cbfab3e15956397c1edb72e6f90bcda73`. Synthetic UI checks include mobile requester review, six-language coverage, grouped backups, new-entry Devices and reload continuity. Production lifecycle/address-reuse checks remain pending.
 
 - **2.4.37 validation passed:** 62 isolated suites, syntax checks for 65 first-party PHP files, and installer verification of 379 entries, 146 first-party files and 13 locked dependencies. Report: `dist/verification-2.4.37.json`. SHA-256: `1284c74f580d8e792479694ebb0df97f1f055b033577c72999e62e7ba386adc7`. Browser checks covered desktop/mobile, Spanish/English and light/dark themes with synthetic fixtures; no production UISP or RouterOS changes were performed.
 
@@ -414,9 +430,23 @@ Check the relevant RouterOS logging topics and the actual profile/session state.
 
 [Español](docs/MEJORAS.md) · [PR description](docs/PR_DESCRIPTION.md) · [Webhook setup and rationale](docs/WEBHOOK_SETUP_EN.md)
 
-This revision combines [dhanielsnieto's changes in PR #89](https://github.com/MadaMzandu/uisp-ros-plugin/pull/89) with the subsequent fixes prepared in this repository. The comparison starts at `7ca8dc8`; the original PR ends at `056b89f`. The current candidate is **2.4.37**. The operator confirmed archived-plan speed recovery in their 2.4.19 installation. That confirmation covers this historical scenario; the remaining UISP and RouterOS integration scenarios still require their own checks before production readiness can be established.
+This revision combines [dhanielsnieto's changes in PR #89](https://github.com/MadaMzandu/uisp-ros-plugin/pull/89) with the subsequent fixes prepared in this repository. The comparison starts at `7ca8dc8`; the original PR ends at `056b89f`. The current candidate is **2.4.38**. The operator confirmed archived-plan speed recovery in their 2.4.19 installation. That confirmation covers this historical scenario; the remaining UISP and RouterOS integration scenarios still require their own checks before production readiness can be established.
 
 The plugin connects UISP CRM to MikroTik through the **native RouterOS API**, normally on port `8728`, or `8729` with TLS. The panel manages that integration; it does not switch the transport to SSH, WinBox, or REST.
+
+## Candidate 2.4.38: retire obsolete service intent and organize System
+
+The queue reads current UISP state before replaying old provisioning intent. Freshly confirmed ended, obsolete or inactive services (`2`, `5`, `8`), archived clients, or service absence established by a verified HTTP 404 can retire their previous pending updates. **Suspended status `3` preserves its account and assignment** and is not treated as termination. A broken service-page link, stale cache or PPP username suffix alone proves none of these states.
+
+Reservations can be released locally when no possible physical resources remain. Applied state, prepared commands, uncertain older attempts and retained resources instead produce normal guarded removal jobs; addresses remain protected until cleanup is confirmed. Lifecycle and resource ownership are checked again before writing, preserving an account now owned by another service. Reactivation, contradictory identity or an unavailable API leaves a service-specific incident rather than authorizing deletion or overwrite of a current owner. Fair turns and bounded budgets do not guarantee clearing hundreds of services in one pass. Removing Site or the account identifier is verified as a separate configuration detachment; it is not confused with a reactivated billing termination and does not replay an obsolete update before cleanup.
+
+The scheduled review includes historical owners, and an actual allocator conflict can review its recorded owner before retrying allocation. Retaining a cancelled intent no longer makes its reservation permanent. For requester `7279` and reservation holder `9807`, fresh proof that `7279` ended or its client was archived retires that obsolete request while preserving the current `9807` assignment.
+
+**Review requesting service** opens explicit fresh evidence with links to the known service and client. **Retire service pending work** requires an eligible preview and a single-use token, then revalidates before changing the queue. Results distinguish released reservations from **Removal scheduled** and link to the removal jobs. An uncertain response consumes its permission and requires a new review. Finite error messages explain unavailable UISP, identity checks or unfinished router cleanup; unknown evidence cannot enable retirement. A paused migration retains its separate compatibility barrier.
+
+A new panel visit opens **Devices**. A real reload preserves the selected section and scroll position; a remembered Jobs section no longer changes the landing page. **System → Plugin backups** groups the full ZIP and previous/cleanup SQLite copies with explicit scope. ZIP preserves queue and operational state; legacy SQLite retains the primary-database scope and cleanup copies remain download-only. Backup actions no longer repeat in Utilities. New System sections are more compact; the general redesign and notification center remain outstanding.
+
+Automated/package validation: **63 isolated suites passed**, syntax checks for **66 first-party PHP files**, and verification of 380 archive entries, 147 first-party files and 13 locked dependencies. Report: `dist/verification-2.4.38.json`. SHA-256: `ebbb4de8aa1d0e6a14e0b8f89981639cbfab3e15956397c1edb72e6f90bcda73`. Synthetic browser checks cover desktop/mobile, Spanish/English and light/dark themes, including the dialog at 390 × 844. No production UISP or RouterOS state was changed; lifecycle cleanup and address reuse still require verification in the affected installation.
 
 ## Candidate 2.4.37: reviewed synchronization, fresh state, reconciliation and full backup
 
@@ -676,7 +706,7 @@ This revision's standalone warning is superseded by 2.4.21 view mode. Its report
 - Evidence of partially creating a suspension profile is preserved. Cleanup verifies an existing profile before changing accounts or sessions; mismatched frozen values remain an error. A missing profile is not recreated during cleanup, and an existing profile is not overwritten.
 - Connection handling is unchanged: each service batch opens and closes its own API connection; queries and cleanup can open additional connections. API login/logout messages alone do not mean PPP sessions were disconnected. No connection sharing between batches was introduced.
 
-The historical 2.4.17 validation passed 27 suites, checks for 39 first-party PHP files, and verification of a ZIP containing 351 entries, 118 first-party files, and 13 pinned dependencies. Its report and hash are retained later in this changelog; the validation status of current candidate 2.4.36 is recorded above.
+The historical 2.4.17 validation passed 27 suites, checks for 39 first-party PHP files, and verification of a ZIP containing 351 entries, 118 first-party files, and 13 pinned dependencies. Its report and hash are retained later in this changelog; the validation status of current candidate 2.4.38 is recorded above.
 
 ## Changes contributed in PR #89
 
@@ -903,7 +933,7 @@ Later production evidence identified missing tokens and a URL pasted as the secr
 
 ## Installation and validation readiness
 
-The current version is 2.4.37. Its validation status appears at the beginning of this changelog. Archived-plan recovery confirmation belongs to 2.4.19 and retains its historical scope. CRM warnings keep other jobs available: current duplicate addresses can be corrected explicitly, and a freshly verified ended service can have its exact historical assignment reviewed without editing its CRM history. **Review cleanup** separately previews eligible obsolete local reservations with a private backup; pending work, unresolved recovery, and recorded applied ownership still protect their reservations. Backups remain downloadable from **System** after reload. Only the separate duplicate-reservation preflight that prevents safe migration pauses other writes and provisioning; it requires resolving those stored conflicts and reloading. The [real-environment test guide](docs/PRUEBAS_REALES.md) contains 226 scenarios for the remaining checks.
+The current version is 2.4.38. Its validation status appears at the beginning of this changelog. Archived-plan recovery confirmation belongs to 2.4.19 and retains its historical scope. Fresh lifecycle evidence retires obsolete intent and queues guarded removal before releasing physically owned addresses. Unknown evidence remains an incident for that service. The separate local-cleanup review retains its limited scope and private backup. A duplicate-reservation migration barrier still requires resolving stored assignments and reloading. Backups remain downloadable from System. The [real-environment test guide](docs/PRUEBAS_REALES.md) contains 242 scenarios and does not claim production validation.
 
 ### Historical 2.4.17 result
 
@@ -936,7 +966,7 @@ Local regressions use PHP 8.5.11, temporary databases, mocks, and local sockets.
 
 ## Known outstanding work
 
-- Visual redesign is deferred until the final stage: compact elements across views and a notification center for warnings, retaining access to details and queue priority while 2.4.36 is tested and functional work continues.
+- Visual redesign is deferred until the final stage: compact elements across views and a notification center for warnings, retaining access to details and queue priority. The 2.4.38 backup grouping and compact System sections do not complete that broader redesign.
 - Physical removal of an individual suspension queue with unexpected dependencies can remain deferred; 2.4.36 reports a required retained resource as unconfirmed instead of presenting verified removal.
 - Broaden periodic review beyond proven owned PPP/Hotspot accounts with no active work; migrations, adoptions and partial evidence retain separate review.
 - Chronological ordering of distinct events still requires a reliable source revision. Fresh reads and the 2.4.37 pending-review inbox avoid applying stale snapshots without inventing that revision or assuming immediate UISP consistency.

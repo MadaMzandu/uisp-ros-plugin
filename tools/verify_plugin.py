@@ -32,7 +32,7 @@ def main() -> int:
     suites = [
         'backend', 'jobs', 'router', 'burst', 'runtime', 'stability', 'client_queue', 'automatic_reconciliation',
         'locale', 'second_audit', 'ownership', 'shared_resources', 'shared_pool', 'pool_reset', 'ip_attribute_export', 'site_address_policy', 'site_address_retry', 'router_ownership', 'provisioning_verification', 'provisioning_verification_retry', 'service_diagnostics', 'automation_health',
-        'sync_preview', 'service_reconciliation', 'webhook_freshness', 'full_backup', 'pool_capacity', 'job_context',
+        'sync_preview', 'service_reconciliation', 'service_lifecycle', 'webhook_freshness', 'full_backup', 'pool_capacity', 'job_context',
         'nonfinite', 'profile_names', 'unmanaged', 'reconnect', 'reconnect_router', 'webhook_auth', 'webhook_flow', 'billing_router', 'job_diagnostics', 'job_actions', 'jobs_status', 'job_recovery', 'job_recovery_observation', 'job_retained_resources', 'cancelled_recovery', 'archived_plans', 'migration_conflicts', 'recovery_reads', 'network_diagnostics', 'network_cleanup', 'network_repair', 'network_repair_batch', 'crm_network_monitor', 'crm_network_resolution', 'reserved_networks',
     ]
     commands = [('regression_' + name, php_tests + ['tests/regression_' + name + '.php']) for name in suites]
@@ -56,12 +56,15 @@ def main() -> int:
     def run(item: tuple[str, list[str]]) -> dict:
         name, command = item
         started = time.monotonic()
+        # The lifecycle suite deliberately transfers 200 dual-stack services
+        # through the real durable queue and RouterOS adapter, including retries.
+        timeout = 360 if name == 'regression_service_lifecycle' else 180
         try:
-            result = subprocess.run(command, cwd=ROOT, capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=180)
+            result = subprocess.run(command, cwd=ROOT, capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=timeout)
             record = {'name': name, 'exit_code': result.returncode, 'seconds': round(time.monotonic() - started, 2),
                       'output': (result.stdout + result.stderr).strip()}
         except subprocess.TimeoutExpired:
-            record = {'name': name, 'exit_code': -1, 'seconds': 180, 'output': 'Timed out in an isolated regression.'}
+            record = {'name': name, 'exit_code': -1, 'seconds': timeout, 'output': 'Timed out in an isolated regression.'}
         print(('PASS' if record['exit_code'] == 0 else 'FAIL') + ' ' + name, flush=True)
         return record
 

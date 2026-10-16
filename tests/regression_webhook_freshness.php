@@ -25,7 +25,9 @@ class UcrmApi {
     public static function create() { return new self(); }
     public function get($path, $options = []) {
         self::$reads[]=$path;
-        if ($path === 'custom-attributes') return [['key'=>'pppoeUsername','id'=>228],['key'=>'pppoePassword','id'=>229]];
+        if ($path === 'clients/70') return ['id'=>70,'isArchived'=>false];
+        if ($path === 'custom-attributes') return [['key'=>'pppoeSite','id'=>235,'attributeType'=>'service'],
+            ['key'=>'pppoeUsername','id'=>228,'attributeType'=>'service'],['key'=>'pppoePassword','id'=>229,'attributeType'=>'service']];
         if (preg_match('#^clients/services/([1-9][0-9]*)$#D', $path, $match)) {
             $request=self::$requests[(int)$match[1]]??null;
             if ($request!==null) {
@@ -33,7 +35,11 @@ class UcrmApi {
                 $entity->status=['suspend'=>3,'unsuspend'=>1,'suspend_cancel'=>1,'activate'=>1,'end'=>2,'delete'=>2][$request->changeType]??$entity->status;
                 return $entity;
             }
-            if (isset(self::$services[(int)$match[1]])) return self::$services[(int)$match[1]];
+            if (isset(self::$services[(int)$match[1]])) {
+                $value=self::$services[(int)$match[1]];
+                if ($value instanceof \Throwable) throw $value;
+                return $value;
+            }
         }
         throw new \RuntimeException('Fixture network prohibited');
     }
@@ -169,6 +175,8 @@ try {
     $absentAction=new ApiAction(null,$absent); $absentAction->reconcileService(1420,true);
     flowCheck($absentAction->result()['provisioning']==='queued' && count(MT::$writes)===$writes,
         'Confirmed absent service did not queue normal guarded cleanup without router I/O');
+    // The worker independently observes the same authenticated absence as the incoming review.
+    $sdk::$services[1420]=new \GuzzleHttp\Exception\RequestException(404);
     $queue->run();
     flowCheck($queue->appliedSnapshot(1420)===[],'Confirmed absence did not complete normal cleanup');
     // A pending UUID must not write its stale snapshot, including after a partially acknowledged batch.

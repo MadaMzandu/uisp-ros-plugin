@@ -12,7 +12,18 @@ mkdir($directory,0700);
 foreach (['lib','includes','data','vendor'] as $folder) mkdir($directory . '/' . $folder,0700);
 foreach (glob($source . '/lib/*.php') as $file) copy($file,$directory . '/lib/' . basename($file));
 foreach (glob($source . '/includes/*') as $file) if (is_file($file)) copy($file,$directory . '/includes/' . basename($file));
-file_put_contents($directory . '/vendor/autoload.php','<?php namespace Ubnt\\UcrmPluginSdk\\Service; class UcrmApi { public static function create(){ return new self(); } public function get(){ throw new \\RuntimeException("External network prohibited"); } }');
+file_put_contents($directory . '/vendor/autoload.php', <<<'PHP'
+<?php
+namespace Ubnt\UcrmPluginSdk\Service;
+class UcrmApi {
+    public static function create() { return new self(); }
+    public function get($path, $options=[]) {
+        if ($path==='clients/71') return ['id'=>71,'isArchived'=>false];
+        if ($path==='clients/services/501') return ['id'=>501,'clientId'=>71,'status'=>1];
+        throw new \RuntimeException('External network prohibited');
+    }
+}
+PHP);
 file_put_contents($directory . '/lib/mt.php', <<<'PHP'
 <?php
 class MT {

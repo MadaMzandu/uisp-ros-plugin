@@ -21,6 +21,7 @@ class UcrmApi {
     public static array $requests=[];
     public static function create() { return new self(); }
     public function get($path,$options=[]) {
+        if ($path==='clients/70') return ['id'=>70,'isArchived'=>false];
         if (preg_match('#^clients/services/([1-9][0-9]*)$#D',$path,$match) && isset(self::$requests[(int)$match[1]])) {
             $request=self::$requests[(int)$match[1]]; $entity=clone $request->extraData->entity;
             $entity->status=['suspend'=>3,'unsuspend'=>1,'suspend_cancel'=>1,'activate'=>1,'end'=>2,'delete'=>2][$request->changeType]??$entity->status;

@@ -215,7 +215,8 @@ class ApiService {
         const jobRecovery = changeType === 'recover' && target === 'job_recovery' && ['preview', 'apply'].includes(action);
         const jobCleanup = changeType === 'cleanup' && target === 'job_reservation' && ['preview', 'apply'].includes(action);
         const fullRestore = changeType === 'update' && target === 'full_backup' && ['preview', 'apply'].includes(action);
-        if (changeType !== 'list' && !cleanup && !crmRepair && !localRepair && !jobRecovery && !jobCleanup && !fullRestore && this.recovery?.readOnly === true) return this.blockedWrite();
+        const lifecycleReview = changeType === 'update' && target === 'service_lifecycle' && action === 'apply';
+        if (changeType !== 'list' && !cleanup && !crmRepair && !localRepair && !jobRecovery && !jobCleanup && !fullRestore && !lifecycleReview && this.recovery?.readOnly === true) return this.blockedWrite();
         if (target === 'orphans' && this.recovery?.readOnly === true) return this.blockedRouterRead();
         const mutate = changeType === 'update' || action === 'apply' && ['cleanup', 'resolve', 'repair', 'recover'].includes(changeType);
         return (mutate ? this.mutatingRequest.bind(this) : this.request.bind(this))({ method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -259,6 +260,8 @@ class ApiService {
     getAutomationHealth() { return this.send('list', 'automation_health'); }
     getPoolCapacity() { return this.send('list', 'pool_capacity'); }
     getServiceReconciliation() { return this.send('list', 'service_reconciliation'); }
+    previewServiceLifecycle(serviceId) { return this.send('list', 'service_lifecycle', 'preview', { serviceId }); }
+    applyServiceLifecycle(previewToken) { return this.send('update', 'service_lifecycle', 'apply', { previewToken }); }
     getFullBackups() { return this.send('list', 'full_backup'); }
     createFullBackup() { return this.send('update', 'full_backup', 'create'); }
     previewFullBackup(name) { return this.send('update', 'full_backup', 'preview', { name }); }

@@ -1,1 +1,1 @@
-Modernize the panel, repair local IP reservations safely, and expose pending jobs
+Retire obsolete service provisioning and organize backup tools

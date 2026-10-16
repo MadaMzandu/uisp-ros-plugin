@@ -20,6 +20,10 @@ class Batch
     private array $batch_failed = [];
     private array $batch_success = [];
     private bool $forceReconnect = false;
+    private bool $retirementScope = false;
+    private array $retirementMarker = [];
+    private int $retirementServiceId = 0;
+    private float $lifecycleConflictBudget = 8.0;
     private array $submissionOutcomes = ['requested' => 0, 'completed' => 0, 'failed' => 0, 'failures' => []];
 
     /** Safe per-service results for a bulk operation; credentials never enter the response. */
@@ -161,7 +165,13 @@ class Batch
         $replacement = $this->snapshot($replacement, 'update');
         // A migration's delete is a separate prerequisite job. Validate the
         // replacement before that prerequisite can be queued or touch its account.
-        if (!isset($replacement['_commands'])) (new MtData())->validateBeforeCleanup($replacement, $replacement['_plan'], true);
+        if (!isset($replacement['_commands'])) {
+            try { (new MtData())->validateBeforeCleanup($replacement,$replacement['_plan'],true); }
+            catch (Throwable $error) {
+                if (!$this->resolveLifecycleConflict($error,(int)$replacement['id'])) throw $error;
+                (new MtData())->validateBeforeCleanup($replacement,$replacement['_plan'],true);
+            }
+        }
         $entries = [
             ['snapshot' => $this->snapshot($previous, 'delete'), 'operation' => 'delete'],
             ['snapshot' => $replacement, 'operation' => 'update']
@@ -174,6 +184,7 @@ class Batch
 
     private function submit(array $ids, string $operation): bool
     {
+        $this->lifecycleConflictBudget=8.0;
         $this->submissionOutcomes = ['requested' => count($ids), 'completed' => 0, 'failed' => 0, 'failures' => []];
         if (!$ids) { return true; }
         if (!is_array(reset($ids))) {
@@ -223,7 +234,12 @@ class Batch
 
     private function submitLocked(array $ids, string $operation): bool
     {
-        $keys = $this->enqueueEntries($ids, $operation);
+        try { $keys = $this->enqueueEntries($ids, $operation); }
+        catch (Throwable $error) {
+            $sid=(int)(is_array($ids[0]??null)?($ids[0]['id']??0):($ids[0]??0));
+            if ($operation!=='update' || $sid<1 || !$this->resolveLifecycleConflict($error,$sid)) throw $error;
+            $keys=$this->enqueueEntries($ids,$operation);
+        }
         if (!$keys) {
             if (in_array($operation, ['update','queues_set'], true)) {
                 foreach ($ids as $item) {
@@ -238,6 +254,14 @@ class Batch
         // An immediate request also retries its own unfinished prerequisites, in version order.
         $queue->runSelected($keys);
         return $queue->completed($keys);
+    }
+
+    private function resolveLifecycleConflict(Throwable $error,int $sid): bool
+    {
+        if ($this->lifecycleConflictBudget<=0) return false;
+        $started=microtime(true);
+        try { return myJobQueue()->lifecycleReviewer()->resolveConflict($error,myJobQueue(),$sid,microtime(true)+$this->lifecycleConflictBudget); }
+        finally { $this->lifecycleConflictBudget=max(0,$this->lifecycleConflictBudget-(microtime(true)-$started)); }
     }
 
     private function enqueueEntries(array $ids, string $operation): array
@@ -465,6 +489,10 @@ class Batch
     /** Execute exactly this job's identity and commands, never current cached service credentials. */
     public function applySnapshot(array $service, string $operation, ApiJobQueue $queue, array $job): bool
     {
+        $this->retirementScope=$operation==='delete' && !empty($service['_lifecycle_retirement']);
+        $this->retirementMarker=$this->retirementScope?$service['_lifecycle_retirement']:[];
+        $this->retirementServiceId=(int)$service['id'];
+        if ($this->retirementScope) $queue->lifecycleReviewer()->assertRetired((int)$service['id'],$service['_lifecycle_retirement']);
         $verificationStages=ApiProvisioningVerification::boundedStages(is_array($service['_verification_stages']??null)?$service['_verification_stages']:[]);
         $verificationDeadline=microtime(true)+12;
         // Previous cleanup was acknowledged before a later stage failed. Re-read
@@ -541,7 +569,7 @@ class Batch
                 $cleanup = $debt['snapshot'];
                 if ((int) ($cleanup['id'] ?? 0) !== (int) $service['id'])
                     throw new RuntimeException('cancelled_resource_snapshot_incomplete');
-                $cleanup['_commands'] = $this->cancellationCommands($cleanup);
+                $cleanup['_commands'] = $this->retirementScope ? $this->terminalCommands($cleanup) : $this->cancellationCommands($cleanup);
                 $guards = [];
                 $remove = []; $disconnect = [];
                 $alreadyDeleting = in_array($cleanup['action'] ?? '', ['delete','remove','queues_remove'], true);
@@ -673,7 +701,7 @@ class Batch
         if (!$queuesOnly) {
             $services = [$service['device'] ?? 'snapshot' => [$service]];
             if ($delete) {
-                if ($queue->canClearApplied($service)) { $this->unsave_batch($services); }
+                if ($queue->canClearApplied($service) || ($this->retirementScope && $queue->lifecycleMayRelease($job))) { $this->unsave_batch($services); }
             }
             else { $this->save_batch($services); }
         }
@@ -691,6 +719,13 @@ class Batch
         $delete = $operation === 'delete';
         $queuesOnly = in_array($operation, ['queues_remove', 'queues_set'], true);
         $service['_device'] = (array) $device;
+        if ($delete && !empty($service['_lifecycle_retirement'])) {
+            $service['_commands']=$this->terminalCommands($service);
+            foreach ($service['_commands'] as &$command) $command['batch']=$batchId;
+            unset($command);
+            $service['_commands']=MtData::safePreparedCommands($service,$service['_commands'],'delete');
+            return $service;
+        }
         $api = new MtData();
         $plan = $service['_plan'] ?? $this->make_plan($service);
         // A dual-stack build either acquires every requested family or leaves
@@ -754,6 +789,12 @@ class Batch
             $api = $this->device_api($device->type ?? 'mikrotik');
             $write = fn() => $cancellationGuards ? $api->do_cancellation_cleanup($device, $commands, $cancellationGuards)
                 : $api->do_batch($device, $commands, $beforeWrite);
+            if ($this->retirementScope && method_exists($api,'withRetirementScope')) {
+                $execute=$write;
+                $guard=fn()=>myJobQueue()->lifecycleReviewer()->withDeadline(microtime(true)+8,
+                    fn()=>myJobQueue()->lifecycleReviewer()->assertRetired($this->retirementServiceId,$this->retirementMarker));
+                $write=fn()=>$api->withRetirementScope($execute,$guard);
+            }
             if ($verificationObserver!==null && method_exists($api,'withVerificationScope')) {
                 $execute=$write; $write=fn()=>$api->withVerificationScope($verificationObserver,$execute);
             }
@@ -846,6 +887,29 @@ class Batch
             return ['path' => empty($service['hotspot']) ? '/ppp/secret' : '/ip/hotspot/user', 'name' => $service['username']];
         }
         return null;
+    }
+
+    /** Deletion addresses resources by identity, never by allocating or validating an obsolete IP. */
+    private function terminalCommands(array $snapshot): array
+    {
+        if (isset($snapshot['_commands']) && is_array($snapshot['_commands'])) return $snapshot['_commands'];
+        $principal=$this->deleteIdentity($snapshot);
+        if ($principal===null) throw new RuntimeException('lifecycle_router_identity_unknown');
+        $sid=(int)$snapshot['id']; $cid=(int)($snapshot['clientId']??0);
+        if ($sid<1 || $cid<1) throw new RuntimeException('lifecycle_router_identity_unknown');
+        $commands=[]; $principal['action']='remove'; $commands[]=$principal;
+        if (isset($principal['name'])) $commands[]=['path'=>empty($snapshot['hotspot'])?'/ppp/active':'/ip/hotspot/active','name'=>$principal['name'],'action'=>'remove','_reconnect_required'=>true];
+        if (!empty($snapshot['duid']) && isset($snapshot['iaid'])) $commands[]=['path'=>'/ipv6/dhcp-server/binding','duid'=>$snapshot['duid'],'iaid'=>$snapshot['iaid'],'action'=>'remove'];
+        // This service-specific cap never shares a selector with another service.
+        $commands[]=['path'=>'/queue/simple','name'=>'uisp-service-'.$sid.'-suspension','_owner'=>'uisp-ros-plugin:suspension:'.$sid,'action'=>'remove'];
+        if (filter_var($snapshot['mac']??'',FILTER_VALIDATE_MAC)) {
+            $name=$snapshot['company']??null;
+            if (!$name && !empty($snapshot['firstName']) && !empty($snapshot['lastName'])) $name=$snapshot['firstName'].' '.$snapshot['lastName'];
+            $commands[]=['path'=>'/queue/simple','name'=>($name?:'Client-'.$cid).' - '.$sid,'action'=>'remove','_service_id'=>$sid,'_client_id'=>$cid];
+        }
+        foreach($commands as &$command) { $command['batch']=$snapshot['batch']??'service-'.$sid; }
+        unset($command);
+        return MtData::safePreparedCommands($snapshot,$commands,'delete');
     }
 
     /** Older confirmed rows can record only a PPP/Hotspot identity, never guessed auxiliary resources. */

@@ -16,7 +16,13 @@ file_put_contents($directory . '/vendor/autoload.php', <<<'PHP'
 namespace Ubnt\UcrmPluginSdk\Service;
 class UcrmApi {
     public static function create() { return new self(); }
-    public function get($path,$options=[]) { throw new \RuntimeException('Fixture network prohibited'); }
+    public function get($path,$options=[]) {
+        // Fresh lifecycle authority for retry tests, still entirely local.
+        if (preg_match('~^clients/services/([1-9][0-9]*)$~D',$path,$match))
+            return ['id'=>(int)$match[1],'clientId'=>70,'status'=>1];
+        if ($path==='clients/70') return ['id'=>70,'isArchived'=>false];
+        throw new \RuntimeException('Fixture network prohibited');
+    }
     public function patch($path,$data=[]) { throw new \RuntimeException('Fixture network prohibited'); }
 }
 PHP);

@@ -36,7 +36,20 @@ $queueCode = str_replace('static $queue = null;',
 checkReconnect($queueFactoryReplacements === 1, 'The isolated queue-restart hook no longer matches its factory');
 file_put_contents($queueFixture, $queueCode);
 foreach (glob($source . '/includes/*') as $file) if (is_file($file)) copy($file, $directory . '/includes/' . basename($file));
-file_put_contents($directory . '/vendor/autoload.php', '<?php namespace Ubnt\\UcrmPluginSdk\\Service; class UcrmApi { public static function create(){return new self();} public function get(){throw new \\RuntimeException("Network prohibited in reconnect regression");} }');
+file_put_contents($directory . '/vendor/autoload.php', <<<'PHP'
+<?php
+namespace Ubnt\UcrmPluginSdk\Service;
+class UcrmApi {
+    public static function create(){return new self();}
+    public function get($path,$options=[]){
+        // Retry lifecycle reads are local authority; RouterOS state remains in its separate adapter.
+        if(preg_match('~^clients/services/([1-9][0-9]*)$~D',$path,$match))
+            return ['id'=>(int)$match[1],'clientId'=>70,'status'=>1];
+        if($path==='clients/70')return ['id'=>70,'isArchived'=>false];
+        throw new \RuntimeException('Network prohibited in reconnect regression');
+    }
+}
+PHP);
 file_put_contents($directory . '/lib/mt.php', <<<'PHP'
 <?php
 class MT {

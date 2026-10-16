@@ -13,8 +13,8 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     
     <!-- Custom CSS -->
-    <script src="js/theme.js?v=2.0.52"></script>
-    <link rel="stylesheet" href="css/style.css?v=2.0.52">
+    <script src="js/theme.js?v=2.0.53"></script>
+    <link rel="stylesheet" href="css/style.css?v=2.0.53">
 </head>
 <body>
 
@@ -355,16 +355,25 @@
 
         <!-- View System -->
         <section id="view-system" class="view-section" style="display: none;">
-            <section class="system-panel" aria-labelledby="service-reconciliation-heading">
+            <section class="system-panel system-workflow" aria-labelledby="service-reconciliation-heading">
                 <div class="conflicts-heading"><div><h3 id="service-reconciliation-heading" data-i18n="Revisión automática de diferencias">Revisión automática de diferencias</h3><p class="form-note" data-i18n="Revisa servicios gradualmente. Las correcciones comprobadas pasan a la cola; los casos ambiguos quedan para revisión individual.">Revisa servicios gradualmente. Las correcciones comprobadas pasan a la cola; los casos ambiguos quedan para revisión individual.</p></div><button type="button" class="btn btn-secondary" id="refresh-service-reconciliation" data-i18n="Refrescar">Refrescar</button></div>
                 <div class="operations-actions"><label><input type="checkbox" id="service-reconciliation-enabled"><span data-i18n="Revisión automática">Revisión automática</span></label><label><input type="checkbox" id="service-reconciliation-auto"><span data-i18n="Corregir casos comprobados">Corregir casos comprobados</span></label><button type="button" class="btn btn-secondary" id="save-service-reconciliation" data-i18n="Guardar cambios">Guardar cambios</button></div>
                 <p class="form-note" id="service-reconciliation-status" role="status" aria-live="polite"></p><div id="service-reconciliation-list" class="operations-result-grid"></div>
             </section>
-            <section class="system-panel" aria-labelledby="full-backups-heading">
-                <div class="conflicts-heading"><div><h3 id="full-backups-heading" data-i18n="Respaldos completos">Respaldos completos</h3><p class="form-note" data-i18n="Incluyen configuración, credenciales del plugin, cola, estado aplicado y recuperaciones. La integración con este servidor UISP se conserva al restaurar.">Incluyen configuración, credenciales del plugin, cola, estado aplicado y recuperaciones. La integración con este servidor UISP se conserva al restaurar.</p></div><div class="operations-actions"><button type="button" class="btn btn-secondary" id="refresh-full-backups" data-i18n="Refrescar">Refrescar</button><button type="button" class="btn btn-primary" id="create-full-backup" data-i18n="Crear respaldo completo">Crear respaldo completo</button><button type="button" class="btn btn-secondary" id="upload-full-backup" data-i18n="Revisar archivo ZIP">Revisar archivo ZIP</button><input type="file" id="full-backup-file" accept=".zip,application/zip" hidden></div></div>
-                <p class="form-note" id="full-backup-status" role="status" aria-live="polite"></p><div class="operations-result-grid" id="full-backup-list"></div>
+            <section class="system-panel system-workflow system-backups" aria-labelledby="system-backups-heading">
+                <h3 id="system-backups-heading" class="section-title" data-i18n="Respaldos del plugin">Respaldos del plugin</h3>
+                <section class="backup-group" aria-labelledby="full-backups-heading">
+                    <div class="conflicts-heading"><div><h4 id="full-backups-heading" data-i18n="Respaldo completo (ZIP)">Respaldo completo (ZIP)</h4><p class="form-note" data-i18n="Incluyen configuración, credenciales del plugin, cola, estado aplicado y recuperaciones. La integración con este servidor UISP se conserva al restaurar.">Incluyen configuración, credenciales del plugin, cola, estado aplicado y recuperaciones. La integración con este servidor UISP se conserva al restaurar.</p></div><div class="operations-actions"><button type="button" class="btn btn-secondary" id="refresh-full-backups" data-i18n="Refrescar">Refrescar</button><button type="button" class="btn btn-primary" id="create-full-backup" data-i18n="Crear respaldo completo">Crear respaldo completo</button><button type="button" class="btn btn-secondary" id="upload-full-backup" data-i18n="Revisar archivo ZIP">Revisar archivo ZIP</button><input type="file" id="full-backup-file" accept=".zip,application/zip" hidden></div></div>
+                    <p class="form-note" id="full-backup-status" role="status" aria-live="polite"></p><div class="operations-result-grid" id="full-backup-list"></div>
+                </section>
+                <details class="backup-group legacy-backups" id="legacy-backups">
+                    <summary data-i18n="Copias anteriores y de limpieza (SQLite)">Copias anteriores y de limpieza (SQLite)</summary>
+                    <p class="form-note" data-i18n="Copias de la base principal: configuración, dispositivos, planes y asignaciones. No incluyen la cola ni las recuperaciones. Las copias de limpieza sólo permiten descarga.">Copias de la base principal: configuración, dispositivos, planes y asignaciones. No incluyen la cola ni las recuperaciones. Las copias de limpieza sólo permiten descarga.</p>
+                    <div class="operations-actions"><button type="button" class="btn btn-secondary" id="btn-backup" data-i18n="Crear copia SQLite">Crear copia SQLite</button><button type="button" class="btn btn-secondary" id="btn-upload" data-i18n="Restaurar archivo SQLite">Restaurar archivo SQLite</button></div>
+                    <div id="backups-grid" class="backups-grid" aria-label="Copias anteriores y de limpieza (SQLite)" data-i18n-aria-label="Copias anteriores y de limpieza (SQLite)"><!-- Contenido dinámico --></div>
+                </details>
             </section>
-            <section class="system-panel" aria-labelledby="automation-health-title">
+            <section class="system-panel system-workflow" aria-labelledby="automation-health-title">
                 <div class="conflicts-heading"><div><h2 id="automation-health-title" data-i18n="Salud de la automatización">Salud de la automatización</h2><p class="form-note" data-i18n="Actividad observada del proceso automático, webhooks y cola. Una ejecución manual no cuenta como ejecución programada.">Actividad observada del proceso automático, webhooks y cola. Una ejecución manual no cuenta como ejecución programada.</p></div><button type="button" id="refresh-automation-health" class="btn btn-secondary" data-i18n="Refrescar">Refrescar</button></div>
                 <p id="automation-health-status" class="form-note" role="status" aria-live="polite"></p>
                 <div id="automation-health-content" class="automation-health-grid"></div>
@@ -397,34 +406,12 @@
 
                     <div class="utility-card">
                         <div>
-                            <strong data-i18n="Restaurar desde archivo">Restaurar desde archivo</strong>
-                            <p data-i18n="Selecciona un respaldo del plugin guardado en este equipo.">Selecciona un respaldo del plugin guardado en este equipo.</p>
-                        </div>
-                        <button class="btn btn-secondary" id="btn-upload" data-i18n="Elegir archivo">Elegir archivo</button>
-                    </div>
-
-                    <div class="utility-card">
-                        <div>
                             <strong data-i18n="Limpiar registro">Limpiar registro</strong>
                             <p data-i18n="Vacía el registro de eventos del plugin.">Vacía el registro de eventos del plugin.</p>
                         </div>
                         <button class="btn btn-secondary" id="btn-log-clear" data-i18n="Limpiar">Limpiar</button>
                     </div>
 
-                    <div class="utility-card">
-                        <div>
-                            <strong data-i18n="Crear respaldo">Crear respaldo</strong>
-                            <p data-i18n="Guarda una copia de la base de datos del plugin.">Guarda una copia de la base de datos del plugin.</p>
-                        </div>
-                        <button class="btn btn-primary" id="btn-backup" data-i18n="Crear respaldo">Crear respaldo</button>
-                    </div>
-                </div>
-            </div>
-
-            <div class="system-panel">
-                <h4 class="section-title" data-i18n="Respaldos disponibles">Respaldos disponibles</h4>
-                <div id="backups-grid" class="backups-grid">
-                    <!-- Contenido dinámico -->
                 </div>
             </div>
         </section>
@@ -525,6 +512,17 @@
                 <button type="button" class="btn btn-secondary" id="resolve-crm-ip-history" style="display: none;" data-i18n="Resolver asignación histórica">Resolver asignación histórica</button>
                 <button type="button" class="btn btn-secondary" id="cleanup-crm-ip-result" style="display: none;" data-i18n="Revisar limpieza">Revisar limpieza</button>
             </div>
+        </div>
+    </div>
+    <div id="service-lifecycle-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="service-lifecycle-title" style="display: none;">
+        <div class="modal network-cleanup-dialog">
+            <div class="modal-header"><h3 id="service-lifecycle-title" data-i18n="Revisar estado del servicio">Revisar estado del servicio</h3><button type="button" class="close-modal" aria-label="Cerrar" data-i18n-aria-label="Cerrar"><i data-feather="x"></i></button></div>
+            <div class="modal-body">
+                <p class="form-note" data-i18n="Revisa el estado actual del servicio solicitante en UISP antes de retirar sus trabajos pendientes.">Revisa el estado actual del servicio solicitante en UISP antes de retirar sus trabajos pendientes.</p>
+                <p class="form-note" data-i18n="La asignación del otro servicio se conserva.">La asignación del otro servicio se conserva.</p>
+                <div id="service-lifecycle-details"></div><p id="service-lifecycle-status" class="form-note" role="status" aria-live="polite"></p><div id="service-lifecycle-result" class="operations-actions"></div>
+            </div>
+            <div class="modal-footer"><button type="button" class="btn btn-secondary close-modal" data-i18n="Cerrar">Cerrar</button><button type="button" class="btn btn-secondary" id="review-service-lifecycle" data-i18n="Verificar nuevamente">Verificar nuevamente</button><button type="button" class="btn btn-primary" id="apply-service-lifecycle" disabled data-i18n="Retirar pendientes del servicio">Retirar pendientes del servicio</button></div>
         </div>
     </div>
     <div id="network-cleanup-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="network-cleanup-title" style="display: none;">
@@ -772,10 +770,10 @@
     </div>
 
     <!-- Scripts -->
-    <script src="js/i18n.js?v=2.0.52"></script>
-    <script src="js/api.js?v=2.0.52"></script>
-    <script src="js/operations.js?v=2.0.52"></script>
-    <script src="js/workflows.js?v=2.0.52"></script>
-    <script src="js/app.js?v=2.0.52"></script>
+    <script src="js/i18n.js?v=2.0.53"></script>
+    <script src="js/api.js?v=2.0.53"></script>
+    <script src="js/operations.js?v=2.0.53"></script>
+    <script src="js/workflows.js?v=2.0.53"></script>
+    <script src="js/app.js?v=2.0.53"></script>
 </body>
 </html>

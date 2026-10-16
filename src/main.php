@@ -38,6 +38,10 @@ try {
     } catch (Throwable $ignored) { MyLog()->Append(['event'=>'automatic_reconciliation_failed','errorCode'=>'check_unavailable'],LOG_WARNING); }
     require_once __DIR__ . '/lib/api_configuration_apply.php';
     myJobQueue()->withAdministrativeLock(fn() => ApiConfigurationApply::drain());
+    try {
+        // Include historical reservations and archived owners, not only services present in the active cache.
+        myJobQueue()->lifecycleReviewer()->tick(myJobQueue(),8);
+    } catch (Throwable $ignored) { MyLog()->Append(['event'=>'service_lifecycle_review_failed','errorCode'=>'lifecycle_unavailable'],LOG_WARNING); }
     $results = (new ApiJobs())->run();
     $pending = count(array_filter($results, fn(array $result): bool => ($result['success'] ?? false) !== true));
     if ($pending) { MyLog()->Append('Scheduled router operations remain pending: ' . $pending, LOG_WARNING); }

@@ -566,6 +566,19 @@ class ApiAction
         $ids = [];
         foreach($services as $service){ $ids[] = $service['id']; }
         $this->diagnosticServiceIds = array_map('intval', $ids);
+        if (in_array($entity['isArchived']??null,[true,1,'1'],true)) {
+            // Archiving a client retires its provisioning; a name update must never revive its accounts.
+            return myJobQueue()->withServiceLocks($ids,function () use($ids,$entity): bool {
+                if (!$this->save($entity)) return false;
+                $ok=true;
+                foreach($ids as $sid) {
+                    $review=myJobQueue()->lifecycleReviewer()->review((int)$sid,myJobQueue());
+                    if ($review['state']==='unknown') $ok=false;
+                }
+                $this->resultData['provisioning']='queued';
+                return $ok;
+            });
+        }
         return $this->batchOutcome(myJobQueue()->withServiceLocks($ids, function () use ($ids, $entity): bool {
             if (!$this->batch()->del_queues($ids)) return false;
             if (!$this->save($entity)) return false;
@@ -605,6 +618,13 @@ class ApiAction
             $data = array_replace($cleanup, $client);
             $data['action'] = 'delete';
             $data['_terminal'] = true;
+            if (in_array((int)($this->normalizedEntity['status']??-1),[2,5,8],true) || in_array($this->action(),['delete','end'],true))
+                $data['_lifecycle_billing']=true;
+            else {
+                $data['_lifecycle_detached']=true;
+                if ($this->hasSite($this->normalizedEntity??[]))
+                    $data['_lifecycle_identity_field']=filter_var($cleanup['mac']??'',FILTER_VALIDATE_MAC)?'mac':'username';
+            }
             $deletions[] = $data;
         }
         // The cache describes desired UISP state; successful RouterOS cleanup is tracked separately.

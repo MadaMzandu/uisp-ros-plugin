@@ -6,6 +6,20 @@ Esta revisión reúne las modificaciones de [dhanielsnieto en el PR #89](https:/
 
 El plugin comunica UISP CRM con los MikroTik mediante la **API nativa de RouterOS**. Los puertos habituales son `8728` para API y `8729` para API con TLS. El panel permite administrar esa integración; no cambia el transporte a SSH, WinBox o REST.
 
+## Candidato 2.4.38 — retirar intenciones de servicios dados de baja y ordenar Sistema
+
+La cola consulta el estado actual en UISP antes de volver a aplicar intenciones antiguas. Un servicio terminado, obsoleto o inactivo (`2`, `5`, `8`), un cliente cuyo archivo está confirmado o un servicio ausente mediante HTTP 404 comprobado permiten retirar sus pendientes anteriores. **Suspendido (`3`) conserva su cuenta y asignación**: no se trata como una baja. Una ficha que no abre, una caché antigua o el sufijo de un usuario PPPoE no prueban por sí solos ninguna de esas situaciones.
+
+Si no quedan recursos físicos posibles, se retiran las reservas locales correspondientes. Si hay estado aplicado, comandos preparados, intentos antiguos o recursos conservados, se programa su baja mediante la cola normal y se mantiene la IP protegida hasta confirmar la limpieza. Antes de escribir se comprueban otra vez el estado y la propiedad del recurso; una cuenta que ahora pertenece a otro servicio se conserva. La reactivación, una identidad contradictoria o una consulta fallida dejan una incidencia del servicio afectado y no autorizan borrar ni sobrescribir al propietario actual. La revisión usa turnos y presupuestos acotados; no promete limpiar cientos de servicios en una sola pasada. Quitar el Site o el identificador de cuenta se comprueba como una retirada de configuración independiente; no se confunde con una baja de facturación reactivada ni reproduce una actualización obsoleta antes de limpiar.
+
+La revisión programada incluye propietarios históricos, y un conflicto real puede revisar al propietario concreto registrado antes de reintentar la asignación. Así se evita perpetuar una reserva por el único hecho de conservar una intención cancelada. En el caso solicitante `7279` / reserva `9807`, si UISP confirma que `7279` está dado de baja o su cliente archivado, se retira esa intención antigua; la asignación vigente de `9807` se conserva.
+
+**Revisar servicio solicitante** abre una comprobación explícita con enlaces al servicio y al cliente conocidos. **Retirar pendientes del servicio** sólo se habilita con evidencia fresca y un token de un uso; vuelve a validar antes de cambiar la cola. El resultado distingue las reservas ya liberadas de **Baja programada**, con acceso a sus trabajos. Una respuesta incierta consume el permiso y exige revisar de nuevo. Los errores explican si falta consultar UISP, confirmar identidad o limpiar el router; una comprobación sin evidencia no habilita la retirada. La compatibilidad de una migración pausada mantiene su protección independiente.
+
+Una entrada nueva al panel abre **Dispositivos**. Una recarga real conserva la sección y su posición; recordar una visita anterior a Trabajos ya no cambia la portada. **Sistema → Respaldos del plugin** reúne el ZIP completo y las copias SQLite anteriores o de limpieza, con sus alcances explícitos. El ZIP incluye cola y estado operativo; SQLite mantiene el alcance de la base principal y las copias de limpieza permiten descarga. Sus controles dejan de repetirse en Utilidades. Se compactan las secciones nuevas de Sistema; el rediseño general y el centro de notificaciones siguen pendientes.
+
+Validación automatizada e instalador: **63 suites aisladas aprobadas**, sintaxis de **66 archivos PHP propios** y verificación de 380 entradas, 147 archivos propios y 13 dependencias fijadas. Informe: `dist/verification-2.4.38.json`. SHA-256: `ebbb4de8aa1d0e6a14e0b8f89981639cbfab3e15956397c1edb72e6f90bcda73`. La revisión de navegador usó datos sintéticos en escritorio/móvil, español/inglés y temas claro/oscuro, incluido el modal a 390 × 844. No se modificaron UISP ni routers de producción; la baja y reutilización de IP requieren comprobarse en la instalación afectada.
+
 ## Candidato 2.4.37 — sincronización revisada, estado fresco, reconciliación y respaldo completo
 
 **Revisar sincronización** prepara una vista previa por router con servicios sin cambios, diferencias y casos que requieren revisión. Consulta UISP y RouterOS con límites; no actualiza la caché, reserva IP, modifica CRM/router ni ejecuta trabajos. Muestra IPv4/IPv6, campos comprobados, posibles reconexiones y, cuando corresponda, router anterior y destino del traslado. **Sólo revisar** cierra sin aplicar. **Aplicar diferencias** programa únicamente cambios comprobados; **Forzar reconexión** incluye las cuentas verificadas sin diferencias. La confirmación vuelve a comprobar la identidad y el estado actual y usa la cola normal, servicio por servicio, para la siguiente pasada del worker. Cancelar detiene las solicitudes siguientes; una solicitud ya enviada conserva su resultado. Un dato incierto, una cuenta manual o ajena y un cambio concurrente no se convierten en permiso para sobrescribir.
@@ -491,7 +505,7 @@ La evidencia real posterior identificó tokens ausentes y una URL pegada como se
 
 ## Preparación para instalar y validar
 
-La versión actual es 2.4.33; su estado de validación se indica al principio. La confirmación de recuperación de planes archivados corresponde a 2.4.19 y conserva su alcance histórico. Ante IP duplicadas, consultar las seis vistas y revisar los propietarios. **Revisar limpieza** permite comprobar una selección de reservas obsoletas y confirmar sólo las elegibles con respaldo privado; un trabajo pendiente, una recuperación pendiente o el estado aplicado de una cuenta impiden retirar sus reservas. El respaldo generado permanece descargable desde **Sistema**, incluso después de recargar. Resolver los conflictos restantes y recargar permite completar la migración; las demás escrituras y el aprovisionamiento siguen pausados hasta entonces. La [guía de pruebas reales](PRUEBAS_REALES.md) contiene 171 escenarios para las comprobaciones restantes.
+La versión actual es 2.4.38; su validación se indica al principio. La confirmación de planes archivados de 2.4.19 conserva su alcance histórico. La revisión del estado actual retira intenciones de servicios dados de baja y programa la limpieza física necesaria antes de liberar direcciones; una identidad o consulta sin comprobar conserva la incidencia correspondiente. Revisar limpieza mantiene su alcance local independiente y sus respaldos. El modo consulta de una migración pausada conserva sus protecciones hasta resolver las asignaciones y recargar. La [guía de pruebas reales](PRUEBAS_REALES.md) contiene 242 escenarios; sus resultados de laboratorio no acreditan la instalación de producción.
 
 ### Resultado histórico de 2.4.17
 
@@ -509,7 +523,7 @@ En 2.4.16 se comprobaron cancelación de retiradas nativas sin intentos, conteos
 
 SHA-256 histórico de 2.4.16: `e02d1697e13d1fd5a708cf5849b781ae2229c4bae234087bf720fe54b0f8850b`.
 
-1. Guardar el instalador anterior y copias privadas de `data/data.db` y `data/jobs.db`. Los respaldos del panel contienen `data.db`; **no incluyen la cola `jobs.db`**.
+1. Guardar el instalador anterior y copias privadas de `data/data.db` y `data/jobs.db`. Las copias SQLite anteriores contienen `data.db`; el ZIP completo conserva también la cola, caché y estado operativo admitido. Ambos tipos contienen datos privados.
 2. Pausar workers y entregas anteriores mientras se sustituye el paquete. Comprobar la migración antes de reanudarlos.
 3. Comprobar el modo del webhook. Por defecto, guardar sólo la clave en `webhookSecret` y enviarla también desde UISP; el plugin no modifica el terminal. Para funcionar sin clave, activar expresamente la compatibilidad descrita en la [guía](PRUEBAS_REALES.md#configurar-el-secreto-del-webhook).
 4. Si PHP web conserva el punto de entrada anterior con `opcache.validate_timestamps=0`, renovar su caché/reiniciar ese servicio. La consola y la recarga del navegador no renuevan OPcache web.
@@ -520,7 +534,7 @@ La regresión local usa PHP 8.5.11, bases temporales, mocks y sockets locales. E
 
 ## Pendientes conocidos
 
-- Renovación visual para la etapa final: elementos compactos en todas las vistas y avisos reunidos en un centro de notificaciones, conservando acceso a sus detalles y prioridad de la cola. Se pospone mientras se prueba 2.4.36 y se atienden los pendientes funcionales.
+- Renovación visual para la etapa final: elementos compactos en todas las vistas y avisos reunidos en un centro de notificaciones, conservando acceso a sus detalles y prioridad de la cola. La agrupación de respaldos y las tarjetas de Sistema de 2.4.38 no completan ese rediseño general.
 - La retirada física de una cola individual de suspensión con dependencias inesperadas puede seguir diferida; 2.4.36 informa el recurso requerido conservado como sin confirmar, en lugar de presentar una eliminación verificada.
 - Ampliar la revisión periódica fuera del alcance inicial de cuentas PPP/Hotspot propias sin trabajos activos; migraciones, adopciones y evidencia parcial mantienen revisión específica.
 - Ordenar cronológicamente eventos distintos exige una revisión fiable del origen. La consulta fresca y revisión pendiente de 2.4.37 evitan aplicar instantáneas antiguas; no inventan esa revisión ni aseguran consistencia inmediata de UISP.

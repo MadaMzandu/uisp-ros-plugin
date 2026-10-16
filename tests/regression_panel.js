@@ -669,7 +669,8 @@ function contentionFixture(disableContention, translated = false) {
 }
 
 function recoveryPanelFixture({ bootstrap, details, storage, storageBlocked = false, mobile = false,
-    initialReplies = new Map(), url = 'https://fixture.invalid/crm/_plugins/ros-plugin/public.php?page=panel', raf = false, exposeRenderers = false } = {}) {
+    initialReplies = new Map(), url = 'https://fixture.invalid/crm/_plugins/ros-plugin/public.php?page=panel', raf = false, exposeRenderers = false,
+    navigationType = 'reload', legacyNavigationType } = {}) {
     const nodes = new Map(Array.from(markup.matchAll(/\bid="([^"]+)"/g), match => [match[1], new Element(match[1])]));
     const closeButtons = Array.from(markup.matchAll(/<button\b[^>]*class="[^"]*\bclose-modal\b[^"]*"/g), () => new Element());
     const views = ['devices', 'plans', 'config', 'jobs', 'system', 'network_conflicts'];
@@ -739,6 +740,8 @@ function recoveryPanelFixture({ bootstrap, details, storage, storageBlocked = fa
     };
     const localContext = vm.createContext({
         URL, FormData: FixtureFormData, document: localDocument,
+        ...(navigationType !== null ? { performance: { getEntriesByType: name => name === 'navigation' ? [{ type: navigationType }] : [] } }
+            : legacyNavigationType !== undefined ? { performance: { navigation: { type: legacyNavigationType } } } : {}),
         window: { innerHeight: 500, location: { href: url, reload() { reloads++; } },
             getComputedStyle() { return { overflowY: mobile ? 'visible' : 'auto' }; },
             addEventListener(type, listener) { if (!events.has(type)) events.set(type, []); events.get(type).push(listener); }
@@ -2344,7 +2347,7 @@ async function checkNetworkRecoveryPanel() {
     assert.deepEqual(plain(healthy.diagnostics()[0].data), {}, 'Reactive recovery reads must not request live CRM verification');
     const malformed = recoveryPanelFixture({ bootstrap: '{', details }); await flush();
     assert.equal(malformed.nodes.get('btn-cache').disabled, false, 'An invalid optional bootstrap must not break normal navigation');
-    assert.equal((markup.match(/(?:src|href)="(?:js|css)\/[^"?]+\?v=2\.0\.52"/g) || []).length, 7, 'Every panel asset must use the new revision to invalidate UISP browser caches');
+    assert.equal((markup.match(/(?:src|href)="(?:js|css)\/[^"?]+\?v=2\.0\.53"/g) || []).length, 7, 'Every panel asset must use the new revision to invalidate UISP browser caches');
     assert(!markup.includes('v=2.0.45'));
     assert(apiSource.includes("'alert-triangle':"), 'The conflict warning must have its own local warning icon');
 }
@@ -2552,6 +2555,25 @@ async function checkNavigationContinuity() {
         devices: [{ id: 1, name: 'Router de ejemplo', ip: '192.0.2.1', status: null }], plans: [{ id: 1, name: 'Plan', ratio: 1, uploadSpeed: 10, downloadSpeed: 20 }],
         messages: [[], { config_disable_contention: { name: 'disable_contention', label: 'Desactivar contención', type: 1 } }], jobs: {}, sys: { app_version: '2.4.24' }
     };
+    for (const entry of [
+        { navigationType: 'navigate' }, { navigationType: 'back_forward' },
+        { navigationType: null }, { navigationType: null, legacyNavigationType: 0 }
+    ]) {
+        const storage = new Map([[key, stored('jobs', { jobs: { scrollTop: 420 }, devices: { scrollTop: 240 } })]]);
+        const fresh = recoveryPanelFixture({ storage, ...entry }); await flush();
+        assert.equal(fresh.nodes.get('view-devices').style.display, 'block', 'A new visit opens Devices regardless of a previously saved Jobs section');
+        assert.equal(fresh.nodes.get('view-jobs').style.display, 'none');
+        assert.equal(fresh.surface().scrollTop, 0, 'A fresh visit starts at the top of Devices');
+        assert(!fresh.calls.some(call => call.target === 'jobs'), 'Fresh entry must not fetch the remembered queue');
+        assert.equal(JSON.parse(storage.get(key)).view, 'devices');
+    }
+    for (const entry of [{ navigationType: 'reload' }, { navigationType: null, legacyNavigationType: 1 }]) {
+        const storage = new Map([[key, stored('jobs', { jobs: { scrollTop: 420 } })]]);
+        const reloaded = recoveryPanelFixture({ storage, ...entry }); await flush();
+        assert.equal(reloaded.nodes.get('view-jobs').style.display, 'block', 'A real reload resumes the selected section');
+        assert.equal(reloaded.surface().scrollTop, 420, 'Reload keeps the selected section position');
+        assert.equal(reloaded.writes().length, 0, 'Restoring navigation cannot execute queued work');
+    }
     for (const view of views) {
         const storage = new Map();
         const first = recoveryPanelFixture({ bootstrap: { readOnly: true, details }, details, storage });
@@ -2659,6 +2681,118 @@ async function checkNavigationContinuity() {
         assert.equal(fixture.surface().scrollTop, 450, 'A same-section async refresh must respect newer scrolling while ' + target + ' is pending');
         assert.equal(fixture.writes().length, 0);
     }
+}
+
+function checkSystemBackupGrouping() {
+    const group = markup.match(/<section\b[^>]*class="[^"]*\bsystem-backups\b[^"]*"[\s\S]*?<\/details>\s*<\/section>/)?.[0];
+    assert(group, 'System must have one grouped backup section');
+    for (const id of ['full-backups-heading', 'refresh-full-backups', 'create-full-backup', 'upload-full-backup', 'full-backup-list',
+        'legacy-backups', 'btn-backup', 'btn-upload', 'backups-grid']) {
+        assert(group.includes('id="' + id + '"'), 'Existing backup control must remain available in its grouped section: ' + id);
+        assert.equal([...markup.matchAll(new RegExp('\\bid="' + id + '"', 'g'))].length, 1, 'Backup controls must not be duplicated: ' + id);
+    }
+    assert(/<details\b[^>]*id="legacy-backups"[^>]*>\s*<summary/.test(group), 'Previous SQLite copies remain keyboard accessible through a native details control');
+    assert(!/<details\b[^>]*id="legacy-backups"[^>]*\bopen(?:\s|=|>)/.test(group), 'Long legacy history starts compact');
+    assert(group.includes('Respaldo completo (ZIP)') && group.includes('No incluyen la cola ni las recuperaciones.'), 'ZIP and SQLite scopes must be visible and distinct');
+    const utilities = markup.match(/<div class="system-utilities">([\s\S]*?)\n\s*<\/div>\n\s*<\/div>\n\s*<\/section>/)?.[1];
+    assert(utilities, 'System utilities remain available');
+    assert.equal([...utilities.matchAll(/class="utility-card"/g)].length, 3, 'Utilities contain only rebuild, cache and log tools');
+    for (const id of ['btn-rebuild', 'btn-cache', 'btn-log-clear']) assert(utilities.includes('id="' + id + '"'));
+    for (const id of ['btn-backup', 'btn-upload', 'backups-grid']) assert(!utilities.includes('id="' + id + '"'), 'Backup actions must not repeat in Utilities');
+}
+
+async function checkRequesterLifecycleReview() {
+    const token = 'e'.repeat(64), envelope = data => ({ status: 'ok', error: false, data });
+    const job = { Q989: { serviceId: 7279, deviceId: 10, state: 'pending', username: 'former@48781',
+        error: 'network_address_conflict: requested_service=7279 blocking_service=9807 source=reserved family=IPv4' } };
+    const candidate = extra => ({ serviceId: 7279, clientId: 48781, status: 2, missing: false, state: 'retired', reason: 'service_ended',
+        eligible: true, previewToken: token, expiresAt: '2026-10-16T23:00:00Z', ...extra });
+    const outcome = extra => ({ serviceId: 7279, clientId: 48781, state: 'retired', reason: 'lifecycle_retired', retired: true, queued: 0, jobKeys: [], released: true, ...extra });
+    async function open(preview, options = {}) {
+        const fixture = recoveryPanelFixture({ ...options, initialReplies: new Map([['list/jobs', envelope(job)], ['list/service_lifecycle', envelope(preview)]]) });
+        await fixture.navigate('jobs');
+        const button = fixture.tables.get('#jobs-table tbody').children[0].querySelector('.job-description').children
+            .find(child => child.textContent === 'Revisar servicio solicitante #7279');
+        assert(button, 'The requesting service needs an action separate from protected reservation #9807');
+        await button.fire('click'); await flush(); return fixture;
+    }
+    for (const [code, phrase] of Object.entries({ lifecycle_unavailable: 'próximo reintento automático', lifecycle_review_pending: 'otra pasada automática',
+        lifecycle_identity_changed: 'identidad del cliente cambió', lifecycle_reactivated: 'volvió a estar vigente', lifecycle_router_identity_unknown: 'router o la cuenta anterior',
+        lifecycle_resources_unconfirmed: 'confirmar en el router', lifecycle_changed: 'cambió durante la revisión' })) {
+        const fixture = recoveryPanelFixture({ initialReplies: new Map([['list/jobs', envelope({ Q989: { ...job.Q989, error: code } })],
+            ['list/service_lifecycle', envelope(candidate({ state: 'unknown', reason: 'lifecycle_unavailable', eligible: false, previewToken: null, expiresAt: null }))]]) });
+        await fixture.navigate('jobs');
+        const row = fixture.tables.get('#jobs-table tbody').children[0];
+        assert(row.innerHTML.includes(phrase) && !row.innerHTML.includes(code), 'Lifecycle job errors must explain the service-specific action instead of showing raw codes: ' + code);
+        const review = row.querySelector('.job-description').children.find(child => child.textContent === 'Revisar servicio solicitante #7279');
+        assert(review, 'A lifecycle error needs an explicit requester review action: ' + code);
+        await review.fire('click'); await flush();
+        assert(fixture.nodes.get('service-lifecycle-status').textContent.includes('No se pudo confirmar el estado actual'));
+        assert.equal(fixture.nodes.get('apply-service-lifecycle').disabled, true, 'An unknown status must not enable retirement');
+        assert.equal(fixture.writes().length, 0);
+    }
+    for (const [extra, reason] of [[{}, 'servicio terminó'], [{ reason: 'client_archived', status: 1 }, 'cliente está archivado'],
+        [{ reason: 'service_not_found', missing: true, clientId: null, status: null }, 'servicio no existe']]) {
+        const fixture = await open(candidate(extra));
+        assert(fixture.nodes.get('service-lifecycle-status').textContent.includes(reason));
+        assert.equal(fixture.nodes.get('apply-service-lifecycle').disabled, false);
+        const identity = fixture.nodes.get('service-lifecycle-details').children[0].children;
+        assert.equal(identity[0].href, 'https://fixture.invalid/crm/client/service/7279', 'Review must target the requester, never reservation holder #9807');
+        if (!extra.missing) assert.equal(identity[1].href, 'https://fixture.invalid/crm/client/48781');
+        assert.equal(fixture.writes().length, 0, 'Review cannot retire work or modify the router');
+        fixture.reply('update/service_lifecycle', payload => { assert.deepEqual(plain(payload.data), { previewToken: token }); return envelope(outcome()); });
+        fixture.reply('list/jobs', envelope({}));
+        await fixture.nodes.get('apply-service-lifecycle').fire('click'); await flush();
+        assert(fixture.nodes.get('service-lifecycle-status').textContent.includes('liberaron sus reservas locales'));
+        assert.equal(fixture.nodes.get('apply-service-lifecycle').disabled, true);
+        assert.equal(fixture.writes().length, 1);
+        assert(!fixture.calls.some(call => ['job_reservation', 'network_conflicts'].includes(call.target) && call.action === 'apply'), 'Retiring old work must never clean the active holder');
+        assert(!fixture.calls.some(call => call.target === 'jobs' && call.action === 'run'), 'The review must not execute router jobs automatically');
+    }
+    for (const preview of [candidate({ state: 'active', reason: 'active_service', status: 1, eligible: false, previewToken: null, expiresAt: null }),
+        candidate({ state: 'unknown', reason: 'lifecycle_unavailable', eligible: false, previewToken: null, expiresAt: null }),
+        candidate({ state: 'active' }), candidate({ serviceId: 9807 }), candidate({ clientId: attack }), candidate({ reason: attack }), candidate({ previewToken: 'invalid' })]) {
+        const fixture = await open(preview);
+        assert.equal(fixture.nodes.get('apply-service-lifecycle').disabled, true, 'Active, ambiguous or malformed lifecycle proof must never enable retirement');
+        await fixture.nodes.get('apply-service-lifecycle').fire('click');
+        assert.equal(fixture.writes().length, 0);
+        assert(!fixture.nodes.get('service-lifecycle-status').textContent.includes('<img'), 'Unknown reason text cannot enter the panel');
+    }
+    const queued = await open(candidate());
+    queued.reply('update/service_lifecycle', envelope(outcome({ queued: 1, jobKeys: ['Q1001'], released: false, reason: 'lifecycle_router_cleanup_pending' })));
+    await queued.nodes.get('apply-service-lifecycle').fire('click'); await flush();
+    assert(queued.nodes.get('service-lifecycle-status').textContent.includes('liberará al completar la limpieza'), 'A queued router cleanup cannot claim the IP is already free');
+    assert.equal(queued.nodes.get('service-lifecycle-result').children[0].textContent, 'Baja programada · Q1001');
+    assert.equal(queued.calls.filter(call => call.target === 'jobs' && call.action === 'run').length, 0);
+    const recovery = await open(candidate(), { bootstrap: { readOnly: true, details: { duplicate_groups: 1, conflicts: [] } } });
+    assert(recovery.calls.some(call => call.target === 'service_lifecycle' && call.action === 'preview'), 'Fresh lifecycle evidence remains available during recovery');
+    assert.equal(recovery.nodes.get('apply-service-lifecycle').disabled, true, 'Migration recovery must retain its compatibility barrier for retirement writes');
+    await recovery.nodes.get('apply-service-lifecycle').fire('click');
+    assert.equal(recovery.writes().length, 0);
+    const refreshFailure = await open(candidate());
+    refreshFailure.reply('update/service_lifecycle', envelope(outcome()));
+    refreshFailure.reply('list/jobs', { status: 'failed', error: true, message: 'read_failed' });
+    await refreshFailure.nodes.get('apply-service-lifecycle').fire('click'); await flush();
+    assert(refreshFailure.nodes.get('service-lifecycle-status').textContent.includes('liberaron sus reservas locales'), 'A failed queue refresh must not turn a confirmed retirement into an uncertain result');
+    assert.equal(refreshFailure.writes().length, 1);
+    const uncertain = await open(candidate()), pending = deferred();
+    uncertain.reply('update/service_lifecycle', () => pending.promise);
+    const first = uncertain.nodes.get('apply-service-lifecycle').fire('click'); await flush();
+    await uncertain.nodes.get('apply-service-lifecycle').fire('click');
+    assert.equal(uncertain.writes().length, 1, 'Apply must be single flight');
+    pending.resolve({ status: 'failed', error: true, message: 'transport failure' }); await first; await flush();
+    assert.equal(uncertain.nodes.get('apply-service-lifecycle').disabled, true);
+    await uncertain.nodes.get('apply-service-lifecycle').fire('click');
+    assert.equal(uncertain.writes().length, 1, 'An uncertain apply must consume its token instead of replaying it');
+    assert(uncertain.nodes.get('service-lifecycle-status').textContent.includes('No se confirmó el retiro'));
+    const closed = recoveryPanelFixture({ initialReplies: new Map([['list/jobs', envelope(job)]]) }); await closed.navigate('jobs');
+    const waiting = deferred(); closed.reply('list/service_lifecycle', () => waiting.promise);
+    const review = closed.tables.get('#jobs-table tbody').children[0].querySelector('.job-description').children.find(child => child.textContent === 'Revisar servicio solicitante #7279');
+    const reviewing = review.fire('click'); await flush(); await closed.documentEvent('keydown', { key: 'Escape' });
+    waiting.resolve(envelope(candidate())); await reviewing; await flush();
+    assert.equal(closed.nodes.get('service-lifecycle-modal').style.display, 'none');
+    assert.equal(closed.nodes.get('apply-service-lifecycle').disabled, true, 'A closed preview response must not leave an actionable token');
+    assert.equal(closed.writes().length, 0);
 }
 
 async function checkCurrentAddressEvidence() {
@@ -3944,6 +4078,8 @@ async function checkLanguagePresentation() {
     await checkNetworkCleanupPanel();
     await checkNetworkClientArchivePanel();
     await checkNavigationContinuity();
+    checkSystemBackupGrouping();
+    await checkRequesterLifecycleReview();
     await checkCurrentAddressEvidence();
     console.log('Panel regression checks passed: terminal CRM edit outcomes, confirmed receipts and uncertain readback, bounded read-only retries without token replay, ended-service historical fallback and separate cleanup review, identity/absence/reactivation safeguards and cancellation; recovery navigation, escaped owner/status diagnostics, same-origin CRM links, explicit single-service verification without blocking navigation, update/upload guards and diagnostic downloads; partial provisioning counts/diagnostics/persistence and full totals, API contracts, old HTML/API manual editors, saved global contention flags and drafts, legacy zero ratios, configuration keyboard drafts during pending saves/reloads, language changes preserving open modal/custom values/scroll and asynchronous settings drafts, stale language response rejection, legacy global language preservation, inactive control omission, configuration failure recovery, stable local editor visibility, deferred plan saves and failure drafts, burst templates and math, custom plans, legacy sentinels, drafts, one-click saves, nonblocking notifications, safe text, numeric types, overrides, TLS, backup routes and failure cleanup.');
 })().catch(error => { console.error(error); process.exitCode = 1; });
