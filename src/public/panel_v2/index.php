@@ -13,8 +13,8 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     
     <!-- Custom CSS -->
-    <script src="js/theme.js?v=2.0.54"></script>
-    <link rel="stylesheet" href="css/style.css?v=2.0.54">
+    <script src="js/theme.js?v=2.0.55"></script>
+    <link rel="stylesheet" href="css/style.css?v=2.0.55">
 </head>
 <body>
 
@@ -421,6 +421,19 @@
     </div>
 
     <!-- Modals -->
+    <div class="modal-overlay" id="service-resolution-modal" role="dialog" aria-modal="true" aria-labelledby="service-resolution-heading" style="display: none;">
+        <div class="modal resolution-dialog">
+            <div class="modal-header"><h3 id="service-resolution-heading" tabindex="-1" data-i18n="Resolver">Resolver</h3><button type="button" class="close-modal" id="service-resolution-close" aria-label="Cerrar" data-i18n-aria-label="Cerrar"><i data-feather="x"></i></button></div>
+            <div class="modal-body">
+                <p id="service-resolution-status" class="form-note" role="status" aria-live="polite"></p>
+                <div id="service-resolution-summary"></div>
+                <div id="service-resolution-changes" class="resolution-changes"></div>
+                <div id="service-resolution-candidates" class="resolution-candidates"></div>
+                <div id="service-resolution-result" class="operations-actions" aria-live="polite"></div>
+            </div>
+            <div class="modal-footer"><button type="button" id="service-resolution-refresh" class="btn btn-secondary" data-i18n="Actualizar revisión">Actualizar revisión</button><button type="button" id="service-resolution-apply" class="btn btn-primary" disabled data-i18n="Resolver y sincronizar">Resolver y sincronizar</button></div>
+        </div>
+    </div>
     <div class="modal-overlay" id="sync-preview-modal" role="dialog" aria-modal="true" aria-labelledby="sync-preview-heading" style="display: none;">
         <div class="modal workflow-dialog"><div class="modal-header"><h3 id="sync-preview-heading" data-i18n="Vista previa de sincronización">Vista previa de sincronización</h3><button type="button" class="close-modal" aria-label="Cerrar" data-i18n-aria-label="Cerrar"><i data-feather="x"></i></button></div><div class="modal-body">
             <p class="form-note" data-i18n="Sólo revisar consulta UISP y RouterOS. Aplicar diferencias programa cambios comprobados. Forzar reconexión incluye las cuentas verificadas aunque no tengan diferencias.">Sólo revisar consulta UISP y RouterOS. Aplicar diferencias programa cambios comprobados. Forzar reconexión incluye las cuentas verificadas aunque no tengan diferencias.</p>
@@ -770,10 +783,11 @@
     </div>
 
     <!-- Scripts -->
-    <script src="js/i18n.js?v=2.0.54"></script>
-    <script src="js/api.js?v=2.0.54"></script>
-    <script src="js/operations.js?v=2.0.54"></script>
-    <script src="js/workflows.js?v=2.0.54"></script>
-    <script src="js/app.js?v=2.0.54"></script>
+    <script src="js/i18n.js?v=2.0.55"></script>
+    <script src="js/api.js?v=2.0.55"></script>
+    <script src="js/operations.js?v=2.0.55"></script>
+    <script src="js/workflows.js?v=2.0.55"></script>
+    <script src="js/service_resolution.js?v=2.0.55"></script>
+    <script src="js/app.js?v=2.0.55"></script>
 </body>
 </html>

@@ -114,6 +114,7 @@ $q=new ApiJobQueue('data/jobs.db',null);$q->close();
                     for origin in (None, 'http://other.invalid'):
                         check(request(operation(target), origin=origin)[0] == 403, 'Workflow read accepted a foreign/missing origin')
                 writes = [operation('full_backup', 'create', change='update'),
+                          operation('service_resolution', 'apply', {'previewToken': 'f' * 64, 'selection': []}, 'update'),
                           operation('device_sync', 'begin', {'deviceId': 1}, 'update'),
                           operation('device_sync', 'step', {'syncToken': 'f' * 64}, 'update'),
                           operation('full_backup', 'apply', {'previewToken': 'f' * 64}, 'update'),
@@ -134,6 +135,10 @@ $q=new ApiJobQueue('data/jobs.db',null);$q->close();
                              operation('full_backup', 'preview', {'name': '../../config.json'}, 'update'),
                              operation('service_lifecycle', 'preview', {'serviceId': '771'}),
                              operation('service_lifecycle', 'preview', {'serviceId': 771, 'force': True}),
+                             operation('service_resolution', 'preview', {'serviceId': '771'}),
+                             operation('service_resolution', 'preview', {'serviceId': 771, 'force': True}),
+                             operation('service_resolution', 'apply', {'previewToken': 'f' * 64, 'selection': []}),
+                             operation('service_resolution', 'apply', {'previewToken': 'f' * 64, 'selection': [1]}, 'update'),
                              operation('job_reservation', 'preview', {'serviceIds': [48781]}, 'cleanup')]:
                     check(request(body)[0] == 400, 'Invalid workflow request accepted: ' + str(body))
                 check(not (directory / 'setup-called').exists() and not (directory / 'cache-sync-called').exists(),
@@ -197,6 +202,16 @@ $q=new ApiJobQueue('data/jobs.db',null);$q->close();
                 with closing(sqlite3.connect(directory / 'data/data.db')) as db, db:
                     check(db.execute('SELECT name FROM devices WHERE id=1').fetchone()[0] == 'Before restore', 'HTTP restore left replaced state')
 
+                status, body, _ = request(operation('service_resolution', 'preview', {'serviceId': 771}), role='view')
+                check(status == 200 and body['data']['mode'] == 'blocked',
+                      'Service resolution preview did not preserve read permission or its terminal-service block: ' + str(body))
+                check('PRIVATE' not in json.dumps(body), 'Resolution preview exposed stored credentials')
+                for role in ('none', 'client'):
+                    check(request(operation('service_resolution', 'preview', {'serviceId': 771}), role=role)[0] == 403,
+                          'Unauthorized service resolution read accepted')
+                check(request(operation('service_resolution', 'apply', {'previewToken': 'f' * 64, 'selection': []}, 'update'))[0] == 400,
+                      'Unknown service resolution token was accepted')
+
                 boundary = 'WORKFLOW-FIXTURE-BOUNDARY'
                 upload = (f'--{boundary}\r\nContent-Disposition: form-data; name="workflow"\r\n\r\nfull_backup\r\n'
                           f'--{boundary}\r\nContent-Disposition: form-data; name="fullBackup"; filename="backup.zip"\r\nContent-Type: application/zip\r\n\r\n').encode() + archive + f'\r\n--{boundary}--\r\n'.encode()
@@ -213,6 +228,9 @@ $q=new ApiJobQueue('data/jobs.db',null);$q->close();
                 status, body, _ = request(operation('device_sync', 'begin', {'deviceId': 2}, 'update'))
                 check(status == 400 and body.get('recovery', {}).get('readOnly') is True and body['data']['duplicate_groups'] == 1,
                       'Immediate synchronization bypassed the paused duplicate-address migration: ' + str(body))
+                status, body, _ = request(operation('service_resolution', 'apply', {'previewToken': 'f' * 64, 'selection': []}, 'update'))
+                check(status == 400 and body.get('recovery', {}).get('readOnly') is True,
+                      'Service resolution bypassed the paused duplicate-address migration: ' + str(body))
                 with closing(sqlite3.connect(directory / 'data/jobs.db')) as db:
                     check(db.execute('SELECT service_id,operation,status,payload FROM jobs ORDER BY id').fetchall() == before_jobs,
                           'A paused migration initialized synchronization work')

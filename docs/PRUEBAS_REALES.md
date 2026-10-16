@@ -1,6 +1,12 @@
-# Pruebas reales del candidato 2.4.39
+# Pruebas reales del candidato 2.4.40
 
 Las pruebas automatizadas usan bases temporales, transportes simulados y sockets locales. Esta lista comprueba la integración **UISP → plugin → API nativa de RouterOS** en una copia de UISP y un CHR/router con clientes de prueba. Registrar versiones de UISP, PHP y RouterOS, así como ID del servicio, plan, trabajo, estado e IP/prefijo en cada caso.
+
+## Comprobar resolución y cambios de pool en 2.4.40
+
+Los casos 252–260 verifican el botón Resolver y el cambio del pool de un Site. Los resultados automatizados y visuales son sintéticos; los casos de esta matriz requieren su propia comprobación en UISP/RouterOS de laboratorio.
+
+Validación 2.4.40 aprobada: **67 suites aisladas**, sintaxis de **69 archivos PHP propios**, 384 entradas del instalador, 151 archivos propios y 13 dependencias fijadas. Informe: `dist/verification-2.4.40.json`. SHA-256: `4b5ea85b8993872423b0566850526d025b5e966b031e58debe18f463598f44f4`. La revisión visual sintética comprobó el botón Resolver, selección de duplicados, resolución de un clic, respaldo y resultado en escritorio/móvil, español/inglés. No se modificaron UISP ni RouterOS de producción.
 
 ## Comprobar sincronización inmediata en 2.4.39
 
@@ -522,3 +528,13 @@ Si el piloto falla, pausar worker/webhook y conservar datos/errores sin credenci
 | 249 | Duplicar clic, perder una respuesta, cambiar configuración o restaurar durante el recorrido. | Bloquea duplicados, no repite automáticamente una reconexión incierta, invalida contexto cambiado y conserva la exclusión de restauración. |
 | 250 | Ver en móvil y seis idiomas las acciones principal/secundaria, y entrar con sólo lectura o recarga obligatoria. | Controles compactos/accesibles; la revisión permanece disponible sólo con sus permisos y la sincronización exige escritura, sin escapar a la recarga. |
 | 251 | Con una migración pausada por direcciones duplicadas, llamar también directamente a la nueva ruta de sincronización. | Conserva la pausa antes de inicializar trabajos o consultar/aplicar cuentas; el permiso de escritura no sustituye la reparación de esa migración. |
+
+| 252 | Resolver una cuenta única con comentario de otro servicio confirmado como distinto/retirado e IP diferente. | Confirma la exclusividad actual, respalda, corrige el vínculo y aplica; sólo declara resuelto con lectura posterior verificada. |
+| 253 | Resolver una cuenta manual sin comentario y duplicados comprobables. | Exige elegir una cuenta; no preselecciona ni elimina registros manuales/ajenos sin evidencia. |
+| 254 | Introducir un servicio vigente que reclama el mismo usuario/MAC y router. | Explica la colisión e impide apropiarse de su cuenta, incluso con Resolver. |
+| 255 | Cambiar atributos, fila, configuración o propietario entre revisión y aplicación; duplicar clic o perder respuesta. | Invalida el permiso, no repite la escritura incierta y permite revisar nuevamente. |
+| 256 | Revisar sólo lectura y con migración pausada; descargar un respaldo de resolución. | La vista no ejecuta trabajos; aplicar/descargar exige edición, origen válido y las barreras de migración. |
+| 257 | Guardar un pool nuevo mientras otro servicio usa un Site inexistente. | Guarda sin refrescar toda la caché, sin escribir en routers y conserva el rango anterior. |
+| 258 | Sincronizar una IP del pool anterior y repetir con un trabajo ya preparado y una reserva antigua incompatible. | Usa una IP del pool nuevo; no reproduce la dirección anterior ni gira nuevamente el reemplazo al repetir. |
+| 259 | Cambiar pool durante un trabajo; agotar el destino o perder UISP antes de vaciar IP. | Revalida bajo exclusión del endpoint; no aplica un rango obsoleto después del guardado ni retira la configuración previa sin reemplazo comprobado. |
+| 260 | Resolver colas DHCP duplicadas propias y repetir con dependencias, perfiles compartidos y colas ajenas. | Sólo consolida las propias sin dependencias; respalda y conserva las demás con causa explícita. |

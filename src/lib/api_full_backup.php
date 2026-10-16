@@ -215,6 +215,7 @@ final class ApiFullBackup
     private function allowed(string $name): bool
     {
         return in_array($name,['data/data.db','data/jobs.db','data/cache.db','data/config.json','data/state.json','data/queue.json'],true)
+            || preg_match('~^data/router-resolution-[0-9]{8}T[0-9]{6}Z-[a-f0-9]{16}\.json$~D',$name)===1
             || preg_match('~^data/(?:provisioning-verification-[1-9][0-9]*|crm-network-(?:history|correction)-[1-9][0-9]*-(?:address|address6))\.json$~D',$name)===1;
     }
 

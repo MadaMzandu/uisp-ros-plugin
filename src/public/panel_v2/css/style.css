@@ -516,6 +516,17 @@ details.config-section[open] > summary.config-section-header::after { content: '
 .operations-result-card { display: flex; flex-direction: column; gap: 10px; align-items: flex-start; }
 .operations-result-card .badge { white-space: normal; }
 .operations-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.resolution-dialog { width: min(760px, calc(100vw - 24px)); }
+.resolution-identity { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 6px; }
+.resolution-changes { display: grid; gap: 6px; margin: 10px 0; }
+.resolution-change { display: grid; grid-template-columns: minmax(90px, .35fr) minmax(0, 1fr); gap: 10px; font-size: .8rem; overflow-wrap: anywhere; }
+.resolution-candidates { display: grid; gap: 8px; }
+.resolution-candidate { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border: 1px solid var(--border); border-radius: 7px; background: var(--surface-subtle); min-width: 0; }
+.resolution-candidate > input { flex: 0 0 auto; margin-top: 3px; }
+.resolution-candidate-body { display: flex; flex: 1; flex-wrap: wrap; gap: 4px 10px; min-width: 0; overflow-wrap: anywhere; font-size: .8rem; }
+.resolution-candidate-body > strong, .resolution-candidate-body > small { flex-basis: 100%; }
+.resolution-candidate-body > small { color: var(--text-muted); }
+.resolution-outcome { flex-basis: 100%; font-weight: 600; }
 .operations-source-status { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin: 16px 0; }
 .operations-source-status > div { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; font-size: .8rem; }
 .operations-source-status small { color: var(--text-muted); overflow-wrap: anywhere; }

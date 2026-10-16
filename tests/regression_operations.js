@@ -34,7 +34,7 @@ function assertReadOnly(ui) {
         assert(!/update|delete|disconnect|reconnect|apply/.test(request.body.action), 'Operational observation invoked a mutation action');
     }
 }
-function fixture(reviewEnabled = true) {
+function fixture(reviewEnabled = true, resolveEnabled = false) {
     const nodes = new Map(); const events = new Map(); const timers = new Map(); const requests = []; const routes = new Map(); let timerId = 0;
     const document = {
         baseURI: 'https://fixture.invalid/public.php', visibilityState: 'visible', documentElement: {},
@@ -59,10 +59,11 @@ function fixture(reviewEnabled = true) {
     vm.runInContext(fs.readFileSync(path.join(panel, 'api.js'), 'utf8'), context);
     vm.runInContext(fs.readFileSync(path.join(panel, 'operations.js'), 'utf8'), context);
     const api = vm.runInContext('api', context); const operations = context.PanelOperations;
-    const navigations = []; const reviews = [];
+    const navigations = []; const reviews = []; const resolutions = [];
     operations.mount({ api, navigate(view) { navigations.push(view); operations.onView(view); },
+        ...(resolveEnabled ? { resolveService(service) { resolutions.push(service); } } : {}),
         ...(reviewEnabled ? { reviewJob(job, service) { reviews.push([job, service]); } } : {}) });
-    return { context, document, nodes, timers, requests, routes, api, operations, navigations, reviews,
+    return { context, document, nodes, timers, requests, routes, api, operations, navigations, reviews, resolutions,
         node: id => document.getElementById(id),
         async visibility(state) { document.visibilityState = state; for (const listener of events.get('visibilitychange') || []) listener(); await settle(); },
         async mutation(active) { for (const listener of api.mutationListeners) listener(active); await settle(); },
@@ -218,7 +219,20 @@ async function jobReviewAndHistory() {
     assert(!all(without.node('service-diagnostic-detail')).some(item => item.tagName === 'BUTTON' && item.textContent === 'Revisar trabajo'), 'Missing review callback created a dead control');
     assertReadOnly(ui); assertReadOnly(without);
 }
+async function serviceResolutionEntry() {
+    const ui = fixture(true, true); ui.routes.set('service_diagnostics/inspect', () => envelope(diagnostic(42)));
+    await ui.operations.openService(42);
+    const resolve = button(ui.node('service-diagnostic-detail'), 'Resolver');
+    assert.equal(resolve.className, 'btn btn-primary');
+    const before = ui.requests.length; await resolve.emit('click');
+    assert.deepEqual(ui.resolutions, [42]); assert.equal(ui.requests.length, before, 'Diagnostic resolver performed its own provisioning request');
+    await ui.mutation(true); await resolve.emit('click'); assert.deepEqual(ui.resolutions, [42], 'A stale diagnostic button bypassed an active mutation');
+    ui.routes.set('provisioning_verification/list', () => envelope({ available: true, items: [] }));
+    await ui.mutation(false);
+    ui.api.requireReload(); await resolve.emit('click'); assert.deepEqual(ui.resolutions, [42], 'A stale restore page started resolution');
+    assertReadOnly(ui);
+}
 (async () => {
-    await resultsAndRechecks(); await diagnosticsAndRaces(); await jobReviewAndHistory(); await automationPolling();
+    await resultsAndRechecks(); await diagnosticsAndRaces(); await jobReviewAndHistory(); await automationPolling(); await serviceResolutionEntry();
     console.log('Operations UI regression passed');
 })().catch(error => { console.error(error); process.exitCode = 1; });

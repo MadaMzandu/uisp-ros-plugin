@@ -8,6 +8,7 @@ const panel = path.join(__dirname, '../src/public/panel_v2');
 const source = fs.readFileSync(path.join(panel, 'js/i18n.js'), 'utf8');
 const operations = fs.readFileSync(path.join(panel, 'js/operations.js'), 'utf8');
 const workflows = fs.readFileSync(path.join(panel, 'js/workflows.js'), 'utf8');
+const serviceResolution = fs.readFileSync(path.join(panel, 'js/service_resolution.js'), 'utf8');
 const markup = fs.readFileSync(path.join(panel, 'index.php'), 'utf8');
 const calls = [];
 const context = vm.createContext({
@@ -62,6 +63,8 @@ for (const match of operations.matchAll(/'([^'\n]+)'/g))
     if (/^[A-ZÁÉÍÓÚÑ]/.test(match[1])) used.add(match[1]);
 for (const match of workflows.matchAll(/\bt\('([^'\n]+)'/g)) used.add(match[1]);
 for (const match of workflows.matchAll(/'([^'\n]+)'/g))
+    if (/^[A-ZÁÉÍÓÚÑ]/.test(match[1]) && match[1] !== 'Escape') used.add(match[1]);
+for (const match of serviceResolution.matchAll(/'([^'\n]+)'/g))
     if (/^[A-ZÁÉÍÓÚÑ]/.test(match[1]) && match[1] !== 'Escape') used.add(match[1]);
 used.add('Recarga el panel antes de hacer cambios sobre el estado restaurado.');
 used.add('Revisar sincronización');

@@ -13,7 +13,7 @@
         site_unverified: 'El Site no identifica un único router configurado.', ipv6_unavailable: 'IPv6 no pudo comprobarse; IPv4 conserva su resultado.',
         router_observation_limit: 'La consulta alcanzó su límite; vuelve a comprobar.', configuration_unavailable: 'Falta la configuración necesaria para consultar el servicio.'
     };
-    let api, navigate, reviewJob, mounted = false, view = 'devices', mutations = 0;
+    let api, navigate, reviewJob, resolveService, mounted = false, view = 'devices', mutations = 0;
     let health = null, results = null, detail = null, search = null, selected = null;
     let healthBusy = false, resultsBusy = false, searchSequence = 0, detailSequence = 0, timer, epoch = 0, lastResultsAt = 0;
     let resultsFeedback = '';
@@ -66,12 +66,17 @@
     }
     function actions(node, service, receipt) {
         const controls = root.document.createElement('div'); controls.className = 'operations-actions';
+        if (typeof resolveService === 'function' && ['mismatch', 'unconfirmed'].includes(receipt?.state)) controls.appendChild(resolver(service));
         controls.appendChild(button('Diagnóstico por servicio', () => openService(service)));
         if (receipt && !['missing', 'superseded', 'not_applicable'].includes(receipt.state)) {
             const recheckButton = button('Verificar de nuevo', () => recheck(service));
             recheckButton.disabled = rechecking.has(service) || mutations > 0; controls.appendChild(recheckButton);
         }
         node.appendChild(controls);
+    }
+    function resolver(service) {
+        const result = button('Resolver', () => { if (!mutations && api.recovery?.readOnly !== true && api.reloadRequired !== true) return resolveService(service); });
+        result.className = 'btn btn-primary'; result.disabled = mutations > 0 || api.recovery?.readOnly === true || api.reloadRequired === true; return result;
     }
     function renderResults() {
         const list = byId('provisioning-results-list'); if (!list) return;
@@ -162,6 +167,7 @@
             <div class="operations-comparison-scroll"><table class="operations-comparison"><thead><tr><th>${h(t('Campo'))}</th><th>UISP</th><th>${h(t('Previsto por el plugin'))}</th><th>RouterOS</th></tr></thead><tbody>${rows.map(row => `<tr><th>${h(t(fields[row.field]))}</th><td>${h(value(row.uisp, row.field))}</td><td class="${row.matches_uisp === false ? 'operations-difference' : ''}">${h(value(row.expected, row.field))}${row.matches_uisp === false ? `<small>${h(t('Diferencia detectada'))}</small>` : ''}</td><td class="${row.matches_router === false ? 'operations-difference' : ''}">${h(value(row.router, row.field))}${row.matches_router === false ? `<small>${h(t('Diferencia detectada'))}</small>` : ''}</td></tr>`).join('')}</tbody></table></div>
             <p class="form-note">${h(t('Sin comprobar significa que falta evidencia; no equivale a que el servicio esté correcto.'))}</p>${verificationChecks(detail.verification)}`;
         const controls = root.document.createElement('div'); controls.className = 'operations-actions';
+        if (typeof resolveService === 'function') controls.appendChild(resolver(service));
         controls.appendChild(button('Actualizar diagnóstico', () => inspect(service)));
         if (detail.verification && !['missing', 'not_applicable', 'superseded'].includes(detail.verification.state)) {
             const check = button('Verificar de nuevo', () => recheck(service)); check.disabled = rechecking.has(service) || mutations > 0; controls.appendChild(check);
@@ -243,11 +249,12 @@
         if (view === 'jobs') refreshResults();
     }
     function mount(options) {
-        if (mounted) return; api = options.api; navigate = options.navigate; reviewJob = options.reviewJob; mounted = true;
+        if (mounted) return; api = options.api; navigate = options.navigate; reviewJob = options.reviewJob; resolveService = options.resolveService; mounted = true;
         byId('service-diagnostic-search')?.addEventListener('submit', findServices);
         byId('refresh-automation-health')?.addEventListener('click', refreshHealth);
         byId('refresh-provisioning-results')?.addEventListener('click', refreshResults);
         api.onMutation?.(active => { epoch++; mutations = Math.max(0, mutations + (active ? 1 : -1)); root.clearTimeout(timer);
+            renderResults(); renderDetail();
             if (!mutations) { if (view === 'system') refreshHealth(); if (view === 'jobs') refreshResults(); }
         });
         root.document.addEventListener('visibilitychange', () => {
@@ -256,5 +263,6 @@
         root.PanelI18n?.onChange(() => { renderHealth(); renderResults(); renderSearch(); renderDetail(); });
     }
     root.PanelOperations = { mount, onView, openService, refreshResults, refreshHealth, verificationLabel,
+        refreshService(service) { if (selected === service && recordId(detail) === service && view === 'diagnostics') return inspect(service); },
         jobsUpdated() { if (Date.now() - lastResultsAt > 10000) refreshResults(); } };
 })(globalThis);

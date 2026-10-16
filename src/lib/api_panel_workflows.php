@@ -4,6 +4,12 @@ final class ApiPanelWorkflows
 {
     public static function handle(string $method,?object $request,array $files,array $post,array $query): bool
     {
+        if (isset($query['download']) && is_string($query['download'])
+            && preg_match('/^router-resolution-/', $query['download'])) {
+            require_once __DIR__.'/api_service_resolution.php';
+            if ($method!=='GET' || !ApiServiceResolution::backupName($query['download'])) throw new InvalidArgumentException('invalid_download_method');
+            ApiServiceResolution::download($query['download']); return true;
+        }
         if (isset($query['download']) && ApiFullBackup::backupName($query['download'])) {
             if ($method!=='GET') throw new InvalidArgumentException('invalid_download_method');
             ApiFullBackup::download($query['download']); return true;
@@ -12,7 +18,7 @@ final class ApiPanelWorkflows
             if ($method!=='POST' || array_keys($files)!==['fullBackup'] || array_keys($post)!==['workflow']) throw new InvalidArgumentException('invalid_full_backup_request');
             respond('full_backup_preview',false,(new ApiFullBackup())->previewUpload($files['fullBackup'])); return true;
         }
-        if ($method!=='POST' || !$request || !in_array($request->target??null,['full_backup','pool_capacity','service_reconciliation','sync_preview','device_sync','service_lifecycle'],true)) return false;
+        if ($method!=='POST' || !$request || !in_array($request->target??null,['full_backup','pool_capacity','service_reconciliation','sync_preview','device_sync','service_lifecycle','service_resolution'],true)) return false;
         if (!empty($request->entity) || !is_object($request->data??null)) throw new InvalidArgumentException('invalid_workflow_request');
         $data=$request->data; $keys=array_keys(get_object_vars($data)); $action=$request->action??'list'; $type=$request->changeType??null;
         $result=null;
@@ -20,6 +26,22 @@ final class ApiPanelWorkflows
             require_once __DIR__.'/api_pool_capacity.php'; $result=(new ApiPoolCapacity())->read();
         } elseif ($request->target==='service_reconciliation' && $type==='list' && $action==='list' && !$keys) {
             require_once __DIR__.'/api_service_reconciliation.php'; $result=(new ApiServiceReconciliation())->read();
+        } elseif ($request->target==='service_resolution') {
+            require_once __DIR__.'/api_service_resolution.php';
+            $preview=$type==='list' && $action==='preview' && $keys===['serviceId'] && is_int($data->serviceId) && $data->serviceId>0;
+            $apply=$type==='update' && $action==='apply' && $keys===['previewToken','selection']
+                && is_string($data->previewToken) && is_array($data->selection) && count($data->selection)<=1;
+            if (!$preview && !$apply) throw new InvalidArgumentException('invalid_service_resolution_request');
+            if ($apply && is_file('data/data.db')) {
+                $setup=new ApiSetup(); $setup->assertCompatible(); $setup->assertNetworkAddressesUnique();
+            }
+            $api=new ApiServiceResolution();
+            try { $result=$preview?$api->preview($data->serviceId):$api->apply($data->previewToken,$data->selection); }
+            catch (RuntimeException $error) {
+                $statuses=['resolution_busy'=>409,'resolution_preview_limit'=>429,'resolution_storage_unavailable'=>503];
+                if (!isset($statuses[$error->getMessage()])) throw $error;
+                http_response_code($statuses[$error->getMessage()]); respond($error->getMessage(),true,[]); return true;
+            }
         } elseif ($request->target==='service_lifecycle') {
             require_once __DIR__.'/api_service_lifecycle.php'; $api=new ApiServiceLifecycle();
             if ($type==='list' && $action==='preview' && $keys===['serviceId'] && is_int($data->serviceId) && $data->serviceId>0) $result=$api->preview($data->serviceId);

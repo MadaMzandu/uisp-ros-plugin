@@ -670,7 +670,7 @@ function contentionFixture(disableContention, translated = false) {
 
 function recoveryPanelFixture({ bootstrap, details, storage, storageBlocked = false, mobile = false,
     initialReplies = new Map(), url = 'https://fixture.invalid/crm/_plugins/ros-plugin/public.php?page=panel', raf = false, exposeRenderers = false,
-    navigationType = 'reload', legacyNavigationType, workflows } = {}) {
+    navigationType = 'reload', legacyNavigationType, workflows, operations, serviceResolution } = {}) {
     const nodes = new Map(Array.from(markup.matchAll(/\bid="([^"]+)"/g), match => [match[1], new Element(match[1])]));
     const closeButtons = Array.from(markup.matchAll(/<button\b[^>]*class="[^"]*\bclose-modal\b[^"]*"/g), () => new Element());
     const views = ['devices', 'plans', 'config', 'jobs', 'system', 'network_conflicts'];
@@ -741,6 +741,8 @@ function recoveryPanelFixture({ bootstrap, details, storage, storageBlocked = fa
     const localContext = vm.createContext({
         URL, FormData: FixtureFormData, document: localDocument,
         ...(workflows ? { PanelWorkflows: workflows } : {}),
+        ...(operations ? { PanelOperations: operations } : {}),
+        ...(serviceResolution ? { PanelServiceResolution: serviceResolution } : {}),
         ...(navigationType !== null ? { performance: { getEntriesByType: name => name === 'navigation' ? [{ type: navigationType }] : [] } }
             : legacyNavigationType !== undefined ? { performance: { navigation: { type: legacyNavigationType } } } : {}),
         window: { innerHeight: 500, location: { href: url, reload() { reloads++; } },
@@ -998,6 +1000,27 @@ async function checkImmediateDeviceSyncProtocol() {
     const stalledCatalog = await run([envelope(progress({ phase: 'catalog', processed: 0, total: 0, catalogScanned: 0 }))],
         progress({ phase: 'catalog', total: 0, catalogScanned: 0 }));
     assert.equal(stalledCatalog.step, 1); assert.equal(stalledCatalog.toast.role, 'alert');
+}
+
+async function checkJobServiceResolutionEntry() {
+    const resolved = [], mounted = [], jobs = { Q1: { serviceId: 42, state: 'pending', error: 'Fixture ownership conflict' },
+        Q2: { serviceId: 43, state: 'running', error: 'Fixture running' }, Q3: { serviceId: 'invalid', state: 'pending' } };
+    const operations = { mount() {}, onView() {}, jobsUpdated() {}, openService() {} };
+    const serviceResolution = { mount(options) { mounted.push(options); }, resolveService(sid) { resolved.push(sid); }, close() {}, requireReload() {} };
+    const initialReplies = new Map([['list/jobs', { status: 'ok', error: false, data: jobs }]]);
+    const fixture = recoveryPanelFixture({ operations, serviceResolution, initialReplies }); await fixture.navigate('jobs');
+    const rows = fixture.tables.get('#jobs-table tbody').children;
+    const resolver = row => row.querySelector('.job-description').children.find(item => item.textContent === 'Resolver');
+    assert.equal(resolver(rows[0]).className, 'btn btn-primary job-repair-button');
+    await resolver(rows[0]).fire('click'); assert.deepEqual(resolved, [42]);
+    assert.equal(resolver(rows[1]).disabled, true); await resolver(rows[1]).fire('click'); assert.deepEqual(resolved, [42]);
+    assert.equal(resolver(rows[2]), undefined, 'Invalid service ID exposed a resolver');
+    assert.equal(fixture.writes().length, 0, 'The Jobs entry point must delegate reviewed resolution without performing its own write');
+    assert.equal(mounted.length, 1);
+    const details = { duplicate_groups: 1, conflicts: [] };
+    const readonly = recoveryPanelFixture({ operations, serviceResolution, initialReplies, bootstrap: { readOnly: true, details }, details });
+    await readonly.navigate('jobs'); const blocked = resolver(readonly.tables.get('#jobs-table tbody').children[0]);
+    assert.equal(blocked.disabled, true); await blocked.fire('click'); assert.deepEqual(resolved, [42]);
 }
 
 async function checkPendingJobsIndicator() {
@@ -2449,7 +2472,7 @@ async function checkNetworkRecoveryPanel() {
     assert.deepEqual(plain(healthy.diagnostics()[0].data), {}, 'Reactive recovery reads must not request live CRM verification');
     const malformed = recoveryPanelFixture({ bootstrap: '{', details }); await flush();
     assert.equal(malformed.nodes.get('btn-cache').disabled, false, 'An invalid optional bootstrap must not break normal navigation');
-    assert.equal((markup.match(/(?:src|href)="(?:js|css)\/[^"?]+\?v=2\.0\.54"/g) || []).length, 7, 'Every panel asset must use the new revision to invalidate UISP browser caches');
+    assert.equal((markup.match(/(?:src|href)="(?:js|css)\/[^"?]+\?v=2\.0\.55"/g) || []).length, 8, 'Every panel asset must use the new revision to invalidate UISP browser caches');
     assert(!markup.includes('v=2.0.45'));
     assert(apiSource.includes("'alert-triangle':"), 'The conflict warning must have its own local warning icon');
 }
@@ -4173,6 +4196,7 @@ async function checkLanguagePresentation() {
     await checkNonblockingDeviceSync();
     await checkDeviceSyncReviewGuards();
     await checkImmediateDeviceSyncProtocol();
+    await checkJobServiceResolutionEntry();
     await checkPendingJobsIndicator();
     await checkWarningDismissals();
     await checkJobRecoveryResolutionPanel();

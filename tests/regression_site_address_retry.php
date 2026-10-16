@@ -10,6 +10,13 @@ $directory = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'uisp-site-retry-' . bin
 mkdir($directory, 0700);
 foreach (['lib','includes','data','vendor'] as $folder) mkdir($directory . '/' . $folder, 0700);
 foreach (glob($source . '/lib/*.php') as $file) copy($file, $directory . '/lib/' . basename($file));
+// Pause a real worker after preparation but before its physical endpoint gate.
+// The synthetic interleaving invokes the actual device save API, never a direct setting write.
+$batchPath=$directory.'/lib/batch.php';
+$batchSource=str_replace('        // Different plans can still collide on the same account or DHCP identity.',
+    '        if (isset($GLOBALS["retryBeforeEndpoint"])) { $hook=$GLOBALS["retryBeforeEndpoint"]; unset($GLOBALS["retryBeforeEndpoint"]); $hook(); }'."\n".
+    '        // Different plans can still collide on the same account or DHCP identity.',file_get_contents($batchPath),$hookCount);
+retryCheck($hookCount===1,'Worker endpoint interleaving hook was not precise');file_put_contents($batchPath,$batchSource);
 foreach (glob($source . '/includes/*') as $file) if (is_file($file)) copy($file, $directory . '/includes/' . basename($file));
 file_put_contents($directory . '/vendor/autoload.php', <<<'PHP'
 <?php
@@ -43,8 +50,10 @@ file_put_contents($directory . '/lib/mt.php', <<<'PHP'
 class MT {
     public static array $writes=[];
     public static bool $fail=false;
+    public static $writeHook=null;
     public function do_batch($device,$commands,?callable $beforeWrite=null): int {
         if (self::$fail) throw new RuntimeException('Fixture router transport unavailable');
+        if (self::$writeHook!==null) { $hook=self::$writeHook;self::$writeHook=null;$hook(); }
         if ($beforeWrite) $beforeWrite($commands);
         foreach ($commands as $command) self::$writes[]=['device'=>(int)$device->id,'command'=>$command];
         return count($commands);
@@ -55,6 +64,7 @@ class MT {
 PHP);
 chdir($directory); set_include_path($directory . '/lib' . PATH_SEPARATOR . $originalIncludePath);
 require 'vendor/autoload.php'; require 'lib/api_common.php'; require 'lib/api_setup.php'; require 'lib/batch.php';
+require 'lib/api_update.php';
 try {
     file_put_contents('data/config.json',json_encode(['debugEnable'=>false]));
     $apiSqlite=new ApiSqlite('data/data.db'); $apiSqlite->exec(file_get_contents('includes/schema.sql'));
@@ -216,7 +226,86 @@ try {
         catch (RuntimeException $failure) { $rejected=$failure->getMessage()==='site_address_prepared_guard_changed'; }
         retryCheck($rejected,'An IP rebuild accepted changed or incomplete preparation evidence: ' . $change);
     }
-    echo "Queued Site address retries passed: old prepared snapshots, protected old addresses, stable replacement, manual override, automatic intent and unavailable UISP.\n";
+    // A pool edit must save without a global catalog refresh. This SDK deliberately
+    // rejects catalog GETs, as a deployment with an unrelated unknown Site would.
+    $poolChange=$prepared(608,'198.51.100.68','198.51.100.68');
+    $oldKey=$apiJobQueue->enqueue($poolChange);
+    $apiSqlite->execute('DELETE FROM network WHERE id=608');
+    $apiSqlite->insert(['id'=>699,'address'=>'198.51.100.68'],'network');
+    $beforeEditJobs=$apiJobQueue->list(); $beforeEditCache=hash_file('sha256','data/cache.db');
+    $edit=new ApiUpdate(['action'=>'edit','data'=>['id'=>21,'name'=>$device['name'],'ip'=>$device['ip'],
+        'user'=>'fixture','password'=>'fixture','pool'=>'198.18.0.0/24','pool6'=>null,'pfxLength'=>64]],'devices');
+    $edit->exec();
+    retryCheck(($edit->result()['pool']??null)==='198.18.0.0/24' && $apiJobQueue->list()===$beforeEditJobs
+        && hash_file('sha256','data/cache.db')===$beforeEditCache,
+        'Saving a pool depended on the global UISP cache, changed reservations or started router work');
+    retryCheck((int)$apiSqlite->singleQuery('SELECT count(*) FROM device_pool_history')===1,
+        'Saving the new pool lost the previous Site range provenance');
+    $patches=count(\Ubnt\UcrmPluginSdk\Service\UcrmApi::$patches);
+    $apiJobQueue->runSelected([$oldKey]);
+    $replacement=$apiSqlite->selectAddress(608);
+    retryCheck($apiJobQueue->completed([$oldKey]) && strpos($replacement??'','198.18.0.')===0
+        && $principal($apiJobQueue->appliedSnapshot(608))===$replacement
+        && $apiSqlite->selectAddress(699)==='198.51.100.68'
+        && count(\Ubnt\UcrmPluginSdk\Service\UcrmApi::$patches)===$patches+1,
+        'An older prepared job replayed a former Site IP or was blocked by its obsolete reservation: '.json_encode($apiJobQueue->list()));
+    $patches=count(\Ubnt\UcrmPluginSdk\Service\UcrmApi::$patches);
+    $repeat=new Batch(); $repeatSuccess=$repeat->set_accounts([608]);
+    retryCheck($repeatSuccess && $apiSqlite->selectAddress(608)===$replacement
+        && count(\Ubnt\UcrmPluginSdk\Service\UcrmApi::$patches)===$patches,
+        'A second synchronization rotated the pool replacement or repeated its CRM clear: '.json_encode($repeat->outcomes()));
+    $history=$apiSqlite->selectAllFromTable('device_pool_history');
+    $invalid=new ApiUpdate(['action'=>'edit','data'=>['id'=>21,'pool'=>'198.18.0.0/999']],'devices');
+    $rejected=false;try{$invalid->exec();}catch(InvalidArgumentException $error){$rejected=$error->getMessage()==='invalid_device_pool';}
+    retryCheck($rejected && $apiSqlite->singleQuery('SELECT pool FROM devices WHERE id=21')==='198.18.0.0/24'
+        && $apiSqlite->selectAllFromTable('device_pool_history')===$history,'An invalid pool partially changed saved settings/history');
+    // A pool can be saved after a job prepares commands but before the worker owns
+    // its final endpoint gate. Reject that stale batch, then recover with the new pool.
+    $race=$prepared(609,'198.18.0.69','198.18.0.69');$race['_device']=$apiSqlite->singleQuery('SELECT * FROM devices WHERE id=21',true);
+    $raceKey=$apiJobQueue->enqueue($race);$writes=count(MT::$writes);
+    $GLOBALS['retryBeforeEndpoint']=static function():void{(new ApiUpdate(['action'=>'edit','data'=>['id'=>21,'pool'=>'198.19.0.0/24']],'devices'))->exec();};
+    $apiJobQueue->runSelected([$raceKey]);
+    retryCheck(!$apiJobQueue->completed([$raceKey]) && count(MT::$writes)===$writes
+        && $apiSqlite->singleQuery('SELECT pool FROM devices WHERE id=21')==='198.19.0.0/24',
+        'A prepared worker applied its obsolete pool after a concurrent device save');
+    $apiJobQueue->runSelected([$raceKey]);$raceAddress=$apiSqlite->selectAddress(609);
+    retryCheck($apiJobQueue->completed([$raceKey])&&strpos($raceAddress??'','198.19.0.')===0
+        &&$principal($apiJobQueue->appliedSnapshot(609))===$raceAddress,'Stale pool guard prevented a normal retry with the new pool');
+    // An empty or exhausted replacement range cannot clear UISP or retire the old account.
+    $empty=$prepared(610,'198.19.0.70','198.19.0.70');$empty['_device']=$apiSqlite->singleQuery('SELECT * FROM devices WHERE id=21',true);
+    $emptyKey=$apiJobQueue->enqueue($empty);(new ApiUpdate(['action'=>'edit','data'=>['id'=>21,'pool'=>null]],'devices'))->exec();
+    $writes=count(MT::$writes);$patches=count(\Ubnt\UcrmPluginSdk\Service\UcrmApi::$patches);$apiJobQueue->runSelected([$emptyKey]);
+    retryCheck(!$apiJobQueue->completed([$emptyKey])&&count(MT::$writes)===$writes
+        &&count(\Ubnt\UcrmPluginSdk\Service\UcrmApi::$patches)===$patches&&$apiSqlite->selectAddress(610)==='198.19.0.70',
+        'An empty destination pool cleared the live attribute or allowed stale router writes');
+    (new ApiUpdate(['action'=>'edit','data'=>['id'=>21,'pool'=>'198.20.0.0/30']],'devices'))->exec();
+    foreach([690=>'198.20.0.1',691=>'198.20.0.2']as$owner=>$address)$apiSqlite->insert(['id'=>$owner,'address'=>$address],'network');
+    $apiJobQueue->runSelected([$emptyKey]);
+    retryCheck(!$apiJobQueue->completed([$emptyKey])&&count(MT::$writes)===$writes
+        &&count(\Ubnt\UcrmPluginSdk\Service\UcrmApi::$patches)===$patches&&$apiSqlite->selectAddress(610)==='198.19.0.70',
+        'An exhausted destination pool caused premature CRM clearing or router mutation');
+    // A larger replacement that still contains the old address needs no rotation.
+    (new ApiUpdate(['action'=>'edit','data'=>['id'=>21,'pool'=>'198.18.0.0/15']],'devices'))->exec();$apiJobQueue->runSelected([$emptyKey]);
+    retryCheck($apiJobQueue->completed([$emptyKey])&&$apiSqlite->selectAddress(610)==='198.19.0.70'
+        &&count(\Ubnt\UcrmPluginSdk\Service\UcrmApi::$patches)===$patches,'An address valid in the enlarged pool was blocked or rotated: '.json_encode([
+            $apiJobQueue->selectionStatus([$emptyKey]),$apiSqlite->selectAddress(610),count(\Ubnt\UcrmPluginSdk\Service\UcrmApi::$patches),$patches]));
+    // Once a worker holds the physical endpoint gate, a setting save must defer
+    // before either its device row or pool provenance can change.
+    $locked=$prepared(611,'198.18.0.71','198.18.0.71');$locked['_device']=$apiSqlite->singleQuery('SELECT * FROM devices WHERE id=21',true);
+    $lockedKey=$apiJobQueue->enqueue($locked);$history=$apiSqlite->selectAllFromTable('device_pool_history');$saveRefused=false;
+    MT::$writeHook=static function()use(&$saveRefused):void{
+        try{(new ApiUpdate(['action'=>'edit','data'=>['id'=>21,'pool'=>'198.21.0.0/24']],'devices'))->exec();}
+        catch(RuntimeException$error){$saveRefused=strpos($error->getMessage(),'provisioning or maintenance operation')!==false;}
+    };
+    $apiJobQueue->runSelected([$lockedKey]);
+    retryCheck($saveRefused&&$apiJobQueue->completed([$lockedKey])&&$apiSqlite->singleQuery('SELECT pool FROM devices WHERE id=21')==='198.18.0.0/15'
+        &&$apiSqlite->selectAllFromTable('device_pool_history')===$history,'Concurrent pool save partially committed during an active router write');
+    // The new final guard does not reinterpret a frozen shared/global PPP pool.
+    $global=$locked;$global['_config']['router_ppp_pool']=false;$global['_config']['ppp_pool']='198.18.0.0/24';
+    (new ApiUpdate(['action'=>'edit','data'=>['id'=>21,'pool'=>null]],'devices'))->exec();
+    $guard=new ReflectionMethod(Batch::class,'assertSavedPoolAddresses');if(PHP_VERSION_ID<80100)$guard->setAccessible(true);
+    $guard->invoke(new Batch(),$global,(object)$locked['_device']);
+    echo "Queued Site address retries passed: prepared snapshots, stable replacement, manual overrides, pool edits without global refresh, same-Site former ranges and obsolete conflicting reservations.\n";
 } finally {
     if (isset($apiJobQueue)) $apiJobQueue->close(); if (isset($apiSqlite)) $apiSqlite->close(); if (isset($apiSqliteCache)) $apiSqliteCache->close();
     chdir($original); set_include_path($originalIncludePath);

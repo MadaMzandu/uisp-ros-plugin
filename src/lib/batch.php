@@ -274,7 +274,7 @@ class Batch
                 if ($operation==='update' && !isset($service['_commands'])) {
                     $service=ApiSiteAddressPolicy::reconcile($service,
                         ($currentDevice=$this->find_device($service['device']??null)) ? (array)$currentDevice : null,
-                        null,'data/data.db',[$this,'validateSiteAddressReplacement']);
+                        null,'data/data.db',fn(array $replacement) => $this->validateSiteAddressReplacement($replacement));
                 }
                 $snapshot = $this->snapshot($service, $operation);
                 if ($operation === 'update') {
@@ -526,6 +526,7 @@ class Batch
             $refresh = ApiSiteAddressPolicy::refreshForExecution($service, (array)$device, null, 'data/data.db',
                 fn(array $candidate) => $this->validateSiteAddressReplacement($candidate));
             if ($refresh['changed']) {
+                if (isset($refresh['device'])) $device = (object)$refresh['device'];
                 $next = $queue->preserveReplacedAddresses($service, $refresh['snapshot']);
                 if (isset($service['_commands'])) {
                     // Replace addresses in the same named resources; never lose a
@@ -786,6 +787,7 @@ class Batch
         // Different plans can still collide on the same account or DHCP identity.
         // Serialize lookup + ownership checks + mutation for this physical endpoint.
         myJobQueue()->withResourceLock(ApiSharedResources::endpointIdentity($device), function () use ($device, $commands, $beforeWrite, $cancellationGuards, $ownershipService, $verificationObserver): void {
+            if ($ownershipService!==null) $this->assertSavedPoolAddresses($ownershipService,$device);
             $api = $this->device_api($device->type ?? 'mikrotik');
             $write = fn() => $cancellationGuards ? $api->do_cancellation_cleanup($device, $commands, $cancellationGuards)
                 : $api->do_batch($device, $commands, $beforeWrite);
@@ -815,6 +817,65 @@ class Batch
                 throw new RuntimeException($failed ? implode('; ', array_map('strval', $failed)) : 'Not every router command completed');
             }
         });
+    }
+
+    /** A pool save and the final router write share this endpoint gate, rather than racing a frozen command. */
+    private function assertSavedPoolAddresses(array $service,object $device): void
+    {
+        $configuration=$service['_config']??(array)$this->db()->readConfig();
+        $ppp=filter_var($service['mac']??'',FILTER_VALIDATE_MAC)===false&&empty($service['hotspot']);
+        if ($ppp && filter_var($configuration['router_ppp_pool']??true,FILTER_VALIDATE_BOOLEAN,FILTER_NULL_ON_FAILURE)===false) return;
+        $current=$this->db()->singleQuery('SELECT * FROM devices WHERE id=?',true,[(int)($service['device']??0)]);
+        if (!$current || ApiSharedResources::endpointIdentity((object)$current)!==ApiSharedResources::endpointIdentity($device)) return;
+        if (!$this->db()->has_tables(['device_pool_history'])) return;
+        $history=$this->db()->selectCustom('SELECT pools,fingerprint FROM device_pool_history WHERE device_id=? AND endpoint=? LIMIT 10001',
+            [(int)$current['id'],ApiSharedResources::endpointIdentity($device)])??[];
+        if (count($history)>10000) throw new RuntimeException('site_address_device_changed');
+        $former=[];
+        foreach ($history as $row) {
+            if (!is_string($row['pools']) || strlen($row['pools'])>16384 || hash('sha256',$row['pools'])!==$row['fingerprint'])
+                throw new RuntimeException('site_address_device_changed');
+            $pool=json_decode($row['pools'],true,8,JSON_THROW_ON_ERROR);
+            if (!is_array($pool)||(int)($pool['id']??0)!==(int)$current['id']) throw new RuntimeException('site_address_device_changed');
+            $former[]=$pool;
+        }
+        $addresses=['address'=>[],'address6'=>[]];
+        if (isset($service['_commands'])) {
+            foreach ($service['_commands'] as $command) {
+                if (!is_array($command)||($command['action']??'')==='remove') continue;
+                $path=trim($command['path']??'','/');
+                if ($path==='ppp/secret') {
+                    $addresses['address'][]=$command['remote-address']??null;$addresses['address6'][]=$command['remote-ipv6-prefix']??null;
+                } elseif (in_array($path,['ip/hotspot/user','ip/dhcp-server/lease'],true)) $addresses['address'][]=$command['address']??null;
+                elseif ($path==='ipv6/dhcp-server/binding') $addresses['address6'][]=$command['address']??null;
+            }
+        } else foreach (['address','address6'] as $field) $addresses[$field][]=$service[$field]??($service['network'][$field]??null);
+        foreach (['address'=>'pool','address6'=>'pool6'] as $field=>$poolField) foreach ($addresses[$field] as $literal) {
+            if (!is_string($literal)||$literal===''||$this->addressInSavedPool($literal,$current[$poolField]??null,$field==='address6')) continue;
+            foreach ($former as $pool) if ($this->addressInSavedPool($literal,$pool[$poolField]??null,$field==='address6'))
+                throw new RuntimeException(empty($current[$poolField])?'site_address_pool_unavailable':'site_address_device_changed');
+        }
+    }
+
+    private function addressInSavedPool(string $literal,$pools,bool $ipv6): bool
+    {
+        if (!is_string($pools)||trim($pools)==='') return false;
+        $parts=explode('/',trim($literal));$maximum=$ipv6?128:32;
+        if (count($parts)>2||!filter_var($parts[0],FILTER_VALIDATE_IP,$ipv6?FILTER_FLAG_IPV6:FILTER_FLAG_IPV4)) return false;
+        $length=isset($parts[1])&&ctype_digit($parts[1])?(int)$parts[1]:$maximum;
+        if ($length>$maximum) return false;$address=inet_pton($parts[0]);
+        foreach (preg_split('/\s*,\s*/',trim($pools)) as $prefix) {
+            $range=explode('/',$prefix);
+            if (count($range)!==2||!ctype_digit($range[1])||!filter_var($range[0],FILTER_VALIDATE_IP,$ipv6?FILTER_FLAG_IPV6:FILTER_FLAG_IPV4)) continue;
+            $prefixLength=(int)$range[1];if($prefixLength<1||$prefixLength>$maximum||$length<$prefixLength)continue;
+            $network=inet_pton($range[0]);$matches=true;
+            for($index=0;$index<strlen($address);$index++){
+                $bits=max(0,min(8,$prefixLength-$index*8));$mask=$bits===0?0:(255<<(8-$bits))&255;
+                if((ord($address[$index])&$mask)!==(ord($network[$index])&$mask)){$matches=false;break;}
+            }
+            if($matches)return true;
+        }
+        return false;
     }
 
     /** An address refresh cannot erase evidence of partial profile creation or a pending reconnect. */

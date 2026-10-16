@@ -47,6 +47,12 @@ try {
     file_put_contents($data.'/state.json',json_encode(['backup'=>gmdate('c'),'cleanup'=>gmdate('c')]));
     file_put_contents($data.'/provisioning-verification-42.json',json_encode(['fixture'=>'saved evidence']));
     file_put_contents($data.'/crm-network-history-42-address.json',json_encode(['fixture'=>'historical exclusion']));
+    $resolutionBackup='router-resolution-20261016T130000Z-0123456789abcdef.json';
+    file_put_contents($data.'/'.$resolutionBackup,json_encode(['rows'=>[['password'=>'PRIVATE-REMOVED-ACCOUNT']]]));
+    require_once __DIR__.'/../src/lib/api_site_address_policy.php';
+    $oldDevice=$db->singleQuery('SELECT * FROM devices WHERE id=1',true);
+    $oldDevice['pool']='198.51.100.0/24';
+    ApiSiteAddressPolicy::recordPoolChange($oldDevice,array_replace($oldDevice,['pool'=>'198.18.0.0/24']),$db);
     file_put_contents($data.'/plugin.log','PRIVATE-LOG');file_put_contents($root.'/ucrm.json','PRIVATE-HOST-SDK');
     $beforeData=fullLogical($data.'/data.db');$beforeJobs=fullLogical($data.'/jobs.db');$beforeCache=fullLogical($data.'/cache.db');
     $api=new ApiFullBackup($data,static function()use(&$now){return(float)$now;});
@@ -54,7 +60,8 @@ try {
     $zip=new ZipArchive();fullCheck($zip->open($data.'/full-backups/'.$created['name'])===true,'Snapshot ZIP unavailable');
     $manifest=json_decode($zip->getFromName('manifest.json'),true);
     fullCheck(isset($manifest['files']['data/jobs.db'],$manifest['files']['data/data.db'],$manifest['files']['data/cache.db'],
-        $manifest['files']['data/config.json'],$manifest['files']['data/provisioning-verification-42.json'],$manifest['files']['data/crm-network-history-42-address.json'])
+        $manifest['files']['data/config.json'],$manifest['files']['data/provisioning-verification-42.json'],$manifest['files']['data/crm-network-history-42-address.json'],
+        $manifest['files']['data/'.$resolutionBackup])
         && $zip->locateName('data/plugin.log')===false&&$zip->locateName('ucrm.json')===false,'Snapshot omitted ownership/evidence or included logs/host integration');$zip->close();
     fullCheck(!str_contains(json_encode([$created,$api->listing()]),'PRIVATE'),'Public backup metadata exposed credentials');
     $db->execute("UPDATE devices SET name='Changed' WHERE id=1");$db->saveConfig(['device_name_attr'=>'changedSite']);

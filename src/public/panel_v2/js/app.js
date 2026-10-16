@@ -1926,6 +1926,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function closeModals() {
         globalThis.PanelWorkflows?.close?.();
+        globalThis.PanelServiceResolution?.close?.();
         if (lifecycleModal && !lifecycleApplying) {
             lifecycleModal.style.display = 'none'; lifecycleGeneration++; lifecycleTarget = null; lifecyclePreview = null; lifecycleLoading = false;
             updateLifecycleControls();
@@ -3122,6 +3123,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 row.querySelector('.job-description').appendChild(link);
             }
             if (globalThis.PanelOperations && Number.isSafeInteger(diagnosticId) && diagnosticId > 0) {
+                if (typeof globalThis.PanelServiceResolution?.resolveService === 'function') {
+                    const resolve = document.createElement('button'); resolve.type = 'button'; resolve.className = 'btn btn-primary job-repair-button';
+                    translatedText(resolve, 'Resolver'); markRecoveryWrite(resolve);
+                    resolve.disabled = resolve.disabled || job.state === 'running' || jobsActionPending;
+                    resolve.addEventListener('click', () => {
+                        if (job.state !== 'running' && !jobsActionPending && !recoveryReadOnly && !restoredRequiresReload)
+                            return globalThis.PanelServiceResolution.resolveService(diagnosticId);
+                    });
+                    row.querySelector('.job-description').appendChild(resolve);
+                }
                 const diagnostic = document.createElement('button'); diagnostic.type = 'button'; diagnostic.className = 'btn btn-secondary job-repair-button';
                 translatedText(diagnostic, 'Diagnóstico por servicio');
                 diagnostic.addEventListener('click', () => globalThis.PanelOperations.openService(diagnosticId));
@@ -3649,7 +3660,19 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (error) { if (sequence === languageLoad) notify(t('Error: {message}', { message: error.message }), 'error'); }
     });
 
-    globalThis.PanelOperations?.mount({ api, navigate: view => switchView(view, view), reviewJob: key => {
+    globalThis.PanelServiceResolution?.mount({ api, notify, navigate: (view, serviceId) => {
+        if (view === 'diagnostics' && Number.isSafeInteger(serviceId) && serviceId > 0) globalThis.PanelOperations?.openService(serviceId);
+        else switchView(view, view);
+    }, reviewJob: key => {
+        if (!/^Q[1-9]\d*$/.test(key)) return;
+        jobReviewRequested = key; switchView('jobs', 'Trabajos');
+    }, onApplied: result => {
+        refreshJobsStatus(); if (currentView === 'jobs') renderJobs();
+        globalThis.PanelOperations?.refreshService?.(result.serviceId);
+    } });
+    globalThis.PanelOperations?.mount({ api, resolveService: typeof globalThis.PanelServiceResolution?.resolveService === 'function'
+        ? serviceId => globalThis.PanelServiceResolution.resolveService(serviceId) : undefined,
+    navigate: view => switchView(view, view), reviewJob: key => {
         if (!/^Q[1-9]\d*$/.test(key)) return;
         jobReviewRequested = key;
         switchView('jobs', 'Trabajos');
@@ -3663,6 +3686,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }, onApplied: (result) => {
         if (result?.requiresReload) {
             restoredRequiresReload = true; api.requireReload?.();
+            globalThis.PanelServiceResolution?.requireReload?.();
             clearJobsRefreshTimer(); applyRecoveryControls(); return;
         }
         refreshJobsStatus();

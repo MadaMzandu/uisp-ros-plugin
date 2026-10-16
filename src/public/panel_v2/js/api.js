@@ -241,6 +241,7 @@ class ApiService {
     downloadUrl(name) {
         if (name !== 'network-conflicts' && !/^backup-[0-6]$/.test(name)
             && !/^(?:network-cleanup|jobs-recovery)-\d{8}T\d{6}Z-[a-f0-9]{32}\.sqlite$/.test(name)
+            && !/^router-resolution-\d{8}T\d{6}Z-[a-f0-9]{16}\.json$/.test(name)
             && !/^full-backup-\d{8}T\d{6}Z-[a-f0-9]{32}\.zip$/.test(name)) throw new Error(PanelUtils.t('Nombre de respaldo inválido.'));
         const url = new URL(this.endpoint, window.location.href);
         url.search = '';
@@ -262,6 +263,8 @@ class ApiService {
     getServiceReconciliation() { return this.send('list', 'service_reconciliation'); }
     previewServiceLifecycle(serviceId) { return this.send('list', 'service_lifecycle', 'preview', { serviceId }); }
     applyServiceLifecycle(previewToken) { return this.send('update', 'service_lifecycle', 'apply', { previewToken }); }
+    previewServiceResolution(serviceId) { return this.send('list', 'service_resolution', 'preview', { serviceId }); }
+    applyServiceResolution(previewToken, selection = []) { return this.send('update', 'service_resolution', 'apply', { previewToken, selection }); }
     getFullBackups() { return this.send('list', 'full_backup'); }
     createFullBackup() { return this.send('update', 'full_backup', 'create'); }
     previewFullBackup(name) { return this.send('update', 'full_backup', 'preview', { name }); }

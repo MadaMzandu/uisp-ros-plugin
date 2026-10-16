@@ -422,7 +422,16 @@ class ApiUpdate
         $trim = array_intersect_key($data,$fill);
         $trim = $this->validateRow($trim, true);
         $trim['last'] = date('c') ;
-        $saved = $this->db()->transaction(function () use ($trim, $pk): bool {
+        $nameChanged = false;
+        $persist = function () use ($trim,$pk,&$nameChanged):bool { return $this->db()->transaction(function () use ($trim, $pk, &$nameChanged): bool {
+            if ($this->mode === 'devices') {
+                $before = $this->db()->singleQuery('SELECT * FROM devices WHERE id=?', true, [$trim[$pk]]);
+                if (!$before) throw new InvalidArgumentException('device_not_found');
+                $after = array_replace($before, $trim);
+                $nameChanged = $after['name'] !== $before['name'];
+                require_once __DIR__ . '/api_site_address_policy.php';
+                ApiSiteAddressPolicy::recordPoolChange($before, $after, $this->db());
+            }
             if (!$this->db()->edit($trim, $this->mode)) return false;
             if ($this->mode === 'plans') {
                 require_once __DIR__ . '/batch.php';
@@ -431,11 +440,32 @@ class ApiUpdate
                 ApiConfigurationApply::requestPlan((int) $trim[$pk]);
             }
             return true;
-        });
+        }); };
+        if ($this->mode === 'devices') {
+            require_once __DIR__.'/api_shared_resources.php';
+            $beforeGuard=$this->db()->singleQuery('SELECT * FROM devices WHERE id=?',true,[$trim[$pk]]);
+            if (!$beforeGuard) throw new InvalidArgumentException('device_not_found');
+            $identities=array_values(array_unique([ApiSharedResources::endpointIdentity((object)$beforeGuard),
+                ApiSharedResources::endpointIdentity((object)array_replace($beforeGuard,$trim))]));
+            sort($identities,SORT_STRING);
+            $saveGuarded=function(int $index) use(&$saveGuarded,$identities,$persist,$trim,$pk,$beforeGuard):bool {
+                if ($index<count($identities)) return myJobQueue()->withResourceLock($identities[$index],fn():bool=>$saveGuarded($index+1));
+                $current=$this->db()->singleQuery('SELECT * FROM devices WHERE id=?',true,[$trim[$pk]]);
+                if (!$current || ApiSharedResources::endpointIdentity((object)$current)!==ApiSharedResources::endpointIdentity((object)$beforeGuard))
+                    throw new RuntimeException('site_address_device_changed');
+                return $persist();
+            };
+            try {$saved=$saveGuarded(0);} finally {$saveGuarded=null;}
+        } else $saved=$persist();
         if($saved){
             $this->result = $this->find_last($trim[$pk]);
             switch ($this->mode){
-                case 'devices': $this->cache_build(true) && $this->set_qos($qos); break;
+                case 'devices':
+                    // Saving one router must not depend on refreshing every UISP
+                    // service. Direct sync resolves its current Site independently.
+                    if ($nameChanged) $this->db()->saveConfig(['next_cache' => '2020-01-01']);
+                    $this->set_qos($qos);
+                    break;
                 case 'plans':
                     require_once __DIR__ . '/api_configuration_apply.php';
                     ApiConfigurationApply::drain();
@@ -565,6 +595,20 @@ class ApiUpdate
             foreach (['name','ip','user'] as $field) {
                 if (!$edit && empty($row[$field])) throw new InvalidArgumentException('device_field_required: ' . $field);
                 if (isset($row[$field]) && (!is_string($row[$field]) || trim($row[$field]) === '' || preg_match('/[\r\n\x00]/', $row[$field]))) throw new InvalidArgumentException('device_field_invalid');
+            }
+            foreach (['pool' => false, 'pool6' => true] as $field => $ipv6) {
+                if (!array_key_exists($field, $row)) continue;
+                if ($row[$field] === null || $row[$field] === '') { $row[$field] = null; continue; }
+                if (!is_string($row[$field])) throw new InvalidArgumentException('invalid_device_pool');
+                $prefixes = preg_split('/\s*,\s*/', trim($row[$field]));
+                foreach ($prefixes as $prefix) {
+                    $parts = explode('/', $prefix);
+                    if (count($parts) !== 2 || !ctype_digit($parts[1]) || (int)$parts[1] < 1
+                        || (int)$parts[1] > ($ipv6 ? 128 : 32)
+                        || !filter_var($parts[0], FILTER_VALIDATE_IP, $ipv6 ? FILTER_FLAG_IPV6 : FILTER_FLAG_IPV4))
+                        throw new InvalidArgumentException('invalid_device_pool');
+                }
+                $row[$field] = implode(',', array_values(array_unique($prefixes)));
             }
             if (array_key_exists('port', $row)) {
                 if ($edit && ($row['port'] === '' || $row['port'] === null)) unset($row['port']);

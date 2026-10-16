@@ -4,6 +4,24 @@ require_once __DIR__ . '/api_network_address_evidence.php';
 /** Clear only a freshly verified foreign-Site address before requesting a new pool allocation. */
 final class ApiSiteAddressPolicy
 {
+    /** Keep only pool provenance, never credentials or address reservations. Caller owns the save transaction. */
+    public static function recordPoolChange(array $before, array $after, ApiSqlite $db): void
+    {
+        if (($before['pool'] ?? null) === ($after['pool'] ?? null)
+            && ($before['pool6'] ?? null) === ($after['pool6'] ?? null)) return;
+        require_once __DIR__ . '/api_shared_resources.php';
+        $endpoint = ApiSharedResources::endpointIdentity((object)$before);
+        if ($endpoint !== ApiSharedResources::endpointIdentity((object)$after)) return;
+        $previous = ['id' => self::id($before['id'] ?? null), 'pool' => $before['pool'] ?? null,
+            'pool6' => $before['pool6'] ?? null, 'pfxLength' => $before['pfxLength'] ?? null];
+        if ($previous['id'] === null || (!$previous['pool'] && !$previous['pool6'])) return;
+        $json = json_encode($previous, JSON_THROW_ON_ERROR);
+        $db->exec('CREATE TABLE IF NOT EXISTS device_pool_history (device_id INTEGER NOT NULL, endpoint TEXT NOT NULL,
+            fingerprint TEXT NOT NULL, pools TEXT NOT NULL, PRIMARY KEY(device_id,endpoint,fingerprint))');
+        if (!$db->execute('INSERT OR IGNORE INTO device_pool_history(device_id,endpoint,fingerprint,pools) VALUES(?,?,?,?)',
+            [$previous['id'], $endpoint, hash('sha256', $json), $json])) throw new RuntimeException('device_pool_history_failed');
+    }
+
     /** Refresh only foreign-Site IP intent before an old queued update can replay it. */
     public static function refreshForExecution(array $service, ?array $expectedDevice = null, ?callable $request = null,
         string $dataPath = 'data/data.db', ?callable $preflight = null): array
@@ -12,11 +30,11 @@ final class ApiSiteAddressPolicy
         $did = self::id($service['device'] ?? null);
         if ($did === null || !isset($devices[$did])) return ['snapshot' => $service, 'changed' => false];
         $candidate = $service; $derived = [];
-        $foreign = self::foreignAddresses($service, $devices[$did], $configuration, $devices);
+        $foreign = self::foreignAddresses($service, $devices[$did], $configuration, $devices, $dataPath);
         foreach (self::preparedAddresses($service) as $field => $value) {
             if (isset($foreign[$field])) continue;
             $withCommand = $service; unset($withCommand[$field]); $withCommand['network'][$field] = $value;
-            $commandForeign = self::foreignAddresses($withCommand, $devices[$did], $configuration, $devices);
+            $commandForeign = self::foreignAddresses($withCommand, $devices[$did], $configuration, $devices, $dataPath);
             if (!isset($commandForeign[$field])) continue;
             unset($candidate[$field]); $candidate['network'][$field] = $value; $derived[$field] = true;
             $foreign[$field] = $commandForeign[$field];
@@ -28,16 +46,34 @@ final class ApiSiteAddressPolicy
                 || !is_string($reset['previous'] ?? null) || !is_string($reset['generation'] ?? null)
                 || preg_match('/^[a-f0-9]{32}$/D', $reset['generation']) !== 1) continue;
             $withPrevious = $service; unset($withPrevious[$field]); $withPrevious['network'][$field] = $reset['previous'];
-            $resetForeign = self::foreignAddresses($withPrevious, $devices[$did], $configuration, $devices);
+            $resetForeign = self::foreignAddresses($withPrevious, $devices[$did], $configuration, $devices, $dataPath);
             if (!isset($resetForeign[$field])) continue;
             unset($candidate[$field]); $candidate['network'][$field] = $reset['previous']; $foreign[$field] = $resetForeign[$field];
         }
         if (!$foreign)
             return ['snapshot' => $service, 'changed' => false];
-        $refreshed = self::reconcile($candidate, $expectedDevice, $request, $dataPath, $preflight, true);
+        $executionDevice = $expectedDevice;
+        if ($expectedDevice !== null && self::endpoint($expectedDevice) !== self::endpoint($devices[$did])) {
+            require_once __DIR__ . '/api_shared_resources.php';
+            $sameEndpoint = ApiSharedResources::endpointIdentity((object)$expectedDevice)
+                === ApiSharedResources::endpointIdentity((object)$devices[$did]);
+            $knownPool = false;
+            foreach (self::formerPools($devices[$did], $dataPath) as $former) {
+                if (($former['pool'] ?? null) === ($expectedDevice['pool'] ?? null)
+                    && ($former['pool6'] ?? null) === ($expectedDevice['pool6'] ?? null)
+                    && ($former['pfxLength'] ?? null) === ($expectedDevice['pfxLength'] ?? null)) $knownPool = true;
+            }
+            if (!$sameEndpoint || !$knownPool || self::id($expectedDevice['id'] ?? null) !== $did
+                || ($expectedDevice['name'] ?? null) !== ($devices[$did]['name'] ?? null)) throw new RuntimeException('site_address_device_changed');
+            $executionDevice = $expectedDevice;
+            foreach (['pool','pool6','pfxLength'] as $key) $executionDevice[$key] = $devices[$did][$key] ?? null;
+            if (isset($candidate['_device'])) $candidate['_device'] = $executionDevice;
+        }
+        $refreshed = self::reconcile($candidate, $executionDevice, $request, $dataPath, $preflight, true);
         // Keep the exact account identity, credentials, status and prepared resource evidence.
         // The queue owns invalidating/rebuilding commands while retaining their old resources.
         $next = $service;
+        if (isset($candidate['_device'])) $next['_device'] = $candidate['_device'];
         if (isset($service['_config']) && is_array($service['_config']) && isset($refreshed['_config']))
             $next['_config'] = $refreshed['_config'];
         foreach (['address', 'address6'] as $field) {
@@ -52,7 +88,9 @@ final class ApiSiteAddressPolicy
                 else unset($next['_network_reset'][$field]);
             }
         }
-        return ['snapshot' => $next, 'changed' => $next !== $service || (bool) array_intersect_key($derived, $foreign)];
+        $changed = $next !== $service || (bool) array_intersect_key($derived, $foreign);
+        return ['snapshot' => $next, 'changed' => $changed]
+            + ($changed && $executionDevice !== null ? ['device' => $executionDevice] : []);
     }
 
     public static function reconcile(array $service, ?array $expectedDevice = null, ?callable $request = null,
@@ -65,7 +103,7 @@ final class ApiSiteAddressPolicy
         if ($expectedDevice !== null && (self::id($expectedDevice['id'] ?? null) !== $did
             || self::endpoint($expectedDevice) !== self::endpoint($device))) throw new RuntimeException('site_address_device_changed');
         $candidates = [];
-        foreach (self::foreignAddresses($service, $device, $configuration, $devices) as $field => $address) {
+        foreach (self::foreignAddresses($service, $device, $configuration, $devices, $dataPath) as $field => $address) {
             $existing = $service['_network_reset'][$field] ?? null;
             $generation = is_array($existing) && ($existing['previous'] ?? null) === $address
                 && is_string($existing['generation'] ?? null) && preg_match('/^[a-f0-9]{32}$/D', $existing['generation']) === 1
@@ -99,7 +137,7 @@ final class ApiSiteAddressPolicy
                 if ($evidence[$field]['value'] !== null && $evidence[$field]['value'] !== $intent['previous']) {
                     if (!$refreshAddress) throw new RuntimeException('site_address_changed');
                     $current = $service; unset($current[$field]); $current['network'][$field] = $evidence[$field]['value'];
-                    $foreign = self::foreignAddresses($current, $device, $configuration, $devices);
+                    $foreign = self::foreignAddresses($current, $device, $configuration, $devices, $dataPath);
                     if (!isset($foreign[$field])) { $overrides[$field] = $evidence[$field]['value']; continue; }
                     $intent = ['previous' => $foreign[$field], 'generation' => bin2hex(random_bytes(16))];
                 }
@@ -187,15 +225,26 @@ final class ApiSiteAddressPolicy
         }
     }
 
-    public static function foreignAddresses(array $service, array $device, array $configuration, array $devices): array
+    public static function foreignAddresses(array $service, array $device, array $configuration, array $devices,
+        string $dataPath = 'data/data.db'): array
     {
         $candidates = [];
+        $formerPools = self::formerPools($device, $dataPath);
         foreach (['address' => false, 'address6' => true] as $field => $ipv6) {
             $literal = array_key_exists($field, $service) ? $service[$field] : ($service['network'][$field] ?? null);
             if (!is_string($literal) || trim($literal) === '') continue;
             try { $address = self::address($literal, $ipv6, $device); }
             catch (Throwable $ignored) { continue; }
-            if (self::contained($address, self::pools($service, $device, $configuration, $ipv6))) continue;
+            $currentPools = self::pools($service, $device, $configuration, $ipv6);
+            if (self::contained($address, $currentPools)) continue;
+            // A saved pool replacement is explicit provenance for a CRM IP
+            // exported from this Site's former range. No other Site need keep it.
+            if ($currentPools) foreach ($formerPools as $former) {
+                if (self::contained($address, self::pools($service, $former, $configuration, $ipv6))) {
+                    $candidates[$field] = $address; break;
+                }
+            }
+            if (isset($candidates[$field])) continue;
             foreach ($devices as $peerId => $peer) {
                 if ($peerId === (int) $device['id']) continue;
                 if (self::contained($address, self::pools($service, $peer, $configuration, $ipv6, true))) {
@@ -204,6 +253,29 @@ final class ApiSiteAddressPolicy
             }
         }
         return $candidates;
+    }
+
+    private static function formerPools(array $device, string $dataPath): array
+    {
+        if (!is_file($dataPath) || is_link($dataPath)) return [];
+        $db = null;
+        try {
+            require_once __DIR__ . '/api_shared_resources.php';
+            $db = new SQLite3($dataPath, SQLITE3_OPEN_READONLY); $db->enableExceptions(true); $db->busyTimeout(500);
+            if (!$db->querySingle("SELECT 1 FROM sqlite_master WHERE type='table' AND name='device_pool_history'")) return [];
+            $statement = $db->prepare('SELECT pools,fingerprint FROM device_pool_history WHERE device_id=? AND endpoint=?');
+            $statement->bindValue(1, (int)$device['id'], SQLITE3_INTEGER);
+            $statement->bindValue(2, ApiSharedResources::endpointIdentity((object)$device), SQLITE3_TEXT);
+            $rows = $statement->execute(); $result = [];
+            while ($row = $rows->fetchArray(SQLITE3_ASSOC)) {
+                if (!is_string($row['pools']) || strlen($row['pools']) > 16384
+                    || hash('sha256', $row['pools']) !== $row['fingerprint']) throw new RuntimeException('device_pool_history_invalid');
+                $former = json_decode($row['pools'], true, 8, JSON_THROW_ON_ERROR);
+                if (!is_array($former) || self::id($former['id'] ?? null) !== (int)$device['id']) throw new RuntimeException('device_pool_history_invalid');
+                $result[] = $former;
+            }
+            $rows->finalize(); $statement->close(); return $result;
+        } finally { if ($db !== null) $db->close(); }
     }
 
     private static function preparedAddresses(array $service): array
