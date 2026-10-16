@@ -233,10 +233,14 @@ try {
     $apiSqlite->execute('DELETE FROM network WHERE id=608');
     $apiSqlite->insert(['id'=>699,'address'=>'198.51.100.68'],'network');
     $beforeEditJobs=$apiJobQueue->list(); $beforeEditCache=hash_file('sha256','data/cache.db');
-    $edit=new ApiUpdate(['action'=>'edit','data'=>['id'=>21,'name'=>$device['name'],'ip'=>$device['ip'],
-        'user'=>'fixture','password'=>'fixture','pool'=>'198.18.0.0/24','pool6'=>null,'pfxLength'=>64]],'devices');
-    $edit->exec();
-    retryCheck(($edit->result()['pool']??null)==='198.18.0.0/24' && $apiJobQueue->list()===$beforeEditJobs
+    // Match PanelUtils.devicePayload: router technology is not a service selector.
+    require_once 'lib/api_router.php';
+    $edit=new ApiRouter(['changeType'=>'update','target'=>'devices','action'=>'edit','data'=>['id'=>21,'name'=>$device['name'],'ip'=>$device['ip'],
+        'type'=>'mikrotik','user'=>'fixture','port'=>8728,'ssl'=>0,'allowSelfSigned'=>0,
+        'pool'=>'198.18.0.0/24','pool6'=>'','pfxLength'=>64]]);
+    $edit->route();ob_start();$edit->http_response();$saved=json_decode(ob_get_clean(),true,512,JSON_THROW_ON_ERROR);
+    retryCheck(($saved['status']??null)==='ok' && $saved['error']===false && ($saved['data']['pool']??null)==='198.18.0.0/24'
+        && !array_key_exists('password',$saved['data']) && $apiJobQueue->list()===$beforeEditJobs
         && hash_file('sha256','data/cache.db')===$beforeEditCache,
         'Saving a pool depended on the global UISP cache, changed reservations or started router work');
     retryCheck((int)$apiSqlite->singleQuery('SELECT count(*) FROM device_pool_history')===1,

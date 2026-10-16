@@ -1,6 +1,12 @@
-# Pruebas reales del candidato 2.4.40
+# Pruebas reales del candidato 2.4.41
 
 Las pruebas automatizadas usan bases temporales, transportes simulados y sockets locales. Esta lista comprueba la integración **UISP → plugin → API nativa de RouterOS** en una copia de UISP y un CHR/router con clientes de prueba. Registrar versiones de UISP, PHP y RouterOS, así como ID del servicio, plan, trabajo, estado e IP/prefijo en cada caso.
+
+## Guardado del formulario en 2.4.41
+
+Los casos 261–262 comprueban el contrato del formulario y la separación de filtros.
+
+Validación 2.4.41 aprobada: **67 suites aisladas**, sintaxis de **69 archivos PHP propios** y 384 entradas verificadas del instalador. Informe: `dist/verification-2.4.41.json`. SHA-256: `4d1c0aa46a22609ee5724b3d031cc3bfee84492a86f9ecc224ab5bc98b0501ae`. Las pruebas usan datos sintéticos; no se modificaron UISP ni RouterOS de producción.
 
 ## Comprobar resolución y cambios de pool en 2.4.40
 
@@ -538,3 +544,6 @@ Si el piloto falla, pausar worker/webhook y conservar datos/errores sin credenci
 | 258 | Sincronizar una IP del pool anterior y repetir con un trabajo ya preparado y una reserva antigua incompatible. | Usa una IP del pool nuevo; no reproduce la dirección anterior ni gira nuevamente el reemplazo al repetir. |
 | 259 | Cambiar pool durante un trabajo; agotar el destino o perder UISP antes de vaciar IP. | Revalida bajo exclusión del endpoint; no aplica un rango obsoleto después del guardado ni retira la configuración previa sin reemplazo comprobado. |
 | 260 | Resolver colas DHCP duplicadas propias y repetir con dependencias, perfiles compartidos y colas ajenas. | Sólo consolida las propias sin dependencias; respalda y conserva las demás con causa explícita. |
+
+| 261 | Guardar el dispositivo desde el panel con `type: mikrotik`, sin modificar QoS, y cambiar su pool. | Devuelve éxito sin `invalid_service_filter`; guarda el pool sin modificar cuentas, caché ni cola por esta acción. La sincronización posterior conserva la migración normal del rango. |
+| 262 | Cambiar QoS de un router con servicios en varios routers y enviar después `system.type=mikrotik`. | QoS sólo aplica al router seleccionado; los alcances válidos de sistema siguen funcionando y el tipo de tecnología se rechaza como filtro de sistema sin escrituras. |

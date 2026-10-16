@@ -1,1 +1,1 @@
-Add actionable service resolution and fix Site pool changes
+Fix saving MikroTik devices without an invalid service filter

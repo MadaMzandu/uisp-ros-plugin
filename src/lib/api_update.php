@@ -511,7 +511,9 @@ class ApiUpdate
     private function find_services($type = null): array
     {
         $id = $this->data->data->id ?? 0 ;
-        $type = $this->data->data->type ?? $type ?? 'device' ;
+        // A caller's explicit scope takes precedence over a device row's
+        // technology field (for example type=mikrotik in the edit form).
+        $type = $type ?? $this->data->data->type ?? 'device' ;
         if($type != 'all' && !$id){ return []; }
         if (!in_array($type, ['device','devices','plan','plans','service','services','all'], true)) throw new InvalidArgumentException('invalid_service_filter');
         $field = in_array($type, ['device','devices'], true) ? 'device' : 'planId';
@@ -535,10 +537,11 @@ class ApiUpdate
 
     private function set_qos($type = 0): array
     {
+        if (!$type) return [];
         $this->fast_finish();
         MyLog()->Append("set_qos type: ". $type);
-        $ids = $this->find_services() ;
-        if(!$ids || !$type){ return []; }
+        $ids = $this->find_services('device') ;
+        if(!$ids){ return []; }
         $batch = new Batch();
         if($type > 0){
            $done = $batch->set_accounts($ids);

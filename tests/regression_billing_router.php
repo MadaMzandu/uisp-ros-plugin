@@ -465,7 +465,58 @@ try {
         'Default device synchronization failed to apply fresh names and scoped reconnect or ran another router');
     $start=count($GLOBALS['billingAdapters']);$deviceSync->step($sync['syncToken']);
     billingCheck(count($GLOBALS['billingAdapters'])===$start,'A completed device-sync cursor repeated router writes');
-    echo "Billing RouterOS checks passed: real pipeline, billing transitions, scoped reconnects, protected deletion, ordered immediate/duplicate webhook recovery, failed prerequisite barriers, bounded versions, migration cleanup, suspension bootstrap and reactivation.\n";
+    // Device forms carry the RouterOS technology, not the system service-selection scope.
+    // Exercise both QoS directions through the real update/queue/Batch/MT pipeline.
+    $apiSqlite->execute('UPDATE devices SET qos=0 WHERE id=10');
+    $foreignAccount=array_values(array_filter($GLOBALS['billingCatalogue']['ppp/secret'],static fn($row)=>($row['name']??null)==='other-ram-user'));
+    $foreignApplied=$queue->appliedSnapshot(94);
+    $beforeJob=(int)$queueDb->querySingle('SELECT max(id) FROM jobs');
+    $start=count($GLOBALS['billingAdapters']);
+    $qosOn=new ApiUpdate((object)['action'=>'edit','data'=>(object)['id'=>10,'type'=>'mikrotik','qos'=>1]],'devices');
+    $qosOn->exec();
+    $writes=$accountSentences($start);
+    billingCheck(!($qosOn->status()->error??false) && $qosOn->result()['type']==='mikrotik' && $qosOn->result()['qos']===1
+        &&count($writes)===1 && $writes[0][0]==='/ppp/secret/set' && in_array('=name=ram-renamed',$writes[0],true)
+        &&(int)$queueDb->querySingle('SELECT count(*) FROM jobs WHERE id>'.$beforeJob)===1
+        &&(int)$queueDb->querySingle("SELECT count(*) FROM jobs WHERE id>$beforeJob AND service_id=91 AND operation='update' AND status='succeeded' AND attempts=1")===1,
+        'Enabling QoS with the real device-form type did not apply exactly the selected router through Batch');
+    billingCheck(array_values(array_filter($GLOBALS['billingCatalogue']['ppp/secret'],static fn($row)=>($row['name']??null)==='other-ram-user'))===$foreignAccount
+        &&$queue->appliedSnapshot(94)===$foreignApplied && $queue->selectionStatus([$foreignKey])[$foreignKey]['attempts']===0
+        &&$GLOBALS['billingCatalogue']['ppp/active']===[['.id'=>'*device-other','name'=>'other-ram-user']],
+        'Enabling QoS applied or disconnected the other router or executed its pending job');
+
+    $ownCap=['.id'=>'*A991','name'=>'uisp-service-91-suspension','comment'=>'uisp-ros-plugin:suspension:91','target'=>'10.42.0.91','max-limit'=>'64k/64k'];
+    $foreignCap=['.id'=>'*A994','name'=>'uisp-service-94-suspension','comment'=>'uisp-ros-plugin:suspension:94','target'=>'10.43.0.94','max-limit'=>'64k/64k'];
+    $GLOBALS['billingCatalogue']['queue/simple']=[$ownCap,$foreignCap];
+    $beforeJob=(int)$queueDb->querySingle('SELECT max(id) FROM jobs');
+    $start=count($GLOBALS['billingAdapters']);
+    $qosOff=new ApiUpdate((object)['action'=>'edit','data'=>(object)['id'=>10,'type'=>'mikrotik','qos'=>0]],'devices');
+    $qosOff->exec();$queueDeletes=[];
+    foreach(array_slice($GLOBALS['billingAdapters'],$start)as$adapter)foreach($adapter->recording->sentences as$sentence)
+        if(($sentence[0]??'')==='/queue/simple/remove')$queueDeletes[]=$sentence;
+    billingCheck(!($qosOff->status()->error??false) && $qosOff->result()['qos']===0
+        &&count($queueDeletes)===1 && in_array('=.id=*A991',$queueDeletes[0],true) && $accountSentences($start)===[]
+        &&$GLOBALS['billingCatalogue']['queue/simple']===[$foreignCap]
+        &&(int)$queueDb->querySingle('SELECT count(*) FROM jobs WHERE id>'.$beforeJob)===1
+        &&(int)$queueDb->querySingle("SELECT count(*) FROM jobs WHERE id>$beforeJob AND service_id=91 AND operation='queues_remove' AND status='succeeded' AND attempts=1")===1
+        &&$queue->appliedSnapshot(94)===$foreignApplied && $queue->selectionStatus([$foreignKey])[$foreignKey]['attempts']===0
+        &&$GLOBALS['billingCatalogue']['ppp/active']===[['.id'=>'*device-other','name'=>'other-ram-user']],
+        'Disabling QoS with the device-form type did not remove only its own queue through Batch');
+
+    $start=count($GLOBALS['billingAdapters']);$beforeJob=(int)$queueDb->querySingle('SELECT max(id) FROM jobs');
+    $unchangedQos=new ApiUpdate((object)['action'=>'edit','data'=>(object)['id'=>10,'type'=>'mikrotik','qos'=>0]],'devices');
+    $unchangedQos->exec();
+    billingCheck(!($unchangedQos->status()->error??false) && count($GLOBALS['billingAdapters'])===$start
+        &&(int)$queueDb->querySingle('SELECT max(id) FROM jobs')===$beforeJob,
+        'An unchanged device QoS value performed unnecessary provisioning or rejected its technology field');
+    $invalidScope=false;
+    try {
+        (new ApiUpdate((object)['action'=>'insert','data'=>(object)['type'=>'mikrotik','id'=>10]],'system'))->exec();
+    } catch(InvalidArgumentException $error) {$invalidScope=$error->getMessage()==='invalid_service_filter';}
+    billingCheck($invalidScope && count($GLOBALS['billingAdapters'])===$start
+        &&(int)$queueDb->querySingle('SELECT max(id) FROM jobs')===$beforeJob,
+        'A RouterOS technology name was incorrectly accepted as a system synchronization scope');
+    echo "Billing RouterOS checks passed: real pipeline, billing transitions, scoped reconnects and QoS edits, protected deletion, ordered immediate/duplicate webhook recovery, failed prerequisite barriers, bounded versions, migration cleanup, suspension bootstrap and reactivation.\n";
 } finally {
     if (isset($queue)) $queue->close();
     if (isset($apiSqlite)) $apiSqlite->close();

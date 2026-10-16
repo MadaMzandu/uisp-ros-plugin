@@ -1,10 +1,18 @@
 ## Summary
 
-Candidate **2.4.40** adds an actionable service resolution flow and fixes saving and replacing Site IP pools. A proven unique account can be repaired and synchronized with one click; duplicates use an explicit account choice. Pool changes no longer trigger a failing global cache refresh, and old pool addresses are migrated through verified replacement preparation. Current-owner protection, normal queue cleanup and RouterOS readback remain in force.
+Candidate **2.4.41** fixes saving the actual router form: its `type: mikrotik` technology no longer becomes an invalid service filter after persistence. Saves without QoS changes skip provisioning; QoS updates explicitly target the edited router. Previous service resolution and Site pool migration remain included.
 
 The cumulative changes include the panel work from [PR #89](https://github.com/MadaMzandu/uisp-ros-plugin/pull/89), durable provisioning, webhook handling and recovery tools. Provisioning uses the native RouterOS API with optional TLS.
 
 **The full English changelog and webhook setup guide are included below, not only linked.** Historical entries identify behavior superseded by later revisions; the summary describes the current implementation.
+
+## Candidate 2.4.41: separate device technology from service filtering
+
+Fix `invalid_service_filter` when saving the router form. The panel sends `type: mikrotik` as the device technology; a subsequent service lookup incorrectly interpreted it as a provisioning scope. This happened after persistence, so the pool could already be saved despite the error response. Saves without a QoS change now finish before searching services or provisioning. Actual QoS changes explicitly select the edited device. System scopes (`device`, `plan`, `service`, `all`) retain their validation; `mikrotik` is not accepted as a synchronization scope.
+
+The regression submits the complete form payload, including `type`, through `ApiRouter` and checks the successful JSON response, credential redaction and unchanged cache/queue before synchronization. Pool migration, retries, exhaustion and endpoint-write exclusion remain covered. Additional tests exercise QoS changes only on the selected router and reject an invalid system filter before writes.
+
+Validation for 2.4.41 passed: **67 isolated suites**, syntax checks for **69 first-party PHP files**, and 384 verified archive entries. Report: `dist/verification-2.4.41.json`. SHA-256: `4d1c0aa46a22609ee5724b3d031cc3bfee84492a86f9ecc224ab5bc98b0501ae`. Tests use synthetic data; no production UISP or RouterOS changes were performed.
 
 ## Candidate 2.4.40: actionable service resolution and Site pool replacement
 
@@ -294,6 +302,8 @@ An explicit **Allow webhooks without a secret (compatibility)** checkbox preserv
 
 ## Validation and scope
 
+Validation for 2.4.41 passed: **67 isolated suites**, syntax checks for **69 first-party PHP files**, and 384 verified archive entries. Report: `dist/verification-2.4.41.json`. SHA-256: `4d1c0aa46a22609ee5724b3d031cc3bfee84492a86f9ecc224ab5bc98b0501ae`. Tests use synthetic data; no production UISP or RouterOS changes were performed.
+
 Validation for 2.4.40 passed: **67 isolated suites**, syntax checks for **69 first-party PHP files**, 384 archive entries, 151 first-party files and 13 locked dependencies. Report: `dist/verification-2.4.40.json`. SHA-256: `4b5ea85b8993872423b0566850526d025b5e966b031e58debe18f463598f44f4`. Synthetic browser checks cover Resolve, duplicate selection, one-click repair, backup download link and the result on desktop/mobile in Spanish/English. No production UISP or RouterOS changes were executed.
 
 - **2.4.38 automated/package validation:** **63 isolated suites passed**, syntax checks for **66 first-party PHP files**, and verification of 380 archive entries, 147 first-party files and 13 locked dependencies. Report: `dist/verification-2.4.38.json`. SHA-256: `ebbb4de8aa1d0e6a14e0b8f89981639cbfab3e15956397c1edb72e6f90bcda73`. Synthetic UI checks include mobile requester review, six-language coverage, grouped backups, new-entry Devices and reload continuity. Production lifecycle/address-reuse checks remain pending.
@@ -456,9 +466,17 @@ Check the relevant RouterOS logging topics and the actual profile/session state.
 
 [Español](docs/MEJORAS.md) · [PR description](docs/PR_DESCRIPTION.md) · [Webhook setup and rationale](docs/WEBHOOK_SETUP_EN.md)
 
-This revision combines [dhanielsnieto's changes in PR #89](https://github.com/MadaMzandu/uisp-ros-plugin/pull/89) with the subsequent fixes prepared in this repository. The comparison starts at `7ca8dc8`; the original PR ends at `056b89f`. The current candidate is **2.4.40**. The operator confirmed archived-plan speed recovery in their 2.4.19 installation. That confirmation covers this historical scenario; the remaining UISP and RouterOS integration scenarios still require their own checks before production readiness can be established.
+This revision combines [dhanielsnieto's changes in PR #89](https://github.com/MadaMzandu/uisp-ros-plugin/pull/89) with the subsequent fixes prepared in this repository. The comparison starts at `7ca8dc8`; the original PR ends at `056b89f`. The current candidate is **2.4.41**. The operator confirmed archived-plan speed recovery in their 2.4.19 installation. That confirmation covers this historical scenario; the remaining UISP and RouterOS integration scenarios still require their own checks before production readiness can be established.
 
 The plugin connects UISP CRM to MikroTik through the **native RouterOS API**, normally on port `8728`, or `8729` with TLS. The panel manages that integration; it does not switch the transport to SSH, WinBox, or REST.
+
+## Candidate 2.4.41: separate device technology from service filtering
+
+Fix `invalid_service_filter` when saving the router form. The panel sends `type: mikrotik` as the device technology; a subsequent service lookup incorrectly interpreted it as a provisioning scope. This happened after persistence, so the pool could already be saved despite the error response. Saves without a QoS change now finish before searching services or provisioning. Actual QoS changes explicitly select the edited device. System scopes (`device`, `plan`, `service`, `all`) retain their validation; `mikrotik` is not accepted as a synchronization scope.
+
+The regression submits the complete form payload, including `type`, through `ApiRouter` and checks the successful JSON response, credential redaction and unchanged cache/queue before synchronization. Pool migration, retries, exhaustion and endpoint-write exclusion remain covered. Additional tests exercise QoS changes only on the selected router and reject an invalid system filter before writes.
+
+Validation for 2.4.41 passed: **67 isolated suites**, syntax checks for **69 first-party PHP files**, and 384 verified archive entries. Report: `dist/verification-2.4.41.json`. SHA-256: `4d1c0aa46a22609ee5724b3d031cc3bfee84492a86f9ecc224ab5bc98b0501ae`. Tests use synthetic data; no production UISP or RouterOS changes were performed.
 
 ## Candidate 2.4.40: actionable service resolution and Site pool replacement
 
@@ -983,7 +1001,7 @@ Later production evidence identified missing tokens and a URL pasted as the secr
 
 ## Installation and validation readiness
 
-The current version is 2.4.40. Its validation status appears at the beginning of this changelog. Archived-plan recovery confirmation belongs to 2.4.19 and retains its historical scope. Fresh lifecycle evidence retires obsolete intent and queues guarded removal before releasing physically owned addresses. Unknown evidence remains an incident for that service. The separate local-cleanup review retains its limited scope and private backup. A duplicate-reservation migration barrier still requires resolving stored assignments and reloading. Backups remain downloadable from System. The [real-environment test guide](docs/PRUEBAS_REALES.md) contains 260 scenarios and does not claim production validation.
+The current version is 2.4.41. Its validation status appears at the beginning of this changelog. Archived-plan recovery confirmation belongs to 2.4.19 and retains its historical scope. Fresh lifecycle evidence retires obsolete intent and queues guarded removal before releasing physically owned addresses. Unknown evidence remains an incident for that service. The separate local-cleanup review retains its limited scope and private backup. A duplicate-reservation migration barrier still requires resolving stored assignments and reloading. Backups remain downloadable from System. The [real-environment test guide](docs/PRUEBAS_REALES.md) contains 262 scenarios and does not claim production validation.
 
 ### Historical 2.4.17 result
 

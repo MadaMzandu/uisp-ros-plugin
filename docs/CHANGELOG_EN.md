@@ -2,9 +2,17 @@
 
 [Español](MEJORAS.md) · [PR description](PR_DESCRIPTION.md) · [Webhook setup and rationale](WEBHOOK_SETUP_EN.md)
 
-This revision combines [dhanielsnieto's changes in PR #89](https://github.com/MadaMzandu/uisp-ros-plugin/pull/89) with the subsequent fixes prepared in this repository. The comparison starts at `7ca8dc8`; the original PR ends at `056b89f`. The current candidate is **2.4.40**. The operator confirmed archived-plan speed recovery in their 2.4.19 installation. That confirmation covers this historical scenario; the remaining UISP and RouterOS integration scenarios still require their own checks before production readiness can be established.
+This revision combines [dhanielsnieto's changes in PR #89](https://github.com/MadaMzandu/uisp-ros-plugin/pull/89) with the subsequent fixes prepared in this repository. The comparison starts at `7ca8dc8`; the original PR ends at `056b89f`. The current candidate is **2.4.41**. The operator confirmed archived-plan speed recovery in their 2.4.19 installation. That confirmation covers this historical scenario; the remaining UISP and RouterOS integration scenarios still require their own checks before production readiness can be established.
 
 The plugin connects UISP CRM to MikroTik through the **native RouterOS API**, normally on port `8728`, or `8729` with TLS. The panel manages that integration; it does not switch the transport to SSH, WinBox, or REST.
+
+## Candidate 2.4.41: separate device technology from service filtering
+
+Fix `invalid_service_filter` when saving the router form. The panel sends `type: mikrotik` as the device technology; a subsequent service lookup incorrectly interpreted it as a provisioning scope. This happened after persistence, so the pool could already be saved despite the error response. Saves without a QoS change now finish before searching services or provisioning. Actual QoS changes explicitly select the edited device. System scopes (`device`, `plan`, `service`, `all`) retain their validation; `mikrotik` is not accepted as a synchronization scope.
+
+The regression submits the complete form payload, including `type`, through `ApiRouter` and checks the successful JSON response, credential redaction and unchanged cache/queue before synchronization. Pool migration, retries, exhaustion and endpoint-write exclusion remain covered. Additional tests exercise QoS changes only on the selected router and reject an invalid system filter before writes.
+
+Validation for 2.4.41 passed: **67 isolated suites**, syntax checks for **69 first-party PHP files**, and 384 verified archive entries. Report: `dist/verification-2.4.41.json`. SHA-256: `4d1c0aa46a22609ee5724b3d031cc3bfee84492a86f9ecc224ab5bc98b0501ae`. Tests use synthetic data; no production UISP or RouterOS changes were performed.
 
 ## Candidate 2.4.40: actionable service resolution and Site pool replacement
 
@@ -529,7 +537,7 @@ Later production evidence identified missing tokens and a URL pasted as the secr
 
 ## Installation and validation readiness
 
-The current version is 2.4.40. Its validation status appears at the beginning of this changelog. Archived-plan recovery confirmation belongs to 2.4.19 and retains its historical scope. Fresh lifecycle evidence retires obsolete intent and queues guarded removal before releasing physically owned addresses. Unknown evidence remains an incident for that service. The separate local-cleanup review retains its limited scope and private backup. A duplicate-reservation migration barrier still requires resolving stored assignments and reloading. Backups remain downloadable from System. The [real-environment test guide](PRUEBAS_REALES.md) contains 260 scenarios and does not claim production validation.
+The current version is 2.4.41. Its validation status appears at the beginning of this changelog. Archived-plan recovery confirmation belongs to 2.4.19 and retains its historical scope. Fresh lifecycle evidence retires obsolete intent and queues guarded removal before releasing physically owned addresses. Unknown evidence remains an incident for that service. The separate local-cleanup review retains its limited scope and private backup. A duplicate-reservation migration barrier still requires resolving stored assignments and reloading. Backups remain downloadable from System. The [real-environment test guide](PRUEBAS_REALES.md) contains 262 scenarios and does not claim production validation.
 
 ### Historical 2.4.17 result
 

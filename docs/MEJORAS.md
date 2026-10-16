@@ -6,6 +6,14 @@ Esta revisión reúne las modificaciones de [dhanielsnieto en el PR #89](https:/
 
 El plugin comunica UISP CRM con los MikroTik mediante la **API nativa de RouterOS**. Los puertos habituales son `8728` para API y `8729` para API con TLS. El panel permite administrar esa integración; no cambia el transporte a SSH, WinBox o REST.
 
+## Candidato 2.4.41 — guardar dispositivos sin confundir el tipo y el filtro
+
+Se corrige `invalid_service_filter` al guardar el formulario de un router. El panel envía `type: mikrotik` como tecnología del dispositivo; ese valor se estaba interpretando después como alcance de una búsqueda de servicios. El fallo ocurría después de persistir los datos y podía mostrar error aunque el pool ya estuviera guardado. Ahora guardar sin cambios de QoS termina antes de buscar servicios o ejecutar aprovisionamiento. Los cambios reales de QoS usan explícitamente el alcance del dispositivo seleccionado. Los filtros de operaciones de sistema (`device`, `plan`, `service`, `all`) conservan su validación; `mikrotik` no se acepta como filtro de sincronización.
+
+La regresión utiliza la petición completa del formulario, incluido `type`, mediante `ApiRouter` y comprueba la respuesta JSON de éxito, la ausencia de contraseñas y la conservación de caché/cola antes de sincronizar. Continúan las comprobaciones de migración del pool, reintentos, agotamiento y exclusión de escrituras. Se agregan pruebas de los cambios QoS en el router seleccionado y del rechazo de un filtro de sistema inválido sin escrituras.
+
+Validación 2.4.41 aprobada: **67 suites aisladas**, sintaxis de **69 archivos PHP propios** y 384 entradas verificadas del instalador. Informe: `dist/verification-2.4.41.json`. SHA-256: `4d1c0aa46a22609ee5724b3d031cc3bfee84492a86f9ecc224ab5bc98b0501ae`. Las pruebas usan datos sintéticos; no se modificaron UISP ni RouterOS de producción.
+
 ## Candidato 2.4.40 — resolver cuentas desde el panel y cambiar pools por Site
 
 **Resolver** aparece junto a cada trabajo con error y en el diagnóstico del servicio. Consulta nuevamente UISP, su catálogo completo y las cuentas del router. Cuando una única cuenta puede asociarse al servicio actual con evidencia vigente, corrige el comentario y sincroniza inmediatamente con un clic. La diferencia de IP no impide corregir un comentario antiguo si la identidad y la exclusividad actuales están comprobadas. Una cuenta manual requiere selección explícita; ante duplicados se elige cuál conservar, sin selección predeterminada. Sólo se retiran los demás registros cuya propiedad se pudo comprobar. Los propietarios vigentes reales y los datos desconocidos conservan su protección y explican la causa concreta.
@@ -529,7 +537,7 @@ La evidencia real posterior identificó tokens ausentes y una URL pegada como se
 
 ## Preparación para instalar y validar
 
-La versión actual es 2.4.40; su validación se indica al principio. La confirmación de planes archivados de 2.4.19 conserva su alcance histórico. La revisión del estado actual retira intenciones de servicios dados de baja y programa la limpieza física necesaria antes de liberar direcciones; una identidad o consulta sin comprobar conserva la incidencia correspondiente. Revisar limpieza mantiene su alcance local independiente y sus respaldos. El modo consulta de una migración pausada conserva sus protecciones hasta resolver las asignaciones y recargar. La [guía de pruebas reales](PRUEBAS_REALES.md) contiene 260 escenarios; sus resultados de laboratorio no acreditan la instalación de producción.
+La versión actual es 2.4.41; su validación se indica al principio. La confirmación de planes archivados de 2.4.19 conserva su alcance histórico. La revisión del estado actual retira intenciones de servicios dados de baja y programa la limpieza física necesaria antes de liberar direcciones; una identidad o consulta sin comprobar conserva la incidencia correspondiente. Revisar limpieza mantiene su alcance local independiente y sus respaldos. El modo consulta de una migración pausada conserva sus protecciones hasta resolver las asignaciones y recargar. La [guía de pruebas reales](PRUEBAS_REALES.md) contiene 262 escenarios; sus resultados de laboratorio no acreditan la instalación de producción.
 
 ### Resultado histórico de 2.4.17
 
