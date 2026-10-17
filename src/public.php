@@ -1,69 +1,256 @@
 <?php
-
-
 chdir(__DIR__);
-//include_once 'includes/cors.php';
+set_time_limit(120);
+ini_set('memory_limit', '512M');
+ini_set('display_errors', '0');
+// The panel HTML and authenticated responses must not survive a plugin update in browser/proxy caches.
+header('Cache-Control: private, no-store, no-cache, must-revalidate');
+header('Pragma: no-cache');
+header('Expires: 0');
+require_once 'lib/api_runtime.php';
+$runtimeRefresh = refresh_plugin_runtime();
+require_once 'lib/api_full_backup.php';
+try { ApiFullBackup::recoverPending(); }
+catch (Throwable $error) {
+    http_response_code(503); header('Content-Type: application/json');
+    echo json_encode(['status'=>'failed','error'=>true,'message'=>'full_backup_recovery_required']); exit;
+}
 require_once 'vendor/autoload.php';
-include_once 'lib/api_logger.php';
-include_once 'lib/api_common.php';
+require_once 'lib/api_common.php';
+require_once 'lib/api_security.php';
+require_once 'lib/api_uisp_client.php';
 
-if (isset($_SERVER['REQUEST_METHOD'])
-    && $_SERVER['REQUEST_METHOD'] == 'OPTIONS') { //skip redirect for options
-    exit();
-}
-
-if(isset($_GET['sync'])){
-    include_once "lib/api_ip_mgmt.php";
-    exit();
-}
-
-$json = file_get_contents('php://input') ?? null;
-
-if(!$json && is_file('test.json')){ // for testing
-    $json = file_get_contents('test.json');
-}
-
-try
-{
-    include_once 'lib/api_cache.php';
-    include_once 'lib/api_setup.php';
-
-    set_error_handler('myErrorHandler');
-    run_setup();
-    cache_setup();
-    cache_sync();
-
-    include_once 'lib/api_router.php';
-
-    if(isset($_FILES) && !empty($_FILES))
-    {//backup restore
-        $bak = $_FILES['backup'] ?? null ;
-        if($bak){ backup_restore(); }
-        header('content-type: application/json');
-        echo '{"status":"ok","error":false,"message":"ok","data":[]}';
-        exit();
+try {
+    $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
+    if (!in_array($method, ['GET', 'POST'], true)) {
+        http_response_code(405);
+        header('Allow: GET, POST');
+        respond('method_not_allowed', true);
+        exit;
     }
-
-    if(!$json)
-    {
-        if (isset($_GET['page']) && $_GET['page'] == 'panel')
-        { //load panel
-            include 'public/panel/index.php';
+    $raw = file_get_contents('php://input', false, null, 0, 1048577);
+    if ($raw === false) throw new RuntimeException('request_read_failed');
+    if (strlen($raw) > 1048576) throw new InvalidArgumentException('request_too_large');
+    $data = $raw !== '' ? json_decode($raw, false, 512, JSON_THROW_ON_ERROR) : null;
+    $config = is_file('data/config.json') ? json_decode(file_get_contents('data/config.json'), true) : [];
+    $webhook = $method === 'POST' && ApiSecurity::webhookAuthorized($data, $_SERVER, $_GET, is_array($config) ? $config : []);
+    $user = null;
+    if (!$webhook) {
+        try { $user = ApiUispClient::security()->getUser(); }
+        catch (Throwable $ignored) {}
+    }
+    $write = isset($_GET['download']) || ($method === 'POST' && (($data->changeType ?? '') !== 'list' || !empty($_FILES)));
+    if (!$webhook && !ApiSecurity::isAdmin($user, $write)) {
+        if ($method === 'POST' && ApiSecurity::isWebhook($data)) {
+            // Authentication failures occur before setup/queue creation. Log only
+            // validated routing metadata, never the request body or credentials.
+            MyLog()->Append([
+                'webhook_rejected',
+                'reason' => ApiSecurity::webhookRejectionReason($data, $_SERVER, $_GET, is_array($config) ? $config : []),
+                'entity' => $data->entity,
+                'entityId' => (int) $data->entityId,
+                'changeType' => $data->changeType,
+            ], LOG_WARNING);
         }
-        exit();
+        http_response_code(403);
+        respond('unauthorized', true);
+        exit;
     }
-
-    $data = json_decode($json);
+    $options = is_file('ucrm.json') ? json_decode(file_get_contents('ucrm.json')) : null;
+    if (!$webhook && $method === 'POST' && !ApiSecurity::sameOrigin($_SERVER, $options->ucrmPublicUrl ?? null)) {
+        http_response_code(403);
+        respond('invalid_origin', true);
+        exit;
+    }
+    if ($method === 'POST' && empty($_FILES)
+        && preg_match('~^application/json(?:\s*;|$)~i', trim($_SERVER['CONTENT_TYPE'] ?? '')) !== 1) {
+        throw new InvalidArgumentException('json_content_type_required');
+    }
+    if ($method === 'POST' && ApiSecurity::isWebhook($data)) {
+        // Authentication has passed. Receipt records delivery, not successful provisioning.
+        try {
+            require_once __DIR__ . '/lib/api_automation_health.php';
+            ApiAutomationHealth::webhookReceived();
+        } catch (Throwable $ignored) { /* Telemetry must not prevent a valid delivery. */ }
+    }
+    set_error_handler('myErrorHandler');
+    require_once 'lib/api_setup.php';
+    require_once 'lib/api_cache.php';
+    $setupComplete = false;
+    if (!$webhook) {
+        require_once 'lib/api_panel_workflows.php';
+        if (ApiPanelWorkflows::handle($method,is_object($data)?$data:null,$_FILES,$_POST,$_GET)) exit;
+    }
+    if (!$webhook && empty($_FILES)) {
+        if ($method === 'POST' && is_object($data)
+            && in_array($data->target ?? null, ['automation_health', 'service_diagnostics', 'provisioning_verification'], true)) {
+            $values = $data->data ?? null;
+            if (($data->changeType ?? '') !== 'list' || !empty($data->entity) || !is_object($values)) throw new InvalidArgumentException('invalid_operations_request');
+            $keys = array_keys(get_object_vars($values));
+            $action = $data->action ?? 'list';
+            if ($data->target === 'automation_health' && $action === 'list' && !$keys) {
+                require_once __DIR__ . '/lib/api_automation_health.php';
+                $result = ApiAutomationHealth::read();
+            } elseif ($data->target === 'service_diagnostics' && $action === 'search' && $keys === ['query']
+                && is_string($values->query) && strlen($values->query) <= 160) {
+                require_once __DIR__ . '/lib/api_service_diagnostics.php';
+                $result = (new ApiServiceDiagnostics())->search($values->query);
+            } elseif ($data->target === 'service_diagnostics' && $action === 'inspect' && $keys === ['serviceId']
+                && is_int($values->serviceId) && $values->serviceId > 0) {
+                require_once __DIR__ . '/lib/api_service_diagnostics.php';
+                $result = (new ApiServiceDiagnostics())->inspect($values->serviceId);
+            } elseif ($data->target === 'provisioning_verification' && $action === 'list' && !$keys) {
+                require_once __DIR__ . '/lib/api_provisioning_verification.php';
+                $result = (new ApiProvisioningVerification())->listing();
+            } elseif ($data->target === 'provisioning_verification' && in_array($action, ['read', 'recheck'], true)
+                && $keys === ['serviceId'] && is_int($values->serviceId) && $values->serviceId > 0) {
+                require_once __DIR__ . '/lib/api_provisioning_verification.php';
+                $verification = new ApiProvisioningVerification();
+                $result = $action === 'recheck' ? $verification->recheck($values->serviceId) : $verification->read($values->serviceId);
+            } else throw new InvalidArgumentException('invalid_operations_request');
+            respond($data->target, false, $result);
+            exit;
+        }
+        // Counts read existing local storage only, even when migration is paused.
+        if ($method === 'POST' && is_object($data) && ($data->changeType ?? '') === 'list'
+            && ($data->target ?? '') === 'jobs_status') {
+            if (!empty($data->entity) || ($data->action ?? 'list') !== 'list' || (isset($data->data)
+                && (!is_object($data->data) || count(get_object_vars($data->data)) !== 0))) {
+                throw new InvalidArgumentException('invalid_jobs_status_request');
+            }
+            require_once 'lib/api_jobs_status.php';
+            respond('jobs_status', false, (new ApiJobsStatus())->read());
+            exit;
+        }
+        if ($method === 'POST' && is_object($data) && ($data->target ?? '') === 'job_recovery') {
+            $values = $data->data ?? null;
+            if (!empty($data->entity) || !is_object($values)) throw new InvalidArgumentException('invalid_job_recovery_request');
+            require_once 'lib/api_job_recovery.php';
+            $recovery = new ApiJobRecovery();
+            if (($data->changeType ?? '') === 'list' && ($data->action ?? 'list') === 'list'
+                && count(get_object_vars($values)) === 0) {
+                $result = $recovery->listing();
+            } elseif (($data->changeType ?? '') === 'recover' && ($data->action ?? '') === 'preview'
+                && in_array(array_keys(get_object_vars($values)), [['sourceJobId'], ['sourceJobId', 'mode']], true)
+                && is_int($values->sourceJobId) && $values->sourceJobId > 0
+                && in_array($values->mode ?? 'resolve', ['resolve', 'preserve', 'discard'], true)) {
+                if (is_file('data/data.db')) (new ApiSetup())->assertCompatible();
+                $result = $recovery->preview($values->sourceJobId, $values->mode ?? 'resolve');
+            } elseif (($data->changeType ?? '') === 'recover' && ($data->action ?? '') === 'apply'
+                && array_keys(get_object_vars($values)) === ['previewToken'] && is_string($values->previewToken)) {
+                if (is_file('data/data.db')) (new ApiSetup())->assertCompatible();
+                $result = $recovery->apply($values->previewToken);
+            } else throw new InvalidArgumentException('invalid_job_recovery_request');
+            respond('job_recovery', false, $result);
+            exit;
+        }
+        if ($method === 'GET' && isset($_GET['download'])) {
+            require_once 'lib/api_job_recovery.php';
+            if (ApiJobRecovery::backupName($_GET['download'])) {
+                ApiJobRecovery::download($_GET['download']);
+                exit;
+            }
+        }
+        if ($method === 'POST' && is_object($data) && ($data->target ?? '') === 'network_repair') {
+            $values = $data->data ?? null;
+            if (!empty($data->entity) || !is_object($values)) throw new InvalidArgumentException('invalid_network_repair_request');
+            require_once 'lib/api_network_repair.php';
+            $repair = new ApiNetworkRepair();
+            if (($data->changeType ?? '') === 'list' && ($data->action ?? 'list') === 'list'
+                && count(get_object_vars($values)) === 0) {
+                $result = $repair->listing();
+            } elseif (($data->changeType ?? '') === 'repair' && ($data->action ?? '') === 'preview'
+                && array_keys(get_object_vars($values)) === ['selection'] && is_array($values->selection)) {
+                if (is_file('data/data.db')) (new ApiSetup())->assertCompatible();
+                $selection = [];
+                foreach ($values->selection as $item) {
+                    if (!is_object($item) || array_diff(array_keys(get_object_vars($item)), ['serviceId', 'fields'])
+                        || !is_int($item->serviceId ?? null) || !is_array($item->fields ?? null))
+                        throw new InvalidArgumentException('invalid_network_repair_request');
+                    $selection[] = ['serviceId' => $item->serviceId, 'fields' => $item->fields];
+                }
+                $result = $repair->preview($selection);
+            } elseif (($data->changeType ?? '') === 'repair' && ($data->action ?? '') === 'apply'
+                && array_keys(get_object_vars($values)) === ['previewToken'] && is_string($values->previewToken)) {
+                if (is_file('data/data.db')) (new ApiSetup())->assertCompatible();
+                $result = $repair->apply($values->previewToken);
+            } else throw new InvalidArgumentException('invalid_network_repair_request');
+            respond('network_repair', false, $result);
+            exit;
+        }
+        // The monitor endpoint only reads its independent completed snapshot.
+        // Polling never initializes jobs, refreshes CRM/cache, or gates writes.
+        if ($method === 'POST' && is_object($data) && ($data->changeType ?? '') === 'list'
+            && ($data->target ?? '') === 'crm_network_conflicts' && empty($data->entity)) {
+            if (($data->action ?? 'list') !== 'list' || (isset($data->data)
+                && (!is_object($data->data) || count(get_object_vars($data->data)) !== 0))) {
+                throw new InvalidArgumentException('invalid_crm_monitor_request');
+            }
+            require_once 'lib/api_crm_network_monitor.php';
+            respond('crm_network_conflicts', false, (new ApiCrmNetworkMonitor())->read());
+            exit;
+        }
+        require_once 'lib/api_panel_recovery.php';
+        require_once 'lib/api_crm_network_resolution.php';
+        if (ApiCrmNetworkResolution::panelRequest($method, is_object($data) ? $data : null)) exit;
+        if (ApiPanelRecovery::cleanupRequest($method, is_object($data) ? $data : null, $_GET)) exit;
+        if (ApiPanelRecovery::diagnosticRequest($method, is_object($data) ? $data : null, $_GET)) exit;
+    }
+    run_setup();
+    $setupComplete = true;
+    cache_setup();
+    require_once 'lib/api_router.php';
+    require_once 'lib/api_backup.php';
+    if (isset($_GET['download'])) {
+        if ($method !== 'GET') throw new InvalidArgumentException('invalid_download_method');
+        ApiBackup::download($_GET['download']);
+        exit;
+    }
+    if (isset($_GET['sync'])) throw new InvalidArgumentException('use_authenticated_sync_action');
+    if (!empty($_FILES)) {
+        ApiBackup::restoreUpload($_FILES['backup'] ?? []);
+        respond('backup_restored');
+        exit;
+    }
+    if ($method === 'GET') {
+        if (($_GET['page'] ?? '') !== 'panel') throw new InvalidArgumentException('page_not_found');
+        header('Content-Type: text/html; charset=utf-8');
+        // This file contains static HTML; read it from disk instead of caching it as PHP bytecode.
+        if (readfile('public/panel_v2/index.php') === false) throw new RuntimeException('panel_read_failed');
+        exit;
+    }
+    if (!is_object($data)) throw new InvalidArgumentException('request_empty');
+    // Refresh failure does not block billing events: retain the last valid cache.
+    try { cache_sync(); }
+    catch (Throwable $error) { MyLog()->Append('Cache refresh failed; retained previous snapshot', LOG_ERR); }
     $api = new ApiRouter($data);
     $api->route();
     $api->http_response();
+} catch (Throwable $error) {
+    MyLog()->Append(['request_failed', 'type' => get_class($error), 'message' => $error->getMessage()], LOG_ERR);
+    if (!headers_sent()) http_response_code($error instanceof InvalidArgumentException || $error instanceof JsonException ? 400 : 500);
+    $details = $error instanceof ApiVersionMismatchException ? $error->getVersions() : [];
+    if ($details) $details['runtime_cache_needs_restart'] = (bool) ($runtimeRefresh['needs_restart'] ?? false);
+    if ($details) MyLog()->Append(['version_mismatch' => $details], LOG_ERR);
+    if ($error instanceof ApiNetworkAddressConflictException) {
+        $details = $error->getDetails();
+        MyLog()->Append(['network_address_conflicts' => $details], LOG_ERR);
+        // A billing webhook is not an administrative read grant, including when
+        // compatibility mode explicitly accepts events without a secret.
+        if ($webhook ?? false) $details = ['duplicate_groups' => $details['duplicate_groups']];
+        if (!($webhook ?? false) && !($setupComplete ?? false)) {
+            try {
+                require_once 'lib/api_panel_recovery.php';
+                if (ApiPanelRecovery::handle($method, is_object($data) ? $data : null, $_GET, $error)) exit;
+            } catch (Throwable $recoveryError) {
+                MyLog()->Append(['recovery_read_failed', 'type' => get_class($recoveryError)], LOG_ERR);
+                http_response_code($recoveryError instanceof InvalidArgumentException ? 400 : 500);
+                respond($recoveryError instanceof InvalidArgumentException ? $recoveryError->getMessage() : 'recovery_read_failed', true);
+                exit;
+            }
+        }
+    }
+    $metadata = $error instanceof ApiNetworkAddressConflictException && !($webhook ?? false) && !($setupComplete ?? false)
+        ? ['recovery' => ['readOnly' => true]] : [];
+    respond($error instanceof InvalidArgumentException ? $error->getMessage() : 'operation_failed_check_log', true, $details, $metadata);
 }
-catch ( \Exception | Error $error)
-{
-    MyLog()->Append(sprintf("Global exception message: %s \nTrace: %s",
-        $error->getMessage(),$error->getTraceAsString()));
-    respond($error->getMessage(),true);
-}
-
-
-

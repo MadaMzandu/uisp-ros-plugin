@@ -1,8 +1,12 @@
 <?php
 include_once 'api_attributes.php';
+include_once 'api_job_queue.php';
 
 class ApiTrim
 {// trim request to min and map to db fields
+    private ?ApiAttributes $readAttributes = null;
+
+    public function __construct(?ApiAttributes $attributes = null) { $this->readAttributes = $attributes; }
 
     public function trim($type, $request): ?array
     {
@@ -11,6 +15,8 @@ class ApiTrim
             case 'services': return $this->trim_service($request);
             case 'client':
             case 'clients': return $this->trim_client($request);
+            case 'site':
+            case 'sites': return $this->trim_site($request);
             default: return null;
         }
     }
@@ -29,7 +35,14 @@ class ApiTrim
         $array = json_decode(json_encode($item),true);
         $entity = array_fill_keys(['id','firstName','lastName'],null);
         $entity = array_intersect_key($array,$entity);
-        $entity['company'] = $item->companyName ?? null ;
+        if (property_exists($item, 'companyName')) { $entity['company'] = $item->companyName; }
+        // An omitted lifecycle property is a partial update. Client Zone access
+        // (isActive) is unrelated to archive status and must never fill it in.
+        if (property_exists($item, 'isArchived')) {
+            $value = $item->isArchived;
+            $entity['isArchived'] = in_array($value, [true, 1, '1'], true) ? 1
+                : (in_array($value, [false, 0, '0'], true) ? 0 : null);
+        }
         return ['entity' => $entity];
     }
 
@@ -40,27 +53,67 @@ class ApiTrim
         $return['action'] = $request->changeType ?? 'insert' ;
         $return['entity'] = $this->extract($entity);
         if($previous){
-            $return['previous'] = $this->extract($previous);
+            try { $return['previous'] = $this->extract($previous); }
+            catch (InvalidArgumentException $error) {
+                if ($error->getMessage() !== 'service_site_not_configured') throw $error;
+                // A router may have been renamed or removed since the event's old
+                // attributes were recorded. Only confirmed applied state can replace
+                // that obsolete reference; never guess an endpoint from the label.
+                $id = filter_var($entity->id ?? $request->entityId ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+                $oldId = filter_var($previous->id ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+                if ($id === false || $oldId !== $id) throw $error;
+                $applied = myJobQueue()->appliedSnapshot($id);
+                if (!$this->usableAppliedIdentity($applied, $id)) throw $error;
+                // Internal frozen commands/configuration belong to the old job, not
+                // to the desired service that ApiAction merges with these fields.
+                $fields = 'id,clientId,status,uploadSpeed,downloadSpeed,uploadSpeedOverride,downloadSpeedOverride,trafficShapingOverrideEnd,trafficShapingOverrideEnabled,price,totalPrice,currencyCode,'
+                    . 'planId,device,username,password,mac,hotspot,duid,iaid,callerId,network';
+                $return['previous'] = array_intersect_key($applied, array_fill_keys(explode(',', $fields), true));
+                foreach (['address', 'address6'] as $field) {
+                    if (isset($applied[$field]) && $applied[$field] !== '') $return['previous']['network'][$field] = $applied[$field];
+                }
+            }
         }
         return $return;
     }
 
+    private function usableAppliedIdentity(array $applied, int $id): bool
+    {
+        if ((int) ($applied['id'] ?? 0) !== $id || (int) ($applied['device'] ?? 0) < 1
+            || empty($applied['_commands']) || !is_array($applied['_commands'])
+            || empty($applied['_device']['ip'])) return false;
+        foreach (['username', 'mac'] as $field) {
+            if (isset($applied[$field]) && $applied[$field] !== '') return true;
+        }
+        return false;
+    }
+
     private function extract($item): array
     {
-        $entity = $this->attrs()->extract($item->attributes ?? []);
+        // An omitted property is a partial update; an explicit empty list clears attributes.
+        $entity = property_exists($item, 'attributes') ? $this->attrs()->extract($item->attributes ?? []) : [];
         $fields = "id,clientId,status,uploadSpeed,".
-            "downloadSpeed,price,totalPrice,currencyCode";
+            "downloadSpeed,uploadSpeedOverride,downloadSpeedOverride,trafficShapingOverrideEnd,trafficShapingOverrideEnabled,price,totalPrice,currencyCode";
         $array = json_decode(json_encode($item),true);
         $trim = array_intersect_key($array,
             array_fill_keys(explode(',',$fields),null));
         $entity = array_replace($entity,$trim);
-        $entity['planId'] = $item->servicePlanId ?? null;
+        if (array_key_exists('trafficShapingOverrideEnabled', $entity)) {
+            $flag = $entity['trafficShapingOverrideEnabled'];
+            if ($flag !== null && !in_array($flag, [true, false, 1, 0, '1', '0'], true))
+                throw new InvalidArgumentException('invalid_service_shaping_override');
+            $entity['trafficShapingOverrideEnabled'] = $flag === null ? null : (int) in_array($flag, [true, 1, '1'], true);
+            if ($entity['trafficShapingOverrideEnabled'] === 1
+                && (!array_key_exists('uploadSpeedOverride', $entity) || !array_key_exists('downloadSpeedOverride', $entity)))
+                throw new InvalidArgumentException('incomplete_service_shaping_override');
+        }
+        if (property_exists($item, 'servicePlanId')) { $entity['planId'] = $item->servicePlanId; }
         return $entity ;
     }
 
     private function attrs(): ApiAttributes
     {
-        return myAttr();
+        return $this->readAttributes ?? myAttr();
     }
 
 }

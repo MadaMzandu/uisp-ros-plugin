@@ -8,6 +8,9 @@ class ApiAttributes
     private ?array $_devmap = null;
     private ?object  $_conf = null ;
     private ?array $_attrs = null ;
+    private ?ApiSqlite $readDatabase = null;
+
+    public function __construct(?ApiSqlite $database = null) { $this->readDatabase = $database; }
 
     public function set_user($serviceId, $clientId): void
     {
@@ -15,16 +18,23 @@ class ApiAttributes
         $conf = $this->conf() ;
         $values = [];
         foreach(['user','pass'] as $nk){
-            $key = $conf->{"pppoe_${nk}_attr"} ?? 'NoKey';
+            $key = $conf->{"pppoe_{$nk}_attr"} ?? 'NoKey';
             $id = $attrs[$key]  ?? null ;
+            if (!$id) throw new RuntimeException('credential_attribute_missing');
             $values[$nk] = ['customAttributeId' => $id];
         }
-        $values['user']['value'] = sprintf('%s-%s',$this->string(5),$clientId);
-        $values['pass']['value'] = $this->string();
+        $service = $this->ucrm()->get('clients/services/' . (int) $serviceId);
+        foreach ($service->attributes ?? [] as $attribute) {
+            foreach (['user','pass'] as $field) {
+                if ($attribute->customAttributeId == $values[$field]['customAttributeId'] && isset($attribute->value) && $attribute->value !== '') $values[$field]['value'] = $attribute->value;
+            }
+        }
+        $values['user']['value'] = $values['user']['value'] ?? sprintf('%s-%s', $this->string(8), $serviceId);
+        $values['pass']['value'] = $values['pass']['value'] ?? $this->string(16);
         if($values) {
            $done = $this->ucrm()
                 ->patch('clients/services/'.$serviceId,['attributes' => array_values($values)]);
-          if(!property_exists($done,'id')) MyLog()->Append($done);
+          if (!is_object($done) || !isset($done->id)) throw new RuntimeException('credential_update_failed');
         }
     }
 
@@ -34,7 +44,8 @@ class ApiAttributes
         $device = $conf->device_name_attr ?? null ;
         $user = $conf->pppoe_user_attr ?? null ;
         $mac = $conf->mac_addr_attr ?? null ;
-        return $device && ($user || $mac);
+        return $device !== null && $device !== ''
+            && (($user !== null && $user !== '') || ($mac !== null && $mac !== ''));
     }
 
     private function string($length = 8): string
@@ -51,7 +62,7 @@ class ApiAttributes
             foreach ($chars as $set) {
                 if(strlen($str) >= $length){ continue; }
                 $array = str_split($set);
-                 $str .= $array[array_rand($array)];
+                 $str .= $array[random_int(0, count($array) - 1)];
             }
         }
         return $str ;
@@ -61,9 +72,15 @@ class ApiAttributes
     {//extract attribute values and map to database keys
         $fill = array_fill_keys($this->db_map(),null);
         $map = array_replace($fill,$this->strip($attributes));
-        $devices = $this->dev_map();
         $device = $map['device'] ?? null ;
-        if($device) $map['device'] = $devices[strtolower($device)] ?? null ;
+        if ($device !== null && $device !== '') {
+            $devices = $this->dev_map();
+            $id = $devices[strtolower($device)] ?? null;
+            // A selected but unknown/ambiguous Site is a routing error, never a request
+            // to detach the service and delete its previously provisioned account.
+            if ($id === null) throw new InvalidArgumentException('service_site_not_configured');
+            $map['device'] = $id;
+        }
         return $this->split($map) ;
     }
 
@@ -72,9 +89,17 @@ class ApiAttributes
         $fill = array_fill_keys(['address','address6'],'&^%#@');
         $net = array_intersect_key($values,$fill);
         $map = array_diff_key($values,$fill);
-        if(preg_grep("#[\d.:a-fA-F]+#",$net)){
-            $map['network'] = $net ;
+        $network = [];
+        foreach (['address'=>'ip_addr_attr','address6'=>'ip_addr6_attr'] as $field=>$setting) {
+            $key = $this->conf()->{$setting} ?? null;
+            // extract() receives a complete attributes collection. A configured
+            // family omitted or explicitly emptied in that collection is a real
+            // clear; it must survive the desired-state merge with an older cache.
+            // Keep malformed nonempty values too, so strict address validation
+            // rejects them instead of silently treating them as removal.
+            if (is_string($key) && trim($key) !== '') $network[$field] = $net[$field] ?? null;
         }
+        if ($network) $map['network'] = $network;
         return $map ;
     }
 
@@ -85,10 +110,16 @@ class ApiAttributes
         $dbmap = $this->db_map() ;
         $stripped = [];
         foreach($attributes as $attr){
+            if (!is_object($attr) || !isset($attr->key)) { continue; }
             $native = array_search($attr->key,$conf,true);
             $dbcol = $dbmap[$native] ?? null ;
             if($dbcol){
-                $stripped[$dbcol] = empty($attr->value) ? null : trim($attr->value);
+                $value = $attr->value ?? null;
+                if ($value !== null && !is_scalar($value)) { throw new InvalidArgumentException('invalid_service_attribute_value'); }
+                // RouterOS credentials are literal strings. In particular "0" and surrounding spaces are valid.
+                if ($value !== null && !in_array($dbcol, ['username','password'], true)) { $value = trim((string) $value); }
+                elseif ($value !== null) { $value = (string) $value; }
+                $stripped[$dbcol] = $value === '' ? null : $value;
             }
         }
         return $stripped ;
@@ -96,12 +127,15 @@ class ApiAttributes
 
     private function dev_map(): array
     {
-        if(empty($this->_devmap)){
+        if($this->_devmap === null){
             $this->_devmap = [];
             $devices = $this->db()->selectAllFromTable('devices') ?? [];
             foreach ($devices as $device){
-                $name = $device['name'] ?? 'Noname';
-                $this->_devmap[strtolower(trim($name))] = $device['id'] ?? null;
+                $name = strtolower(trim((string) ($device['name'] ?? '')));
+                if ($name === '') continue;
+                $id = filter_var($device['id'] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+                // Normalized duplicates cannot be resolved safely by row order.
+                $this->_devmap[$name] = array_key_exists($name, $this->_devmap) || $id === false ? null : $id;
             }
         }
         return $this->_devmap ;
@@ -135,7 +169,7 @@ class ApiAttributes
         ];
     }
 
-    private function db(): ApiSqlite { return mySqlite(); }
+    private function db(): ApiSqlite { return $this->readDatabase ?? mySqlite(); }
 
     private function conf(): ?object
     {

@@ -23,6 +23,8 @@ CREATE TABLE IF NOT EXISTS "devices" (
     "port"  INTEGER ,
     "qos" INTEGER ,
     "type"  TEXT,
+    "ssl" INTEGER,
+    "allowSelfSigned" INTEGER DEFAULT 0,
     "user"  TEXT,
     "password"      TEXT,
     "dbname"        TEXT,
@@ -63,8 +65,8 @@ CREATE TABLE IF NOT EXISTS "config" (
     PRIMARY KEY("key")
 );
 
-CREATE INDEX "address_index" ON "network" ("address");
-CREATE INDEX "address6_index" ON "network" ("address6");
-CREATE INDEX "device_index" ON "services" ("device");
-CREATE INDEX "plan_index" ON "services" ("planId");
-CREATE INDEX "dev_name_index" ON "devices" ("name" COLLATE nocase);
+CREATE UNIQUE INDEX IF NOT EXISTS "unique_address" ON "network" ("address") WHERE address IS NOT NULL AND address<>'';
+CREATE UNIQUE INDEX IF NOT EXISTS "unique_address6" ON "network" ("address6") WHERE address6 IS NOT NULL AND address6<>'';
+CREATE INDEX IF NOT EXISTS "device_index" ON "services" ("device");
+CREATE INDEX IF NOT EXISTS "plan_index" ON "services" ("planId");
+CREATE INDEX IF NOT EXISTS "dev_name_index" ON "devices" ("name" COLLATE nocase);

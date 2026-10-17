@@ -11,3 +11,6 @@
 /uisp/
 /src/lib/timer.php
 src/ros-plugin-test.zip
+/dist/
+__pycache__/
+*.pyc

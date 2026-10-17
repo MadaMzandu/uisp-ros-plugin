@@ -4,6 +4,7 @@ CREATE TABLE IF NOT EXISTS "clients" (
      "company"	TEXT COLLATE NOCASE,
      "firstName"	TEXT COLLATE NOCASE,
      "lastName"	TEXT COLLATE NOCASE,
+     "isArchived"	INTEGER,
      PRIMARY KEY("id"));
 CREATE TABLE IF NOT EXISTS "network" (
      "id"	INTEGER NOT NULL,
@@ -18,6 +19,10 @@ CREATE TABLE IF NOT EXISTS "services" (
       "status"	INTEGER,
       "uploadSpeed"	REAL,
       "downloadSpeed"	REAL,
+      "trafficShapingOverrideEnabled"	INTEGER,
+      "uploadSpeedOverride"	REAL,
+      "downloadSpeedOverride"	REAL,
+      "trafficShapingOverrideEnd"	TEXT,
       "username"	TEXT COLLATE NOCASE,
       "password"	TEXT,
       "mac"	TEXT COLLATE NOCASE,

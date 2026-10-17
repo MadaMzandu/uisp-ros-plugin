@@ -65,29 +65,55 @@ class ApiRouter
             bail('entity_unsupported: ' .$entity);
         }
         $change = $this->data->changeType ?? 'none';
-        $allowed = "insert,edit,admin,data,update,list";
+        $allowed = "insert,edit,delete,suspend,unsuspend,suspend_cancel,end,activate,update,list";
         if (!in_array($change, explode(',',$allowed))) {
             bail('change_unsupported: ' .$change);
         }
         return true;
     }
 
+    private function sanitizeData($data) {
+        if (is_array($data) || is_object($data)) {
+            $result = is_array($data) ? [] : new stdClass();
+            foreach ($data as $key => $value) {
+                if (is_array($result)) {
+                    $result[$key] = $this->sanitizeData($value);
+                } else {
+                    $result->$key = $this->sanitizeData($value);
+                }
+            }
+            return $result;
+        } elseif (is_float($data)) {
+            if (is_nan($data) || is_infinite($data)) {
+                return 0; // Replace NaN/Inf with 0
+            }
+        }
+        return $data;
+    }
+
     public function http_response(): void
     {
+        if (defined('JSON_RESPOND_SENT')) return;
+        define('JSON_RESPOND_SENT', true);
         if(!headers_sent())header('content-type: application/json');
         $stat = 'ok';
         $error = $this->status->error ?? false ;
         if ($error) { // failed response
-            if(!headers_sent()) header('X-API-Response: 202', true, 202);
+            if(!headers_sent()) http_response_code(502);
             $stat = 'failed';
         }
         $response = [
             'status' => $stat,
             'error' => $error,
             'message' => $this->status->message ?? ($error ? 'error_unknown' : 'ok'),
-            'data' => $this->result ?? [],
+            'data' => $this->sanitizeData($this->result ?? []),
         ];
-        echo json_encode($response,JSON_PRETTY_PRINT);
+        $json = json_encode($response, JSON_PRETTY_PRINT | JSON_INVALID_UTF8_SUBSTITUTE);
+        if ($json === false) {
+            $json = '{"status":"error","error":true,"message":"JSON Encode Error: ' . json_last_error_msg() . '","data":[]}';
+        }
+        MyLog()->Append('Outputting Router JSON length: ' . strlen($json));
+        echo $json;
     }
 
 }

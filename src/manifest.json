@@ -5,7 +5,7 @@
     "displayName": "Ros Plugin",
     "description": "Real time provisioning for RouterOs",
     "url": "",
-    "version": "2.3.6.2",
+    "version": "2.4.48",
     "ucrmVersionCompliancy": {
       "min": "2.14.0-beta4",
       "max": null
@@ -17,17 +17,30 @@
     "author": "Madalitso Mzandu"
   },
   "menu": [
-        {
-            "key": "Ros Plugin",
-            "label": "Panel",
-            "type" : "admin",
-            "target": "iframe",
-            "parameters":{
-                "page": "panel"
-            }
-        }
-    ],
+    {
+      "key": "Ros Plugin",
+      "label": "Panel",
+      "type": "admin",
+      "target": "iframe",
+      "parameters": {
+        "page": "panel"
+      }
+    }
+  ],
   "configuration": [
+    {
+      "key": "webhookSecret",
+      "label": "Secreto del webhook (solo clave, mínimo 32 caracteres)",
+      "description": "Escriba únicamente la clave en este campo. En Terminal → Webhooks coloque la URL completa terminada en ?webhookToken=SU_CLAVE; también puede enviar X-Webhook-Token.",
+      "required": 0
+    },
+    {
+      "key": "webhookAllowWithoutSecret",
+      "label": "Permitir webhooks sin secreto (compatibilidad)",
+      "description": "Al activarlo, los eventos válidos de clientes y servicios se aceptan sin clave. El panel y las acciones administrativas siguen requiriendo una sesión autorizada. Desactivado exige el secreto configurado.",
+      "type": "checkbox",
+      "required": 0
+    },
     {
       "key": "unmsToken",
       "label": "UNMS api token",
@@ -44,7 +57,13 @@
     {
       "key": "syncAttrHour",
       "label": "Sync Addresses from Router to UISP Attribute (Hour)",
-      "description": "Hour to sync addresses: 0-24 (empty to disable)",
+      "description": "Hour to sync addresses: 0-23 (empty to disable)",
+      "required": 0
+    },
+    {
+      "key": "syncTimezone",
+      "label": "Zona horaria de sincronización de IP",
+      "description": "Identificador como America/Caracas. Vacío utiliza la zona horaria del servidor.",
       "required": 0
     }
   ],

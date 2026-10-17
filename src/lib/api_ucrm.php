@@ -1,6 +1,7 @@
 <?php
 
 require_once 'vendor/autoload.php';
+require_once __DIR__ . '/api_uisp_client.php';
 include_once 'api_ucrm_web.php';
 
 const USE_UCRM_CURL = 0;
@@ -27,17 +28,24 @@ class ApiUcrm
     private function exec()
     {
         if(USE_UCRM_CURL) return $this->web_exec();
-        $api = $this->unms && is_string($this->token())
-            ? UnmsApi::create($this->token())
-            : UcrmApi::create();
         $action = $this->method;
         try{
+            if ($this->unms && !$this->token()) throw new RuntimeException('UISP Network token is not configured');
+            $api = $this->unms ? ApiUispClient::network($this->token()) : ApiUispClient::crm();
             $response = $api->$action($this->url, $this->data);
             return json_decode(json_encode($response), $this->assoc);
         }
-        catch (Exception $e){
-            MyLog()->Append([$e->getMessage(),$e->getTraceAsString()]);
-            return null ;
+        catch (\Throwable $e){
+            $diagnostic = ['uisp_request_failed', 'path' => $this->url, 'method' => $action, 'type' => get_class($e)];
+            for ($failure = $e; $failure !== null; $failure = $failure->getPrevious()) {
+                if ($failure instanceof \GuzzleHttp\Exception\RequestException && $failure->hasResponse()) {
+                    $status = $failure->getResponse()->getStatusCode();
+                    if ($status >= 100 && $status <= 599) $diagnostic['http_status'] = $status;
+                    break;
+                }
+            }
+            MyLog()->Append($diagnostic, LOG_ERR);
+            throw new RuntimeException('UISP request failed: ' . $action . ' ' . $this->url, 0, $e);
         }
     }
 

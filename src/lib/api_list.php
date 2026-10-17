@@ -1,13 +1,20 @@
 <?php
 include_once 'api_update.php';
 include_once 'api_ucrm.php';
+require_once __DIR__ . '/api_plan_catalog.php';
 class ApiList
 {
     private string $mode ;
     private $result = null ;
     private $data;
+    private array $serviceParams = [];
 
     public function exec(): void
+    {
+        myJobQueue()->withAdministrativeLock(function (): void { $this->dispatch(); });
+    }
+
+    private function dispatch(): void
     {
         $this->result = $this->list();
     }
@@ -26,6 +33,7 @@ class ApiList
             case 'orphans': return $this->list_orphans();
             case 'messages':
             case 'lang': return $this->list_msg();
+            case 'sys': return $this->list_sys();
             default: return null;
         }
     }
@@ -37,13 +45,15 @@ class ApiList
 
     private function list_plans(): array
     {
-        $plans = $this->find_plans();
-        if($plans){ $this->db()->edit(array_values($plans),'plans'); }
+        $plans = null;
+        try { $plans = $this->find_plans(); }
+        catch (Throwable $error) { MyLog()->Append('Plan refresh failed; retained previous plans', LOG_WARNING); }
+        if($plans){ ApiPlanCatalog::save($plans); }
         $from_db = $this->find_db_plans();
         $res = [];
         foreach($from_db as $v){
             $id = $v['id'];
-            $v['archive'] = !in_array($id,array_keys($plans));
+            $v['archive'] = is_array($plans) && (!isset($plans[$id]) || !empty($plans[$id]['archive']));
             $res[] = $v;
         }
 
@@ -53,11 +63,33 @@ class ApiList
 
     public function list_msg(): array
     {
-        $accept = $_SERVER['HTTP_ACCEPT_LANGUAGE'] ; //add trailing comma
-        $split = preg_split("/[;,]+/",$accept) ;
-        $grep = preg_grep("/[a-zA-Z]+$/",$split);
-        $first = array_shift($grep) ?? 'en-USA' ;
-        $lang = preg_replace("/-.*/",'',$first);
+        $config = $this->db()->readConfig();
+        $override_lang = $config->plugin_language ?? 'system';
+        // A browser preference changes only this read; it never updates shared settings.
+        $requested = $this->data->data->language ?? null;
+        $allowed = ['es', 'en', 'pt', 'fr', 'de', 'it', 'af', 'sw'];
+        if (is_string($requested) && in_array($requested, $allowed, true)) {
+            $override_lang = $requested;
+        }
+        
+        if ($override_lang !== 'system' && !empty($override_lang)) {
+            $lang = $override_lang;
+        } else {
+            $accept = $_SERVER['HTTP_ACCEPT_LANGUAGE'] ?? 'en';
+            $lang = 'en';
+            $bestQuality = 0.0;
+            foreach (explode(',', is_string($accept) ? $accept : '') as $candidate) {
+                if (!preg_match('/^([a-z]{2})(?:-[a-z0-9]{1,8})*(?:\\s*;\\s*q=(0(?:\\.\\d{1,3})?|1(?:\\.0{1,3})?))?$/iD', trim($candidate), $match)) continue;
+                $primary = strtolower($match[1]);
+                $quality = isset($match[2]) ? (float) $match[2] : 1.0;
+                if (in_array($primary, $allowed, true) && $quality > $bestQuality) {
+                    $lang = $primary;
+                    $bestQuality = $quality;
+                }
+            }
+        }
+        $lang = is_string($lang) ? strtolower($lang) : 'en';
+        if (!in_array($lang, $allowed, true)) $lang = 'en';
         $data = [];
         foreach (['messages','fields'] as $name){
             $dir = 'includes/l10n/';
@@ -75,8 +107,18 @@ class ApiList
         $device = $this->db()->selectDeviceById($id);
         $type = $device->type ?? null ;
         $api = $type == 'mikrotik' ? new MtData() : null ;
-        if($api) fail('orphan_list_fail',[$device,$this->data]);
-        return $api->get_orphans($device);
+        if(!$api) fail('orphan_list_fail',[$device,$this->data]);
+        $raw = $api->get_orphans($device);
+        $mapped = [];
+        foreach ($raw as $item) {
+            $mapped[] = [
+                'name' => $item['name'] ?? $item['comment'] ?? null,
+                'mac' => $item['mac-address'] ?? null,
+                'address' => $item['address'] ?? $item['target'] ?? $item['remote-address'] ?? null,
+                'path' => $item['path'] ?? null
+            ];
+        }
+        return $mapped;
     }
 
     private function list_devices(): array
@@ -91,6 +133,7 @@ class ApiList
             $device['status'] = $status[$device['id']] ?? false;
             $device['disabled'] = $disabled[$device['id']] ?? false ;
             $list[] = $device ;
+            unset($list[count($list) - 1]['password']);
         }
         MyLog()->Append(['device_list_success','items: '.sizeof($list)]);
         return $list ;
@@ -120,15 +163,16 @@ class ApiList
     {
         $db = $this->dbx2();
         $data = ['data' => []];
-        $data['count'] = $db->querySingle($this->svc_sql(true)) ?? 0;
-        $f = $db->query($this->svc_sql());
-        while($r = $f->fetchArray(SQLITE3_ASSOC)){
+        $data['count'] = $db->singleQuery($this->svc_sql(true), false, $this->serviceParams) ?? 0;
+        $rows = $db->selectCustom($this->svc_sql(), $this->serviceParams);
+        foreach ($rows as $r) {
             $r['address'] ??= $r['a4'] ?? null;
             $r['address6'] ??= $r['a6'] ?? null;
             $r['username'] = $r['username'] ?? $r['mac'];
             $r['client'] = $r['company'] ?? $r['firstName'] . ' ' . $r['lastName'];
             $r['pricef'] = sprintf('%01.2f',$r['price']);
             $data['data'][] = $r ;
+            unset($data['data'][count($data['data']) - 1]['password']);
         }
         $db->close();
         MyLog()->Append(['list_services','items: '. sizeof($data['data'])]);
@@ -138,12 +182,9 @@ class ApiList
 
     private function list_jobs(): array
     {
-        $r = null ;
-        $fn = 'data/queue.json';
-        if(is_file($fn)){
-            $r = json_decode(file_get_contents($fn),true);
-        }
-        return is_array($r) ? $r : [];
+        require_once __DIR__ . '/api_job_queue.php';
+        require_once __DIR__ . '/api_job_context.php';
+        return (new ApiJobContext())->enrich(myJobQueue()->list());
     }
 
     private function list_backups(): array
@@ -151,7 +192,7 @@ class ApiList
         $files = [];
         $dir = 'data';
         if(is_dir($dir)){
-            $re = '#^backup-\d+#';
+            $re = '#^backup-[0-6]$#D';
             $list = preg_grep($re,scandir($dir));
             foreach ($list as $file){
                 $r = [];
@@ -162,7 +203,9 @@ class ApiList
             }
 
         }
-        return $files;
+        require_once __DIR__ . '/api_network_cleanup.php';
+        require_once __DIR__ . '/api_job_recovery.php';
+        return array_merge($files, ApiNetworkCleanup::listBackups($dir), ApiJobRecovery::listBackups($dir));
     }
 
     private function find_disabled(): array
@@ -186,7 +229,7 @@ class ApiList
             try{
                 $conn = @fsockopen($device['ip'],
                     $port,
-                    $code, $err, 8);
+                    $code, $err, 2);
                 $state = is_resource($conn);
                 $status[$id] = $state ;
                 if($state){ fclose($conn); }
@@ -211,7 +254,7 @@ class ApiList
 
     private function find_devices(): array
     {
-        $r = $this->db()->selectAllFromTable('devices');
+        $r = $this->db()->selectAllFromTable('devices') ?? [];
         $tmp = [];
         foreach ($r as $item) { $tmp[$item['id']] = $item ; }
         return $tmp;
@@ -221,32 +264,58 @@ class ApiList
 
     private function find_db_plans(): array
     {
-        $st = [
-            "SELECT id,name,last,created, IFNULL(ratio,1) as ratio,",
-            "IFNULL(uploadOverride,uploadSpeed) as uploadSpeed,", //use override if set
-            "IFNULL(downloadOverride,downloadSpeed) as downloadSpeed,",
-            "IFNULL(priorityUpload,8) as priorityUpload, IFNULL(priorityDownload,8) as priorityDownload,",
-            "IFNULL(limitUpload,0) as limitUpload, IFNULL(limitDownload,0) as limitDownload,",
-            "IFNULL(burstUpload,0) as burstUpload, IFNULL(burstDownload,0) as burstDownload,",
-            "IFNULL(threshUpload,0) as threshUpload, IFNULL(threshDownload,0) as threshDownload,",
-            "IFNULL(timeUpload,1) as timeUpload, IFNULL(timeDownload,1) as timeDownload",
-            "FROM plans"
-        ];
-        return $this->db()->selectCustom(implode(' ',$st));
+        require_once __DIR__ . '/data.php';
+        $rows = $this->db()->selectCustom('SELECT id,name,last,created,ratio,uploadSpeed,downloadSpeed,' .
+            'uploadOverride,downloadOverride,priorityUpload,priorityDownload,limitUpload,limitDownload,' .
+            'burstUpload,burstDownload,threshUpload,threshDownload,timeUpload,timeDownload FROM plans') ?? [];
+        $defaults = ['ratio'=>1, 'priorityUpload'=>8, 'priorityDownload'=>8, 'limitUpload'=>0,
+            'limitDownload'=>0, 'burstUpload'=>0, 'burstDownload'=>0, 'threshUpload'=>0,
+            'threshDownload'=>0, 'timeUpload'=>1, 'timeDownload'=>1];
+        foreach ($rows as &$row) {
+            $row = Data::normalizePlanNumbers($row);
+            $row['numericIssues'] = Data::planNumericIssues($row);
+            $invalid = array_fill_keys(array_column($row['numericIssues'], 'field'), true);
+            // Diagnose the original value before JSON sanitization can disguise infinity as zero.
+            // These replacements affect the response only; reviewing a plan never repairs storage.
+            foreach ($invalid as $field => $ignored) if (array_key_exists($field, $row)) $row[$field] = null;
+            foreach ($defaults as $field => $value) {
+                if (!isset($invalid[$field]) && $row[$field] === null) $row[$field] = $value;
+            }
+            foreach (['Upload', 'Download'] as $direction) {
+                $prefix = lcfirst($direction);
+                $source = $prefix . 'Override';
+                if (!isset($invalid[$source]) && $row[$source] === null) $source = $prefix . 'Speed';
+                $row['effective' . $direction . 'Speed'] = isset($invalid[$source]) ? null : $row[$source];
+            }
+        }
+        unset($row);
+        return $rows;
     }
 
     private function find_plans(): array
     {
         $data = $this->ucrm()->get('service-plans',['servicePlanType' => 'internet']);
+        if (!is_array($data)) throw new RuntimeException('invalid_service_plan_collection');
         $tmp = [];
-        $trimmer = array_fill_keys(['id','uploadSpeed','downloadSpeed','name'],'$#@&');
-        $now = date('c');
         foreach ($data as $item) {
-            $trim = array_intersect_key($item,$trimmer);
-            $trim['created'] = $now;
-            $trim['last'] = $now;
-            $tmp[$item['id']] = $trim;
+            $plan = ApiPlanCatalog::normalize($item);
+            $plan['archive'] = ($item['archived'] ?? $item['isArchived'] ?? false) === true;
+            $tmp[$plan['id']] = $plan;
         }
+        // The standard collection can omit archived plans still attached to services.
+        // Fetch their exact IDs; do not guess a server-specific archive filter.
+        $needed = [];
+        foreach ([$this->db(), myCache()] as $database) {
+            foreach ($database->selectCustom('SELECT DISTINCT planId FROM services WHERE planId>0') ?? [] as $row)
+                $needed[(int) $row['planId']] = true;
+        }
+        foreach ($this->db()->selectAllFromTable('plans') ?? [] as $row)
+            if ((int) $row['id'] > 0 && ApiPlanCatalog::needsHydration($row)) $needed[(int) $row['id']] = true;
+        foreach (array_keys($needed) as $id) {
+            if (isset($tmp[$id])) continue;
+            $tmp[$id] = ApiPlanCatalog::fetch($id) + ['archive' => true];
+        }
+        // Publication happens only after every required response was validated.
         return $tmp ;
     }
 
@@ -260,41 +329,52 @@ class ApiList
 
     private function svc_sql($count = false): string
     {
-        $fields = "services.*,services.username,services.mac,services.price,".
-            "main.network.address,main.network.address6,clients.company,clients.firstName,".
-            "clients.lastName,plans.name as plan,cache.network.address as a4,".
-            "cache.network.address6 as a6";
-        if($count){ $fields = "count(main.services.id)"; }
+        $fields = "cs.*,s.id,s.device,s.planId,s.status,cs.status AS desiredStatus,".
+            "n.address,n.address6,c.company,c.firstName,c.lastName,p.name AS plan,".
+            "cn.address AS a4,cn.address6 AS a6";
+        if($count){ $fields = "count(s.id)"; }
         $did = $this->data->data->did ?? $this->data->data->id ?? $this->data->data->device ?? 0;
-        $sql = "SELECT $fields FROM main.services ".
-            "LEFT JOIN cache.clients ON main.services.clientId=clients.id ".
-            "LEFT JOIN main.network ON main.services.id=main.network.id ".
-            "LEFT JOIN cache.network on main.services.id=cache.network.id ".
-            "LEFT JOIN main.plans on main.services.planId=plans.id ".
-            "LEFT JOIN cache.services ON main.services.id=cache.services.id ".
-            "WHERE main.services.device = $did AND main.services.status NOT IN (2,5,8) ";
+        $did = filter_var($did, FILTER_VALIDATE_INT, ['options' => ['min_range' => 0]]);
+        if ($did === false) throw new InvalidArgumentException('invalid_device_id');
+        $this->serviceParams = [$did];
+        $sql = "SELECT $fields FROM main.services s ".
+            "LEFT JOIN cache.clients c ON s.clientId=c.id ".
+            "LEFT JOIN main.network n ON s.id=n.id ".
+            "LEFT JOIN cache.network cn ON s.id=cn.id ".
+            "LEFT JOIN main.plans p ON s.planId=p.id ".
+            "LEFT JOIN cache.services cs ON s.id=cs.id ".
+            "WHERE s.device = ? AND s.status NOT IN (2,5,8) ";
         $query = $this->data->data->query ?? null ;
         if($query){
-            if(is_numeric($query)){
-                $sql .= "AND (main.services.id=$query OR main.services.clientId=$query) ";
+            if (!is_string($query) && !is_int($query)) throw new InvalidArgumentException('invalid_search');
+            if(ctype_digit((string) $query)){
+                $sql .= "AND (s.id=? OR s.clientId=?) ";
+                $this->serviceParams[] = (string) $query;
+                $this->serviceParams[] = (string) $query;
             }
             else{
-                $sql .= "AND (clients.firstName LIKE '%$query%' OR clients.lastName LIKE '%$query%' ".
-                    "OR clients.company LIKE '%$query%' OR services.username LIKE '%$query%' OR ".
-                    "services.mac LIKE '%$query%') ";
+                $sql .= "AND (c.firstName LIKE ? OR c.lastName LIKE ? OR c.company LIKE ? OR cs.username LIKE ? OR cs.mac LIKE ?) ";
+                foreach (range(1,5) as $ignored) $this->serviceParams[] = '%' . $query . '%';
             }
         }
         $limit = $this->data->limit ?? 100 ;
         $offset = $this->data->offset ?? 0 ;
-        if(!$count) { $sql .=  "ORDER BY main.services.id LIMIT $limit OFFSET $offset "; }
+        if (!$count) {
+            $limit = filter_var($limit, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1, 'max_range' => 500]]);
+            $offset = filter_var($offset, FILTER_VALIDATE_INT, ['options' => ['min_range' => 0]]);
+            if ($limit === false || $offset === false) throw new InvalidArgumentException('invalid_pagination');
+            $sql .= 'ORDER BY s.id LIMIT ? OFFSET ?';
+            $this->serviceParams[] = $limit;
+            $this->serviceParams[] = $offset;
+        }
         return $sql;
     }
 
-    private function dbx2(): SQLite3
+    private function dbx2(): ApiSqlite
     {
         $fn = 'data/data.db';
         $fn2 = 'data/cache.db';
-        $db = new SQLite3($fn);
+        $db = new ApiSqlite($fn);
         $db->exec("ATTACH '$fn2' as cache");
         return $db ;
     }
@@ -313,5 +393,20 @@ class ApiList
         $this->set_mode($mode);
         if(!$data){$data = new stdClass(); }
         $this->data = $data ;
+    }
+
+    private function list_sys(): array
+    {
+        $config = $this->db()->readConfig();
+        $version = defined('MY_VERSION') ? MY_VERSION : 'unknown';
+        if ($version === 'unknown' && defined('MyCacheVersion')) {
+            $version = MyCacheVersion;
+        }
+        return [
+            'app_version' => $version,
+            'php_version' => phpversion(),
+            'last_cache' => $config->last_cache ?? 'never',
+            'next_cache' => $config->next_cache ?? 'never',
+        ];
     }
 }

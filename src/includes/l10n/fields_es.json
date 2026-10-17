@@ -3,7 +3,7 @@
     "name": "name",
     "label": "Nombre del dispositivo",
     "describe": true,
-    "description": "Defina un nombre descriptivo para el dispositivo de puerta de enlace. El nombre no se puede cambiar si el dispositivo tiene usuarios.",
+    "description": "Defina un nombre descriptivo para el router. El nombre no se puede cambiar si el dispositivo tiene clientes asignados.",
     "hint": "",
     "width": null,
     "obscure": null,
@@ -24,16 +24,16 @@
   "device_port" :
   {
     "name" : "port",
-    "label" : "Port number",
+    "label" : "Número de puerto",
     "hint" : "443",
     "describe" : true,
-    "description" : "Set device port number"
+    "description" : "Establecer número de puerto del dispositivo"
   },
   "device_pool": {
     "name": "pool",
-    "label": "Piscina ip4",
+    "label": "Pool IPv4",
     "describe": true,
-    "description": "Defina prefijos ip4 para clientes: necesarios para dhcp. Para usar estos grupos de dispositivos para ppp, habilite la opción en la configuración de API.",
+    "description": "Defina prefijos IPv4 para los clientes (necesario para DHCP). Para usar estos pools para PPP, habilite la opción en la configuración.",
     "hint": "10.88.1.0/24",
     "width": 600,
     "obscure": null,
@@ -44,25 +44,25 @@
   {
     "name" : "pool6",
     "width" : "600",
-    "label" : "Piscina ip6",
+    "label" : "Pool IPv6",
     "hint" : "fddc:9057:1bea::/48",
     "describe" : true,
-    "description" : "Definir prefijos ip6 para asignar clientes. Actualmente solo se admite ip6 sobre ppp. Los prefijos se pueden reutilizar en muchos enrutadores."
+    "description" : "Defina prefijos IPv6 para asignar a los clientes. Actualmente solo se admite IPv6 sobre PPP. Los prefijos se pueden reutilizar en múltiples routers."
   },
   "device_pfxLength":
   {
     "name" : "pfxLength",
     "width" : "600",
-    "label" : "Longitud del prefijo ip6 del cliente",
+    "label" : "Longitud del prefijo IPv6 del cliente",
     "hint" : "/64",
     "describe" : true,
-    "description" : "Especifica el tamaño del prefijo ip6 para asignar a cada cliente"
+    "description" : "Especifica el tamaño del prefijo IPv6 que se asignará a cada cliente"
   },
   "device_user": {
     "name": "user",
     "label": "Nombre de usuario",
     "describe": true,
-    "description": "Proporcionar nombre de usuario para iniciar sesión en el dispositivo de puerta de enlace",
+    "description": "Nombre de usuario para iniciar sesión en el router (Mikrotik)",
     "hint": "",
     "width": null,
     "obscure": null,
@@ -73,7 +73,7 @@
     "name": "password",
     "label": "Contraseña",
     "describe": true,
-    "description": "Proporcionar contraseña para iniciar sesión en el dispositivo de puerta de enlace",
+    "description": "Contraseña para iniciar sesión en el router (Mikrotik)",
     "hint": "",
     "width": null,
     "obscure": true,
@@ -82,7 +82,7 @@
   },
   "device_dbname": {
     "name": "dbname",
-    "label": "Nombre de base de datos",
+    "label": "Nombre de la base de datos",
     "describe": true,
     "description": "Nombre de base de datos",
     "hint": "",
@@ -93,9 +93,9 @@
   },
   "config_auto_ppp_user": {
     "name": "auto_ppp_user",
-    "label": "Generar nombre de usuario ppp automático",
+    "label": "Generar nombre de usuario PPP automáticamente",
     "describe": true,
-    "description": "Habilitar la generación automática de nombre de usuario y contraseña",
+    "description": "Habilitar la generación automática de nombre de usuario y contraseña para conexiones PPP",
     "hint": "",
     "width": null,
     "obscure": null,
@@ -104,9 +104,9 @@
   },
   "config_uisp_url": {
     "name": "uisp_url",
-    "label": "URL a api de unms",
+    "label": "URL de la API de UNMS",
     "describe": true,
-    "description": "Si este software no se está ejecutando en el servidor uisp, cambie localhost por el nombre o la dirección ip y el puerto del servidor uisp",
+    "description": "Si este software no se está ejecutando en el servidor UISP, cambie localhost por el nombre o la dirección IP y el puerto del servidor UISP",
     "hint": "",
     "width": 600,
     "obscure": null,
@@ -115,9 +115,9 @@
   },
   "config_uisp_token": {
     "name": "uisp_token",
-    "label": "token de api de Unms",
+    "label": "Token de la API de UNMS",
     "describe": true,
-    "description": "Genere el token en la configuración de unms bajo usuarios. El token permite a este software recuperar datos de uisp.",
+    "description": "Genere el token en la configuración de UNMS bajo usuarios. El token permite a este plugin recuperar datos de UISP.",
     "hint": "",
     "width": null,
     "obscure": null,
@@ -126,9 +126,9 @@
   },
   "config_ppp_pool": {
     "name": "ppp_pool",
-    "label": "Grupo de direcciones pppoe global",
+    "label": "Pool global de direcciones PPPoE",
     "describe": true,
-    "description": "Especifique las subredes separadas por comas que se utilizarán para las cuentas pppoe. Los grupos globales se utilizan en cualquier enrutador y requieren un protocolo de enrutamiento dinámico como ospf o rip para propagar las direcciones enmarcadas.",
+    "description": "Especifique las subredes separadas por comas que se utilizarán para las cuentas PPPoE. Los pools globales se utilizan en cualquier router y requieren un protocolo de enrutamiento dinámico como OSPF o RIP para propagar las direcciones.",
     "hint": "10.99.0.0/16,10.88.0.0/16",
     "width": 600,
     "obscure": null,
@@ -137,9 +137,9 @@
   },
   "config_router_ppp_pool": {
     "name": "router_ppp_pool",
-    "label": "Usar grupo dhcp para pppoe",
+    "label": "Usar pool DHCP para PPPoE",
     "describe": true,
-    "description": "Active esta opción para utilizar el grupo dhcp que ha definido en dispositivos administrados. Esto deshabilitará el grupo de pppoe global a continuación",
+    "description": "Active esta opción para utilizar el pool DHCP que ha definido en los dispositivos. Esto deshabilitará el pool global de PPPoE configurado arriba",
     "hint": "",
     "width": 75,
     "obscure": null,
@@ -148,9 +148,9 @@
   },
   "config_excl_addr": {
     "name": "excl_addr",
-    "label": "Exclusiones del grupo IP",
+    "label": "Exclusiones del Pool IP",
     "describe": true,
-    "description": "Mostrar intervalos de direcciones que no se deben asignar a clientes dhcp y ppp desde los grupos",
+    "description": "Intervalos de direcciones que no se deben asignar a los clientes DHCP y PPP desde los pools",
     "hint": "10.99.1.1-10.99.1.100,10.99.8.1-10.99.8.100",
     "width": 600,
     "obscure": null,
@@ -161,7 +161,7 @@
     "name": "active_list",
     "label": "Lista de direcciones de Mikrotik para usuarios activos",
     "describe": true,
-    "description": "Nombre opcional de la lista de firewall dinámico para cuentas que no están suspendidas",
+    "description": "Nombre opcional de la lista de firewall dinámica (address list) para cuentas que NO están suspendidas",
     "hint": "",
     "width": 550,
     "obscure": null,
@@ -170,9 +170,9 @@
   },
   "config_disabled_list": {
     "name": "disabled_list",
-    "label": "Lista de direcciones de Mikrotik para usuarios discapacitados",
+    "label": "Lista de direcciones de Mikrotik para usuarios suspendidos",
     "describe": true,
-    "description": "Nombre de la lista dinámica de cortafuegos para filtrar y redirigir cuentas suspendidas",
+    "description": "Lista de firewall para clientes suspendidos. Al crear un perfil PPP/Hotspot de suspensión se asigna aquí su address-list. RouterOS añade la IP al conectar; las reglas del firewall determinan el bloqueo. Los perfiles existentes conservan su configuración.",
     "hint": "",
     "width": 550,
     "obscure": null,
@@ -181,9 +181,9 @@
   },
   "config_disabled_profile": {
     "name": "disabled_profile",
-    "label": "Perfil Mikrotik para usuarios discapacitados",
+    "label": "Perfil de Mikrotik para usuarios suspendidos",
     "describe": true,
-    "description": "Perfil de Mikrotik ppp que se aplica a cuentas suspendidas. El perfil tiene que ser creado y configurado cada router",
+    "description": "Perfil PPP/Hotspot para suspendidos. Si falta, se crea con la lista y el límite de suspensión configurados; PPP obtiene la dirección local del router. Un perfil existente se conserva. Para crearlo debe haber una lista o un límite positivo; cero no limita.",
     "hint": "",
     "width": 550,
     "obscure": null,
@@ -192,9 +192,9 @@
   },
   "config_disabled_rate": {
     "name": "disabled_rate",
-    "label": "Límite de tarifas Mikrotik para cuentas con discapacidad",
+    "label": "Límite de velocidad de Mikrotik para cuentas suspendidas",
     "describe": true,
-    "description": "Tasa de Mikrotik aplicada a colas dhcp deshabilitadas y de perfil deshabilitado",
+    "description": "Límite máximo adicional para clientes suspendidos, en Mbps. PPP/Hotspot usa una cola individual; su perfil existente y otras colas también pueden limitar el tráfico. Cero no añade este límite.",
     "hint": "",
     "width": 550,
     "obscure": null,
@@ -203,9 +203,9 @@
   },
   "config_unsuspend_date_fix": {
     "name": "unsuspend_date_fix",
-    "label": "Habilitar corrección de fecha de factura sin suspensión",
+    "label": "Corregir fecha de facturación al reanudar servicio",
     "describe": true,
-    "description": "Habilitar el ajuste de la fecha de facturación de aniversario al anular la suspensión de cuentas",
+    "description": "Habilitar el ajuste de la fecha de facturación al reanudar la cuenta (des-suspender)",
     "hint": "",
     "width": 75,
     "obscure": null,
@@ -214,9 +214,9 @@
   },
   "config_unsuspend_fix_wait": {
     "name": "unsuspend_fix_wait",
-    "label": "Fecha de factura fijar retraso en segundos",
+    "label": "Retraso en segundos al corregir fecha de facturación",
     "describe": true,
-    "description": "Dejar 5 s predeterminados",
+    "description": "Dejar en 5 segundos por defecto",
     "hint": "",
     "width": 100,
     "obscure": null,
@@ -227,7 +227,7 @@
     "name": "pppoe_user_attr",
     "label": "Atributo personalizado para el nombre de usuario",
     "describe": true,
-    "description": "Define el nombre de usuario pppoe del cliente",
+    "description": "Define el atributo utilizado para el nombre de usuario PPPoE del cliente",
     "hint": "",
     "width": null,
     "obscure": null,
@@ -236,9 +236,9 @@
   },
   "config_pppoe_caller_attr": {
     "name": "pppoe_caller_attr",
-    "label": "Atributo personalizado para identificador de llamadas",
+    "label": "Atributo personalizado para el identificador de llamadas (Caller ID)",
     "describe": true,
-    "description": "Define el identificador de llamada pppoe del cliente",
+    "description": "Define el identificador de llamada (Caller ID) PPPoE del cliente",
     "hint": "",
     "width": null,
     "obscure": null,
@@ -249,7 +249,7 @@
     "name": "pppoe_pass_attr",
     "label": "Atributo personalizado para la contraseña",
     "describe": true,
-    "description": "Define la contraseña pppoe del cliente",
+    "description": "Define el atributo utilizado para la contraseña PPPoE del cliente",
     "hint": "",
     "width": null,
     "obscure": null,
@@ -258,9 +258,9 @@
   },
   "config_device_name_attr": {
     "name": "device_name_attr",
-    "label": "Atributo personalizado para nombre de dispositivo",
+    "label": "Atributo personalizado para nombre del dispositivo",
     "describe": true,
-    "description": "Define el nombre del enrutador en el que se creará la cuenta de servicio",
+    "description": "Define el atributo que contiene el nombre del router en el que se creará la cuenta de servicio",
     "hint": "",
     "width": null,
     "obscure": null,
@@ -269,9 +269,9 @@
   },
   "config_mac_addr_attr": {
     "name": "mac_addr_attr",
-    "label": "Atributo personalizado para la dirección mac dhcp",
+    "label": "Atributo personalizado para la dirección MAC DHCP",
     "describe": true,
-    "description": "Define la dirección mac del cliente para una concesión dhcp. Tenga en cuenta que proporcionar una dirección mac deshabilita pppoe para el cliente",
+    "description": "Define la dirección MAC del cliente para una concesión DHCP. Tenga en cuenta que al proporcionar una dirección MAC se deshabilitará el PPPoE para el cliente",
     "hint": "",
     "width": null,
     "obscure": null,
@@ -281,24 +281,24 @@
   "config_dhcp6_duid_attr" :
   {
     "name" : "dhcp6_duid_attr",
-    "label" : "Custom attribute for dhcp6 mac address (duid)",
+    "label" : "Atributo personalizado para dirección MAC de DHCPv6 (DUID)",
     "describe" : true,
-    "description" : "Mac address used for duid - ether1 on mikrotiks",
+    "description" : "Dirección MAC usada para DUID (usualmente ether1 en Mikrotik)",
     "isAttribute" : true
   },
   "config_dhcp6_iaid_attr" :
   {
     "name" : "dhcp6_iaid_attr",
-    "label" : "Custom attribute for dhcp6 wan interface number (iaid)",
+    "label" : "Atributo personalizado para interfaz WAN de DHCPv6 (IAID)",
     "describe" : true,
-    "description" : "Used for iaid - hex or decimal",
+    "description" : "Usado para IAID - en formato hexadecimal o decimal",
     "isAttribute" : true
   },
   "config_ip_addr_attr": {
     "name": "ip_addr_attr",
     "label": "Atributo personalizado para la dirección IP manual",
     "describe": true,
-    "description": "Define una dirección ip asignada manualmente. La dirección IP puede ser de un grupo externo que no está definido en esta API",
+    "description": "Define una dirección IP asignada manualmente. La dirección IP puede ser de un pool externo que no esté definido en este plugin",
     "hint": "",
     "width": null,
     "obscure": null,
@@ -308,16 +308,16 @@
   "config_lease_time" :
   {
     "name" : "lease_time",
-    "label" : "Lease duration for dhcpv4 and dhcpv6",
+    "label" : "Tiempo de concesión (Lease time) para DHCPv4 y DHCPv6",
     "width" : "75",
     "describe" : true,
-    "description" : "Specify lease duration in minutes. Applies for dhcpv4 and dhcpv6."
+    "description" : "Especificar el tiempo de concesión en minutos. Aplica para DHCPv4 y DHCPv6."
   },
   "config_disable_contention": {
     "name": "disable_contention",
-    "label": "Deshabilitar contención de ancho de banda",
+    "label": "Deshabilitar la contención de ancho de banda",
     "describe": true,
-    "description": "Seleccione esta opción para desactivar las colas primarias. Puede tardar unos minutos en aplicarse y eliminará las colas principales de los enrutadores.",
+    "description": "Desactiva la contención. Al guardar se programan los cambios para los servicios; consulta el avance en Trabajos. Se retiran los vínculos con las colas padre, y los padres antiguos sin uso pueden permanecer.",
     "hint": "",
     "width": 75,
     "obscure": null,
@@ -327,25 +327,25 @@
   "config_hs_enable" :
   {
     "name" : "hs_enable",
-    "label" : "Habilitar cuentas de hotspot",
+    "label" : "Habilitar cuentas de Hotspot",
     "describe" : true,
-    "description" : "Habilitar o desactivar el atributo personalizado de cuenta hotspot",
+    "description" : "Habilitar o desactivar el atributo personalizado de cuenta de Hotspot",
     "isAttribute" : true
   },
   "config_auto_hs_user" :
   {
     "name" : "auto_hs_user",
-    "label" : "Nombre de usuario de hotspot automático",
+    "label" : "Nombre de usuario de Hotspot automático",
     "describe" : true,
-    "description" : "Habilitar para el nombre de usuario automático. Deshabilitará los nombres de usuario de ppp automáticos",
+    "description" : "Habilitar la generación automática de usuarios. Desactivará la generación automática de usuarios PPP",
     "isAttribute" : true
   },
   "service_ratio": {
     "name": "ratio",
-    "label": "Establecer relación de contención",
+    "label": "Establecer ratio de contención",
     "describe": true,
-    "description": "Establece el divisor de proporción de contención",
-    "hint": "number e.g. 4",
+    "description": "Establece el divisor del ratio de contención (Contention Ratio)",
+    "hint": "Un número, p. ej. 4",
     "width": 200,
     "obscure": null,
     "type": null,

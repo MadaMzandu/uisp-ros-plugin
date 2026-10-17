@@ -58,12 +58,13 @@ class ApiCurl
             CURLOPT_ENCODING => '',
             CURLOPT_MAXREDIRS => 10,
             CURLOPT_TIMEOUT => 10,
+            CURLOPT_CONNECTTIMEOUT => 5,
             CURLOPT_VERBOSE => $this->verbose,
-            CURLOPT_FOLLOWLOCATION => true,
+            CURLOPT_FOLLOWLOCATION => false,
             CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
             CURLOPT_POST => $method == 'POST',
             CURLOPT_SSL_VERIFYPEER => !$this->no_ssl,
-            CURLOPT_SSL_VERIFYHOST => !$this->no_ssl,
+            CURLOPT_SSL_VERIFYHOST => $this->no_ssl ? 0 : 2,
         ];
         if($method != 'POST'){
             $this->opts[CURLOPT_CUSTOMREQUEST] = $method;
@@ -91,10 +92,12 @@ class ApiCurl
         if (curl_errno($this->curl()) !== 0) {
             $error = curl_error($this->curl());
         }
-        if (curl_getinfo($this->curl(), CURLINFO_HTTP_CODE) >= 400) {
-            $error = $response ;
+        $status = curl_getinfo($this->curl(), CURLINFO_HTTP_CODE);
+        if ($status >= 300) {
+            $error = 'API HTTP status ' . $status;
         }
-        curl_close($this->curl());
+        if (PHP_VERSION_ID < 80000) curl_close($this->ch);
+        $this->ch = null;
         if($error){
             MyLog()->Append("API error: ". $error);
             return null ;

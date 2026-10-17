@@ -1,6 +1,8 @@
 {
   "ppp_pool": "10.99.0.0\/16,fd10:9900::\/48",
   "router_ppp_pool": "true",
+  "service_reconciliation_enabled": true,
+  "service_reconciliation_auto_apply": true,
   "excl_addr": null,
   "active_list": null,
   "lease_time": 60,

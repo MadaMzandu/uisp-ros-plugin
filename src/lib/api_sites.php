@@ -100,7 +100,7 @@ class ApiSites
         if(empty($this->_blackboxes)){
             $this->_blackboxes = [];
             foreach($sites as $site){
-                $blacks = $this->ucrm()->get('devices',['siteId' => $site,'type' => 'blackBox']);
+                $blacks = $this->ucrm()->get('devices',['siteId' => $site,'type' => 'blackBox']) ?? [];
                 foreach($blacks as $black){
                     $name = $black->identification->name ;
                     if(preg_match("#^\s*RosP#",$name)){
@@ -119,7 +119,7 @@ class ApiSites
         $map = [];
         foreach ($uplinks as $uplink){
             $did = $uplink->identification->id ?? null ;
-            $ifs = $this->find_ifs($did);
+            $ifs = $this->find_ifs($did) ?? [];
             foreach($ifs as $if){
                 $status = $if->status->status ?? 'offline';
                 $type = $if->identification->type ?? "br";

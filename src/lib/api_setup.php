@@ -1,23 +1,80 @@
 <?php
-const MY_VERSION = '2.3.1';
+const MY_VERSION = '2.4.48';
 const MAX_BACKUPS = 6 ;
-const REPEAT_STATEMENTS  = 8; //number of statements expected to fail during update
 
 include_once 'api_sqlite.php';
 include_once 'api_logger.php';
 include_once 'api_timer.php';
 
+final class ApiVersionMismatchException extends InvalidArgumentException
+{
+    private array $versions;
+
+    public function __construct(string $databaseVersion, string $context)
+    {
+        $this->versions = [
+            'database_version' => $databaseVersion,
+            'runtime_version' => MY_VERSION,
+            'package_version' => ApiSetup::packageVersion(),
+        ];
+        parent::__construct($context === 'backup' ? 'backup_version_is_newer_than_plugin' : 'database_version_is_newer_than_plugin');
+    }
+
+    public function getVersions(): array { return $this->versions; }
+}
+
+final class ApiNetworkAddressConflictException extends InvalidArgumentException
+{
+    private array $details;
+
+    public function __construct(array $details)
+    {
+        $this->details = $details;
+        parent::__construct('duplicate_network_addresses_resolve_before_upgrade');
+    }
+
+    public function getDetails(): array { return $this->details; }
+}
+
 class ApiSetup
 {
     private ?object $_db = null ;
     private ?object $_tmp = null ;
+    private ?ApiSqlite $migrationDb = null;
+    private string $context;
+
+    public function __construct(?ApiSqlite $database = null, string $context = 'database')
+    {
+        $this->migrationDb = $database;
+        $this->context = $context;
+    }
 
     public function run(){
+        if (SQLite3::version()['versionNumber'] < 3024000) throw new RuntimeException('SQLite 3.24 or newer is required');
+        // Queue initialization can import/recover old jobs. A known-incompatible upgrade
+        // must stop before that initialization as well as before backup rotation.
+        if (is_file('data/data.db')) {
+            $this->assertCompatible();
+            $this->assertNetworkAddressesUnique();
+        }
+        if (!is_dir('data') && !mkdir('data', 0700, true) && !is_dir('data')) throw new RuntimeException('data_directory_failed');
+        require_once __DIR__ . '/api_job_queue.php';
+        myJobQueue()->withAdministrativeLock(function (): void { $this->runLocked(); });
+    }
+
+    private function runLocked(): void
+    {
+        $lock = fopen('data/setup.lock', 'c');
+        if (!$lock || !flock($lock, LOCK_EX)) throw new RuntimeException('setup_lock_failed');
+        try {
+        if (!$this->needs_db()) {
+            $this->assertCompatible();
+            $this->assertNetworkAddressesUnique();
+        }
         if($this->needs_db()){
             $this->db_create();
         }
         if($this->needs_update()){
-            $this->do_conversions(); //apply conversion while original version
             $this->db_update();
         }
         if($this->needs_backup()){
@@ -26,37 +83,132 @@ class ApiSetup
         if($this->needs_cleanup()){
             $this->file_cleanup();
         }
+        foreach (array_merge(['config.json','queue.json','data.db'], array_map(function ($index) { return 'backup-' . $index; }, range(0,6))) as $name) {
+            $path = 'public/' . $name;
+            if (is_file($path) || is_link($path)) {
+                if (!unlink($path)) throw new RuntimeException('published_secret_cleanup_failed');
+            }
+        }
+        } finally { flock($lock, LOCK_UN); fclose($lock); }
     }
 
     private function db_update(): void
     {
+        // Reject incompatible versions before rotating any existing recovery snapshot.
+        $this->assertCompatible();
+        // Failed upgrades must not cycle through and replace the operator's recovery copies.
+        $this->assertNetworkAddressesUnique();
         if(!$this->db_backup()){
             fail('backup_failure');
         }
-        $schema = $this->update_schema();
-        shell_exec('rm -f data/tmp.db');
-        $failed = 0 ; $total = sizeof($schema) ;
-        set_error_handler('dbUpdateHandler');
-        foreach($schema as $stm){
-            if(!$this->db()->exec($stm)){ $failed++; }
-        }
-        $this->close();
-        set_error_handler('myErrorHandler');
-        MyLog()->Append(sprintf('update: %s of %s statements rejected',$failed,$total));
-        if($failed <= REPEAT_STATEMENTS){
-            copy('data/tmp.db','data/data.db');
-            shell_exec('rm -f data/tmp.db');
+        $this->migrate();
+    }
+
+    public function migrate(): void
+    {
+        $this->assertCompatible();
+        $this->dbApi()->transaction(function () {
+            // Check the effective legacy import under the write lock before changing any columns.
+            $this->assertNetworkAddressesUnique();
+            // Migrate by column name in place; never guess column order or tolerate SQL failures.
+            foreach (['network','services','plans','devices','config'] as $table) {
+                $desired = $this->get_cols($table);
+                $current = $this->get_cols($table, false);
+                if (!$current) {
+                    $sql = $this->tmp()->querySingle("SELECT sql FROM sqlite_master WHERE type='table' AND name='" . $table . "'");
+                    $this->dbApi()->exec($sql);
+                    continue;
+                }
+                foreach (array_diff_key($desired, $current) as $name => $type) {
+                    $this->dbApi()->exec('ALTER TABLE ' . ApiSqlite::identifier($table) . ' ADD COLUMN ' . ApiSqlite::identifier($name) . ' ' . $type);
+                    if ($table === 'plans' && in_array($name, ['priorityUpload','priorityDownload'], true) && isset($current['priority'])) {
+                        $this->dbApi()->exec('UPDATE plans SET ' . ApiSqlite::identifier($name) . '=priority');
+                    }
+                }
+                if ($table === 'services' && isset($current['address'])) {
+                    $prefix = isset($current['prefix6']) ? 'prefix6' : 'NULL';
+                    $this->dbApi()->exec('INSERT OR IGNORE INTO network(id,address,address6) SELECT id,address,' . $prefix . ' FROM services');
+                }
+            }
+            $this->do_conversions();
+            $this->dbApi()->exec(file_get_contents('includes/schema.sql'));
+            $this->dbApi()->execute("UPDATE devices SET type='mikrotik' WHERE type IS NULL OR type=''");
             $this->set_version();
             $this->config_load();
+        });
+    }
+
+    public function assertCompatible(): void
+    {
+        $version = $this->databaseVersion();
+        if (version_compare($version, MY_VERSION, '>')) throw new ApiVersionMismatchException($version, $this->context);
+    }
+
+    public function assertNetworkAddressesUnique(): void
+    {
+        $db = $this->dbApi();
+        $network = $this->get_cols('network', false);
+        $services = $this->get_cols('services', false);
+        $details = ['duplicate_groups' => 0, 'conflicts' => [], 'conflicts_truncated' => false];
+        foreach (['address' => 'IPv4', 'address6' => 'IPv6'] as $field => $family) {
+            $parts = [];
+            if (isset($network['id'], $network[$field])) {
+                $parts[] = 'SELECT id,' . $field . ' AS address FROM network';
+            }
+            // INSERT OR IGNORE imports only missing IDs. The existing network row wins,
+            // including its NULL address, and legacy IPv6 lives in services.prefix6.
+            $legacyField = $field === 'address' ? 'address' : 'prefix6';
+            if (isset($services['id'], $services['address'], $services[$legacyField])) {
+                $parts[] = 'SELECT s.id,s.' . $legacyField . ' AS address FROM services s'
+                    . (isset($network['id']) ? ' WHERE NOT EXISTS (SELECT 1 FROM network n WHERE n.id=s.id)' : '');
+            }
+            if (!$parts) continue;
+            $effective = '(' . implode(' UNION ALL ', $parts) . ')';
+            $groups = 'SELECT address,count(*) AS service_count FROM ' . $effective
+                . " WHERE address IS NOT NULL AND address<>'' GROUP BY address HAVING count(*)>1";
+            $count = (int) $db->singleQuery('SELECT count(*) FROM (' . $groups . ')');
+            $details['duplicate_groups'] += $count;
+            $remaining = 20 - count($details['conflicts']);
+            if (!$count || !$remaining) continue;
+            foreach ($db->selectCustom($groups . ' ORDER BY address LIMIT ' . $remaining) as $group) {
+                // Separate limited lookup avoids building an unbounded group_concat result.
+                $owners = $db->selectCustom('SELECT id FROM ' . $effective . ' WHERE address=? ORDER BY id LIMIT 50', [$group['address']]);
+                $details['conflicts'][] = [
+                    'family' => $family,
+                    'address' => (string) $group['address'],
+                    'service_ids' => array_map(static function (array $row): int { return (int) $row['id']; }, $owners),
+                    'service_count' => (int) $group['service_count'],
+                    'services_truncated' => (int) $group['service_count'] > count($owners),
+                ];
+            }
         }
+        if (!$details['duplicate_groups']) return;
+        $details['conflicts_truncated'] = $details['duplicate_groups'] > count($details['conflicts']);
+        throw new ApiNetworkAddressConflictException($details);
+    }
+
+    private function databaseVersion(): string
+    {
+        if (!$this->dbApi()->has_tables(['config'])) return '0.0.0';
+        // A release such as "2.40" must remain text, rather than becoming the float 2.4.
+        $version = $this->dbApi()->singleQuery('SELECT value FROM config WHERE key=?', false, ['version']);
+        return $version === null || trim((string) $version) === '' ? '0.0.0' : trim((string) $version);
+    }
+
+    public static function packageVersion(): string
+    {
+        $path = dirname(__DIR__) . '/manifest.json';
+        if (!is_file($path)) return 'unknown';
+        $manifest = json_decode(file_get_contents($path), true);
+        $version = $manifest['information']['version'] ?? null;
+        return is_string($version) ? $version : 'unknown';
     }
 
     private function db_create(): void
     {
         $source = 'includes/schema.sql';
         $schema = file_get_contents($source);
-        shell_exec('rm -f data/data.db');
-        if($this->db()->exec($schema)){
+        if($this->dbApi()->exec($schema)){
             if($this->config_load()){
                 $this->set_version();
             }
@@ -75,7 +227,13 @@ class ApiSetup
     private function get_cols($t,$tmp = true): array
     {
         $q = "select name,type from pragma_table_info('$t')";
-        $db = $tmp ? $this->tmp() : $this->db() ;
+        if (!$tmp) {
+            $rows = $this->dbApi()->selectCustom('PRAGMA table_info(' . ApiSqlite::identifier($t) . ')');
+            $columns = [];
+            foreach ($rows as $row) $columns[$row['name']] = $row['type'];
+            return $columns;
+        }
+        $db = $this->tmp();
         $f = $db->query($q);
         $m = [];
         while($r = $f->fetchArray(SQLITE3_ASSOC)){
@@ -97,15 +255,6 @@ class ApiSetup
         return $this->_tmp ;
     }
 
-    private function update_schema(): ?array
-    {
-        $source = 'includes/update_schema.sql';
-        $str = file_get_contents($source);
-        $str = preg_replace('/[\n\r]+/','',$str); //remove line breaks
-        $str = preg_replace('/\s*;\s*/'," ;\n",$str); //line break at semicolon
-        return explode("\n",$str);
-    }
-
     private  function set_version(): void
     {
 
@@ -114,13 +263,10 @@ class ApiSetup
 
     private function db_backup(): bool
     {
+        require_once __DIR__ . '/api_backup.php';
         $state = $this->state();
-        if(++$state->backups > MAX_BACKUPS){
-            $state->backups = 0 ;
-        }
-        $file = 'data/data.db';
-        $backup = sprintf('data/backup-%s',$state->backups);
-        $copy = copy($file,$backup);
+        $backup = ApiBackup::rotate();
+        $copy = is_file('data/' . $backup);
         $state->backup = date('c');
         $this->save($state);
         return $copy ;
@@ -129,7 +275,7 @@ class ApiSetup
     private function file_cleanup():void
     {
         $state = $this->state() ;
-        $files = 'queue.json,plugin.log';
+        $files = 'plugin.log';
         foreach(explode(',',$files) as $file){
             file_put_contents('data/'.$file,'');
         }
@@ -166,8 +312,7 @@ class ApiSetup
     private function needs_update(): bool
     {
         if($this->needs_cols()) return true ;
-        $running = $this->dbApi()->readConfig()->version ?? '0.0.0' ;
-        return trim($running) != MY_VERSION ;
+        return $this->databaseVersion() !== MY_VERSION;
     }
 
     private function needs_db(): bool
@@ -181,7 +326,7 @@ class ApiSetup
         foreach(explode(',',$tables) as $table){
             $new = $this->get_cols($table);
             $current = $this->get_cols($table,false);
-            if(array_diff_assoc($new,$current)){
+            if(array_diff_key($new,$current)){
                 return true ;
             }
         }
@@ -191,25 +336,39 @@ class ApiSetup
     private function state(): stdClass
     {
         $file = 'data/state.json';
-        if(!file_exists($file)){
-            $this->save($this->default_state());
+        if (!is_file($file)) {
+            $state = $this->default_state();
+            $this->save($state);
+            return $state;
         }
-        return json_decode(file_get_contents($file));
-    }
-
-    private function close(): void
-    {
-        $this->db()->close();
-        $this->_db = null ;
+        $raw = file_get_contents($file);
+        $state = $raw === false ? null : json_decode($raw);
+        $valid = $state instanceof stdClass;
+        if ($valid) {
+            foreach (['backup', 'cleanup'] as $key) {
+                if (!isset($state->$key) || !is_string($state->$key)) { $valid = false; break; }
+                try { new DateTime($state->$key); }
+                catch (Throwable $error) { $valid = false; break; }
+            }
+        }
+        if ($valid) return $state;
+        // Auxiliary state is recoverable. Keep the original and avoid rotating backups or clearing logs now.
+        $archive = 'data/state-corrupt-' . date('YmdHis') . '-' . bin2hex(random_bytes(4)) . '.json';
+        if (!copy($file, $archive)) throw new RuntimeException('setup_state_archive_failed');
+        @chmod($archive, 0600);
+        $state = $this->default_state();
+        $state->backup = $state->cleanup = date('c');
+        $this->save($state);
+        MyLog()->Append('setup_state_recovered; original retained privately', LOG_ERR);
+        return $state;
     }
 
     private function do_conversions()
     {
-        $conf = $this->dbApi()->readConfig();
-        $version = $conf->version ?? '0.0.0';
+        $version = $this->databaseVersion();
         foreach($this->conversions_data() as $ver => $update){
-            if(trim($version) <= $ver){
-                $this->db()->exec($update);
+            if(version_compare(trim($version), $ver, '<=')){
+                $this->dbApi()->exec($update);
             }
         }
     }
@@ -225,7 +384,13 @@ class ApiSetup
     private function save($state): void
     {
         $file = 'data/state.json';
-        file_put_contents($file,json_encode($state,JSON_PRETTY_PRINT));
+        $json = json_encode($state, JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR);
+        $temporary = $file . '.tmp-' . bin2hex(random_bytes(8));
+        try {
+            if (file_put_contents($temporary, $json, LOCK_EX) !== strlen($json)) throw new RuntimeException('setup_state_write_failed');
+            @chmod($temporary, 0600);
+            if (!rename($temporary, $file)) throw new RuntimeException('setup_state_publish_failed');
+        } finally { if (is_file($temporary)) unlink($temporary); }
     }
 
     private function default_state(): stdClass
@@ -240,18 +405,9 @@ class ApiSetup
         );
     }
 
-    private function db(): SQLite3
-    {
-        if(empty($this->_db)){
-            $this->_db = new SQLite3('data/data.db');
-            $this->_db->busyTimeout(5000);
-        }
-        return $this->_db ;
-    }
-
     private function dbApi(): ApiSqlite
     {
-        return mySqlite();
+        return $this->migrationDb ?? mySqlite();
     }
 }
 

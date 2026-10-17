@@ -1,5 +1,5 @@
 <?php
-const MyCacheVersion = '1.8.11';
+const MyCacheVersion = '1.8.13';
 
 include_once 'api_trim.php';
 include_once 'api_ucrm.php';
@@ -7,6 +7,7 @@ include_once 'api_ucrm.php';
 class ApiCache{
 
     private ?object $_conf = null;
+    private ?ApiSqlite $staging = null;
 
     public function save($request,$type = 'service')
     { //update a single service
@@ -48,17 +49,12 @@ class ApiCache{
             $types[] = 'sites';
         }
         if($force || $this->needs_update()){
-            $this->clean(); //clean tables
-            foreach($types as $table){
-                $this->populate($table);
-                MyLog()->Append('cache_success_'.$table);
-            }
-
-            $this->db()->saveConfig(['next_cache' => $next->format('c')]);
+            $this->refresh($types);
+            $this->db()->saveConfig(['last_cache' => date('c'), 'next_cache' => $next->format('c'), 'next_sites' => $next->format('c')]);
             $timer->stop();
         }
         elseif($this->needs_sites()){
-            $this->populate('sites');
+            $this->refresh(['sites']);
             $this->db()->saveConfig(['next_sites' => $next->format('c')]);
         }
     }
@@ -67,13 +63,23 @@ class ApiCache{
     {
         $timer = new ApiTimer('cache setup: ');
         if($this->needs_db()){
-            shell_exec('rm -f data/cache.db');
             $schema_file = 'includes/cache.sql';
             $schema = file_get_contents($schema_file);
             if($this->dbCache()->exec($schema)){//reset cache time
+                // CREATE TABLE IF NOT EXISTS cannot add fields to an existing
+                // cache. Preserve every old row and leave its archive status
+                // unknown until a real CRM value arrives.
+                $this->dbCache()->transaction(function () {
+                    if (!$this->has_archive_column()) $this->dbCache()->exec('ALTER TABLE "clients" ADD COLUMN "isArchived" INTEGER');
+                    $columns = array_column($this->dbCache()->selectCustom('PRAGMA table_info("services")') ?? [], 'name');
+                    foreach (['trafficShapingOverrideEnabled'=>'INTEGER','uploadSpeedOverride'=>'REAL','downloadSpeedOverride'=>'REAL','trafficShapingOverrideEnd'=>'TEXT'] as $column=>$type) {
+                        if (!in_array($column, $columns, true)) $this->dbCache()->exec('ALTER TABLE "services" ADD COLUMN "' . $column . '" ' . $type);
+                    }
+                });
                 $state = ['cache_version' => MyCacheVersion,
                     'last_cache' => '2020-01-01','last_net' => '2020-01-01'];
                 $this->db()->saveConfig($state);
+                $this->_conf = null;
                 $timer->stop();
             }
         }
@@ -153,7 +159,9 @@ class ApiCache{
 
     private function get_data($path,$opts,$unms = false): array
     {
-        return $this->ucrm($unms)->get($path,$opts) ?? [];
+        $result = $this->ucrm($unms)->get($path,$opts);
+        if (!is_array($result)) throw new RuntimeException('UISP returned an invalid collection: ' . $path);
+        return $result;
     }
 
     public function batch($table, $request)
@@ -163,7 +171,10 @@ class ApiCache{
             $values[] = array_diff_key($item,['network' => 1,'unmsClientSiteId' => 1]);
         }
         if($values){
-            $this->dbCache()->insert($values,$table,INSERT_REPLACE);
+            // Client webhooks may omit lifecycle facts. Update supplied fields
+            // without clearing an archive flag learned from an earlier event.
+            if ($table === 'clients') $this->dbCache()->edit($values, $table);
+            else $this->dbCache()->insert($values,$table,INSERT_REPLACE);
         }
     }
 
@@ -173,9 +184,13 @@ class ApiCache{
         $values = [];
         foreach($request as $item){
             $net = $item['network'] ?? null;
-            if(!$net){ continue; }
+            if(!is_array($net) || !$net){ continue; }
+            // A supplied NULL is an authoritative clear, while an omitted
+            // family (for example an unconfigured IPv6 attribute) stays intact.
+            $existing = $this->dbCache()->singleQuery('SELECT address,address6 FROM network WHERE id=?',true,[$item['id']]) ?: [];
+            $net = array_replace($existing,array_intersect_key($net,array_fill_keys(['address','address6'],true)));
             $net['id'] = $item['id'];
-            if(in_array($item['status'],[2,5,8])) { $deleted[] = $item['id']; }
+            if(in_array((int)($item['status'] ?? 1),[2,5,8],true)) { $deleted[] = $item['id']; }
             else {
                 $values[] = $net ;
             }
@@ -232,14 +247,58 @@ class ApiCache{
         }
     }
 
+    private function refresh(array $tables): void
+    {
+        $cache = myCache();
+        $generation = $cache->singleQuery('PRAGMA data_version');
+        $localChanges = $cache->singleQuery('SELECT total_changes()');
+        // Download into a separate database; failed pages never replace the last valid cache.
+        $staging = new ApiSqlite(':memory:');
+        $staging->exec(file_get_contents('includes/cache.sql'));
+        $this->staging = $staging;
+        try {
+            foreach ($tables as $table) $this->populate($table);
+            $publish = $tables;
+            if (in_array('services', $tables, true)) $publish[] = 'network';
+            $cache->transaction(function () use ($publish, $staging, $cache, $generation, $localChanges) {
+                if ($cache->singleQuery('PRAGMA data_version') !== $generation || $cache->singleQuery('SELECT total_changes()') !== $localChanges) {
+                    throw new RuntimeException('cache_changed_during_refresh_retry_later');
+                }
+                foreach ($publish as $table) {
+                    $cache->deleteAll($table);
+                    $rows = $staging->selectAllFromTable($table);
+                    if ($rows) $cache->insert($rows, $table, INSERT_REPLACE);
+                }
+            });
+        } finally {
+            $this->staging = null;
+            $staging->close();
+        }
+    }
+
     private function needs_db(): bool
     {
         $file = 'data/cache.db';
         if(!is_file($file)) return true;
         if(!$this->dbCache()->has_tables(['clients','services','network','sites'])){
             return true ;}
+        if (!$this->has_archive_column() || !$this->has_override_column()) return true;
         $version = $this->conf()->cache_version ?? '0.0.0';
         return $version != MyCacheVersion ;
+    }
+
+    private function has_archive_column(): bool
+    {
+        foreach ($this->dbCache()->selectCustom('PRAGMA table_info("clients")') ?? [] as $column) {
+            if (($column['name'] ?? null) === 'isArchived') return true;
+        }
+        return false;
+    }
+
+    private function has_override_column(): bool
+    {
+        $columns = array_column($this->dbCache()->selectCustom('PRAGMA table_info("services")') ?? [], 'name');
+        return !array_diff(['trafficShapingOverrideEnabled','uploadSpeedOverride','downloadSpeedOverride','trafficShapingOverrideEnd'], $columns);
     }
 
     private function attrs(): ApiAttributes { return myAttr(); }
@@ -263,11 +322,11 @@ class ApiCache{
 
     private function dbCache(): ApiSqlite
     {
-        return myCache() ;
+        return $this->staging ?? myCache();
     }
 
    }
 
-function cache_sync() { $api = new ApiCache(); $api->sync();}
+function cache_sync() { return myJobQueue()->withAdministrativeLock(function () { $api = new ApiCache(); $api->sync(); }); }
 
-function cache_setup(){ $cache = new ApiCache(); $cache->setup();}
+function cache_setup(){ return myJobQueue()->withAdministrativeLock(function () { $cache = new ApiCache(); $cache->setup(); }); }

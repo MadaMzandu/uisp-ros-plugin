@@ -6,54 +6,84 @@ class ApiSqlite
 {
 
     private string $path;
+    private bool $readOnly = false;
     private ?SQLite3 $_db = null;
+    private int $transactionDepth = 0;
+
+    public static function identifier(string $name): string
+    {
+        $parts = explode('.', $name);
+        foreach ($parts as &$part) {
+            if (!preg_match('/^[a-zA-Z_][a-zA-Z0-9_]*$/D', $part)) throw new InvalidArgumentException('Invalid SQL identifier');
+            $part = '"' . $part . '"';
+        }
+        return implode('.', $parts);
+    }
+
+    private function prepare(string $sql, array $params): SQLite3Stmt
+    {
+        $statement = $this->db()->prepare($sql);
+        if (!$statement) throw new RuntimeException('Database query preparation failed');
+        foreach ($params as $key => $value) {
+            $type = SQLITE3_TEXT;
+            if ($value === null) $type = SQLITE3_NULL;
+            elseif (is_bool($value) || is_int($value)) $type = SQLITE3_INTEGER;
+            elseif (is_float($value)) $type = SQLITE3_FLOAT;
+            $statement->bindValue(is_int($key) ? $key + 1 : ':' . ltrim($key, ':'), is_bool($value) ? (int) $value : $value, $type);
+        }
+        return $statement;
+    }
+
+    public function execute(string $sql, array $params = []): bool
+    {
+        $statement = $this->prepare($sql, $params);
+        try {
+            $result = $statement->execute();
+            if ($result) $result->finalize();
+            return $result !== false;
+        } finally { $statement->close(); }
+    }
+
+    public function transaction(callable $callback)
+    {
+        $level = $this->transactionDepth++;
+        $savepoint = 'plugin_' . $level;
+        try {
+            $this->db()->exec($level === 0 ? 'BEGIN IMMEDIATE' : 'SAVEPOINT ' . $savepoint);
+            $value = $callback($this);
+            $this->db()->exec($level === 0 ? 'COMMIT' : 'RELEASE SAVEPOINT ' . $savepoint);
+            return $value;
+        } catch (Throwable $error) {
+            try {
+                $this->db()->exec($level === 0 ? 'ROLLBACK' : 'ROLLBACK TO SAVEPOINT ' . $savepoint);
+                if ($level > 0) $this->db()->exec('RELEASE SAVEPOINT ' . $savepoint);
+            } catch (Throwable $ignored) {}
+            throw $error;
+        } finally { $this->transactionDepth--; }
+    }
 
     public function insert($data,$table = 'services',$replace = INSERT_NORMAL): bool
     { //insert single row or batch
         $data = $this->to_array($data);
         if(!$data) return false ;
-        $fields = $this->to_fields($data);
-        $values = $this->to_values($data);
         $INSERT = 'INSERT';
         if($replace != INSERT_NORMAL){
             $INSERT = $replace == INSERT_IGNORE ? 'INSERT OR IGNORE' : 'INSERT OR REPLACE';
         }
-        $query = sprintf("%s INTO %s (%s) VALUES %s",   $INSERT,$table,$fields,$values);
-//        MyLog()->Append("sqlite query: ".$query);
-        return $this->db()->exec($query);
-    }
-
-    private function to_values($data): ?string
-    {
-        $values = [];
-        foreach ($data as $item){
-            $row = [];
-            foreach($item as $value){ $row[] = $this->quote($value);}
-            $values[] = sprintf("(%s)",implode(',',$row));
-        }
-        return implode(',',$values);
-    }
-
-    private function quote($value)
-    {
-        if(is_numeric($value)) return $value;
-        if(empty($value)) return 'null';
-        return sprintf('"%s"',SQLite3::escapeString($value));
-    }
-
-    private function to_fields($data): ?string
-    {
-        $first = array_values($data)[0] ?? [];
-        $fields = [];
-        foreach (array_keys($first) as $key){
-            $fields[] = $this->quote($key);
-        }
-        return implode(',',$fields);
+        return $this->transaction(function () use ($data, $table, $INSERT) {
+            foreach ($data as $row) {
+                $fields = array_map([self::class, 'identifier'], array_keys($row));
+                $query = $INSERT . ' INTO ' . self::identifier($table) . ' (' . implode(',', $fields) . ') VALUES (' . implode(',', array_fill(0, count($row), '?')) . ')';
+                if (!$this->execute($query, array_values($row))) throw new RuntimeException('Database insert failed');
+            }
+            return true;
+        });
     }
 
     private function to_array($data): ?array
     {
         $data = json_decode(json_encode($data),true);
+        if (empty($data)) return [];
         if(is_array($data)){
             $first = array_values($data)[0] ?? null;
             if(is_array($first)) return $data ;
@@ -64,55 +94,30 @@ class ApiSqlite
 
     public function edit_old($data,$table = 'services'): bool
     {
-        $data = $this->to_array($data);
-        if(!$data) return false ;
-        $sql = sprintf("UPDATE %s SET ",$table);
-        foreach($data as $row){
-            $query = $sql . $this->to_edit($row);
-//            MyLog()->Append("sqlite query: ".$query);
-            if(!$this->db()->exec($query)) return false ;
-        }
-        return true ;
+        return $this->edit($data, $table);
     }
 
 
     public function edit($data,$table = 'onts'): bool
     {
         $data = $this->to_array($data);
-        if(!is_array($data)){ return false; }
-
-        $first = array_values($data)[0];
-        $keys = array_keys($first) ;
-
-        $this->insert($data,$table,INSERT_IGNORE);
-
-        $tmp = $this->create_tmp($table) ;
-        if(!$tmp){ return false; }
-
-        if(!$this->insert($data,$tmp)){ return false; }
-
-        $key_pairs = [];
+        if (!$data) return false;
         $pks = $this->find_pk($table);
-        foreach($keys as $key){
-            if(in_array($key,$pks)){ continue; }
-            $key_pairs[] = "$key='$tmp'.$key";}
-        $pkpairs = [];
-        foreach($pks as $pk){
-            $pkpairs[] = "'$tmp'.$pk='$table'.$pk";
-        }
-        $pkstr = implode(' AND ',$pkpairs);
-        $st = "UPDATE $table SET " . implode(',',$key_pairs) . " FROM $tmp WHERE $pkstr";
-        return $this->exec($st);
-    }
-
-    private function create_tmp($table)
-    {
-        $tmp = "t_$table";
-
-        $st = [ "DROP TABLE IF EXISTS $tmp",
-            "CREATE TEMP TABLE $tmp AS SELECT * FROM $table LIMIT 0" ];
-        if($this->db()->exec(implode(";\n",$st))){ return $tmp; }
-        return null;
+        if (!$pks) throw new InvalidArgumentException('Missing table primary key');
+        return $this->transaction(function () use ($data, $table, $pks) {
+            foreach ($data as $row) {
+                foreach ($pks as $pk) if (!isset($row[$pk])) throw new InvalidArgumentException('Missing row primary key');
+                $this->insert($row, $table, INSERT_IGNORE);
+                $values = array_diff_key($row, array_fill_keys($pks, true));
+                if (!$values) continue;
+                $pairs = array_map(function ($key) { return self::identifier($key) . '=?'; }, array_keys($values));
+                $where = array_map(function ($key) { return self::identifier($key) . '=?'; }, $pks);
+                $params = array_values($values);
+                foreach ($pks as $pk) $params[] = $row[$pk];
+                $this->execute('UPDATE ' . self::identifier($table) . ' SET ' . implode(',', $pairs) . ' WHERE ' . implode(' AND ', $where), $params);
+            }
+            return true;
+        });
     }
 
     private function find_pk($table = 'onts')
@@ -124,7 +129,7 @@ class ApiSqlite
 
     private function find_columns($table = 'service_ports')
     {
-        $data = $this->selectCustom("PRAGMA TABLE_INFO('$table')") ?? [];
+        $data = $this->selectCustom('PRAGMA TABLE_INFO(' . self::identifier($table) . ')') ?? [];
         $columns= [];
         foreach ($data as $item){
             $columns[$item['name']] = $item['pk'] ;
@@ -133,32 +138,17 @@ class ApiSqlite
     }
 
 
-    private function to_edit($row): ?string
-    {
-        $id = $row['id'] ?? null ;
-        if(!$id) return null ;
-        $row = array_diff_key($row,['id' => null]);
-        $values = [];
-        foreach(array_keys($row) as $key){
-            $value = $row[$key] ?? null ;
-            $values[] = sprintf("%s=%s",$key,$this->quote($value));
-        }
-        return implode(',',$values) . " WHERE id=" . $id;
-    }
-
     public function has_tables($tables = ['services','devices','config']): bool
     {
         foreach ($tables as $table){
-            $sql = "SELECT name from sqlite_master where type='table' AND name='" . $table ."'";
-            if(empty($this->db()->querySingle($sql))) return false;
+            if (!$this->singleQuery("SELECT name FROM sqlite_master WHERE type='table' AND name=?", false, [$table])) return false;
         }
         return true ;
     }
 
     public function exists($id,$table = 'network'): ?int
     {
-        return $this->db()->querySingle(
-            sprintf('select id from %s where id = %s',$table,$id));
+        return $this->singleQuery('SELECT id FROM ' . self::identifier($table) . ' WHERE id=?', false, [$id]);
     }
 
     public function exec($sql): ?bool
@@ -169,26 +159,22 @@ class ApiSqlite
 
     public function ifDeviceNameIsUsed($name)
     {
-        $sql = "select id from devices where name='" . $name . "' collate nocase";
-        return $this->singleQuery($sql);
+        return $this->singleQuery('SELECT id FROM devices WHERE name=? COLLATE NOCASE', false, [$name]);
     }
 
     public function countServicesByDeviceId($id)
     {
-        $sql = "select count(id) from services where device=" . $id;
-        return $this->singleQuery($sql);
+        return $this->singleQuery('SELECT count(id) FROM services WHERE device=?', false, [$id]);
     }
 
     public function selectDeviceByDeviceName($name): object
     {
-        $sql = "select * from devices where name='" . $name . "' collate nocase";
-        return (object)$this->singleQuery($sql,true);
+        return (object) $this->singleQuery('SELECT * FROM devices WHERE name=? COLLATE NOCASE', true, [$name]);
     }
 
     public function selectDeviceById($id): object
     {
-        $sql = "select * from devices where id=" . $id;
-        return (object)$this->singleQuery($sql,true);
+        return (object) $this->singleQuery('SELECT * FROM devices WHERE id=?', true, [$id]);
     }
 
     public function selectServices(): ?array
@@ -206,42 +192,45 @@ class ApiSqlite
 
     public function deleteAll($table = 'services'): bool
     {
-        $sql = sprintf("delete from %s",$table);
-        return $this->db()->exec($sql);
+        return $this->execute('DELETE FROM ' . self::identifier($table));
     }
 
     public function delete($id, $table = 'services'): bool
     {
-        $sql = sprintf("delete from %s where id = %s",$table,$id);
-        return $this->db()->exec($sql);
+        return $this->execute('DELETE FROM ' . self::identifier($table) . ' WHERE id=?', [$id]);
     }
 
-    public function selectCustom($sql) : ?array
+    public function selectCustom($sql, array $params = []) : ?array
     {
-        $res = $this->db()->query($sql);
-        $return = null;
-        while ($row = $res->fetchArray(SQLITE3_ASSOC)) {
-            $return[] = $row;
-        }
-        return $return;
+        $statement = $this->prepare($sql, $params);
+        try {
+            $res = $statement->execute();
+            $rows = [];
+            while ($row = $res->fetchArray(SQLITE3_ASSOC)) $rows[] = $row;
+            $res->finalize();
+            return $rows;
+        } finally { $statement->close(); }
     }
 
     public function selectAllFromTable($table = 'services'): ?array
     {
-        $sql = "select * from $table";
-        $res = $this->db()->query($sql);
-        $return = [];
-        while ($row = $res->fetchArray(SQLITE3_ASSOC)) {
-            $return[] = $row;
-        }
-        return $return;
+        return $this->selectCustom('SELECT * FROM ' . self::identifier($table));
     }
 
-    private function unStringify($value)
+    private function unStringify($value, string $key)
     {
-        if(in_array($value,['true','false'])) return $value == 'true' ;
-        if(is_numeric($value)) return (double) $value;
-        if(empty($value)) return null;
+        if ($value === null || $value === '') return null;
+        // Storage is TEXT: infer types from the setting, never from a user's value or identifier.
+        if (in_array($key, ['router_ppp_pool','auto_ppp_user','auto_hs_user','hs_enable',
+            'disable_contention','unsuspend_date_fix','debugEnable'], true)) {
+            $flag = filter_var($value, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
+            if ($flag === null) throw new InvalidArgumentException('invalid_boolean_config_' . $key);
+            return $flag;
+        }
+        if (in_array($key, ['lease_time','dhcp_lease_time','disabled_rate','unsuspend_fix_wait','backup_cursor'], true)) {
+            if (!is_numeric($value) || !is_finite((float) $value)) throw new InvalidArgumentException('invalid_numeric_config_' . $key);
+            return $key === 'backup_cursor' ? (int) $value : (float) $value;
+        }
         return $value ;
     }
 
@@ -249,7 +238,8 @@ class ApiSqlite
     {
         if(is_bool($value)) return $value ? 'true' : 'false';
         if(is_numeric($value)) return (string) $value;
-        if(empty($value)) return null ;
+        if($value === null || $value === '') return null ;
+        if (!is_scalar($value)) throw new InvalidArgumentException('invalid_config_value');
         return $value ;
     }
 
@@ -259,29 +249,23 @@ class ApiSqlite
         $cfg = new stdClass();
         foreach ($read as $row) {
             $key = $row['key'] ?? 'nokey';
-            $cfg->$key  = $this->unStringify($row['value']);
+            $cfg->$key  = $this->unStringify($row['value'], $key);
         }
         return $cfg ;
     }
 
     public function saveConfig($fields): bool
     {
-        $data = (array) $fields ;
-        foreach(array_keys($data) as $key){
-            $now = (new DateTime())->format('Y-m-d H:i:s');
-            $value = $this->stringify($data[$key] ?? null);
-            $sql = sprintf("INSERT OR REPLACE INTO config ('key','value','last','created')".
-                " VALUES ('%s','%s','%s','%s') ",$key,$value,$now,'2020-01-01 00:00:00');
-            if(!$this->db()->exec($sql)) return false;
-        }
-        return true;
+        $rows = [];
+        foreach ((array) $fields as $key => $value) $rows[] = ['key' => $key, 'value' => $this->stringify($value), 'last' => date('c'), 'created' => '2020-01-01'];
+        return !$rows || $this->insert($rows, 'config', INSERT_REPLACE);
     }
 
     private function db(): SQLite3
     {
         if(empty($this->_db)){
-            $this->_db = new SQLite3($this->path);
-            $this->_db->busyTimeout(5000);
+            $this->_db = new SQLite3($this->path, $this->readOnly ? SQLITE3_OPEN_READONLY : SQLITE3_OPEN_READWRITE | SQLITE3_OPEN_CREATE);
+            $this->_db->busyTimeout($this->readOnly ? 250 : 5000);
             $this->_db->enableExceptions(true);
         }
         return $this->_db ;
@@ -290,24 +274,49 @@ class ApiSqlite
     public function selectIsUsed($address, $ipv6 = false):bool
     {
         $field = $ipv6 ? 'address6' : 'address';
-        $query = sprintf("select id from network where %s = '%s'",$field,$address);
-        $id = $this->db()->querySingle($query) ;
+        $id = $this->singleQuery('SELECT id FROM network WHERE ' . $field . '=?', false, [$address]);
         return (bool) $id ;
     }
 
     public function selectAddress($sid,$ipv6 = false): ?string
     {
         $field = $ipv6 ? 'address6': 'address';
-        $query = "select $field from network where id='$sid'";
-        return $this->db()->querySingle($query);
+        return $this->singleQuery('SELECT ' . $field . ' FROM network WHERE id=?', false, [$sid]);
     }
 
-    public function singleQuery($sql,$entireRow=false)
+    public function singleQuery($sql,$entireRow=false, array $params = [])
     {
-        return $this->db()->querySingle($sql,$entireRow);
+        $rows = $this->selectCustom($sql, $params);
+        if (!$rows) return null;
+        return $entireRow ? $rows[0] : reset($rows[0]);
     }
 
-    public function __construct($path = null) { $this->path = $path ?? 'data/data.db';}
+    public function close(): void
+    {
+        if ($this->transactionDepth) throw new RuntimeException('Active database transaction');
+        if ($this->_db) $this->_db->close();
+        $this->_db = null;
+    }
+
+    public function backupTo(string $path): bool
+    {
+        $destination = new SQLite3($path);
+        try { return $this->db()->backup($destination); }
+        finally { $destination->close(); }
+    }
+
+    public function restoreFrom(string $path): bool
+    {
+        $source = new SQLite3($path, SQLITE3_OPEN_READONLY);
+        $source->enableExceptions(true);
+        $source->busyTimeout(10000);
+        try { return $source->backup($this->db()); }
+        finally { $source->close(); }
+    }
+
+    public function lastInsertId(): int { return $this->db()->lastInsertRowID(); }
+
+    public function __construct($path = null, bool $readOnly = false) { $this->path = $path ?? 'data/data.db'; $this->readOnly = $readOnly; }
 
 }
 

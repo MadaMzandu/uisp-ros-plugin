@@ -130,7 +130,7 @@
     "width" : "550",
     "label" : "Router address list for disabled users",
     "describe" : true,
-    "description" : "Name of dynamic firewall list for filtering and redirecting suspended accounts"
+    "description" : "Firewall list for suspended clients. Newly created PPP/Hotspot suspension profiles use this address-list. RouterOS adds the IP on connection; firewall rules determine blocking. Existing profiles retain their settings."
   },
   "config_disabled_profile" :
   {
@@ -138,7 +138,7 @@
     "width" : "550",
     "label" : "Router profile for disabled users",
     "describe" : true,
-    "description" : "Router ppp profile that is applied to suspended accounts. The profile has to be created and configured each router"
+    "description" : "PPP/Hotspot suspension profile. If missing, it is created with the configured suspension list and rate; PPP obtains the router local address. Existing profiles are preserved. Creation requires a list or positive rate; zero means no limit."
   },
   "config_disabled_rate" :
   {
@@ -146,7 +146,7 @@
     "width" : "550",
     "label" : "Router rate limit for disabled accounts",
     "describe" : true,
-    "description" : "Router rate applied to disabled profile and disabled dhcp queues"
+    "description" : "Additional maximum suspended-client rate in Mbps. PPP/Hotspot uses an individual queue; the existing profile and other queues may impose lower limits. Zero adds no extra limit."
   },
   "config_unsuspend_date_fix" :
   {
@@ -243,7 +243,7 @@
     "label" : "Disable bandwidth contention",
     "width" : "75",
     "describe" : true,
-    "description" : "Check option to disable parent queues. May take a few minutes to apply and will delete parent queues from routers."
+    "description" : "Disables contention. Saving schedules updates for affected services; check Jobs for progress. Parent links are removed; unused legacy parent queues may remain."
   },
   "config_hs_enable" :
   {
