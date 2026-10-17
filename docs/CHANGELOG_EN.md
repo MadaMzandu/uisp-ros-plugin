@@ -1,6 +1,6 @@
 # UISP ROS Plugin — cumulative changelog
 
-[Español](MEJORAS.md) · [PR description](PR_DESCRIPTION.md) · [Webhook setup and rationale](WEBHOOK_SETUP_EN.md)
+[Español](MEJORAS.md) · [PR description](PR_DESCRIPTION.md) · [Full PR reference](PR_DESCRIPTION_FULL.md) · [Webhook setup and rationale](WEBHOOK_SETUP_EN.md)
 
 This revision combines [dhanielsnieto's changes in PR #89](https://github.com/MadaMzandu/uisp-ros-plugin/pull/89) with the subsequent fixes prepared in this repository. The comparison starts at `7ca8dc8`; the original PR ends at `056b89f`. The current candidate is **2.4.46**. The operator confirmed archived-plan speed recovery in their 2.4.19 installation. That confirmation covers this historical scenario; the remaining UISP and RouterOS integration scenarios still require their own checks before production readiness can be established.
 

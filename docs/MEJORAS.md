@@ -1,6 +1,6 @@
 # UISP ROS Plugin — mejoras acumuladas
 
-[English changelog](CHANGELOG_EN.md) · [Texto completo del PR](PR_DESCRIPTION.md) · [Guía del webhook en inglés](WEBHOOK_SETUP_EN.md)
+[English changelog](CHANGELOG_EN.md) · [Texto del PR](PR_DESCRIPTION.md) · [Referencia íntegra del PR](PR_DESCRIPTION_FULL.md) · [Guía del webhook en inglés](WEBHOOK_SETUP_EN.md)
 
 Esta revisión reúne las modificaciones de [dhanielsnieto en el PR #89](https://github.com/MadaMzandu/uisp-ros-plugin/pull/89) y las correcciones posteriores preparadas en este repositorio. La comparación parte de `7ca8dc8`; el PR original termina en `056b89f`. Las modificaciones posteriores todavía deben validarse en una instalación real de UISP y RouterOS antes de considerarlas listas para producción.
 

@@ -1,6 +1,6 @@
 # UISP/UCRM Plugin for RouterOs Services
 
-[Complete English changelog](docs/CHANGELOG_EN.md) · [Texto completo para el PR](docs/PR_DESCRIPTION.md) · [Webhook setup and rationale](docs/WEBHOOK_SETUP_EN.md) · [Mejoras en español](docs/MEJORAS.md)
+[Complete English changelog](docs/CHANGELOG_EN.md) · [Texto para el PR](docs/PR_DESCRIPTION.md) · [Referencia íntegra del PR](docs/PR_DESCRIPTION_FULL.md) · [Webhook setup and rationale](docs/WEBHOOK_SETUP_EN.md) · [Mejoras en español](docs/MEJORAS.md)
 
 ## Candidato 2.4.46 — exclusiones para futuras asignaciones
 
