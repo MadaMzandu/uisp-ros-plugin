@@ -536,15 +536,24 @@ class ApiJobQueue
 
     public function list(): array
     {
+        require_once __DIR__.'/api_job_changes.php';
         $rows = $this->query("SELECT * FROM jobs WHERE status IN ('pending','running') ORDER BY id");
         $status = $this->selectionStatus(array_column($rows, 'id'));
+        $applied = [];
+        foreach ($this->query("SELECT service_id,applied_payload FROM service_versions
+            WHERE applied_payload IS NOT NULL AND service_id IN (SELECT service_id FROM jobs WHERE status IN ('pending','running'))") as $confirmed) {
+            $snapshot=json_decode($confirmed['applied_payload'],true);
+            if (is_array($snapshot)) $applied[(int)$confirmed['service_id']]=$snapshot;
+        }
         $result = [];
         foreach ($rows as $row) {
             $item = $this->payload($row);
+            $planned = ApiJobChanges::summarize(array_replace($item,['action'=>$row['operation']]),$applied[(int)$row['service_id']]??null);
             foreach (['_device', '_plan', '_commands', '_batch', 'password'] as $secret) {
                 unset($item[$secret]);
             }
             $item = $this->publicPayload($item);
+            $item['plannedChanges'] = $planned;
             $item['action'] = $row['operation'];
             $item['jobId'] = 'Q' . $row['id'];
             $item['version'] = (int) $row['version'];

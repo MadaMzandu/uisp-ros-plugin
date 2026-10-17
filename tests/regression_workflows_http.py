@@ -159,6 +159,9 @@ $q=new ApiJobQueue('data/jobs.db',null);$q->close();
                 status, body, _ = request(operation('service_lifecycle', 'preview', {'serviceId': 42}), role='view')
                 check(status == 200 and body['status'] == 'ok' and body['data']['state'] == 'active' and not body['data']['eligible'],
                       'A live service was eligible for retirement: ' + str(body))
+                status, body, _ = request(operation('service_lifecycle', 'preview', {'serviceId': 999}), role='view')
+                check(status == 200 and body['data']['state'] == 'unknown' and not body['data']['eligible']
+                      and 'PRIVATE' not in json.dumps(body), 'Unavailable CRM details leaked through lifecycle preview: ' + str(body))
                 for role in ('none', 'client'):
                     check(request(operation('service_lifecycle', 'preview', {'serviceId': 771}), role=role)[0] == 403,
                           'Unauthorized lifecycle preview was accepted')
@@ -166,11 +169,43 @@ $q=new ApiJobQueue('data/jobs.db',null);$q->close();
                 check(status == 200 and body['data']['eligible'] and body['data']['previewToken'],
                       'An ended service with only an old local reservation could not be reviewed: ' + str(body))
                 lifecycle_token = body['data']['previewToken']
+                with closing(sqlite3.connect(directory / 'data/jobs.db')) as db, db:
+                    running = db.execute("INSERT INTO jobs(service_id,version,operation,status,payload,identity,fingerprint,created,updated,next_attempt) VALUES(771,1,'update','running',?,'fixture-running','fixture-running',1,1,1)",
+                                         (json.dumps({'id': 771, 'clientId': 17}),)).lastrowid
+                status, body, _ = request(operation('service_lifecycle', 'apply', {'previewToken': lifecycle_token}, 'update'))
+                check(status == 409 and body['error'] and body['message'] == 'lifecycle_service_busy'
+                      and 'PRIVATE' not in json.dumps(body), 'A running service lost its actionable retirement rejection: ' + str(body))
+                status, body, _ = request(operation('service_lifecycle', 'apply', {'previewToken': lifecycle_token}, 'update'))
+                check(status == 409 and body['message'] == 'lifecycle_invalid_token', 'A rejected retirement proof was reusable: ' + str(body))
+                with closing(sqlite3.connect(directory / 'data/data.db')) as db:
+                    check(db.execute('SELECT address FROM network WHERE id=771').fetchone() == ('192.0.2.51',),
+                          'A busy retirement released the old reservation')
+                with closing(sqlite3.connect(directory / 'data/jobs.db')) as db, db:
+                    check(db.execute('SELECT status,payload FROM jobs WHERE id=?', (running,)).fetchone()
+                          == ('running', json.dumps({'id': 771, 'clientId': 17})), 'A busy retirement rewrote the running job')
+                    db.execute('DELETE FROM jobs WHERE id=?', (running,))
+                status, body, _ = request(operation('service_lifecycle', 'preview', {'serviceId': 771}), role='view')
+                check(status == 200 and body['data']['eligible'] and body['data']['previewToken'] != lifecycle_token,
+                      'A stopped running job did not permit a fresh explicit review: ' + str(body))
+                lifecycle_token = body['data']['previewToken']
+                with closing(sqlite3.connect(directory / 'data/jobs.db')) as db, db:
+                    db.execute("CREATE TRIGGER fixture_private_retirement BEFORE INSERT ON service_event_locks BEGIN SELECT RAISE(ABORT,'PRIVATE-QUEUE-ERROR'); END")
+                status, body, _ = request(operation('service_lifecycle', 'apply', {'previewToken': lifecycle_token}, 'update'))
+                check(status == 500 and body['message'] == 'operation_failed_check_log' and 'PRIVATE' not in json.dumps(body),
+                      'An unrecognized retirement failure disclosed private storage details: ' + str(body))
+                with closing(sqlite3.connect(directory / 'data/jobs.db')) as db, db:
+                    db.execute('DROP TRIGGER fixture_private_retirement')
+                status, body, _ = request(operation('service_lifecycle', 'apply', {'previewToken': lifecycle_token}, 'update'))
+                check(status == 409 and body['message'] == 'lifecycle_invalid_token', 'An uncertain retirement proof was reusable: ' + str(body))
+                status, body, _ = request(operation('service_lifecycle', 'preview', {'serviceId': 771}), role='view')
+                check(status == 200 and body['data']['eligible'] and body['data']['previewToken'] != lifecycle_token,
+                      'A fresh retirement review could not recover after an uncertain write: ' + str(body))
+                lifecycle_token = body['data']['previewToken']
                 status, body, _ = request(operation('service_lifecycle', 'apply', {'previewToken': lifecycle_token}, 'update'))
                 check(status == 200 and body['data']['retired'] and body['data']['released'],
                       'The reviewed ended reservation was not released: ' + str(body))
-                check(request(operation('service_lifecycle', 'apply', {'previewToken': lifecycle_token}, 'update'))[0] == 400,
-                      'Lifecycle preview authorization was reusable')
+                status, body, _ = request(operation('service_lifecycle', 'apply', {'previewToken': lifecycle_token}, 'update'))
+                check(status == 409 and body['message'] == 'lifecycle_invalid_token', 'Lifecycle preview authorization was reusable: ' + str(body))
                 with closing(sqlite3.connect(directory / 'data/data.db')) as db:
                     check(db.execute('SELECT address FROM network WHERE id=771').fetchone() in (None, (None,)), 'Ended local reservation stayed occupied')
                     check(db.execute('SELECT address FROM network WHERE id=9807').fetchone() == ('192.0.2.50',),

@@ -239,7 +239,7 @@ const evaluate = code => vm.runInContext(code, context);
 const plain = value => JSON.parse(JSON.stringify(value));
 const flush = () => new Promise(resolve => setImmediate(resolve));
 
-function jobsRefreshFixture(storage = new Map(), blockedStorage = false) {
+function jobsRefreshFixture(storage = new Map(), blockedStorage = false, translated = false) {
     const nodes = new Map(Array.from(markup.matchAll(/\bid="([^"]+)"/g), match => [match[1], new Element(match[1])]));
     const views = ['devices', 'plans', 'config', 'jobs', 'system'];
     const nav = views.map(view => {
@@ -262,7 +262,21 @@ function jobsRefreshFixture(storage = new Map(), blockedStorage = false) {
             else { if (!events.has(type)) events.set(type, []); events.get(type).push(listener); }
         },
         removeEventListener(type, listener) { events.set(type, (events.get(type) || []).filter(item => item !== listener)); },
-        createElement() { return new Element(); }, createElementNS() { return new Element(); },
+        createElement() {
+            const element = new Element();
+            if (translated) Object.defineProperty(element, 'innerHTML', {
+                get() { return this.markup || ''; },
+                set(value) {
+                    Object.getOwnPropertyDescriptor(Element.prototype, 'innerHTML').set.call(this, value);
+                    this.translatedSpans = Array.from(String(value).matchAll(/<span\b([^>]*\bdata-i18n="[^"]+"[^>]*)>([^<]*)<\/span>/g), match => {
+                        const span = new Element(); span.textContent = decodeAttribute(match[2]);
+                        for (const attribute of match[1].matchAll(/([\w-]+)="([^"]*)"/g)) span.setAttribute(attribute[1], decodeAttribute(attribute[2]));
+                        return span;
+                    });
+                }
+            });
+            return element;
+        }, createElementNS() { return new Element(); },
         querySelector(selector) { assert(localTables.has(selector)); return localTables.get(selector); },
         querySelectorAll(selector) {
             if (selector === '.nav-item') return nav;
@@ -271,6 +285,9 @@ function jobsRefreshFixture(storage = new Map(), blockedStorage = false) {
                 const boxes = localTables.get('#jobs-table tbody').children.map(row => row.querySelector('.job-checkbox'));
                 return selector.endsWith(':checked') ? boxes.filter(box => box.checked) : boxes;
             }
+            if (selector === '.job-planned-changes[open]') return localTables.get('#jobs-table tbody').children
+                .filter(row => row.innerHTML.includes('class="job-planned-changes"')).map(row => row.querySelector('.job-planned-changes')).filter(details => details.open);
+            if (translated && selector === '[data-i18n]') return localTables.get('#jobs-table tbody').children.flatMap(row => row.translatedSpans || []);
             return [];
         }
     };
@@ -296,6 +313,11 @@ function jobsRefreshFixture(storage = new Map(), blockedStorage = false) {
             return { ok: true, status: 200, json: async () => plain(response) };
         }
     });
+    if (translated) {
+        localContext.window.document = localDocument;
+        localContext.window.localStorage = { getItem() { return null; }, setItem() {} };
+        vm.runInContext(i18nSource, localContext); localContext.PanelI18n = localContext.window.PanelI18n;
+    }
     vm.runInContext(apiSource, localContext); vm.runInContext(appSource, localContext); onReady();
     return {
         nodes, calls, clock, document: localDocument, state,
@@ -305,6 +327,7 @@ function jobsRefreshFixture(storage = new Map(), blockedStorage = false) {
         boxes() { return localDocument.querySelectorAll('.job-checkbox'); },
         queueReply(reply) { jobReplies.push(typeof reply === 'function' ? reply : () => reply); },
         setState(value) { state = value; }, setUpdateReply(reply) { updateReply = reply; },
+        rows() { return localTables.get('#jobs-table tbody').children; }, i18n: localContext.PanelI18n,
         listCalls() { return calls.filter(call => call.target === 'jobs' && call.changeType === 'list').length; },
         autoTimers() { return [...clock.values()].filter(timer => [5000, 10000, 30000, 60000].includes(timer.delay) && !['pollCrmMonitor', 'pollJobsStatus'].includes(timer.callback.name)); },
         async hidden(value) { localDocument.hidden = value; for (const listener of events.get('visibilitychange') || []) listener(); await flush(); },
@@ -319,6 +342,95 @@ function jobsRefreshFixture(storage = new Map(), blockedStorage = false) {
             now = end;
         }
     };
+}
+
+async function checkJobPlannedChanges() {
+    const text = html => decodeAttribute(html.replace(/<[^>]*>/g, ''));
+    const report = extra => ({ status: 'prepared', reference: 'last_applied', operation: 'update', prepared: true, reconnect: true,
+        changes: [
+            { field: 'site', before: 'Previous Site', after: 'Current Site', beforeKnown: true, afterKnown: true },
+            { field: 'ipv4', before: '192.0.2.42', after: '198.51.100.42', beforeKnown: true, afterKnown: true },
+            { field: 'profile', before: 'Previous plan', after: 'Current plan [Override S#42]', beforeKnown: true, afterKnown: true },
+            { field: 'state', before: 'active', after: 'suspended', beforeKnown: true, afterKnown: true },
+            { field: 'rate', before: '5M/20M', after: '10M/35M', beforeKnown: true, afterKnown: true },
+            { field: 'burst', before: null, after: '15M/50M', beforeKnown: true, afterKnown: true }
+        ], ...extra });
+    const job = (plannedChanges, id = 42) => ({ jobId: 'Q' + id, serviceId: id, deviceId: 10, state: 'pending', attempts: 1,
+        action: plannedChanges?.operation || 'update', plannedChanges });
+    const fixture = jobsRefreshFixture(new Map(), false, true);
+    fixture.setState({ Q42: job(report()), Q43: job(report({ status: 'no_previous', reference: 'none', prepared: false,
+        reconnect: false, changes: [
+            { field: 'ipv4', before: null, after: '192.0.2.43', beforeKnown: false, afterKnown: true },
+            { field: 'ipv6', before: null, after: null, beforeKnown: false, afterKnown: true }
+        ] }), 43) });
+    await fixture.navigate('jobs');
+    let [current, first] = fixture.rows();
+    const compact = text(current.innerHTML.match(/<summary>([\s\S]*?)<\/summary>/)[1]);
+    assert(compact.includes('Router / Site: Previous Site → Current Site') && compact.includes('IPv4: 192.0.2.42 → 198.51.100.42'),
+        'The queue row must show its first two known changes inline');
+    assert(!compact.includes('Current plan') && !compact.includes('10M/35M'), 'Additional changed values belong in the expanded detail');
+    const complete = text(current.innerHTML.match(/<div class="job-changes-content">([\s\S]*?)<\/details>/)[1]);
+    for (const expected of ['Perfil: Previous plan → Current plan [Override S#42]', 'Estado: Activo → Suspendido',
+        'Velocidad: 5M/20M → 10M/35M', 'Burst: Sin asignar → 15M/50M', 'Reconexión solicitada.',
+        'Comparado con el último estado aplicado por el plugin; no es una lectura actual del router.'])
+        assert(complete.includes(expected), 'The expanded job detail omitted expected evidence: ' + expected);
+    assert(!complete.includes('Los valores pendientes de preparar'), 'A frozen prepared job must not be labelled as unprepared');
+    const noPrevious = text(first.innerHTML);
+    assert(noPrevious.includes('IPv4: Por determinar → 192.0.2.43') && noPrevious.includes('IPv6: Por determinar → Sin asignar'),
+        'Unknown previous evidence and a known unassigned value must remain distinct');
+    assert(noPrevious.includes('Sin estado anterior registrado.') && noPrevious.includes('Los valores pendientes de preparar pueden cambiar'),
+        'First application must explain both its absent reference and unprepared values');
+    assert(!noPrevious.includes('Comparado con el último estado aplicado') && !noPrevious.includes('Reconexión solicitada.'),
+        'A first application must not claim saved prior evidence or a forced reconnection');
+
+    current.querySelector('.job-planned-changes').open = true;
+    current.querySelector('.job-checkbox').checked = true;
+    await fixture.refresh();
+    [current] = fixture.rows();
+    assert.equal(current.querySelector('.job-planned-changes').open, true, 'Automatic/manual queue refresh must keep the reviewed job expanded');
+    assert.equal(current.querySelector('.job-checkbox').checked, true, 'Refreshing planned changes must preserve a selected job');
+    const requestsBeforeLanguage = fixture.calls.length;
+    fixture.i18n.setLanguage('en'); await flush();
+    assert.equal(fixture.rows()[0], current, 'Changing language must update planned-change labels without replacing the open row');
+    assert.equal(current.querySelector('.job-planned-changes').open, true);
+    assert.equal(current.querySelector('.job-checkbox').checked, true);
+    const translated = fixture.document.querySelectorAll('[data-i18n]').map(node => [node.getAttribute('data-i18n'), node.textContent]);
+    for (const source of ['Cambios previstos', 'Perfil', 'Activo', 'Suspendido', 'Por determinar', 'Sin asignar',
+        'Reconexión solicitada.', 'Comparado con el último estado aplicado por el plugin; no es una lectura actual del router.']) {
+        const spans = translated.filter(([key]) => key === source);
+        assert(spans.length, 'The planned-change display lacks an in-place language binding: ' + source);
+        assert(spans.every(([, value]) => value === fixture.i18n.t(source) && value !== source), 'The planned-change binding did not translate: ' + source);
+    }
+    assert.equal(fixture.calls.length, requestsBeforeLanguage, 'Changing planned-change language must not fetch or execute jobs');
+
+    fixture.i18n.setLanguage('es'); await flush();
+    const hostile = report({ changes: [
+        { field: 'profile', before: attack, after: attack, beforeKnown: true, afterKnown: true },
+        { field: 'account', before: null, after: '', beforeKnown: false, afterKnown: true },
+        { field: 'password', before: 'PRIVATE-UNKNOWN-FIELD', after: attack, beforeKnown: true, afterKnown: true },
+        { field: attack, before: null, after: 'UNKNOWN-ATTACK-FIELD', beforeKnown: true, afterKnown: true },
+        { field: 'rate', before: 15, after: 'INVALID-NUMERIC-VALUE', beforeKnown: true, afterKnown: true }
+    ] });
+    fixture.setState({ Q42: job(hostile), Q43: job(report({ operation: 'delete', changes: [], reconnect: true }), 43),
+        Q44: job(report({ operation: 'queues_remove', changes: [], reconnect: false }), 44),
+        Q45: job(report({ operation: 'queues_set', changes: [], reconnect: false }), 45) });
+    await fixture.refresh();
+    const hostileMarkup = fixture.rows()[0].innerHTML;
+    assert(!hostileMarkup.includes('<img') && !hostileMarkup.includes('<script') && hostileMarkup.includes('&lt;img'),
+        'Untrusted before/after values must be escaped at both summary and detail boundaries');
+    for (const privateValue of ['PRIVATE-UNKNOWN-FIELD', 'UNKNOWN-ATTACK-FIELD', 'INVALID-NUMERIC-VALUE'])
+        assert(!hostileMarkup.includes(privateValue), 'Unknown fields or malformed values must not enter the queue display');
+    const deleteText = text(fixture.rows()[1].innerHTML);
+    assert(deleteText.includes('Retirar la cuenta y sus recursos asociados.') && deleteText.includes('Reconexión solicitada.')
+        && !deleteText.includes('Se volverá a aplicar'), 'Deletion must explain removal and reconnection without promising configuration reapplication');
+    const queuesRemove = text(fixture.rows()[2].innerHTML), queuesSet = text(fixture.rows()[3].innerHTML);
+    assert(queuesRemove.includes('Retirar las colas del servicio.') && !queuesRemove.includes('Retirar la cuenta'), 'Queue-only removal must not claim to delete the account');
+    assert(queuesSet.includes('Actualizar las colas del servicio.') && !queuesSet.includes('Retirar la cuenta'), 'Queue-only apply must identify its limited scope');
+    fixture.setState(Object.fromEntries([null, { ...report(), status: attack }, { ...report(), reference: 'untrusted' },
+        { ...report(), changes: 'not-a-list' }].map((value, index) => ['Q' + (50 + index), job(value, 50 + index)])));
+    await fixture.refresh();
+    assert(fixture.rows().every(row => !row.innerHTML.includes('<details class="job-planned-changes"')), 'Malformed optional reports must leave ordinary job controls available');
+    assert.equal(fixture.calls.filter(call => call.changeType === 'update').length, 0, 'Reviewing planned changes is entirely read-only');
 }
 
 async function checkJobsRefresh() {
@@ -2553,7 +2665,7 @@ async function checkNetworkRecoveryPanel() {
     assert.deepEqual(plain(healthy.diagnostics()[0].data), {}, 'Reactive recovery reads must not request live CRM verification');
     const malformed = recoveryPanelFixture({ bootstrap: '{', details }); await flush();
     assert.equal(malformed.nodes.get('btn-cache').disabled, false, 'An invalid optional bootstrap must not break normal navigation');
-    assert.equal((markup.match(/(?:src|href)="(?:js|css)\/[^"?]+\?v=2\.0\.58"/g) || []).length, 8, 'Every panel asset must use the new revision to invalidate UISP browser caches');
+    assert.equal((markup.match(/(?:src|href)="(?:js|css)\/[^"?]+\?v=2\.0\.59"/g) || []).length, 8, 'Every panel asset must use the new revision to invalidate UISP browser caches');
     assert(!markup.includes('v=2.0.45'));
     assert(apiSource.includes("'alert-triangle':"), 'The conflict warning must have its own local warning icon');
 }
@@ -2991,6 +3103,51 @@ async function checkRequesterLifecycleReview() {
     await uncertain.nodes.get('apply-service-lifecycle').fire('click');
     assert.equal(uncertain.writes().length, 1, 'An uncertain apply must consume its token instead of replaying it');
     assert(uncertain.nodes.get('service-lifecycle-status').textContent.includes('No se confirmó el retiro'));
+    const actionableFailures = {
+        lifecycle_router_identity_unknown: /router|cuenta anterior/i,
+        lifecycle_identity_changed: /identidad|cliente cambió/i,
+        lifecycle_service_busy: /en ejecución|ocupad/i,
+        lifecycle_invalid_token: /revisión|revisa nuevamente/i,
+        lifecycle_resources_unconfirmed: /router|limpieza/i,
+        lifecycle_changed: /cambió|cambiado/i
+    };
+    for (const code of ['lifecycle_router_identity_unknown', 'lifecycle_identity_changed', 'lifecycle_service_busy']) {
+        const fixture = await open(candidate({ eligible: false, previewToken: null, expiresAt: null, reason: code }));
+        const status = fixture.nodes.get('service-lifecycle-status').textContent;
+        assert.match(status, actionableFailures[code], 'A blocked retirement preview must explain its local or router preflight failure: ' + code);
+        assert(!status.includes(code) && !status.includes('No se pudo confirmar el estado actual'), 'A known preview guard is distinct from unavailable UISP evidence');
+        assert.equal(fixture.nodes.get('apply-service-lifecycle').disabled, true, 'Blocked preflight must not grant retirement authorization');
+        assert.equal(fixture.writes().length, 0, 'Lifecycle preflight is read-only');
+    }
+    for (const [code, explanation] of Object.entries(actionableFailures)) {
+        const fixture = await open(candidate());
+        fixture.reply('update/service_lifecycle', { status: 'failed', error: true, message: code, data: [] });
+        await fixture.nodes.get('apply-service-lifecycle').fire('click'); await flush();
+        const status = fixture.nodes.get('service-lifecycle-status').textContent;
+        assert.match(status, explanation, 'A known retirement guard must explain why it stopped: ' + code);
+        assert(!status.includes('No se confirmó el retiro') && !status.includes(code), 'A known server rejection must not become an unknown write outcome or a raw code: ' + code);
+        assert.equal(fixture.nodes.get('apply-service-lifecycle').disabled, true, 'A rejected retirement consumes its preview proof: ' + code);
+        await fixture.nodes.get('apply-service-lifecycle').fire('click');
+        assert.equal(fixture.writes().length, 1, 'A rejected token cannot be replayed: ' + code);
+        const reads = fixture.calls.filter(call => call.target === 'service_lifecycle' && call.action === 'preview').length;
+        fixture.reply('list/service_lifecycle', envelope(candidate({ previewToken: 'f'.repeat(64) })));
+        await fixture.nodes.get('review-service-lifecycle').fire('click'); await flush();
+        assert.equal(fixture.calls.filter(call => call.target === 'service_lifecycle' && call.action === 'preview').length, reads + 1,
+            'Verify again must fetch fresh evidence after a known guard: ' + code);
+        assert.equal(fixture.writes().length, 1, 'Rechecking a rejected retirement is read-only: ' + code);
+        assert.equal(fixture.nodes.get('apply-service-lifecycle').disabled, false, 'Fresh eligible evidence can authorize a separate explicit retry: ' + code);
+    }
+    for (const message of ['operation_failed_check_log', attack, 'lifecycle_router_identity_unknown ' + attack]) {
+        const fixture = await open(candidate());
+        fixture.reply('update/service_lifecycle', { status: 'failed', error: true, message, data: [] });
+        await fixture.nodes.get('apply-service-lifecycle').fire('click'); await flush();
+        assert(fixture.nodes.get('service-lifecycle-status').textContent.includes('No se confirmó el retiro'), 'Unrecognized failures retain the uncertain-write message');
+        assert(!fixture.nodes.get('service-lifecycle-status').textContent.includes(message), 'Untrusted server error text cannot be rendered as a lifecycle explanation');
+        assert.equal(fixture.nodes.get('apply-service-lifecycle').disabled, true);
+        assert.equal(fixture.writes().length, 1);
+        assert.equal(fixture.calls.filter(call => call.target === 'service_lifecycle' && call.action === 'preview').length, 1,
+            'An uncertain response must not trigger an implicit fresh authorization or replay');
+    }
     const closed = recoveryPanelFixture({ initialReplies: new Map([['list/jobs', envelope(job)]]) }); await closed.navigate('jobs');
     const waiting = deferred(); closed.reply('list/service_lifecycle', () => waiting.promise);
     const review = closed.tables.get('#jobs-table tbody').children[0].querySelector('.job-description').children.find(child => child.textContent === 'Revisar servicio solicitante #7279');
@@ -4275,6 +4432,7 @@ async function checkLanguagePresentation() {
     await checkLanguagePresentation();
     await checkNumericPlanEditors();
     await checkJobsRefresh();
+    await checkJobPlannedChanges();
     await checkNonblockingDeviceSync();
     await checkDeviceSyncReviewGuards();
     await checkImmediateDeviceSyncProtocol();

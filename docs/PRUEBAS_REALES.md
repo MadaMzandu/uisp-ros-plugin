@@ -1,6 +1,12 @@
-# Pruebas reales del candidato 2.4.47
+# Pruebas reales del candidato 2.4.48
 
 Las pruebas automatizadas usan bases temporales, transportes simulados y sockets locales. Esta lista comprueba la integración **UISP → plugin → API nativa de RouterOS** en una copia de UISP y un CHR/router con clientes de prueba. Registrar versiones de UISP, PHP y RouterOS, así como ID del servicio, plan, trabajo, estado e IP/prefijo en cada caso.
+
+## Comprobar retiro recuperable y cambios previstos en 2.4.48
+
+Los casos 298–305 comprueban el retiro después de eliminar un servicio y actualizar su caché, los motivos específicos de bloqueo y los cambios previstos de cada trabajo. Instalar el paquete y abrir una revisión nueva; un token anterior no se reutiliza.
+
+Validación 2.4.48 aprobada: **73 suites aisladas**, sintaxis de **72 archivos PHP propios**, 387 entradas del instalador, 154 archivos propios y 13 dependencias fijadas. Informe: `dist/verification-2.4.48.json`. SHA-256: `551af06874210632ebf69480c7a9851240cd71a37817dff24052f946c987e625`. Las pruebas cubren retiro con caché eliminada, propiedad exacta, protocolo nativo de lectura, limpieza real con transporte simulado, errores públicos seguros y cambios previstos sin consultas ni escrituras externas. No se modificaron UISP ni RouterOS de producción. Registrar los resultados de integración por separado.
 
 ## Comprobar perfiles legibles de override en 2.4.47
 
@@ -621,3 +627,12 @@ Si el piloto falla, pausar worker/webhook y conservar datos/errores sin credenci
 | 295 | Cambiar sólo el nombre del plan principal y permitir su reaplicación ordinaria a PPP y Hotspot. | Conserva el ID interno y añade el mismo indicador al nombre nuevo. El renombrado por sí mismo no fuerza una reconexión; sincronizar con reconexión explícita mantiene esa solicitud. |
 | 296 | Revisar diferencias, reintentar un trabajo antiguo y consultar una recuperación con nombres nuevos/antiguos. Probar un nombre ocupado por un perfil manual o marcador de otro servicio. | Reconoce ambos formatos válidos y conserva comandos históricos de eliminación exactos. No adopta perfiles manuales ni propietarios ambiguos. Los comentarios de perfil siguen su formato fijo, independientemente del idioma del panel. |
 | 297 | Quitar el override después del renombrado y repetir con una cuenta ajena todavía referenciando el perfil. | Vuelve al perfil compartido y retira el perfil personalizado legible sólo si quedó sin dependencias. Los demás servicios y perfiles conservan su identidad y velocidades. |
+
+| 298 | Eliminar un servicio de prueba ya aplicado, actualizar la caché y revisar su retiro conservando el comentario cliente/servicio en RouterOS. | Recupera su identidad exacta, permite retirar sus pendientes y programa la baja. La IP permanece protegida hasta confirmar la limpieza. |
+| 299 | Repetir con PPP, Hotspot, DHCP, recursos IPv6 y perfil privado de override con comentario legible. | Retira sólo los recursos exclusivos probados; conserva perfiles compartidos, otras cuentas y sus sesiones. |
+| 300 | Cambiar la cuenta a otro propietario entre revisión y ejecución; repetir con router desconectado o sin identidad histórica recuperable. | No borra al propietario nuevo ni libera direcciones sin comprobar; informa el motivo y conserva una revisión nueva explícita. |
+| 301 | Revisar mientras corre un trabajo; dejar caducar una revisión y simular una respuesta de aplicación interrumpida. | Explica ocupación o caducidad; no repite el token ni la escritura. Una consulta nueva vuelve a evaluar el caso. |
+| 302 | Encolar cambios de IP, perfil, velocidad, burst, garantía, prioridad, suspensión y router de un servicio de prueba. | Cada trabajo muestra anterior → previsto con referencia al último estado aplicado por el plugin; consultar la cola no ejecuta ni consulta UISP/router. |
+| 303 | Revisar trabajos sin estado anterior, con IP automática pendiente de elegir y con una asignación explícitamente vacía. | Distingue estado previo desconocido, valor por determinar y sin asignar; no presenta una IP futura inventada. |
+| 304 | Revisar baja, mantenimiento de colas y sincronización con reconexión forzada. | Explica el alcance correcto de la operación y las reconexiones solicitadas; no presenta un cambio de colas como eliminación de cuenta. |
+| 305 | Abrir detalles de un trabajo, esperar el refresco y cambiar de idioma; repetir en móvil y con nombres largos. | Conserva los detalles abiertos, traduce etiquetas y estados, muestra los valores completos dentro del detalle y no ejecuta contenido remoto. |

@@ -2,6 +2,18 @@
 
 [Complete English changelog](docs/CHANGELOG_EN.md) · [Texto para el PR](docs/PR_DESCRIPTION.md) · [Referencia íntegra del PR](docs/PR_DESCRIPTION_FULL.md) · [Webhook setup and rationale](docs/WEBHOOK_SETUP_EN.md) · [Mejoras en español](docs/MEJORAS.md)
 
+## Candidato 2.4.48 — retiro recuperable y cambios previstos en los trabajos
+
+La revisión del estado del servicio comprueba también si puede preparar su limpieza antes de habilitar el retiro. Se reprodujo el caso de un servicio eliminado cuya caché ya no contiene usuario/MAC: la comprobación de UISP pasaba, pero al aplicar faltaba la identidad física y el panel ocultaba el motivo.
+
+Si existe un registro aplicado antiguo sin identidad, se consulta su router y se recuperan sólo cuentas con el cliente y servicio exactos en su comentario. Las identidades y sesiones se comprueban dos veces, los comandos de baja quedan congelados y la ejecución conserva sus comprobaciones de propiedad y de estado vigente. La IP se libera después de confirmar la limpieza. Una cuenta ausente sin identidad histórica recuperable, un router sin comprobar o un propietario ambiguo conservan una explicación concreta y sus reservas; nunca se deduce propiedad de la IP o de un usuario nuevo pendiente.
+
+Los errores conocidos de retiro muestran su causa: trabajo en ejecución, cambio de identidad, revisión caducada o limpieza sin comprobar. Los errores internos quedan privados. Una respuesta incierta consume la revisión y exige consultar de nuevo; no se repite automáticamente la escritura.
+
+Cada trabajo incluye **Cambios previstos** con valores anteriores y nuevos: cuenta, Router/Site, IP, perfil, estado, velocidad, burst, garantía, prioridad, contención y propiedad cuando existen datos. El resumen compacto abre los detalles, indica reconexiones solicitadas y distingue valores por determinar de una asignación vacía. La referencia es el último estado aplicado por el plugin, no una lectura actual de RouterOS. En una baja se muestran los recursos de la identidad guardada de ese trabajo, incluso si el servicio ya tiene otra cuenta aplicada. Consultar la cola no consulta UISP/router ni genera tareas; la ejecución conserva su validación vigente. Se mantienen los detalles abiertos al refrescar y las etiquetas cambian con el idioma del panel.
+
+Validación 2.4.48 aprobada: **73 suites aisladas**, sintaxis de **72 archivos PHP propios**, 387 entradas del instalador, 154 archivos propios y 13 dependencias fijadas. Informe: `dist/verification-2.4.48.json`. SHA-256: `551af06874210632ebf69480c7a9851240cd71a37817dff24052f946c987e625`. Las pruebas cubren retiro con caché eliminada, propiedad exacta, protocolo nativo de lectura, limpieza real con transporte simulado, errores públicos seguros y cambios previstos sin consultas ni escrituras externas. No se modificaron UISP ni RouterOS de producción.
+
 ## Candidato 2.4.47 — perfiles de override con el nombre del plan
 
 Los perfiles PPPoE y Hotspot personalizados conservan el nombre del plan principal y añaden un indicador y el ID del servicio: `Plan Residencial [20Mb] [Override S#11389]`. La identificación interna sigue siendo exclusiva del servicio. Los perfiles de planes compartidos mantienen su formato actual y los snapshots históricos sin un nombre de plan conservan su alternativa estable.

@@ -3055,6 +3055,15 @@ document.addEventListener('DOMContentLoaded', () => {
             client_archived: 'UISP confirmó que el cliente está archivado.',
             service_not_found: 'UISP confirmó que el servicio no existe.',
             lifecycle_changed: 'El estado del servicio cambió. Revisa nuevamente antes de retirar sus pendientes.',
+            lifecycle_identity_changed: 'La identidad guardada no coincide con el cliente del servicio. Revisa ambas fichas antes de retirar sus pendientes.',
+            lifecycle_router_identity_unknown: 'No se pudo identificar el router o la cuenta anterior. Revisa el usuario y el dispositivo del servicio.',
+            lifecycle_resources_unconfirmed: 'La baja anterior no se pudo confirmar en el router. Sus reservas se conservan hasta comprobar la limpieza.',
+            lifecycle_resources_remain: 'La baja anterior no se pudo confirmar en el router. Sus reservas se conservan hasta comprobar la limpieza.',
+            lifecycle_service_busy: 'Hay un trabajo de este servicio en ejecución. Espera a que termine y vuelve a revisar.',
+            lifecycle_resource_limit: 'El historial de recursos de este servicio supera el límite de revisión. Revisa su diagnóstico antes de retirar los pendientes.',
+            lifecycle_invalid_token: 'La revisión caducó o ya se utilizó. Vuelve a revisar el servicio antes de intentarlo.',
+            lifecycle_reactivated: 'UISP indica que el servicio vuelve a estar vigente. Se conservaron sus recursos y se comprobará su estado actual.',
+            lifecycle_review_pending: 'El estado del servicio cambió. Revisa nuevamente antes de retirar sus pendientes.',
             lifecycle_router_cleanup_pending: 'La baja del router quedó programada. La IP se liberará al completar la limpieza.',
             lifecycle_retired: 'Se retiraron los pendientes anteriores del servicio.'
         }[reason] || 'No se pudo confirmar el estado actual en UISP. Vuelve a revisar.');
@@ -3136,12 +3145,51 @@ document.addEventListener('DOMContentLoaded', () => {
             try { await refreshJobsStatus(); if (currentView === 'jobs') await renderJobs(); }
             catch (_) { notify(t('No se pudo actualizar. Se conserva la última lectura.'), 'error'); }
         } catch (error) {
-            if (generation === lifecycleGeneration) byId('service-lifecycle-status').textContent = error.message === 'lifecycle_changed'
-                ? lifecycleReason('lifecycle_changed') : t('No se confirmó el retiro. Revisa nuevamente antes de intentarlo.');
+            if (generation === lifecycleGeneration) {
+                const known = ['lifecycle_changed', 'lifecycle_identity_changed', 'lifecycle_router_identity_unknown',
+                    'lifecycle_resources_unconfirmed', 'lifecycle_resources_remain', 'lifecycle_service_busy',
+                    'lifecycle_resource_limit', 'lifecycle_invalid_token', 'lifecycle_reactivated', 'lifecycle_review_pending',
+                    'lifecycle_unavailable', 'lifecycle_preview_failed'];
+                byId('service-lifecycle-status').textContent = known.includes(error.message)
+                    ? lifecycleReason(error.message) : t('No se confirmó el retiro. Revisa nuevamente antes de intentarlo.');
+            }
         } finally { lifecycleApplying = false; updateLifecycleControls(); }
     });
+    function jobChangesMarkup(job) {
+        const report = job.plannedChanges;
+        const labels = { account: 'Usuario/MAC', site: 'Router / Site', ipv4: 'IPv4', ipv6: 'IPv6', profile: 'Perfil',
+            state: 'Estado', rate: 'Velocidad', burst: 'Burst', guarantee: 'Garantía', priority: 'Prioridad', contention: 'Contención', ownership: 'Propiedad' };
+        if (!report || !['queued', 'prepared', 'no_previous'].includes(report.status) || !Array.isArray(report.changes)
+            || !['last_applied', 'none', 'job_target'].includes(report.reference)) return '';
+        const changes = report.changes.slice(0, 12).filter(change => change && Object.hasOwn(labels, change.field)
+            && typeof change.beforeKnown === 'boolean' && typeof change.afterKnown === 'boolean'
+            && (change.before === null || typeof change.before === 'string') && (change.after === null || typeof change.after === 'string'));
+        const translated = key => '<span data-i18n="' + html(key) + '">' + html(t(key)) + '</span>';
+        const value = (change, side) => {
+            if (!change[side + 'Known']) return translated('Por determinar');
+            if (change[side] === null || change[side] === '') return translated('Sin asignar');
+            const raw = change[side].slice(0, 256);
+            const states = { active: 'Activo', suspended: 'Suspendido', ended: 'Terminado', enabled: 'Habilitado', disabled: 'Deshabilitado' };
+            return change.field === 'state' && Object.hasOwn(states, raw) ? translated(states[raw]) : html(raw);
+        };
+        const display = change => translated(labels[change.field]) + ': ' + value(change, 'before') + ' → ' + value(change, 'after');
+        const known = changes.filter(change => change.beforeKnown && change.afterKnown && change.before !== change.after);
+        const summary = (known.length ? known : changes).slice(0, 2).map(display).join(' · ');
+        const operation = report.operation === 'delete' ? 'Retirar la cuenta y sus recursos asociados.'
+            : report.operation === 'queues_remove' ? 'Retirar las colas del servicio.'
+            : report.operation === 'queues_set' ? 'Actualizar las colas del servicio.' : 'Aplicar configuración del servicio.';
+        const reference = report.reference === 'job_target' ? 'Se muestran los recursos que retirará este trabajo, según su identidad guardada.'
+            : report.reference === 'last_applied' ? 'Comparado con el último estado aplicado por el plugin; no es una lectura actual del router.'
+            : 'Sin estado anterior registrado. Los valores previos figuran sin comprobar.';
+        const note = changes.length || ['delete', 'queues_remove'].includes(report.operation) ? '' : '<p>' + translated('No hay diferencias en los campos comparables. Se volverá a aplicar la configuración.') + '</p>';
+        const reconnect = report.reconnect === true ? '<p>' + translated('Reconexión solicitada.') + '</p>' : '';
+        return `<details class="job-planned-changes"><summary><strong>${translated('Cambios previstos')}</strong>${summary ? ': ' + summary : ' · ' + translated(operation)}</summary>
+            <div class="job-changes-content"><p>${translated(operation)}</p>${changes.map(change => '<div class="job-change-line">' + display(change) + '</div>').join('')}${note}${reconnect}
+            <p class="text-muted">${translated(reference)}</p>${report.prepared === false ? '<p class="text-muted">' + translated('Los valores pendientes de preparar pueden cambiar al validar el servicio.') + '</p>' : ''}</div></details>`;
+    }
     function renderJobsTable(jobs) {
         const savedPosition = beforeTableUpdate('jobs');
+        const expandedChanges = new Set(Array.from(document.querySelectorAll('.job-planned-changes[open]'), item => item.dataset.jobKey));
         const selected = new Set(Array.from(document.querySelectorAll('.job-checkbox:checked'), checkbox => checkbox.value));
         const entries = Object.entries(jobs);
         const tbody = document.querySelector('#jobs-table tbody');
@@ -3167,10 +3215,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 <br><small class="text-muted">${html(job.jobId || key)} · <span data-i18n="${html(stateKey)}">${html(t(stateKey))}</span> · <span data-i18n="Intentos: {count}" data-i18n-values="${html(JSON.stringify({ count: attempts }))}">${html(t('Intentos: {count}', { count: attempts }))}</span>${nextRetry}</small>
                 ${error ? `<br><span class="job-error"><span data-i18n="Último error">${html(t('Último error'))}</span>: ${explainedError ?? html(error)}</span>` : ''}
                 ${connectionHelp ? `<br><small class="text-muted" data-i18n="${html(connectionHelp)}">${html(t(connectionHelp))}</small>` : ''}
+                ${jobChangesMarkup(job)}
                 ${jobNoteMarkup(jobReason(job), 'Bloqueado')}
                 ${jobNoteMarkup(job.canDelete === false ? jobReason(job, true) : null, 'No se puede eliminar')}
                 </td><td class="job-selection"><input type="checkbox" class="job-checkbox" aria-label="${html(t('Seleccionar trabajo'))}" data-i18n-aria-label="Seleccionar trabajo"></td>`;
             const checkbox = row.querySelector('.job-checkbox');
+            const changes = row.querySelector('.job-planned-changes');
+            if (changes) { changes.dataset.jobKey = key; changes.open = expandedChanges.has(key); }
             checkbox.value = key;
             checkbox.checked = (selected.has(key) || jobReviewRequested === key) && (!job.state || job.state === 'pending');
             if (jobReviewRequested === key) { row.className = 'job-review-target'; checkbox.focus?.({ preventScroll: false }); }

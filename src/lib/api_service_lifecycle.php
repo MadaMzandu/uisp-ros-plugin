@@ -5,6 +5,7 @@ final class ApiServiceLifecycle
 {
     private $request;
     private $clock;
+    private $routerReader;
     private string $dataPath;
     private string $cachePath;
     private string $jobsPath;
@@ -12,8 +13,8 @@ final class ApiServiceLifecycle
     private array $sources=[];
 
     public function __construct(?callable $request=null,string $dataPath='data/data.db',string $cachePath='data/cache.db',
-        string $jobsPath='data/jobs.db',?callable $clock=null,?float $deadline=null)
-    { $this->request=$request; $this->dataPath=$dataPath; $this->cachePath=$cachePath; $this->jobsPath=$jobsPath; $this->clock=$clock; $this->deadline=$deadline; }
+        string $jobsPath='data/jobs.db',?callable $clock=null,?float $deadline=null,?callable $routerReader=null)
+    { $this->request=$request; $this->dataPath=$dataPath; $this->cachePath=$cachePath; $this->jobsPath=$jobsPath; $this->clock=$clock; $this->deadline=$deadline; $this->routerReader=$routerReader; }
 
     public function inspect(int $sid): array
     {
@@ -61,6 +62,17 @@ final class ApiServiceLifecycle
     {
         $proof=$this->inspect($sid); $token=null; $expires=null;
         if ($proof['state']==='retired') {
+            // A billing fact alone cannot promise that local physical ownership
+            // is recoverable. Check the same journal used by apply before
+            // presenting an actionable retirement button.
+            try { $this->previewResources($sid,$proof); }
+            catch (Throwable $error) {
+                $reason=$error->getMessage();
+                $proof['reason']=in_array($reason,['lifecycle_changed','lifecycle_identity_changed',
+                    'lifecycle_router_identity_unknown','lifecycle_resources_unconfirmed','lifecycle_resource_limit','lifecycle_service_busy'],true)
+                    ?$reason:'lifecycle_unavailable';
+                return $this->publicProof($proof)+['eligible'=>false,'previewToken'=>null,'expiresAt'=>null];
+            }
             $token=bin2hex(random_bytes(32)); $expires=(int)$this->now()+600;
             $path=$this->tokenPath($token); $stream=@fopen($path,'x');
             if (!$stream) throw new RuntimeException('lifecycle_preview_failed');
@@ -72,6 +84,34 @@ final class ApiServiceLifecycle
             } finally { fclose($stream); }
         }
         return $this->publicProof($proof)+['eligible'=>$token!==null,'previewToken'=>$token,'expiresAt'=>$expires===null?null:gmdate('c',$expires)];
+    }
+
+    /** No router writes or retirement mutations are performed while reviewing. */
+    private function previewResources(int $sid,array $proof): void
+    {
+        require_once __DIR__.'/api_job_queue.php';
+        $queue=new ApiJobQueue($this->jobsPath,null);
+        try {
+            $queue->withServiceLock($sid,function () use($sid,$proof,$queue): void {
+                if ($this->running($sid)) throw new RuntimeException('lifecycle_service_busy');
+                $this->snapshots($sid,$queue,$proof['client_id']);
+                $fresh=$this->inspect($sid);
+                if ($fresh['state']!=='retired' || !hash_equals($proof['fingerprint'],$fresh['fingerprint']))
+                    throw new RuntimeException('lifecycle_changed');
+            });
+        } catch (Throwable $error) {
+            if ($error->getMessage()==='Another event or maintenance operation is handling this service; retry this webhook')
+                throw new RuntimeException('lifecycle_service_busy',0,$error);
+            throw $error;
+        } finally { $queue->close(); }
+    }
+
+    private function running(int $sid): bool
+    {
+        if (!is_file($this->jobsPath)) return false;
+        $db=new SQLite3($this->jobsPath,SQLITE3_OPEN_READONLY); $db->enableExceptions(true);
+        try { return $this->table($db,'jobs') && (bool)$this->query($db,"SELECT id FROM jobs WHERE service_id=? AND status='running' LIMIT 1",[$sid]); }
+        finally { $db->close(); }
     }
 
     public function apply(string $token,?ApiJobQueue $queue=null): array
@@ -115,7 +155,12 @@ final class ApiServiceLifecycle
             $result['reason']=$keys?'lifecycle_router_cleanup_pending':'lifecycle_retired';
             return $result;
         };
-        return $queue->ownsServiceLock($sid)?$operation():$queue->withServiceLock($sid,$operation);
+        try { return $queue->ownsServiceLock($sid)?$operation():$queue->withServiceLock($sid,$operation); }
+        catch (Throwable $error) {
+            if ($error->getMessage()==='Another event or maintenance operation is handling this service; retry this webhook')
+                throw new RuntimeException('lifecycle_service_busy',0,$error);
+            throw $error;
+        }
     }
 
     public function reviewTerminal(int $sid,?ApiJobQueue $queue=null,bool $billingContext=false,?string $identityField=null): array
@@ -280,14 +325,32 @@ final class ApiServiceLifecycle
                     $base=$recorded; break;
                 }
             }
-            $resources[]=array_replace($base,$legacy);
+            if (!$this->accountIdentityKnown($base)) {
+                // A purged desired cache must not strand an applied legacy row,
+                // nor may a newer unattempted username stand in for its owner.
+                // Recover exact physical identities from their client/service
+                // comments, then keep those recovered fields frozen verbatim.
+                $did=self::id($legacy['device']??null); $legacyClient=self::id($legacy['clientId']??null);
+                $device=$did===null?[]:$this->row($this->dataPath,'devices',$did);
+                if ($legacyClient===null || ($cid!==null&&$legacyClient!==$cid) || !$device)
+                    throw new RuntimeException('lifecycle_router_identity_unknown');
+                require_once __DIR__.'/api_lifecycle_router_recovery.php';
+                try { $recovered=(new ApiLifecycleRouterRecovery($this->routerReader,$this->deadline))->recover($legacy,$device,$cid); }
+                catch (Throwable $error) {
+                    if ($error->getMessage()==='lifecycle_router_unavailable')
+                        throw new RuntimeException('lifecycle_resources_unconfirmed',0,$error);
+                    throw $error;
+                }
+                if (!$recovered) throw new RuntimeException('lifecycle_router_identity_unknown');
+                foreach ($recovered as $snapshot) $resources[]=$snapshot;
+            } else $resources[]=array_replace($base,$legacy);
         }
         $result=[]; $seen=[];
         foreach ($resources as $snapshot) {
             if ((int)($snapshot['id']??0)!==$sid || self::id($snapshot['clientId']??null)===null
                 || ($cid!==null && (int)$snapshot['clientId']!==$cid)) throw new RuntimeException('lifecycle_identity_changed');
             $did=self::id($snapshot['device']??null);
-            if ($did===null || (!is_string($snapshot['username']??null)&&!filter_var($snapshot['mac']??'',FILTER_VALIDATE_MAC)))
+            if ($did===null || !$this->accountIdentityKnown($snapshot))
                 throw new RuntimeException('lifecycle_router_identity_unknown');
             $device=$this->row($this->dataPath,'devices',$did);
             if (!$device || !is_string($device['ip']??null) || trim($device['ip'])==='') throw new RuntimeException('lifecycle_router_identity_unknown');
@@ -325,6 +388,9 @@ final class ApiServiceLifecycle
         if (count($result)>100) throw new RuntimeException('lifecycle_resource_limit');
         return $result;
     }
+
+    private function accountIdentityKnown(array $snapshot): bool
+    { return (is_string($snapshot['username']??null)&&$snapshot['username']!=='') || (bool)filter_var($snapshot['mac']??'',FILTER_VALIDATE_MAC); }
 
     /** With no physical ownership evidence, cancellation and the terminal gate are durable before this local release. */
     private function releaseLocal(int $sid): void

@@ -583,6 +583,12 @@ details.config-section[open] > summary.config-section-header::after { content: '
 .job-description > span:first-child { font-weight: 600; }
 .job-description .job-repair-button { display: inline-flex; margin: 6px 6px 0 0; }
 .job-description .conflict-owner-meta { margin-top: 5px; }
+.job-planned-changes { margin-top: 5px; font-size: .76rem; }
+.job-planned-changes > summary { cursor: pointer; color: var(--text-main); overflow-wrap: anywhere; }
+.job-planned-changes > summary strong { color: var(--primary); }
+.job-changes-content { border-left: 2px solid var(--border); margin: 6px 0 2px; padding-left: 10px; }
+.job-changes-content p { margin: 4px 0; }
+.job-change-line { padding: 2px 0; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
 #jobs-table tr + tr { border-top: 1px solid var(--border); }
 #jobs-table .job-selection { width: 40px; }
 .job-selection input { width: 16px; height: 16px; }

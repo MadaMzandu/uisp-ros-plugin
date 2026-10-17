@@ -2,9 +2,21 @@
 
 [Español](MEJORAS.md) · [PR description](PR_DESCRIPTION.md) · [Full PR reference](PR_DESCRIPTION_FULL.md) · [Webhook setup and rationale](WEBHOOK_SETUP_EN.md)
 
-This revision combines [dhanielsnieto's changes in PR #89](https://github.com/MadaMzandu/uisp-ros-plugin/pull/89) with the subsequent fixes prepared in this repository. The comparison starts at `7ca8dc8`; the original PR ends at `056b89f`. The current candidate is **2.4.47**. The operator confirmed archived-plan speed recovery in their 2.4.19 installation. That confirmation covers this historical scenario; the remaining UISP and RouterOS integration scenarios still require their own checks before production readiness can be established.
+This revision combines [dhanielsnieto's changes in PR #89](https://github.com/MadaMzandu/uisp-ros-plugin/pull/89) with the subsequent fixes prepared in this repository. The comparison starts at `7ca8dc8`; the original PR ends at `056b89f`. The current candidate is **2.4.48**. The operator confirmed archived-plan speed recovery in their 2.4.19 installation. That confirmation covers this historical scenario; the remaining UISP and RouterOS integration scenarios still require their own checks before production readiness can be established.
 
 The plugin connects UISP CRM to MikroTik through the **native RouterOS API**, normally on port `8728`, or `8729` with TLS. The panel manages that integration; it does not switch the transport to SSH, WinBox, or REST.
+
+## Candidate 2.4.48: recoverable retirement and planned job changes
+
+Service-state review checks whether cleanup can be prepared before enabling retirement. A reproduced failure involved a deleted service whose refreshed cache had lost its username/MAC: the UISP lifecycle check succeeded, but apply lacked physical identity and the panel concealed the actual guard.
+
+For a legacy applied row without an identity, read its recorded router and recover only principals bearing the exact client and service ownership marker. Observe identities and sessions twice, freeze guarded deletion commands, and retain runtime ownership and fresh-lifecycle checks. Release addresses only after confirmed cleanup. Missing historical identities, unavailable routers and ambiguous ownership retain specific explanations and reservations; an IP or a new pending username never establishes physical ownership.
+
+Documented retirement failures expose safe causes such as running work, identity changes, an expired review or unconfirmed cleanup. Unexpected internal errors remain private. An uncertain response consumes its review and requires a new read rather than replaying a write automatically.
+
+Jobs show **Planned changes** with previous and proposed account, Router/Site, address, profile, state, speed, burst, guarantee, priority, contention and ownership values where supported by stored evidence. A compact summary expands details and requested reconnections. Unknown values differ from explicit unassignment. Comparison uses the plugin's last applied journal, not live RouterOS state. Historical removals show their own saved target rather than a newer applied account; listing jobs performs no external reads or mutations. Execution still validates current policy. Expanded details survive refresh, and labels follow the panel language.
+
+Validation for 2.4.48 passed: **73 isolated suites**, syntax checks for **72 first-party PHP files**, 387 archive entries, 154 first-party files and 13 locked dependencies. Report: `dist/verification-2.4.48.json`. SHA-256: `551af06874210632ebf69480c7a9851240cd71a37817dff24052f946c987e625`. Coverage includes purged-cache retirement, exact ownership, native observation protocol, real cleanup with synthetic transport, safe public errors and planned job changes without external reads or writes. No production UISP or RouterOS changes were performed.
 
 ## Candidate 2.4.47: override profiles retain the base plan name
 

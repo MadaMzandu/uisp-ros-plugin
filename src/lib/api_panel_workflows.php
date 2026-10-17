@@ -44,11 +44,23 @@ final class ApiPanelWorkflows
             }
         } elseif ($request->target==='service_lifecycle') {
             require_once __DIR__.'/api_service_lifecycle.php'; $api=new ApiServiceLifecycle();
-            if ($type==='list' && $action==='preview' && $keys===['serviceId'] && is_int($data->serviceId) && $data->serviceId>0) $result=$api->preview($data->serviceId);
-            elseif ($type==='update' && $action==='apply' && $keys===['previewToken'] && is_string($data->previewToken)) {
-                if (is_file('data/data.db')) (new ApiSetup())->assertCompatible();
-                $result=$api->apply($data->previewToken);
-            } else throw new InvalidArgumentException('invalid_service_lifecycle_request');
+            try {
+                if ($type==='list' && $action==='preview' && $keys===['serviceId'] && is_int($data->serviceId) && $data->serviceId>0) $result=$api->preview($data->serviceId);
+                elseif ($type==='update' && $action==='apply' && $keys===['previewToken'] && is_string($data->previewToken)) {
+                    if (is_file('data/data.db')) (new ApiSetup())->assertCompatible();
+                    $result=$api->apply($data->previewToken);
+                } else throw new InvalidArgumentException('invalid_service_lifecycle_request');
+            } catch (Throwable $error) {
+                // Expose only documented guards. Unexpected storage, API or
+                // credential errors still go through the private global log.
+                $code=$error->getMessage();
+                $conflicts=['lifecycle_changed','lifecycle_identity_changed','lifecycle_reactivated',
+                    'lifecycle_router_identity_unknown','lifecycle_resources_unconfirmed','lifecycle_resources_remain',
+                    'lifecycle_service_busy','lifecycle_resource_limit','lifecycle_invalid_token','lifecycle_review_pending'];
+                if (!in_array($code,array_merge($conflicts,['lifecycle_unavailable','lifecycle_preview_failed']),true)) throw $error;
+                http_response_code(in_array($code,$conflicts,true)?409:503);
+                respond($code,true,[]); return true;
+            }
         } elseif ($request->target==='full_backup') {
             $api=new ApiFullBackup();
             if ($type==='list' && $action==='list' && !$keys) $result=$api->listing();

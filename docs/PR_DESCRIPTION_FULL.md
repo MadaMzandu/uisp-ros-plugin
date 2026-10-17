@@ -1,33 +1,44 @@
 ## Summary
 
-This PR brings the panel contributed in [PR #89](https://github.com/MadaMzandu/uisp-ros-plugin/pull/89) together with the provisioning, recovery and operational improvements developed since that baseline. Candidate **2.4.47** uses the native RouterOS API, with optional TLS, and makes service changes observable and recoverable through the same queue and ownership checks.
+Combine the panel from [PR #89](https://github.com/MadaMzandu/uisp-ros-plugin/pull/89) with provisioning and recovery improvements in **2.4.48**, using the native RouterOS API with optional TLS.
 
-## Resulting behavior
+## Essential improvements
 
-- **Immediate synchronization and observable results.** The primary router action reads current UISP state and applies services immediately, forcing their PPP/Hotspot reconnection. Optional difference review remains a separate action. Readback distinguishes verified application from an applied change still awaiting confirmation; observing again does not replay a write.
-- **Durable work and current billing state.** Persistent SQLite jobs retain deduplication, ordered per-service recovery, bounded retries, versions and maintenance exclusion. New webhooks read current UISP state rather than restoring an old event snapshot. Cancellation stops retries while retaining potentially applied resources until reviewed cleanup.
-- **Service diagnostics and explicit repair.** Search by service, client, username or IP, then compare UISP, expected policy and observed RouterOS state with job history. Resolve can repair a proven obsolete account marker, create an absent account or consolidate reviewed duplicates. Exact identities, current competing owners, fresh evidence, private backups and single-use permissions guard changes; ambiguous cases retain a specific explanation.
-- **Address lifecycle and Site changes.** Freshly confirmed ended services and archived clients retire obsolete intent and schedule guarded cleanup; addresses remain protected while physical resources might still exist. Suspension preserves assignments. Site pool replacement and cross-router moves prepare replacement capacity before cleanup, retain stable allocations across retries and preserve unrelated current owners.
-- **Per-service shaping.** UISP overrides use isolated PPP/Hotspot profiles or individual DHCP queues without changing the commercial plan or other subscribers. Customized profiles retain the base plan name with `[Override S#serviceId]`; verified legacy profiles are renamed in place, with no automatic reconnect for a display-only rename. Burst, thresholds, guarantees and mixed-rate contention use effective service speeds, including unlimited directions. Removing an override restores the base profile and retires the unused owned private profile after reassignment.
-- **Allocation-only IP exclusions.** Saving omitted IPv4/IPv6 addresses changes future automatic allocation without bulk provisioning, cache rebuilding or changes to existing assignments. This save preserves work already in the queue. Saves that also change per-service network settings retain their normal application behavior.
-- **Operational visibility and backups.** Automation health reports scheduled activity, webhook acceptance, retries and oldest pending work. Gradual difference review corrects only proven cases and leaves ambiguity on the affected service. Pool capacity separates free, assigned, retained and excluded space. Complete private backups include the queue and supported operational state, with reviewed restoration and a pre-restore copy.
-- **Compact daily operations.** Responsive Devices, Plans, Settings, Jobs, System and Diagnostics views share search, sorting, six languages and light/dark/system appearance. A notification center holds global notices and recent activity. Resolve shows its real phase, animation and elapsed time while retaining the account context.
+- **Immediate sync and verified results:** synchronize directly, with optional difference review as a separate action. Readback distinguishes verified application from changes awaiting confirmation.
+- **Persistent jobs and current state:** ordered retries, deduplication and recovery survive restarts. Fresh UISP checks prevent delayed events from restoring obsolete configuration.
+- **Diagnostics and repair:** search by client, service, username or IP; compare UISP, expected policy and RouterOS. Review exact account ownership before repairing associations, creating missing accounts or resolving duplicates.
+- **Address lifecycle:** retire obsolete work for ended services and archived clients; release IPs after guarded router cleanup. Preserve suspended assignments, handle Site/pool changes and cross-router moves, and expose pool capacity. Saving excluded IPs affects future allocation without bulk jobs or changes to current IPs.
+- **Per-service overrides:** isolated PPP/Hotspot profiles or DHCP queues apply effective speed, burst, guarantees and contention without changing other subscribers. Profiles retain the base plan name plus `[Override S#ID]`; removing an override restores the shared policy.
+- **Operations panel:** compact responsive views, six languages, light/dark themes, notifications and visible progress. Automation health, gradual difference detection and complete backups include the queue and reviewed recovery.
 
-## Validation and deployment
+## New in 2.4.48
 
-Validation for 2.4.47 passed: **70 isolated suites**, syntax checks for **70 first-party PHP files**, 385 archive entries, 152 first-party files and 13 locked dependencies. Report: `dist/verification-2.4.47.json`. SHA-256: `ce2dd9d9be4438346f051f2e1cc40958d1e815a192d1601d74cf400246599d59`. Coverage includes PPP/Hotspot, same-ID renames, historical retries, exact cleanup, no presentation-only reconnection and protection of manual profiles. No production UISP or RouterOS changes were performed. The real-environment guide contains **297 cases**. Synthetic results do not establish production integration.
+- **Planned changes in Jobs:** expandable previous → proposed IP, account, router, profile, state and shaping values, including burst, guarantee, priority and contention. Show requested reconnections and unknown values explicitly. Comparison uses stored applied state; historical deletion shows its own saved target. Listing jobs performs no external reads or writes.
+- **Recoverable service retirement:** validate cleanup before enabling retirement. Recover purged legacy identities only from exact client/service ownership on the recorded router. Explain running jobs, changed ownership, expired reviews and unconfirmed cleanup; keep internal errors private and never replay an uncertain write automatically.
 
-The package does not start a router-wide rebuild when installed. Existing overrides can be applied through explicit synchronization or enabled gradual review; subsequent override edits follow normal webhook processing. Existing pending jobs keep their own state rather than being cancelled by an exclusion-only save. Configuration confirmation establishes observed RouterOS properties, not subscriber Internet reachability. Remaining integration checks are documented in the real-environment guide.
+## Validation
 
-Administrative access and webhook authentication remain separate. Webhooks require a shared secret by default; compatibility without that extra secret check is an explicit option. Setup instructions and the complete history follow below.
+**73 isolated suites passed**, plus syntax checks for **72 first-party PHP files** and installer/dependency checks. The verified ZIP is `src/ros-plugin.zip`; report: `dist/verification-2.4.48.json`. Tests cover ownership transfers, retries, cleanup, overrides, read-only job summaries and safe errors. No production UISP or RouterOS changes were performed; the integration guide contains **305 manual cases**.
 
-**The complete English changelog and webhook setup guide are included below.**
+Installation does not trigger a router-wide rebuild. Existing overrides require explicit sync or enabled gradual review. Router configuration readback does not establish subscriber Internet reachability. Administrative and webhook authentication remain separate; webhook secret setup is in the full reference.
 
 ## Full English changelog
 
-This revision combines [dhanielsnieto's changes in PR #89](https://github.com/MadaMzandu/uisp-ros-plugin/pull/89) with the subsequent fixes prepared in this repository. The comparison starts at `7ca8dc8`; the original PR ends at `056b89f`. The current candidate is **2.4.47**. The operator confirmed archived-plan speed recovery in their 2.4.19 installation. That confirmation covers this historical scenario; the remaining UISP and RouterOS integration scenarios still require their own checks before production readiness can be established.
+This revision combines [dhanielsnieto's changes in PR #89](https://github.com/MadaMzandu/uisp-ros-plugin/pull/89) with the subsequent fixes prepared in this repository. The comparison starts at `7ca8dc8`; the original PR ends at `056b89f`. The current candidate is **2.4.48**. The operator confirmed archived-plan speed recovery in their 2.4.19 installation. That confirmation covers this historical scenario; the remaining UISP and RouterOS integration scenarios still require their own checks before production readiness can be established.
 
 The plugin connects UISP CRM to MikroTik through the **native RouterOS API**, normally on port `8728`, or `8729` with TLS. The panel manages that integration; it does not switch the transport to SSH, WinBox, or REST.
+
+## Candidate 2.4.48: recoverable retirement and planned job changes
+
+Service-state review checks whether cleanup can be prepared before enabling retirement. A reproduced failure involved a deleted service whose refreshed cache had lost its username/MAC: the UISP lifecycle check succeeded, but apply lacked physical identity and the panel concealed the actual guard.
+
+For a legacy applied row without an identity, read its recorded router and recover only principals bearing the exact client and service ownership marker. Observe identities and sessions twice, freeze guarded deletion commands, and retain runtime ownership and fresh-lifecycle checks. Release addresses only after confirmed cleanup. Missing historical identities, unavailable routers and ambiguous ownership retain specific explanations and reservations; an IP or a new pending username never establishes physical ownership.
+
+Documented retirement failures expose safe causes such as running work, identity changes, an expired review or unconfirmed cleanup. Unexpected internal errors remain private. An uncertain response consumes its review and requires a new read rather than replaying a write automatically.
+
+Jobs show **Planned changes** with previous and proposed account, Router/Site, address, profile, state, speed, burst, guarantee, priority, contention and ownership values where supported by stored evidence. A compact summary expands details and requested reconnections. Unknown values differ from explicit unassignment. Comparison uses the plugin's last applied journal, not live RouterOS state. Historical removals show their own saved target rather than a newer applied account; listing jobs performs no external reads or mutations. Execution still validates current policy. Expanded details survive refresh, and labels follow the panel language.
+
+Validation for 2.4.48 passed: **73 isolated suites**, syntax checks for **72 first-party PHP files**, 387 archive entries, 154 first-party files and 13 locked dependencies. Report: `dist/verification-2.4.48.json`. SHA-256: `551af06874210632ebf69480c7a9851240cd71a37817dff24052f946c987e625`. Coverage includes purged-cache retirement, exact ownership, native observation protocol, real cleanup with synthetic transport, safe public errors and planned job changes without external reads or writes. No production UISP or RouterOS changes were performed.
 
 ## Candidate 2.4.47: override profiles retain the base plan name
 
@@ -614,7 +625,7 @@ Later production evidence identified missing tokens and a URL pasted as the secr
 
 ## Installation and validation readiness
 
-The current version is 2.4.47. Its validation status appears at the beginning of this changelog. Archived-plan recovery confirmation belongs to 2.4.19 and retains its historical scope. Fresh lifecycle evidence retires obsolete intent and queues guarded removal before releasing physically owned addresses. Unknown evidence remains an incident for that service. The separate local-cleanup review retains its limited scope and private backup. A duplicate-reservation migration barrier still requires resolving stored assignments and reloading. Backups remain downloadable from System. The [real-environment test guide](docs/PRUEBAS_REALES.md) contains 297 scenarios and does not claim production validation.
+The current version is 2.4.47. Its validation status appears at the beginning of this changelog. Archived-plan recovery confirmation belongs to 2.4.19 and retains its historical scope. Fresh lifecycle evidence retires obsolete intent and queues guarded removal before releasing physically owned addresses. Unknown evidence remains an incident for that service. The separate local-cleanup review retains its limited scope and private backup. A duplicate-reservation migration barrier still requires resolving stored assignments and reloading. Backups remain downloadable from System. The [real-environment test guide](PRUEBAS_REALES.md) contains 297 scenarios and does not claim production validation.
 
 ### Historical 2.4.17 result
 
@@ -655,6 +666,7 @@ Local regressions use PHP 8.5.11, temporary databases, mocks, and local sockets.
 - Native-speaker review of the new translations.
 
 The [draft PR description](docs/PR_DESCRIPTION.md) presents the change for upstream review. This changelog documents implemented behavior and its limits; it does not claim that the PR is published or that all real-environment integration has been validated.
+
 
 ---
 
