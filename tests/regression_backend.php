@@ -219,7 +219,7 @@ try {
 
     $apiSqliteCache = new ApiSqlite('data/cache.db');
     // Upgrade a real old cache without recreating clients, services or secrets.
-    $oldCacheSchema = preg_replace('/^\s*"isArchived"[^\r\n]*\R/m', '', file_get_contents('includes/cache.sql'));
+    $oldCacheSchema = preg_replace('/^\s*"(?:isArchived|trafficShapingOverrideEnabled|uploadSpeedOverride|downloadSpeedOverride|trafficShapingOverrideEnd)"[^\r\n]*\R/m', '', file_get_contents('includes/cache.sql'));
     $apiSqliteCache->exec($oldCacheSchema);
     $apiSqliteCache->insert(['id'=>77,'status'=>3,'device'=>1,'clientId'=>77,'username'=>'preserved','password'=>'private'], 'services');
     $apiSqliteCache->insert(['id'=>77,'firstName'=>'Old'], 'clients');
@@ -231,7 +231,15 @@ try {
     $migrationCache->setup();
     checkBackend($apiSqliteCache->singleQuery('SELECT id,firstName,isArchived FROM clients WHERE id=77',true)
         ===['id'=>77,'firstName'=>'Old','isArchived'=>null], 'Cache archive migration erased identity or invented an archive state');
-    checkBackend($apiSqliteCache->selectAllFromTable('services')===$cachedServicesBefore
+    $migratedServices = $apiSqliteCache->selectAllFromTable('services');
+    foreach ($migratedServices as &$service) {
+        foreach (['trafficShapingOverrideEnabled','uploadSpeedOverride','downloadSpeedOverride','trafficShapingOverrideEnd'] as $field) {
+            checkBackend(array_key_exists($field, $service) && $service[$field] === null, 'Cache migration invented a service override or omitted its column');
+            unset($service[$field]);
+        }
+    }
+    unset($service);
+    checkBackend($migratedServices===$cachedServicesBefore
         && $apiSqliteCache->selectAllFromTable('network')===$cachedNetworkBefore,
         'Cache archive migration changed service status, credentials or network reservations');
     checkBackend($apiSqlite->readConfig()->cache_version===MyCacheVersion, 'Cache archive migration did not record its version');

@@ -130,6 +130,22 @@ async function diagnosticsAndRaces() {
     assert(!content.includes('<img') && !content.includes('<script'), 'A diagnostic cell executed remote markup');
     assert(!content.includes('PRIVATE-COMPARISON') && !content.includes('PASSWORD-MUST-NOT-RENDER') && !content.includes('RAW-JOB-SECRET'), 'Diagnostics exposed an unknown or sensitive field');
     assert(content.includes('&lt;img'), 'Remote values were omitted instead of safely displayed');
+    const speedDetail = diagnostic(42);
+    speedDetail.comparisons = speedDetail.comparisons.filter(row => row.field !== 'password').concat([
+        { field: 'base_speed', uisp: '20/5', expected: '20/5', router: null },
+        { field: 'speed_override', uisp: '35/0', expected: '35/0', router: null },
+        { field: 'speed', uisp: '35/0', expected: '35/0', router: '20/5', matches_router: false },
+        { field: 'rate_limit', uisp: null, expected: '0/35M 0/42M 0/28M 10/10 8 0/28M', router: attack, matches_router: false }
+    ]);
+    ui.routes.set('service_diagnostics/inspect', () => envelope(speedDetail)); await ui.operations.openService(42); await settle();
+    const speedHtml = html(ui.node('service-diagnostic-detail'));
+    assert(speedHtml.includes('Velocidad base ↓/↑') && speedHtml.includes('Override ↓/↑') && speedHtml.includes('Límites y burst ↑/↓'));
+    assert(speedHtml.includes('35 Mbps / Sin límite') && speedHtml.includes('0/35M 0/42M'), 'Override/unlimited/burst values were not rendered');
+    assert(!speedHtml.includes('<img') && speedHtml.includes('&lt;img'), 'Observed rate-limit used remote markup');
+    ui.context.PanelI18n.setLanguage('en'); await settle();
+    assert(html(ui.node('service-diagnostic-detail')).includes('35 Mbps / Unlimited'), 'Unlimited override was not translated');
+    ui.context.PanelI18n.setLanguage('es'); await settle();
+    ui.routes.set('service_diagnostics/inspect', data => { inspectCalls.push(data.serviceId); return envelope(diagnostic(data.serviceId)); });
     ui.routes.set('provisioning_verification/recheck', () => { throw new Error('PRIVATE-RECHECK-ERROR'); });
     await button(ui.node('service-diagnostic-detail'), 'Verificar de nuevo').emit('click'); await settle();
     assert.equal(ui.node('service-diagnostic-status').textContent, 'No se pudo completar la consulta.', 'Diagnostic recheck error was erased by rendering');

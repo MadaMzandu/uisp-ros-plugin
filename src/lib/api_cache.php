@@ -1,5 +1,5 @@
 <?php
-const MyCacheVersion = '1.8.12';
+const MyCacheVersion = '1.8.13';
 
 include_once 'api_trim.php';
 include_once 'api_ucrm.php';
@@ -71,6 +71,10 @@ class ApiCache{
                 // unknown until a real CRM value arrives.
                 $this->dbCache()->transaction(function () {
                     if (!$this->has_archive_column()) $this->dbCache()->exec('ALTER TABLE "clients" ADD COLUMN "isArchived" INTEGER');
+                    $columns = array_column($this->dbCache()->selectCustom('PRAGMA table_info("services")') ?? [], 'name');
+                    foreach (['trafficShapingOverrideEnabled'=>'INTEGER','uploadSpeedOverride'=>'REAL','downloadSpeedOverride'=>'REAL','trafficShapingOverrideEnd'=>'TEXT'] as $column=>$type) {
+                        if (!in_array($column, $columns, true)) $this->dbCache()->exec('ALTER TABLE "services" ADD COLUMN "' . $column . '" ' . $type);
+                    }
                 });
                 $state = ['cache_version' => MyCacheVersion,
                     'last_cache' => '2020-01-01','last_net' => '2020-01-01'];
@@ -278,7 +282,7 @@ class ApiCache{
         if(!is_file($file)) return true;
         if(!$this->dbCache()->has_tables(['clients','services','network','sites'])){
             return true ;}
-        if (!$this->has_archive_column()) return true;
+        if (!$this->has_archive_column() || !$this->has_override_column()) return true;
         $version = $this->conf()->cache_version ?? '0.0.0';
         return $version != MyCacheVersion ;
     }
@@ -289,6 +293,12 @@ class ApiCache{
             if (($column['name'] ?? null) === 'isArchived') return true;
         }
         return false;
+    }
+
+    private function has_override_column(): bool
+    {
+        $columns = array_column($this->dbCache()->selectCustom('PRAGMA table_info("services")') ?? [], 'name');
+        return !array_diff(['trafficShapingOverrideEnabled','uploadSpeedOverride','downloadSpeedOverride','trafficShapingOverrideEnd'], $columns);
     }
 
     private function attrs(): ApiAttributes { return myAttr(); }

@@ -4,6 +4,12 @@
     const codes = ['es', 'en', 'pt', 'fr', 'de', 'it'];
     const names = { es: 'Español', en: 'English', pt: 'Português', fr: 'Français', de: 'Deutsch', it: 'Italiano' };
     const entries = [
+        ['Velocidad base ↓/↑', 'Base speed ↓/↑', 'Velocidade base ↓/↑', 'Débit de base ↓/↑', 'Basistempo ↓/↑', 'Velocità base ↓/↑'],
+        ['Override ↓/↑', 'Override ↓/↑', 'Override ↓/↑', 'Dérogation ↓/↑', 'Überschreibung ↓/↑', 'Override ↓/↑'],
+        ['Velocidad efectiva ↓/↑', 'Effective speed ↓/↑', 'Velocidade efetiva ↓/↑', 'Débit effectif ↓/↑', 'Effektives Tempo ↓/↑', 'Velocità effettiva ↓/↑'],
+        ['Límites y burst ↑/↓', 'Limits and burst ↑/↓', 'Limites e burst ↑/↓', 'Limites et burst ↑/↓', 'Grenzen und Burst ↑/↓', 'Limiti e burst ↑/↓'],
+        ['Sin límite', 'Unlimited', 'Sem limite', 'Illimité', 'Unbegrenzt', 'Senza limite'],
+        ['La cuenta se consultó; no se pudieron comprobar sus límites de velocidad.', 'The account was checked; its speed limits could not be confirmed.', 'A conta foi consultada; não foi possível confirmar os limites de velocidade.', 'Le compte a été consulté ; ses limites de débit n’ont pas pu être confirmées.', 'Das Konto wurde geprüft; seine Geschwindigkeitsgrenzen konnten nicht bestätigt werden.', 'L’account è stato consultato; non è stato possibile confermare i limiti di velocità.'],
         ['Notificaciones', 'Notifications', 'Notificações', 'Notifications', 'Benachrichtigungen', 'Notifiche'],
         ['Cerrar notificaciones', 'Close notifications', 'Fechar notificações', 'Fermer les notifications', 'Benachrichtigungen schließen', 'Chiudi notifiche'],
         ['Notificaciones: {count} aviso activo', 'Notifications: {count} active notice', 'Notificações: {count} aviso ativo', 'Notifications : {count} alerte active', 'Benachrichtigungen: {count} aktiver Hinweis', 'Notifiche: {count} avviso attivo'],

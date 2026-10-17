@@ -2,9 +2,19 @@
 
 [Español](MEJORAS.md) · [PR description](PR_DESCRIPTION.md) · [Webhook setup and rationale](WEBHOOK_SETUP_EN.md)
 
-This revision combines [dhanielsnieto's changes in PR #89](https://github.com/MadaMzandu/uisp-ros-plugin/pull/89) with the subsequent fixes prepared in this repository. The comparison starts at `7ca8dc8`; the original PR ends at `056b89f`. The current candidate is **2.4.44**. The operator confirmed archived-plan speed recovery in their 2.4.19 installation. That confirmation covers this historical scenario; the remaining UISP and RouterOS integration scenarios still require their own checks before production readiness can be established.
+This revision combines [dhanielsnieto's changes in PR #89](https://github.com/MadaMzandu/uisp-ros-plugin/pull/89) with the subsequent fixes prepared in this repository. The comparison starts at `7ca8dc8`; the original PR ends at `056b89f`. The current candidate is **2.4.45**. The operator confirmed archived-plan speed recovery in their 2.4.19 installation. That confirmation covers this historical scenario; the remaining UISP and RouterOS integration scenarios still require their own checks before production readiness can be established.
 
 The plugin connects UISP CRM to MikroTik through the **native RouterOS API**, normally on port `8728`, or `8729` with TLS. The panel manages that integration; it does not switch the transport to SSH, WinBox, or REST.
+
+## Candidate 2.4.45: per-service speed overrides with burst and contention
+
+Apply UISP traffic shaping overrides through a stable private PPP/Hotspot profile for each overridden service, or its own DHCP queue. Preserve the real commercial plan ID and other subscribers' shared profile. Effective rates come from the official `uploadSpeedOverride` and `downloadSpeedOverride` fields while `trafficShapingOverrideEnabled` is enabled; a NULL direction means unlimited. Disabling the override returns to the base policy even if old customized rates remain populated. UISP owns override expiry; webhooks, synchronization and enabled automatic drift review consume its current state.
+
+Recompute burst, threshold and guaranteed rates from the plan percentages against effective service speeds. Equal-rate contention preserves the existing share calculation; mixed-rate groups use a weighted budget with enough room for the highest individual normal rate and burst peak. Unlimited directions remain unlimited at the parent too. Prepared retries preserve account identity and addresses while refreshing current policy resources. Returning to the shared profile retires the old private profile after account reassignment and reconnection, subject to actual RouterOS ownership and dependency checks.
+
+Diagnostics adds base, override, effective speed and observed RouterOS shaping limits, including burst. Proven shaping drift participates in automatic review. Additive cache migration preserves service credentials and address reservations. [Official UISP CRM API documentation](https://ucrm.docs.apiary.io/) and its [published schema](https://jsapi.apiary.io/apis/ucrm).
+
+Validation for 2.4.45 passed: **69 isolated suites**, syntax checks for **70 first-party PHP files**, 385 archive entries, 152 first-party files and 13 locked dependencies. Report: `dist/verification-2.4.45.json`. SHA-256: `b1063a90946a6aeb37053b21141ac783fc3a99a7e2de01b2821f4542a5e05377`. The report retains the initial failures of two test fixtures and their successful revalidation against the identical archive after updating the fixture contract and expected asset revision. Tests use synthetic data; no production UISP or RouterOS changes were performed.
 
 ## Candidate 2.4.44: compact panel, notification center and visible activity
 
@@ -563,7 +573,7 @@ Later production evidence identified missing tokens and a URL pasted as the secr
 
 ## Installation and validation readiness
 
-The current version is 2.4.41. Its validation status appears at the beginning of this changelog. Archived-plan recovery confirmation belongs to 2.4.19 and retains its historical scope. Fresh lifecycle evidence retires obsolete intent and queues guarded removal before releasing physically owned addresses. Unknown evidence remains an incident for that service. The separate local-cleanup review retains its limited scope and private backup. A duplicate-reservation migration barrier still requires resolving stored assignments and reloading. Backups remain downloadable from System. The [real-environment test guide](PRUEBAS_REALES.md) contains 262 scenarios and does not claim production validation.
+The current version is 2.4.45. Its validation status appears at the beginning of this changelog. Archived-plan recovery confirmation belongs to 2.4.19 and retains its historical scope. Fresh lifecycle evidence retires obsolete intent and queues guarded removal before releasing physically owned addresses. Unknown evidence remains an incident for that service. The separate local-cleanup review retains its limited scope and private backup. A duplicate-reservation migration barrier still requires resolving stored assignments and reloading. Backups remain downloadable from System. The [real-environment test guide](PRUEBAS_REALES.md) contains 289 scenarios and does not claim production validation.
 
 ### Historical 2.4.17 result
 

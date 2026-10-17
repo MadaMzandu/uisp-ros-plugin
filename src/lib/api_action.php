@@ -162,7 +162,7 @@ class ApiAction
             $cached = $this->cachedService($serviceId);
             if ($this->freshGuard!==null && ($this->freshGuard)($data['entity'],myJobQueue()->appliedSnapshot($serviceId))!==true)
                 return $this->deferFresh($serviceId,'webhook_fresh_review_blocked',false);
-            if (!$missing) $data['entity']=array_replace(['uploadSpeed'=>null,'downloadSpeed'=>null],$data['entity']);
+            if (!$missing) $data['entity']=array_replace(['uploadSpeed'=>null,'downloadSpeed'=>null,'uploadSpeedOverride'=>null,'downloadSpeedOverride'=>null,'trafficShapingOverrideEnd'=>null,'trafficShapingOverrideEnabled'=>null],$data['entity']);
             $attributeNetwork = !$missing ? ($data['entity']['network'] ?? []) : [];
             if ($cached) $data['previous']=$cached;
             $data['entity']=$this->mergeServiceState($cached,$data['entity']);
@@ -229,7 +229,7 @@ class ApiAction
 
     private function sameFreshIntent(array $current,array $snapshot): bool
     {
-        foreach (['id','clientId','device','status','planId','username','password','mac','duid','iaid','hotspot','callerId','uploadSpeed','downloadSpeed'] as $field) {
+        foreach (['id','clientId','device','status','planId','username','password','mac','duid','iaid','hotspot','callerId','uploadSpeed','downloadSpeed','uploadSpeedOverride','downloadSpeedOverride','trafficShapingOverrideEnd','trafficShapingOverrideEnabled'] as $field) {
             $left=$current[$field]??null; $right=$snapshot[$field]??null;
             if (in_array($field,['username','password','mac','duid','iaid','callerId'],true)) {
                 if ($left!==$right) return false;
@@ -384,7 +384,7 @@ class ApiAction
         foreach (['_commands','_device','_plan','_config'] as $field) {
             if (!isset($applied[$field]) || !is_array($applied[$field]) || !$applied[$field]) return false;
         }
-        foreach (['username','password','mac','hotspot','duid','iaid','callerId','uploadSpeed','downloadSpeed'] as $field)
+        foreach (['username','password','mac','hotspot','duid','iaid','callerId','uploadSpeed','downloadSpeed','uploadSpeedOverride','downloadSpeedOverride','trafficShapingOverrideEnd','trafficShapingOverrideEnabled'] as $field)
             if (array_key_exists($field,$entity) && !array_key_exists($field,$applied)) return false;
         if ($this->needsAppliedReconciliation($entity,false)) return false;
         $principal = filter_var($entity['mac'] ?? '', FILTER_VALIDATE_MAC) ? 'ip/dhcp-server/lease'
@@ -492,7 +492,9 @@ class ApiAction
             $applied = mySqlite()->singleQuery('SELECT * FROM services WHERE id=?', true, [$sid]) ?: [];
             if (!$applied) return true;
         }
-        foreach (['clientId','device','planId','status','username','password','mac','hotspot','duid','iaid','callerId','uploadSpeed','downloadSpeed'] as $field) {
+        foreach (['clientId','device','planId','status','username','password','mac','hotspot','duid','iaid','callerId','uploadSpeed','downloadSpeed','uploadSpeedOverride','downloadSpeedOverride','trafficShapingOverrideEnd','trafficShapingOverrideEnabled'] as $field) {
+            if ($field === 'trafficShapingOverrideEnabled' && !array_key_exists($field, $applied)
+                && !empty($entity[$field])) return true;
             if (!array_key_exists($field, $applied)) continue;
             $desired = $entity[$field] ?? null;
             $actual = $applied[$field] ?? null;

@@ -128,7 +128,7 @@ final class ApiServiceResolution
                     $current=$this->inspect((int)$prepared['serviceId']);
                     if(($current['eligible']??false)!==true||$current['configurationHash']!==$prepared['configurationHash']
                         ||$current['intentHash']!==$prepared['intentHash']||$current['targetComment']!==$prepared['targetComment'])return false;
-                    foreach(['id','clientId','device','status','planId','username','password','mac','hotspot','duid','iaid','callerId','network','uploadSpeed','downloadSpeed']as$field)
+                    foreach(['id','clientId','device','status','planId','username','password','mac','hotspot','duid','iaid','callerId','network','uploadSpeed','downloadSpeed','uploadSpeedOverride','downloadSpeedOverride','trafficShapingOverrideEnd','trafficShapingOverrideEnabled']as$field)
                         if(($fresh[$field]??null)!=($prepared['service'][$field]??null))return false;
                     return true;
                 };

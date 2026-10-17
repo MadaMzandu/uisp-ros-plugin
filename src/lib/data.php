@@ -1,6 +1,7 @@
 <?php
 include_once 'api_sqlite.php';
 include_once 'api_ip.php';
+include_once 'api_service_qos.php';
 
 /** Numeric corruption must stop its service before an unsafe RouterOS write. */
 class InvalidProvisioningNumber extends InvalidArgumentException
@@ -81,6 +82,7 @@ class Data
 
     public function set_data($service,$plan)
     {
+        $plan = ApiServiceQos::effectivePlan($service, $plan);
         $plan = self::normalizePlanNumbers($plan);
         self::validatePlanNumbers($plan, (int) ($service['id'] ?? 0));
         $this->service = $service ;

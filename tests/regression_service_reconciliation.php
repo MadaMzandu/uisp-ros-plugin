@@ -35,11 +35,14 @@ $add=static function(int $sid) use($main,$cache,$jobs,$snapshot):void {
 };
 $add(42); $add(43);
 $report=static function(int $sid):array {
-    $values=['username'=>'fixture-'.$sid,'site'=>'Fixture East','address'=>'192.0.2.42','address6'=>null,'profile'=>'Fixture Profile','plan_id'=>9,'status'=>1,'ownership'=>'17:'.$sid];
+    $values=['username'=>'fixture-'.$sid,'site'=>'Fixture East','address'=>'192.0.2.42','address6'=>null,'profile'=>'Fixture Profile','plan_id'=>9,'status'=>1,'ownership'=>'17:'.$sid,
+        'base_speed'=>'20/5','speed_override'=>'disabled','speed'=>'20/5','rate_limit'=>'5M/20M 0/0 0/0 1/1 8 0/0'];
+    $uisp=$values; $uisp['rate_limit']=null; $router=$values; $router['base_speed']=null; $router['speed_override']=null;
     $comparisons=[]; foreach ($values as $field=>$value) $comparisons[]=['field'=>$field,'uisp'=>$value,'expected'=>$value,'router'=>$value,
-        'matches_uisp'=>in_array($field,['profile','address6'],true)?null:true,'matches_router'=>in_array($field,['plan_id','status','address6'],true)?null:true];
-    return ['service_id'=>$sid,'uisp'=>['available'=>true,'values'=>$values], 'expected'=>['source'=>'applied','values'=>$values],
-        'router'=>['available'=>true,'present'=>true,'reason'=>null,'values'=>$values],'comparisons'=>$comparisons];
+        'matches_uisp'=>in_array($field,['profile','address6','speed','rate_limit'],true)?null:true,'matches_router'=>in_array($field,['plan_id','status','address6','base_speed','speed_override'],true)?null:true];
+    foreach ($comparisons as &$comparison) { $comparison['uisp']=$uisp[$comparison['field']]; $comparison['router']=$router[$comparison['field']]; } unset($comparison);
+    return ['service_id'=>$sid,'uisp'=>['available'=>true,'values'=>$uisp], 'expected'=>['source'=>'applied','values'=>$values],
+        'router'=>['available'=>true,'present'=>true,'reason'=>null,'values'=>$router],'comparisons'=>$comparisons];
 };
 $now=1792070000; $calls=[]; $queued=[]; $hook=null; $mutate=null;
 $inspector=static function(int $sid,float $deadline) use(&$calls,&$hook,&$mutate,$report):array {
@@ -68,6 +71,25 @@ try {
     $tick=$make()->tick(); $read=$make()->read();
     reconciliationCheck($tick['queued']===1 && $queued===[42] && $read['items'][0]['job_keys']===['Q900'],'Proven owned drift was not queued');
     reconciliationCheck($read['items'][0]['fields']===['profile'],'Incident recorded arbitrary diagnostic data');
+    foreach (['base_speed','speed_override','speed','rate_limit'] as $field) {
+        $reset(); $hook=static function($sid,$answer) use($field) {
+            foreach ($answer['comparisons'] as &$comparison) if ($comparison['field']===$field) {
+                $comparison[$field==='rate_limit'?'router':'uisp']=$field==='rate_limit'?'1M/1M 0/0 0/0 1/1 8 0/0':'35/10';
+                $comparison[$field==='rate_limit'?'matches_router':'matches_uisp']=false;
+            } unset($comparison); return $answer;
+        };
+        $tick=$make()->tick(); reconciliationCheck($tick['queued']===1 && $queued===[42]
+            && $make()->read()['items'][0]['fields']===[$field],'Known QoS difference was not eligible for safe correction: '.$field);
+    }
+    $reset(); $hook=static function($sid,$answer) {
+        foreach ($answer['comparisons'] as &$comparison) if ($comparison['field']==='rate_limit') {
+            $comparison['router']=null; $comparison['matches_router']=null;
+        } unset($comparison); return $answer;
+    };
+    $tick=$make()->tick(); reconciliationCheck(!$queued && $tick['unknown']===1 && $make()->read()['items'][0]['reason']==='inspection_unavailable',
+        'Unknown current QoS silently cleared the incident');
+    $reset(); $tick=$make()->tick(); reconciliationCheck(!$queued && $tick['checked']===1 && !$make()->read()['items'],
+        'Already aligned QoS caused repeated correction');
     $public=json_encode($read); foreach (['PRIVATE','password','username','snapshot','applied_hash','configuration_hash'] as $private)
         reconciliationCheck(strpos($public,$private)===false,'A monitoring report exposed private state');
     $reset(); $main->exec("UPDATE config SET value='false' WHERE key='service_reconciliation_auto_apply'");
@@ -111,7 +133,7 @@ try {
     $previousDirectory=getcwd(); $previousInclude=get_include_path(); chdir($root); set_include_path($root.'/lib'.PATH_SEPARATOR.$previousInclude);
     require_once $root.'/lib/api_sqlite.php'; $apiSqlite=new ApiSqlite($mainPath);
     $catalog=[]; foreach (['site','account','manualIp','pass'] as $index=>$key) $catalog[]=['id'=>$index+1,'key'=>$key,'attributeType'=>'service'];
-    $fresh=['id'=>42,'clientId'=>17,'status'=>1,'servicePlanId'=>9,'attributes'=>[
+    $fresh=['id'=>42,'clientId'=>17,'status'=>1,'servicePlanId'=>9,'uploadSpeed'=>5,'downloadSpeed'=>20,'trafficShapingOverrideEnabled'=>false,'attributes'=>[
         ['key'=>'site','customAttributeId'=>1,'value'=>'Fixture East'],['key'=>'account','customAttributeId'=>2,'value'=>'fixture-42'],
         ['key'=>'manualIp','customAttributeId'=>3,'value'=>'192.0.2.42'],['key'=>'pass','customAttributeId'=>4,'value'=>'FRESH-PRIVATE-PASSWORD']]];
     $client=['id'=>17,'firstName'=>'Fresh','lastName'=>'Customer','isArchived'=>false]; $serviceReads=0; $requestHook=null;
@@ -149,6 +171,41 @@ try {
     $hook=static function($sid,$a) { $a['uisp']['values']['address']='192.0.2.42/32'; $a['comparisons'][2]['matches_uisp']=false; return $a; };
     $production()->tick(); reconciliationCheck(count(Batch::$submissions)===1 && $production()->read()['items'][0]['reason']==='identity_unverified',
         'Malformed IPv4 CIDR was queued by automatic correction'); $fresh['attributes'][2]['value']='192.0.2.42';
+    // A missed override webhook must enqueue freshly hydrated QoS, without reusing displayed rates.
+    $overrideReport=static function($sid,$answer) {
+        $answer['uisp']['values']['speed_override']='35/10'; $answer['uisp']['values']['speed']='35/10';
+        foreach ($answer['comparisons'] as &$comparison) if (in_array($comparison['field'],['speed_override','speed'],true)) {
+            $comparison['uisp']='35/10'; $comparison['matches_uisp']=false;
+        } unset($comparison); return $answer;
+    };
+    $reset(); $hook=$overrideReport; $fresh['trafficShapingOverrideEnabled']=true;
+    $fresh['downloadSpeedOverride']=35; $fresh['uploadSpeedOverride']=10; $fresh['trafficShapingOverrideEnd']='2099-01-01T00:00:00+0000';
+    $tick=$production()->tick(); reconciliationCheck($tick['queued']===1 && count(Batch::$submissions)===2
+        && Batch::$submissions[1][0]['downloadSpeedOverride']===35 && Batch::$submissions[1][0]['uploadSpeedOverride']===10
+        && Batch::$submissions[1][0]['trafficShapingOverrideEnabled']===true,'Missed override was not queued from fresh UISP fields');
+    $reset(); $hook=$overrideReport; $fresh['uploadSpeedOverride']=11;
+    $tick=$production()->tick(); reconciliationCheck(!$tick['queued'] && count(Batch::$submissions)===2
+        && $production()->read()['items'][0]['reason']==='state_changed','QoS changed after diagnostics was accepted'); $fresh['uploadSpeedOverride']=10;
+    $reset(); $hook=$overrideReport; $serviceReads=0;
+    $requestHook=static function($path) use(&$fresh,&$serviceReads):void {
+        if ($path==='clients/services/42' && $serviceReads===1) $fresh['trafficShapingOverrideEnd']='2099-02-01T00:00:00+0000';
+    };
+    $tick=$production()->tick(); reconciliationCheck(!$tick['queued'] && count(Batch::$submissions)===2,
+        'Override expiry changed during fresh hydration without invalidating its fingerprint'); $requestHook=null;
+    // UISP's disabled flag is authoritative even when expired override numbers remain on the service.
+    $reset(); $fresh['trafficShapingOverrideEnabled']=false; $fresh['trafficShapingOverrideEnd']='2000-01-01T00:00:00+0000';
+    $hook=static function($sid,$answer) {
+        $answer['expected']['values']['speed_override']='35/10'; $answer['expected']['values']['speed']='35/10';
+        $answer['router']['values']['speed']='35/10';
+        foreach ($answer['comparisons'] as &$comparison) {
+            if ($comparison['field']==='speed_override') { $comparison['expected']='35/10'; $comparison['matches_uisp']=false; }
+            if ($comparison['field']==='speed') { $comparison['expected']='35/10'; $comparison['router']='35/10'; }
+        } unset($comparison); return $answer;
+    };
+    $tick=$production()->tick(); reconciliationCheck($tick['queued']===1 && count(Batch::$submissions)===3
+        && Batch::$submissions[2][0]['trafficShapingOverrideEnabled']===false,'Missed override expiry failed to queue a return to the plan');
+    $reset(); $jobs->exec("INSERT INTO jobs VALUES(901,42,'pending')"); $tick=$production()->tick();
+    reconciliationCheck($tick['deferred']===1 && count(Batch::$submissions)===3 && !$calls,'Pending QoS correction was duplicated');
     $apiSqlite->close(); $apiSqlite=null; chdir($previousDirectory); set_include_path($previousInclude);
     $reset(); $make()->tick(); $value=json_decode(file_get_contents($statePath),true); $value['items']=['42'=>['service_id'=>42,'device_id'=>'PRIVATE','state'=>'unknown','reason'=>'inspection_unavailable','fields'=>[],'checked_at'=>gmdate('Y-m-d\TH:i:s\Z',$now),'job_keys'=>[]]]; file_put_contents($statePath,json_encode($value));
     reconciliationCheck(!$make()->read()['available'],'Corrupt incident identity was trusted');

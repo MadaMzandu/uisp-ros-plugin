@@ -1,1 +1,1 @@
-Compact the panel and add notifications and visible resolution activity
+Apply per-service UISP speed overrides with burst and contention

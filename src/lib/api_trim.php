@@ -66,7 +66,7 @@ class ApiTrim
                 if (!$this->usableAppliedIdentity($applied, $id)) throw $error;
                 // Internal frozen commands/configuration belong to the old job, not
                 // to the desired service that ApiAction merges with these fields.
-                $fields = 'id,clientId,status,uploadSpeed,downloadSpeed,price,totalPrice,currencyCode,'
+                $fields = 'id,clientId,status,uploadSpeed,downloadSpeed,uploadSpeedOverride,downloadSpeedOverride,trafficShapingOverrideEnd,trafficShapingOverrideEnabled,price,totalPrice,currencyCode,'
                     . 'planId,device,username,password,mac,hotspot,duid,iaid,callerId,network';
                 $return['previous'] = array_intersect_key($applied, array_fill_keys(explode(',', $fields), true));
                 foreach (['address', 'address6'] as $field) {
@@ -93,11 +93,20 @@ class ApiTrim
         // An omitted property is a partial update; an explicit empty list clears attributes.
         $entity = property_exists($item, 'attributes') ? $this->attrs()->extract($item->attributes ?? []) : [];
         $fields = "id,clientId,status,uploadSpeed,".
-            "downloadSpeed,price,totalPrice,currencyCode";
+            "downloadSpeed,uploadSpeedOverride,downloadSpeedOverride,trafficShapingOverrideEnd,trafficShapingOverrideEnabled,price,totalPrice,currencyCode";
         $array = json_decode(json_encode($item),true);
         $trim = array_intersect_key($array,
             array_fill_keys(explode(',',$fields),null));
         $entity = array_replace($entity,$trim);
+        if (array_key_exists('trafficShapingOverrideEnabled', $entity)) {
+            $flag = $entity['trafficShapingOverrideEnabled'];
+            if ($flag !== null && !in_array($flag, [true, false, 1, 0, '1', '0'], true))
+                throw new InvalidArgumentException('invalid_service_shaping_override');
+            $entity['trafficShapingOverrideEnabled'] = $flag === null ? null : (int) in_array($flag, [true, 1, '1'], true);
+            if ($entity['trafficShapingOverrideEnabled'] === 1
+                && (!array_key_exists('uploadSpeedOverride', $entity) || !array_key_exists('downloadSpeedOverride', $entity)))
+                throw new InvalidArgumentException('incomplete_service_shaping_override');
+        }
         if (property_exists($item, 'servicePlanId')) { $entity['planId'] = $item->servicePlanId; }
         return $entity ;
     }

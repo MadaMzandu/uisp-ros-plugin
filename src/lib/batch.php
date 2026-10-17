@@ -312,6 +312,9 @@ class Batch
         if (in_array($operation, ['update','queues_set'], true)) $this->ensurePlanMetadata((int) ($service['planId'] ?? 0));
         $plans = $this->find_plans();
         $service['_plan'] ??= $plans[$service['planId'] ?? 0] ?? $this->make_plan($service);
+        if (in_array($operation, ['update','queues_set'], true)) {
+            $service['_plan'] = ApiServiceQos::effectivePlan($service, $service['_plan']);
+        }
         if ($operation === 'update') {
             $applied=myJobQueue()->appliedSnapshot((int)$service['id']);
             foreach (['address'=>false,'address6'=>true] as $field=>$ipv6) {
@@ -515,7 +518,8 @@ class Batch
             $this->ensurePlanMetadata($planId);
             // Unprepared old work must not freeze a nameless/zero-rate fallback.
             // Prepared accounts keep their identity, credentials and allocated addresses.
-            if (!isset($service['_commands']) && $planId > 0) $service['_plan'] = $this->find_plans()[$planId];
+            if (!isset($service['_commands']) && $planId > 0)
+                $service['_plan'] = ApiServiceQos::effectivePlan($service, $this->find_plans()[$planId]);
         }
         $device = $this->operationDevice($service);
         $batchId = 'service-' . (int) $service['id'];
@@ -661,9 +665,11 @@ class Batch
                 // customer's retry must not overwrite a newer shared plan.
                 $planId = (int) ($service['_plan']['id'] ?? $service['planId'] ?? 0);
                 $plans = $this->find_plans(true);
+                $previousPlan = $service['_plan'] ?? null;
+                if (isset($plans[$planId])) $service['_plan'] = ApiServiceQos::effectivePlan($service, $plans[$planId]);
                 $commands = ApiSharedResources::refresh($service, $commands, $plans[$planId] ?? null, (array) $this->db()->readConfig());
                 $commands = $this->prepareSessionReconnect($service, $commands, $queue, $device);
-                if ($commands !== $service['_commands']) {
+                if ($commands !== $service['_commands'] || $previousPlan !== ($service['_plan'] ?? null)) {
                     $service['_commands'] = $commands;
                     $service = $queue->freezePrepared($job, $service);
                 }
@@ -729,6 +735,7 @@ class Batch
         }
         $api = new MtData();
         $plan = $service['_plan'] ?? $this->make_plan($service);
+        if (in_array($operation, ['update','queues_set'], true)) $service['_plan'] = $plan = ApiServiceQos::effectivePlan($service, $plan);
         // A dual-stack build either acquires every requested family or leaves
         // the previous reservations intact. No cleanup/write follows a failed build.
         $data = $api->get_data($service, $plan);
@@ -755,11 +762,18 @@ class Batch
         if ($operation==='update') {
             $allocations=$this->retainPoolAllocationProofs($service,$service['_commands'],$allocations);
             if ($allocations) $service['_pool_allocations']=$allocations;
+            $service['_commands'] = $this->retireUnusedServiceProfiles($service, $service['_commands']);
         }
         // Address reservations are durable before any RouterOS command is sent.
         $this->ip_flush();
         if ($delete) { $service['_delete_frozen'] = true; }
         return $service;
+    }
+
+    /** Use the same private-profile retirement plan as read-only synchronization review. */
+    private function retireUnusedServiceProfiles(array $service, array $commands): array
+    {
+        return MtData::retireUnusedServiceProfiles($service, $commands, myJobQueue()->appliedSnapshot((int) $service['id']));
     }
 
     private function operationDevice(array $service): object

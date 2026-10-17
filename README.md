@@ -2,6 +2,16 @@
 
 [Complete English changelog](docs/CHANGELOG_EN.md) · [Texto completo para el PR](docs/PR_DESCRIPTION.md) · [Webhook setup and rationale](docs/WEBHOOK_SETUP_EN.md) · [Mejoras en español](docs/MEJORAS.md)
 
+## Candidato 2.4.45 — overrides de velocidad por servicio
+
+Los overrides de traffic shaping de UISP se aplican con un perfil privado estable por servicio en PPPoE y Hotspot, o con la cola propia de DHCP. El plan comercial y el perfil compartido de otros clientes conservan su identidad. La política efectiva usa los campos oficiales `uploadSpeedOverride` y `downloadSpeedOverride` cuando `trafficShapingOverrideEnabled` está habilitado; un valor nulo significa sin límite. Al deshabilitarlo en UISP se vuelve al perfil base, incluso si quedaron velocidades personalizadas guardadas. UISP controla la fecha de finalización; el plugin recoge su estado vigente mediante webhook, sincronización y revisión automática habilitada.
+
+Burst, umbral y garantía se recalculan con los porcentajes del plan y las velocidades efectivas. La contención conserva el reparto anterior para clientes de igual velocidad; con velocidades mixtas pondera su capacidad, permite la velocidad individual más alta y deja margen al burst. Una dirección sin límite permanece sin límite también en la cola superior. Los reintentos conservan la identidad y la IP preparadas y actualizan los recursos de la política actual. Al quitar el override, el perfil privado se retira después de cambiar la cuenta y reconectar; la API comprueba propiedad y dependencias antes de eliminarlo.
+
+Diagnóstico muestra velocidad base, override, velocidad efectiva y límites observados en RouterOS, incluido burst. Los cambios comprobables de shaping también entran en la revisión automática de diferencias. La caché se migra por columnas conservando cuentas y reservas. [Esquema oficial de UISP CRM](https://ucrm.docs.apiary.io/) y [definición publicada de la API](https://jsapi.apiary.io/apis/ucrm).
+
+Validación 2.4.45 aprobada: **69 suites aisladas**, sintaxis de **70 archivos PHP propios**, 385 entradas del instalador, 152 archivos propios y 13 dependencias fijadas. Informe: `dist/verification-2.4.45.json`. SHA-256: `b1063a90946a6aeb37053b21141ac783fc3a99a7e2de01b2821f4542a5e05377`. El informe conserva los fallos iniciales de dos fixtures y su revalidación contra el mismo ZIP tras actualizar el contrato de la prueba y la revisión de recursos esperada. Las pruebas usan datos sintéticos; no se modificaron UISP ni RouterOS de producción.
+
 ## Candidato 2.4.44 — panel compacto, notificaciones y actividad visible
 
 Se compactan tablas, formularios, barras de acciones y tarjetas en Dispositivos, Planes, Configuración, Trabajos, Sistema y Diagnóstico. Las acciones de cada trabajo comparten fila; Sistema organiza revisión, respaldos, salud y utilidades en un tablero adaptable. En pantallas amplias, la salud muestra cuatro tarjetas y Configuración usa tres columnas. En móvil, la navegación y las tablas conservan su desplazamiento propio y los controles mantienen su área de interacción. No se recortan los detalles ni se eliminan acciones para ganar espacio.

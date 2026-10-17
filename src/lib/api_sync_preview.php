@@ -16,7 +16,7 @@ final class ApiSyncPreview
     private float $deadline = 0;
     private const PAGE = 500;
     private const MAX_SERVICES = 20000;
-    private const INTENT_FIELDS = ['id','clientId','status','planId','device','uploadSpeed','downloadSpeed','username','password','mac','hotspot','duid','iaid','callerId','network'];
+    private const INTENT_FIELDS = ['id','clientId','status','planId','device','uploadSpeed','downloadSpeed','uploadSpeedOverride','downloadSpeedOverride','trafficShapingOverrideEnd','trafficShapingOverrideEnabled','username','password','mac','hotspot','duid','iaid','callerId','network'];
 
     public function __construct(?callable $request=null, ?callable $routerReader=null, ?callable $applier=null,
         string $dataPath='data/data.db', string $cachePath='data/cache.db', string $jobsPath='data/jobs.db', ?callable $clock=null)
@@ -128,7 +128,7 @@ final class ApiSyncPreview
             $fresh=$fresh??(new ApiTrim(new ApiAttributes($db)))->trim('service',
                 (new ApiWebhookFreshness(fn(string $path)=>$this->get($path),$this->deadline))->service($sid))['entity'];
             $cached=$cache->singleQuery('SELECT * FROM services WHERE id=?',true,[$sid])??[];
-            $service=array_replace($cached,['uploadSpeed'=>null,'downloadSpeed'=>null],$fresh); $cachedNetwork=$cache->singleQuery('SELECT address,address6 FROM network WHERE id=?',true,[$sid])??[];
+            $service=array_replace($cached,['uploadSpeed'=>null,'downloadSpeed'=>null,'uploadSpeedOverride'=>null,'downloadSpeedOverride'=>null,'trafficShapingOverrideEnd'=>null,'trafficShapingOverrideEnabled'=>null],$fresh); $cachedNetwork=$cache->singleQuery('SELECT address,address6 FROM network WHERE id=?',true,[$sid])??[];
             $service['network']=array_replace($cachedNetwork,$fresh['network']??[]);
             $intent=$this->intentHash($fresh);
             $did=(int)($service['device']??0);
@@ -167,7 +167,8 @@ final class ApiSyncPreview
                 if ($peer['newAddress6']) $queue['reserved6'][]=['id'=>$peer['serviceId'],'address6'=>$peer['newAddress6']];
             }
             $addresses=new ApiIP(true,false,['db'=>$db,'cache'=>$cache]+$queue);
-            $commands=MtData::previewCommands($service,$plan,$addresses,$db,$cache);
+            $commands=MtData::previewCommands($service,$plan,$addresses,$db,$cache,
+                ['resourceSnapshots'=>$queue['resourceSnapshots'],'blocked'=>$queue['blocked'],'applied'=>$applied]);
             $observation=$this->inspectCommands($devices[$did],$service,$commands);
             if ($observation['blocked']!==null) return ['public'=>$this->blocked($sid,$observation['blocked'])];
             $migration=false;
@@ -302,7 +303,7 @@ final class ApiSyncPreview
 
     private function queueProjection(): array
     {
-        $result=['reserved4'=>[],'reserved6'=>[],'blocked'=>[],'pending'=>[],'applied'=>[]];
+        $result=['reserved4'=>[],'reserved6'=>[],'blocked'=>[],'pending'=>[],'applied'=>[],'resourceSnapshots'=>[]];
         if (!is_file($this->jobsPath)) return $result;
         $db=new ApiSqlite($this->jobsPath,true);
         try {
@@ -316,11 +317,14 @@ final class ApiSyncPreview
             foreach ($db->selectCustom('SELECT service_id FROM service_tombstones LIMIT 20001')??[] as $row) $result['blocked'][(int)$row['service_id']]=true;
             foreach ($db->selectCustom('SELECT service_id,applied_payload FROM service_versions WHERE applied_payload IS NOT NULL LIMIT 20001')??[] as $row) {
                 $snapshot=$this->payload($row['applied_payload']); $result['applied'][(int)$row['service_id']]=$snapshot;
+                $result['resourceSnapshots'][]=$snapshot;
                 foreach ([false,true] as $ipv6) ApiJobQueue::collectAddresses($result[$ipv6?'reserved6':'reserved4'],(int)$row['service_id'],$snapshot,$ipv6,false);
             }
             foreach ($db->selectCustom("SELECT service_id,status,payload,prior_cleared,cleanup_done FROM jobs WHERE status IN ('pending','running','cancelled','superseded') LIMIT 20001")??[] as $row) {
                 $sid=(int)$row['service_id']; $snapshot=$this->payload($row['payload']);
                 if (in_array($row['status'],['pending','running'],true)) $result['pending'][$sid]=true;
+                if (isset($snapshot['_commands'])) $result['resourceSnapshots'][]=$snapshot;
+                if (isset($snapshot['_cleanup'])&&!$row['cleanup_done']) $result['resourceSnapshots'][]=$snapshot['_cleanup'];
                 foreach ([false,true] as $ipv6) { $key=$ipv6?'reserved6':'reserved4';
                     if (isset($snapshot['_commands'])&&is_array($snapshot['_commands'])) ApiJobQueue::collectAddresses($result[$key],$sid,$snapshot,$ipv6,false);
                     if (!$row['prior_cleared']) ApiJobQueue::collectAddresses($result[$key],$sid,['_prior_network'=>$snapshot['_prior_network']??[]],$ipv6,true);
@@ -330,6 +334,8 @@ final class ApiSyncPreview
             foreach (['cancellation_cleanups','retained_resources'] as $table) foreach ($db->selectCustom('SELECT * FROM '.$table.' LIMIT 20001')??[] as $row) {
                 $sid=(int)$row['service_id']; $snapshot=$this->payload($row['payload']);
                 if ($table==='cancellation_cleanups') $result['pending'][$sid]=true;
+                if ($table==='cancellation_cleanups' || $row['slot']!=='source' || isset($snapshot['_commands'])) $result['resourceSnapshots'][]=$snapshot;
+                if ($table==='retained_resources' && $row['slot']==='source' && isset($snapshot['_cleanup'])) $result['resourceSnapshots'][]=$snapshot['_cleanup'];
                 foreach ([false,true] as $ipv6) { $key=$ipv6?'reserved6':'reserved4';
                     if ($table==='retained_resources' && $row['slot']==='source') {
                         if (isset($snapshot['_commands'])&&is_array($snapshot['_commands'])) ApiJobQueue::collectAddresses($result[$key],$sid,$snapshot,$ipv6,false);

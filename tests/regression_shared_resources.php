@@ -36,7 +36,7 @@ class UcrmApi {
     public static function create() { return new self(); }
     public function get($path, $options=[]) {
         if ($path==='clients/70') return ['id'=>70,'isArchived'=>false];
-        if (preg_match('~^clients/services/(91|92|95|96|97)$~D',$path,$match))
+        if (preg_match('~^clients/services/(91|92|95|96|97|110|111|112)$~D',$path,$match))
             return ['id'=>(int)$match[1],'clientId'=>70,'status'=>in_array((int)$match[1],[96,97],true)?2:1];
         throw new \RuntimeException('Network prohibited in shared resource regression');
     }
@@ -54,7 +54,7 @@ class MT {
         foreach($commands as $command) {
             $path=trim($command['path'],'/');
             if($path==='ppp/profile' && ($command['action'] ?? '')!=='remove') self::$profiles[$command['name']]=$command;
-            if($path==='queue/simple' && ($command['name'] ?? '')==='uisp-plan-1-parent' && ($command['action'] ?? '')!=='remove') self::$parents[$command['name']]=$command;
+            if($path==='queue/simple' && preg_match('/^uisp-plan-[1-9][0-9]*-parent$/D',$command['name'] ?? '') && ($command['action'] ?? '')!=='remove') self::$parents[$command['name']]=$command;
             if($path==='ppp/secret' && ($command['name'] ?? '')===self::$failedAccount) return 0;
         }
         return count($commands);
@@ -134,7 +134,11 @@ try {
     checkShared(count($reconnect)===1 && ($reconnect[0]['_reconnect_required'] ?? null)===true,
         'A refreshed shared profile did not require its own customer to reconnect');
     checkShared(individualShared($retried['_commands'])===$expectedIndividual,'Refreshing shared resources changed an individual command beyond its current shared profile reference');
-    checkShared($retried['_device']===$frozen['_device'] && $retried['_plan']===$frozen['_plan'] && $retried['_config']===$frozen['_config'],'Refreshing shared resources changed the frozen service identity/settings');
+    checkShared($retried['_device']===$frozen['_device'] && $retried['_config']===$frozen['_config'],
+        'Refreshing shared resources changed frozen device or account configuration');
+    checkShared((int)$retried['_plan']['id']===(int)$frozen['_plan']['id']
+        && $retried['_plan']['name']==='Fixture Plan Renamed' && (float)$retried['_plan']['uploadSpeed']===15.0,
+        'The applied plan snapshot did not record the current shared profile policy');
     $account=array_values(array_filter($retried['_commands'],static fn(array $command): bool=>trim($command['path'],'/')==='ppp/secret'))[0];
     checkShared($account['password']===' fixture 0 ' && $account['remote-address']==='192.0.2.91'
         && $account['profile']===$currentProfileName,'Retry used current cache credentials/address or an obsolete profile reference');
@@ -155,7 +159,147 @@ try {
     MT::$batches=[];
     $apiJobQueue->run([$oldKey]);
     checkShared(MT::$batches===[],'A missing shared plan permitted stale writes to the router');
-    echo "Shared resource regression passed: fresh owned readable profile/parent/config, renamed-plan account references, unique physical-router members, applied/prepared IPv4/IPv6 targets, frozen account and disabled-contention safety.\n";
+
+    // Service-specific speeds share the real catalog parent, while profile and
+    // burst policy remain isolated from ordinary subscribers of that plan.
+    MT::$failedAccount=null;
+    $apiSqlite->saveConfig(['disable_contention'=>false]);
+    $apiSqlite->insert(['id'=>2,'name'=>'Override Fixture','ratio'=>2,'uploadSpeed'=>5,'downloadSpeed'=>20,
+        'burstUpload'=>50,'burstDownload'=>50,'threshUpload'=>20,'threshDownload'=>20,'timeUpload'=>5,'timeDownload'=>5],'plans');
+    $apiSqliteCache->insert(['id'=>110,'clientId'=>70,'device'=>10,'planId'=>2,'status'=>1,'username'=>'override-110','password'=>'fixture',
+        'uploadSpeed'=>5,'downloadSpeed'=>20,'uploadSpeedOverride'=>10,'downloadSpeedOverride'=>35,'trafficShapingOverrideEnabled'=>1],'services');
+    $apiSqliteCache->insert(['id'=>110,'address'=>'198.51.100.110'],'network');
+    checkShared((new Batch())->set_accounts([110]),'Service override failed to apply');
+    $private=MT::$profiles['uisp-service-110-profile'];
+    checkShared(strpos($private['rate-limit'],'10M/35M 15000000/52500000 ')===0,'Private override did not retain its own speeds and proportional burst');
+    $overrideParent=MT::$parents['uisp-plan-2-parent'];
+    checkShared($overrideParent['limit-at']==='10M/35M' && $overrideParent['max-limit']==='15M/52.5M',
+        'A lone override at contention ratio two was capped below its normal or burst rate');
+    checkShared($private['parent-queue']==='uisp-plan-2-parent','The service override lost real-plan contention membership');
+    $apiSqliteCache->insert(['id'=>111,'clientId'=>70,'device'=>10,'planId'=>2,'status'=>1,'username'=>'ordinary-111','password'=>'fixture',
+        'uploadSpeed'=>5,'downloadSpeed'=>20,'trafficShapingOverrideEnabled'=>0],'services');
+    $apiSqliteCache->insert(['id'=>111,'address'=>'198.51.100.111'],'network');
+    checkShared((new Batch())->set_accounts([111]),'Ordinary member of the override plan failed');
+    $base=MT::$profiles['Override Fixture [UISP#2]'];
+    checkShared(strpos($base['rate-limit'],'5M/20M 7500000/30000000 ')===0,'A service override changed the shared base profile');
+    checkShared(MT::$profiles['uisp-service-110-profile']===$private,'An ordinary service refresh overwrote the private profile');
+    $mixedParent=MT::$parents['uisp-plan-2-parent'];
+    checkShared($mixedParent['limit-at']==='10M/35M' && $mixedParent['max-limit']==='15M/52.5M',
+        'Mixed ordinary/override members did not retain the largest normal and burst rates');
+    foreach(['198.51.100.110','198.51.100.111'] as $address)
+        checkShared(in_array($address,explode(',',$mixedParent['target']),true),'Mixed parent omitted a member target');
+
+    // A retry refreshes policy from the current catalog without replacing the
+    // explicit service speed with the catalog speed or its private identity.
+    MT::$failedAccount='override-110';
+    checkShared(!(new Batch())->set_accounts([110]),'Override retry fixture did not fail as expected');
+    $overrideKey=null;
+    foreach($apiJobQueue->list() as $key=>$job) if((int)$job['id']===110) $overrideKey=$key;
+    checkShared($overrideKey!==null,'Missing frozen override retry');
+    $apiSqlite->edit(['id'=>2,'uploadOverride'=>7,'downloadOverride'=>25,'burstUpload'=>100,'burstDownload'=>100],'plans');
+    $apiJobQueue->run([$overrideKey]);
+    $refreshedPrivate=MT::$profiles['uisp-service-110-profile'];
+    checkShared(strpos($refreshedPrivate['rate-limit'],'10M/35M 20000000/70000000 ')===0,
+        'A current plan refresh replaced private override speeds or failed to recompute its burst');
+    $retryAccount=array_values(array_filter(snapshotShared($overrideKey)['_commands'],static fn(array $command): bool=>trim($command['path'],'/')==='ppp/secret'))[0];
+    checkShared($retryAccount['profile']==='uisp-service-110-profile','A frozen retry reverted to the shared plan profile');
+    $apiSqliteCache->edit(['id'=>110,'trafficShapingOverrideEnabled'=>0],'services');
+    MT::$failedAccount=null;
+    checkShared((new Batch())->set_accounts([110]),'Removing the override failed to apply');
+    $returnedParent=MT::$parents['uisp-plan-2-parent'];
+    checkShared($returnedParent['limit-at']==='7M/25M' && $returnedParent['max-limit']==='14M/50M',
+        'Returning the current override to the plan retained its obsolete normal/burst capacity');
+    $lastCommands=MT::$batches[count(MT::$batches)-1];
+    $returnedAccount=array_values(array_filter($lastCommands,static fn(array $command): bool=>trim($command['path'],'/')==='ppp/secret' && ($command['action'] ?? '')!=='remove'))[0];
+    checkShared($returnedAccount['profile']==='Override Fixture [UISP#2]','Removing an override did not return to the real base plan');
+    $accountIndex=$reconnectIndex=$retiredIndex=null;
+    foreach($lastCommands as $index=>$command) {
+        $path=trim($command['path'],'/');
+        if($path==='ppp/secret' && ($command['action'] ?? '')!=='remove') $accountIndex=$index;
+        if($path==='ppp/active') $reconnectIndex=$index;
+        if($path==='ppp/profile' && ($command['action'] ?? '')==='remove') {
+            checkShared(($command['_owner'] ?? '')==='uisp-ros-plugin:service-profile:110'
+                && $command['name']==='uisp-service-110-profile','Override removal tried to retire a shared or unowned profile');
+            $retiredIndex=$index;
+        }
+    }
+    checkShared($accountIndex!==null && $reconnectIndex!==null && $retiredIndex!==null
+        && $retiredIndex>$accountIndex && $retiredIndex>$reconnectIndex,
+        'The former private profile was not retired after account reassignment and reconnection');
+    $apiSqliteCache->edit(['id'=>110,'trafficShapingOverrideEnabled'=>1,'uploadSpeedOverride'=>null,'downloadSpeedOverride'=>35],'services');
+    checkShared((new Batch())->set_accounts([110]),'An unlimited upload override failed to apply');
+    $unlimitedParent=MT::$parents['uisp-plan-2-parent'];
+    checkShared($unlimitedParent['limit-at']==='0M/35M' && $unlimitedParent['max-limit']==='0M/70M',
+        'A finite parent throttled an unlimited override direction');
+    checkShared(strpos(MT::$profiles['uisp-service-110-profile']['rate-limit'],'0/35M 0/70000000 ')===0,
+        'Unlimited service override did not retain its RouterOS zero rate and zero burst: '.MT::$profiles['uisp-service-110-profile']['rate-limit']);
+    $apiSqliteCache->edit(['id'=>110,'trafficShapingOverrideEnabled'=>0],'services');
+    checkShared((new Batch())->set_accounts([110]),'Returning an unlimited override to the plan failed');
+    checkShared(MT::$parents['uisp-plan-2-parent']['max-limit']==='14M/50M',
+        'A completed unlimited override leaked unlimited shared parent capacity');
+    $apiSqliteCache->insert(['id'=>112,'clientId'=>70,'device'=>10,'planId'=>2,'status'=>1,'username'=>'override-112','password'=>'fixture',
+        'uploadSpeed'=>5,'downloadSpeed'=>20,'uploadSpeedOverride'=>10,'downloadSpeedOverride'=>35,'trafficShapingOverrideEnabled'=>1],'services');
+    $apiSqliteCache->insert(['id'=>112,'address'=>'198.51.100.112'],'network');
+    checkShared((new Batch())->set_accounts([112]),'A third mixed-rate contention member failed');
+    $weightedParent=MT::$parents['uisp-plan-2-parent'];
+    checkShared($weightedParent['limit-at']==='16M/56.666667M' && $weightedParent['max-limit']==='20M/70M',
+        'Three mixed-rate members did not receive proportional rounded contention shares and burst headroom');
+    $readDb=new ApiSqlite('data/data.db',true); $readCache=new ApiSqlite('data/cache.db',true);
+    try {
+        $plans=Batch::previewPlans($readDb);
+        $previewService=$readCache->singleQuery('SELECT s.*,n.address,n.address6 FROM services s LEFT JOIN network n ON s.id=n.id WHERE s.id=112',true);
+        $previewService+=['company'=>null,'firstName'=>'Fresh','lastName'=>'Client','network'=>[
+            'address'=>$previewService['address'],'address6'=>$previewService['address6']],
+            '_device'=>$readDb->singleQuery('SELECT * FROM devices WHERE id=10',true),'_config'=>(array)$readDb->readConfig(),'action'=>'update'];
+        $projection=['reserved4'=>[],'reserved6'=>[],'blocked'=>[97=>true],'resourceSnapshots'=>$apiJobQueue->resourceSnapshots(),
+            'applied'=>$apiJobQueue->appliedSnapshot(112)];
+        $beforePreview=[];
+        foreach(['data/data.db','data/cache.db','data/jobs.db'] as $file) $beforePreview[$file]=hash_file('sha256',$file);
+        $preview=MtData::previewCommands($previewService,$plans[2],new ApiIP(true,false,['db'=>$readDb,'cache'=>$readCache]+$projection),
+            $readDb,$readCache,$projection);
+        $previewParent=array_values(array_filter($preview,static fn(array $command):bool=>trim($command['path'],'/')==='queue/simple'
+            && ($command['name'] ?? '')==='uisp-plan-2-parent'))[0];
+        unset($previewParent['batch'],$weightedParent['batch']);
+        checkShared($previewParent===$weightedParent,'Mixed-rate preview and execution calculated different parent policy or membership');
+        $off=$previewService; $off['trafficShapingOverrideEnabled']=0;
+        $offPreview=MtData::previewCommands($off,$plans[2],new ApiIP(true,false,['db'=>$readDb,'cache'=>$readCache]+$projection),
+            $readDb,$readCache,$projection);
+        $offParent=array_values(array_filter($offPreview,static fn(array $command):bool=>trim($command['path'],'/')==='queue/simple'
+            && ($command['name'] ?? '')==='uisp-plan-2-parent'))[0];
+        checkShared($offParent['max-limit']==='14M/50M' && $offParent['limit-at']==='14M/50M',
+            'Override-off preview kept the current service old custom normal or burst rate');
+        checkShared(count(array_filter($offPreview,static fn(array $command):bool=>trim($command['path'],'/')==='ppp/profile'
+            && ($command['action'] ?? '')==='remove' && ($command['_owner'] ?? '')==='uisp-ros-plugin:service-profile:112'))===1,
+            'Override-off review omitted the exact private-profile cleanup included in execution');
+        foreach($beforePreview as $file=>$hash) checkShared(hash_file('sha256',$file)===$hash,'Read-only parent review modified '.$file);
+    } finally { $readDb->close(); $readCache->close(); }
+    $fallback=ApiSharedResources::parentMembership(['target'=>'203.0.113.112'],array_replace($previewService,['planId'=>0,'uploadSpeedOverride'=>null]),
+        array_replace($plans[2],['id'=>0]),null,null,[],[]);
+    checkShared($fallback['target']==='203.0.113.112' && $fallback['limit-at']==='0M/35M' && $fallback['max-limit']==='0M/70M',
+        'Fallback parent lost allocated target, unlimited direction or burst headroom');
+    $suspended=array_replace($previewService,['id'=>114,'status'=>3,'username'=>'suspended-114','uploadSpeedOverride'=>null,
+        'downloadSpeedOverride'=>null,'address'=>'198.51.100.114','address6'=>null,'network'=>['address'=>'198.51.100.114','address6'=>null],
+        '_commands'=>[['path'=>'/ppp/secret','profile'=>'external-suspended','remote-address'=>'198.51.100.114'],
+            ['path'=>'/queue/simple','name'=>'uisp-service-114-suspension','target'=>'198.51.100.114','parent'=>'none']]]);
+    $apiSqliteCache->insert(array_intersect_key($suspended,array_fill_keys(['id','clientId','device','planId','status','username',
+        'trafficShapingOverrideEnabled','uploadSpeedOverride','downloadSpeedOverride'],true)),'services');
+    $apiSqliteCache->insert(['id'=>114,'address'=>'198.51.100.114'],'network');
+    $apiSqlite->insert(['id'=>114,'clientId'=>70,'device'=>10,'planId'=>2,'status'=>3],'services');
+    $apiSqlite->insert(['id'=>114,'address'=>'198.51.100.114'],'network');
+    $withoutSuspended=ApiSharedResources::parentMembership(['target'=>''], $previewService, $plans[2],
+        $apiSqlite,$apiSqliteCache,[$suspended],[]);
+    checkShared($withoutSuspended['limit-at']==='16M/56.666667M' && $withoutSuspended['max-limit']==='20M/70M'
+        && !in_array('198.51.100.114',explode(',',$withoutSuspended['target']),true),
+        'A suspended unlimited service became an active contention member');
+    $pendingCleanup=array_replace($suspended,['id'=>115,'status'=>2,'address'=>'198.51.100.115','network'=>['address'=>'198.51.100.115'],
+        '_commands'=>[['path'=>'/ppp/profile','name'=>'uisp-service-115-profile','parent-queue'=>'uisp-plan-2-parent','action'=>'remove'],
+            ['path'=>'/ppp/secret','name'=>'retiring-115','remote-address'=>'198.51.100.115','action'=>'remove']]]);
+    $retainedParent=ApiSharedResources::parentMembership(['target'=>''], $previewService, $plans[2],
+        $apiSqlite,$apiSqliteCache,[$suspended,$pendingCleanup],[]);
+    checkShared($retainedParent['max-limit']==='0M/0M' && $retainedParent['limit-at']==='0M/0M'
+        && in_array('198.51.100.115',explode(',',$retainedParent['target']),true),
+        'An unconfirmed terminal cleanup lost its actual old parent membership or unlimited capacity');
+    echo "Shared resource regression passed: fresh owned shared resources, alias membership and frozen retries, isolated service overrides, proportional burst and mixed-rate contention, and override removal.\n";
 } finally {
     if(isset($apiJobQueue)) $apiJobQueue->close();
     if(isset($apiSqlite)) $apiSqlite->close();

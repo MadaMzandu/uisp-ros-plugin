@@ -143,6 +143,37 @@ try {
     $jobsDb=new ApiSqlite('data/jobs.db');$jobsDb->execute('UPDATE service_versions SET applied_payload=? WHERE service_id=42',[json_encode($snapshot)]);$jobsDb->close();
     $automatic=$api->begin(1);$api->step($automatic['previewToken']);$review=$api->step($automatic['previewToken']);
     previewCheck($review['items'][0]['newAddress']===$proposed,'Explicit applied network null became a new allocation on every review');
+    // Reviewing and applying both directions of an override must use the same
+    // private-profile creation/retirement commands as the ordinary worker.
+    $savedRaw = clone $raw; $savedRouter = $router;
+    $raw->trafficShapingOverrideEnabled = true;
+    $raw->uploadSpeedOverride = 10; $raw->downloadSpeedOverride = 35;
+    $begin=$api->begin(1); $api->step($begin['previewToken']); $review=$api->step($begin['previewToken']);
+    previewCheck($review['items'][0]['state']==='changes','A new service override did not appear in difference review');
+    $overrideApply=$api->applyStep($begin['previewToken'],'differences');
+    previewCheck($overrideApply['state']==='queued' && count($overrideApply['jobKeys'])===1,
+        'The reviewed private-profile build differed from normal queue preparation: '.json_encode($overrideApply));
+    $queue->runSelected($overrideApply['jobKeys'],static fn()=>true);
+    $privateSnapshot=$queue->appliedSnapshot(42);
+    $privateProfile=array_values(array_filter($privateSnapshot['_commands'],static fn($c)=>trim($c['path'],'/')==='ppp/profile'&&($c['action']??'')!=='remove'))[0];
+    previewCheck($privateProfile['name']==='uisp-service-42-profile'&&str_starts_with($privateProfile['rate-limit'],'10M/35M'),
+        'Reviewed override did not freeze customized profile rates');
+    $router['ppp/secret'][0]['profile']='uisp-service-42-profile';
+    $router['ppp/profile'][]=['.id'=>'*D','name'=>'uisp-service-42-profile','comment'=>'Servicio #42',
+        'rate-limit'=>$privateProfile['rate-limit'],'parent-queue'=>$privateProfile['parent-queue'],
+        'local-address'=>'192.0.2.1','address-list'=>$privateProfile['address-list']];
+    $raw->trafficShapingOverrideEnabled=false;
+    $begin=$api->begin(1);$api->step($begin['previewToken']);$review=$api->step($begin['previewToken']);
+    previewCheck($review['items'][0]['state']==='changes','Returning to the base plan was absent from preview');
+    $baseApply=$api->applyStep($begin['previewToken'],'differences');
+    previewCheck($baseApply['state']==='queued' && count($baseApply['jobKeys'])===1,
+        'Private-profile retirement invalidated a valid reviewed return to the base plan: '.json_encode($baseApply));
+    $queue->runSelected($baseApply['jobKeys'],static fn()=>true);
+    $baseSnapshot=$queue->appliedSnapshot(42);
+    previewCheck(count(array_filter($baseSnapshot['_commands'],static fn($c)=>trim($c['path'],'/')==='ppp/profile'
+        && ($c['action']??'')==='remove' && $c['name']==='uisp-service-42-profile'))===1,
+        'Returning to base lost the explicitly reviewed private-profile cleanup');
+    $raw=$savedRaw; $router=$savedRouter;
     // A migration also observes the old account; uncertain source ownership cannot retire a different account.
     $prior=$router;$prior['ppp/secret']=[$account+['.id'=>'*B']];unset($prior['ppp/secret'][0]['password']);
     $target=['ip/address'=>[['.id'=>'*F','address'=>'198.51.100.1/24','disabled'=>'false','dynamic'=>'false','invalid'=>'false']]];

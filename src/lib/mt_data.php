@@ -6,16 +6,52 @@ class MtData extends Data
     private ?ApiIP $validationAddresses = null;
     private ?ApiSqlite $previewDatabase = null;
     private ?ApiSqlite $previewCache = null;
+    private ?array $previewResourceContext = null;
 
     /** Build the ordinary desired commands without acquiring reservations or refreshing cache. */
-    public static function previewCommands(array $service, array $plan, ApiIP $addresses, ApiSqlite $database, ApiSqlite $cache): array
+    public static function previewCommands(array $service, array $plan, ApiIP $addresses, ApiSqlite $database, ApiSqlite $cache, array $resourceContext = []): array
     {
         $builder = new self(); $builder->validationAddresses = $addresses;
         $builder->previewDatabase = $database; $builder->previewCache = $cache;
+        $builder->previewResourceContext = $resourceContext;
+        $plan = ApiServiceQos::effectivePlan($service, $plan);
         $service['_plan'] = $plan;
         $data = $builder->get_data($service, $plan); $commands = [];
         foreach (['pool','parents','profiles','queues','accounts','dhcp6','disconn'] as $key) if (isset($data[$key])) $commands[] = $data[$key];
-        return self::safePreparedCommands($service, $commands, 'update');
+        $commands = self::safePreparedCommands($service, $commands, 'update');
+        return self::retireUnusedServiceProfiles($service, $commands, $resourceContext['applied'] ?? null);
+    }
+
+    /** A private profile is retired after reassignment/reset, and only for this exact account identity. */
+    public static function retireUnusedServiceProfiles(array $service, array $commands, ?array $applied): array
+    {
+        $sid = (int) ($service['id'] ?? 0);
+        if ($sid < 1 || !$applied || (int) ($applied['id'] ?? 0) !== $sid) return $commands;
+        foreach (['device','clientId','username','mac','hotspot','duid','iaid'] as $field)
+            if (($applied[$field] ?? null) != ($service[$field] ?? null)) return $commands;
+        foreach (['ip','port'] as $field)
+            if (($applied['_device'][$field] ?? null) != ($service['_device'][$field] ?? null)) return $commands;
+        $used = []; $seen = [];
+        foreach ($commands as $command) {
+            $path = trim($command['path'] ?? '', '/');
+            $identity = $path . ':' . ($command['name'] ?? '');
+            if (($command['action'] ?? '') === 'remove') { $seen[$identity] = true; continue; }
+            if (in_array($path, ['ppp/secret','ip/hotspot/user'], true))
+                $used[($path === 'ppp/secret' ? 'ppp/profile' : 'ip/hotspot/user/profile') . ':' . ($command['profile'] ?? '')] = true;
+        }
+        foreach ($applied['_commands'] ?? [] as $command) {
+            $path = trim($command['path'] ?? '', '/');
+            $identity = $path . ':' . ($command['name'] ?? '');
+            if (!in_array($path, ['ppp/profile','ip/hotspot/user/profile'], true)
+                || ($command['action'] ?? '') === 'remove'
+                || ($command['_owner'] ?? '') !== 'uisp-ros-plugin:service-profile:' . $sid
+                || ($command['name'] ?? '') !== 'uisp-service-' . $sid . '-profile'
+                || isset($used[$identity]) || isset($seen[$identity])) continue;
+            $seen[$identity] = true;
+            $commands[] = ['path' => '/' . $path, 'name' => $command['name'], '_owner' => $command['_owner'],
+                'action' => 'remove', 'batch' => $service['batch'] ?? 'service-' . $sid];
+        }
+        return $commands;
     }
 
     protected function db(): ApiSqlite { return $this->previewDatabase ?? parent::db(); }
@@ -92,8 +128,8 @@ class MtData extends Data
             'rate-limit' => $this->profile_limits(),
             'parent-queue' => $this->parent_name(),
             'address-list' => $this->addr_list(),
-            'comment' => self::profileOwner($this->plan['id'],(int)$this->service['id']),
-            '_owner' => self::profileOwner($this->plan['id'],(int)$this->service['id']),
+            'comment' => self::profileOwner($this->plan['id'],(int)$this->service['id'],ApiServiceQos::isOverridden($this->plan)),
+            '_owner' => self::profileOwner($this->plan['id'],(int)$this->service['id'],ApiServiceQos::isOverridden($this->plan)),
         ];
         if($type == 'ppp') $data['local-address'] = null;
         return $data;
@@ -322,12 +358,22 @@ class MtData extends Data
     {
         if($this->conf()->disable_contention) return null ;
         if($this->disabled()) return null ;
+        $member = $this->service;
+        if (!isset($member['_commands'])) {
+            $member['address'] = $this->ip(); $member['address6'] = $this->ip(true);
+        }
+        $targets = [$member['address'] ?? ($member['network']['address'] ?? null),
+            $member['address6'] ?? ($member['network']['address6'] ?? null)];
+        foreach ($member['_commands'] ?? [] as $command) {
+            if (!in_array(trim($command['path'] ?? '', '/'), ['ppp/secret','ip/hotspot/user','ip/dhcp-server/lease','ipv6/dhcp-server/binding'], true)) continue;
+            foreach (['remote-address','remote-ipv6-prefix','address'] as $field) $targets[] = $command[$field] ?? null;
+        }
         $parent=[
             'path' => '/queue/simple',
             'name' => $this->parent_name(),
-            'target' => $this->parent_target(),
-            'max-limit' => $this->parent_total(),
-            'limit-at' => $this->parent_total(),
+            'target' => implode(',', array_unique(array_filter($targets))),
+            'max-limit' => '0/0',
+            'limit-at' => '0/0',
             'comment' => 'uisp-ros-plugin:plan-parent:'.(int)$this->plan['id'],
             '_owner' => 'uisp-ros-plugin:plan-parent:'.(int)$this->plan['id'],
         ];
@@ -335,22 +381,11 @@ class MtData extends Data
             $parent['comment']='uisp-ros-plugin:service-parent:'.(int)$this->service['id'];
             $parent['_owner']=$parent['comment'];
         }
-        return $parent;
-    }
-
-    private function parent_target(): ?string
-    {
-        if((int)($this->plan['id'] ?? 0)<1) return implode(',',array_filter([$this->ip(),$this->ip(true)]));
-        $did = $this->service['device'] ?? 0 ;
-        $sql = 'SELECT network.address,network.address6 FROM services LEFT JOIN network '
-            . 'ON services.id=network.id WHERE services.planId=:plan AND services.device=:device';
-        $data = $this->dbCache()->selectCustom($sql, [':plan' => $this->plan['id'], ':device' => $did]) ?? [];
-        $addresses = [];
-        foreach ($data as $item){
-            if($item['address']) $addresses[] = $item['address'];
-            if($item['address6']) $addresses[] = $item['address6'];
-        }
-        return implode(',',$addresses);
+        if (!class_exists('ApiSharedResources', false)) require_once __DIR__ . '/api_shared_resources.php';
+        $context = $this->previewResourceContext;
+        return ApiSharedResources::parentMembership($parent, $member, $this->plan,
+            $this->db(), $this->dbCache(), $context === null ? null : ($context['resourceSnapshots'] ?? []),
+            $context === null ? null : ($context['blocked'] ?? []));
     }
 
     private function parent_name(): ?string
@@ -361,41 +396,19 @@ class MtData extends Data
         return sprintf('uisp-plan-%s-parent',$this->plan['id']);
     }
 
-    private function parent_total(): string
-    {
-        $children = $this->parent_children();
-        $ratio = $this->plan['ratio'];
-        $ratio = max($ratio,1);
-        $shares = intdiv($children,$ratio);
-        if($children % $ratio > 0) $shares++ ;
-        $upload = $this->plan['uploadSpeed'] * $shares ;
-        $download = $this->plan['downloadSpeed'] * $shares;
-        Data::validatePlanNumbers(['id'=>$this->plan['id'],'uploadSpeed'=>$upload,'downloadSpeed'=>$download],(int)$this->service['id']);
-        return sprintf("%sM/%sM",$upload,$download);
-    }
-
-    private function parent_children(): int
-    {
-        if((int)($this->plan['id'] ?? 0)<1) return 1;
-        $did = $this->service['device'] ?? 0 ;
-        $sql = 'SELECT COUNT(services.id) FROM services WHERE services.planId=:plan AND services.device=:device';
-        $count = $this->dbCache()->singleQuery($sql, false, [':plan' => $this->plan['id'], ':device' => $did]);
-        return max($count,1);
-    }
-
     private function profile_name(): string
     {
         if($this->disabled())
             return $this->conf()->disabled_profile ?? 'default';
-        $name=self::managedProfileName($this->plan['id'] ?? null,(int)$this->service['id'],$this->plan['name'] ?? null);
+        $name=self::managedProfileName($this->plan['id'] ?? null,(int)$this->service['id'],$this->plan['name'] ?? null,ApiServiceQos::isOverridden($this->plan));
         if($name===($this->conf()->disabled_profile ?? null))
             throw new RuntimeException('The suspension profile cannot use a plugin-managed active plan name');
         return $name;
     }
 
-    public static function managedProfileName($planId,?int $serviceId=null,?string $planName=null): string
+    public static function managedProfileName($planId,?int $serviceId=null,?string $planName=null,bool $serviceOverride=false): string
     {
-        if(!ctype_digit((string)$planId) || (int)$planId<1){
+        if($serviceOverride || !ctype_digit((string)$planId) || (int)$planId<1){
             if($serviceId!==null && $serviceId>0) return 'uisp-service-'.$serviceId.'-profile';
             throw new InvalidArgumentException('A valid plan or service ID is required for a managed RouterOS profile');
         }
@@ -407,9 +420,9 @@ class MtData extends Data
         return trim($name).' [UISP#'.(int)$planId.']';
     }
 
-    private static function profileOwner($planId,int $serviceId): string
+    private static function profileOwner($planId,int $serviceId,bool $serviceOverride=false): string
     {
-        return ctype_digit((string)$planId) && (int)$planId>0
+        return !$serviceOverride && ctype_digit((string)$planId) && (int)$planId>0
             ? 'uisp-ros-plugin:plan:'.(int)$planId : 'uisp-ros-plugin:service-profile:'.$serviceId;
     }
     private static function suspensionQueueName(int $serviceId): string { return 'uisp-service-'.$serviceId.'-suspension'; }
@@ -422,6 +435,7 @@ class MtData extends Data
         $commands = self::safePoolCommands($service, $commands);
         $disabled=in_array($service['status'] ?? 1,[3,4,5,2,8]);
         $planId=$service['_plan']['id'] ?? $service['planId'] ?? null;
+        $serviceOverride=ApiServiceQos::isOverridden($service['_plan'] ?? []);
         $result=[];
         $suspensionRate=null;
         $account=null;
@@ -467,9 +481,9 @@ class MtData extends Data
                     $suspensionRate=$command['rate-limit'] ?? null;
                     continue;
                 } else {
-                    $command['name']=self::managedProfileName($planId,(int)$service['id'],$service['_plan']['name'] ?? null);
-                    $command['comment']=self::profileOwner($planId,(int)$service['id']);
-                    $command['_owner']=self::profileOwner($planId,(int)$service['id']);
+                    $command['name']=self::managedProfileName($planId,(int)$service['id'],$service['_plan']['name'] ?? null,$serviceOverride);
+                    $command['comment']=self::profileOwner($planId,(int)$service['id'],$serviceOverride);
+                    $command['_owner']=self::profileOwner($planId,(int)$service['id'],$serviceOverride);
                 }
             }
             if(in_array($path,['ppp/secret','ip/hotspot/user'],true)){
@@ -487,7 +501,7 @@ class MtData extends Data
                 }
                 $account=$command;
                 if(!$remove && !$disabled && isset($command['profile']))
-                    $command['profile']=self::managedProfileName($planId,(int)$service['id'],$service['_plan']['name'] ?? null);
+                    $command['profile']=self::managedProfileName($planId,(int)$service['id'],$service['_plan']['name'] ?? null,$serviceOverride);
             }
             if($path==='queue/simple' && ($command['name'] ?? '')===self::suspensionQueueName((int)($service['id'] ?? 0)))
                 $hasSuspensionQueue=true;

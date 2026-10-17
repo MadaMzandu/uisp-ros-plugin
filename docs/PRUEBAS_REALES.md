@@ -1,6 +1,12 @@
-# Pruebas reales del candidato 2.4.44
+# Pruebas reales del candidato 2.4.45
 
 Las pruebas automatizadas usan bases temporales, transportes simulados y sockets locales. Esta lista comprueba la integración **UISP → plugin → API nativa de RouterOS** en una copia de UISP y un CHR/router con clientes de prueba. Registrar versiones de UISP, PHP y RouterOS, así como ID del servicio, plan, trabajo, estado e IP/prefijo en cada caso.
+
+## Comprobar overrides por servicio en 2.4.45
+
+Los casos 282–289 verifican velocidades personalizadas, burst, contención, retorno al plan, reintentos y diagnóstico. Instalar el ZIP y recargar el panel. Empezar con dos servicios de prueba del mismo plan; personalizar únicamente uno. UISP determina cuándo termina el override; comprobar el cambio efectivo cuando el plugin reciba o consulte ese nuevo estado.
+
+Validación 2.4.45 aprobada: **69 suites aisladas**, sintaxis de **70 archivos PHP propios**, 385 entradas del instalador, 152 archivos propios y 13 dependencias fijadas. Informe: `dist/verification-2.4.45.json`. SHA-256: `b1063a90946a6aeb37053b21141ac783fc3a99a7e2de01b2821f4542a5e05377`. El informe conserva los fallos iniciales de dos fixtures y su revalidación contra el mismo ZIP tras actualizar el contrato de la prueba y la revisión de recursos esperada. Las pruebas usan datos sintéticos; no se modificaron UISP ni RouterOS de producción. Registrar los resultados reales por separado.
 
 ## Comprobar el panel compacto y su actividad en 2.4.44
 
@@ -587,3 +593,11 @@ Si el piloto falla, pausar worker/webhook y conservar datos/errores sin credenci
 | 279 | Abrir Resolver con una consulta lenta y confirmar una aplicación de más de quince segundos. | Muestra animación, fase conocida, segundos y orientación de espera; conserva el contexto durante la aplicación y evita porcentajes ficticios. |
 | 280 | Cerrar durante la espera, cambiar de servicio, recibir una respuesta tardía o una respuesta fallida. | Limpia el temporizador de la vista anterior, conserva las protecciones de resultados inciertos y no repite automáticamente la aplicación. |
 | 281 | Repetir en seis idiomas, claro/oscuro, móvil y movimiento reducido, incluyendo formularios inválidos. | Mantiene navegación, contraste, controles y errores de campo accesibles; en movimiento reducido conserva la indicación estática y el tiempo. |
+| 282 | Dos servicios del mismo plan: habilitar override 35 Mbps de bajada / 10 de subida en uno. | Sólo ese servicio usa el perfil privado 35/10; el otro conserva su perfil, velocidades y sesión. |
+| 283 | Cambiar el override a otras velocidades y volver a consultar el diagnóstico. | Actualiza el mismo perfil privado; la IP y el vínculo del servicio se mantienen. Consultar el diagnóstico no reconecta; Sincronizar ahora conserva la reconexión forzada elegida por el operador. |
+| 284 | Habilitar burst y garantías porcentuales en el plan. | El perfil privado recalcula máximos, umbral y mínimos con la velocidad personalizada y conserva prioridades y tiempos. |
+| 285 | Repetir con contención y clientes de velocidades mixtas. | La cola superior permite la velocidad individual y su burst, con presupuesto ponderado del grupo; las velocidades uniformes mantienen el reparto anterior. |
+| 286 | Dejar nula una dirección del override habilitado; después deshabilitar el override en UISP, conservando sus valores antiguos. | Nulo habilitado significa sin límite en esa dirección y en el parent. Deshabilitado vuelve al perfil base y retira el privado sólo si ya no tiene referencias. |
+| 287 | Cortar la API durante la aplicación, cambiar después el override en UISP y recuperar el acceso. | El reintento conserva su configuración preparada e identidad; la revisión del estado vigente aplica la edición posterior, sin afectar a otros clientes. |
+| 288 | Revisar diferencias y aplicar al habilitar/quitar un override; repetir tras el vencimiento definido en UISP sin webhook recibido. | La vista previa coincide con la política aplicable. La revisión automática habilitada detecta el estado nuevo y encola una corrección comprobada; muestra diagnóstico de base, override, velocidad y límites reales. |
+| 289 | Repetir con Hotspot y DHCP, suspender/reactivar y actualizar desde 2.4.44 con trabajos pendientes. | Respeta cada tipo de cuenta y la suspensión; conserva credenciales, cola y reservas durante la migración, y verifica los recursos aplicados. |

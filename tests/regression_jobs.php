@@ -373,6 +373,9 @@ class MtData {
     public function poolAllocations(): array { return []; }
     public function validateBeforeCleanup(array $service,array $plan,bool $releasesReservation): void {}
     public static function safePreparedCommands(array $service,array $commands,string $operation): array { return $commands; }
+    // Queue transport fixtures never create owned private profiles; production
+    // profile retirement is exercised with the real builder in QoS regressions.
+    public static function retireUnusedServiceProfiles(array $service,array $commands,?array $applied): array { return $commands; }
     public function set_data($service,$plan): void { $this->service=$service; }
     public function queue(): array { return ['path'=>'/queue/simple','name'=>'queue-'.$this->service['id']]; }
     public function get_data($service,$plan): array {

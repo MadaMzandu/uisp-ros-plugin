@@ -4,14 +4,16 @@
     const byId = id => root.document.getElementById(id);
     const t = (key, values = {}) => root.PanelI18n?.t(key, values) ?? key.replace(/\{(\w+)\}/g, (all, key) => values[key] ?? all);
     const h = value => PanelUtils.escapeHTML(value);
-    const fields = { username: 'Usuario', site: 'Site', address: 'IPv4', address6: 'IPv6', profile: 'Perfil', status: 'Estado', ownership: 'Propiedad', plan_id: 'Plan' };
+    const fields = { username: 'Usuario', site: 'Site', base_speed: 'Velocidad base ↓/↑', speed_override: 'Override ↓/↑',
+        speed: 'Velocidad efectiva ↓/↑', rate_limit: 'Límites y burst ↑/↓', address: 'IPv4', address6: 'IPv6', profile: 'Perfil', status: 'Estado', ownership: 'Propiedad', plan_id: 'Plan' };
     const sourceReasons = {
         uisp_unavailable: 'No se pudo consultar UISP.', uisp_client_unavailable: 'No se pudo consultar UISP.',
         router_unavailable: 'No se pudo consultar el router.', router_not_inspected: 'No se pudo consultar el router.',
         account_absent: 'La cuenta no está presente en el router consultado.', router_ambiguous: 'No se pudo identificar una única cuenta en el router.',
         router_authority_changed: 'La configuración del router cambió durante la consulta.', identity_unknown: 'Falta una identidad válida para consultar la cuenta.',
         site_unverified: 'El Site no identifica un único router configurado.', ipv6_unavailable: 'IPv6 no pudo comprobarse; IPv4 conserva su resultado.',
-        router_observation_limit: 'La consulta alcanzó su límite; vuelve a comprobar.', configuration_unavailable: 'Falta la configuración necesaria para consultar el servicio.'
+        router_observation_limit: 'La consulta alcanzó su límite; vuelve a comprobar.', configuration_unavailable: 'Falta la configuración necesaria para consultar el servicio.',
+        shaping_unavailable: 'La cuenta se consultó; no se pudieron comprobar sus límites de velocidad.'
     };
     let api, navigate, reviewJob, resolveService, mounted = false, view = 'devices', mutations = 0;
     let health = null, results = null, detail = null, search = null, selected = null;
@@ -49,6 +51,9 @@
     }
     function value(value, field) {
         if (value === null || value === undefined || value === '') return t('Sin comprobar');
+        if (field === 'speed_override' && value === 'disabled') return t('Deshabilitado');
+        if (['base_speed', 'speed_override', 'speed'].includes(field) && typeof value === 'string' && /^\d+(?:\.\d+)?\/\d+(?:\.\d+)?$/.test(value))
+            return value.split('/').map(speed => Number(speed) === 0 ? t('Sin límite') : (root.PanelI18n?.number?.(speed) ?? speed) + ' Mbps').join(' / ');
         if (field === 'status') return t({ 0: 'Preparación', 1: 'Activo', 2: 'Terminado', 3: 'Suspendido', 4: 'Suspendido', 5: 'Terminado', 7: 'Activo', 8: 'Terminado', enabled: 'Habilitado', disabled: 'Deshabilitado' }[String(value)] || 'Estado desconocido');
         if (field === 'ownership' && typeof value === 'string' && /^[1-9]\d{0,14}:[1-9]\d{0,14}$/.test(value)) {
             const [client, service] = value.split(':'); return t('Cliente #{id}', { id: client }) + ' · ' + t('Servicio #{id}', { id: service });

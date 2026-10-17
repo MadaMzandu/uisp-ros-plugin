@@ -411,7 +411,7 @@ final class ApiRecoveryReads
         }
         $where .= ' ORDER BY id';
         $fields = ['id','device','clientId','planId','status','address','prefix6','username','mac','price','last','created'];
-        $cachedFields = ['id','clientId','planId','status','uploadSpeed','downloadSpeed','username','mac','duid','iaid','hotspot',
+        $cachedFields = ['id','clientId','planId','status','uploadSpeed','downloadSpeed','uploadSpeedOverride','downloadSpeedOverride','trafficShapingOverrideEnd','trafficShapingOverrideEnabled','username','mac','duid','iaid','hotspot',
             'price','totalPrice','currencyCode','callerId'];
         $result = ['count'=>0,'data'=>[]];
         foreach ($this->rows('main', 'services', $fields, $where, $parameters) as $service) {

@@ -12,7 +12,7 @@ final class ApiServiceDiagnostics
     private string $jobsPath;
     private float $deadline = 0;
     private ?float $observationDeadline;
-    private const FIELDS = ['username','site','address','address6','profile','plan_id','status','ownership'];
+    private const FIELDS = ['username','site','base_speed','speed_override','speed','rate_limit','address','address6','profile','plan_id','status','ownership'];
 
     public function __construct(?callable $request = null, ?callable $routerReader = null,
         string $dataPath = 'data/data.db', string $cachePath = 'data/cache.db',
@@ -95,6 +95,7 @@ final class ApiServiceDiagnostics
             $values['status'] = self::status($fresh['status'] ?? null); $values['profile'] = self::safe($fresh['servicePlanName'] ?? null);
             $values['plan_id'] = self::id($fresh['servicePlanId'] ?? null);
             $values['ownership'] = $fresh['clientId'].':'.$serviceId;
+            $values = array_replace($values,self::serviceQosValues($fresh));
             if ($result['client_id']!==null && $result['client_id']!==(int)$fresh['clientId']) $result['client_name'] = null;
             $result['client_id'] = (int)$fresh['clientId'];
             $result['uisp'] = ['available'=>true,'checked_at'=>$this->stamp(),'reason'=>null,'values'=>$values];
@@ -143,8 +144,11 @@ final class ApiServiceDiagnostics
         foreach (self::FIELDS as $field) {
             $u = $result['uisp']['values'][$field]; $e = $result['expected']['values'][$field]; $r = $result['router']['values'][$field];
             $result['comparisons'][] = ['field'=>$field,'uisp'=>$u,'expected'=>$e,'router'=>$r,
-                'matches_uisp'=>$field==='profile' || $u===null || $e===null ? null : $u===$e,
-                'matches_router'=>$field==='status' || $e===null || $r===null ? null : $e===$r];
+                'matches_uisp'=>$field==='profile' || $field==='speed' && (in_array($result['uisp']['values']['speed_override'],[null,'disabled'],true)
+                    || !in_array($result['uisp']['values']['status'],[1,7],true))
+                    || $u===null || $e===null ? null : $u===$e,
+                'matches_router'=>$field==='status' || $e===null || $r===null ? null
+                    : ($field==='rate_limit' ? self::normalizedLimits($e)===self::normalizedLimits($r) : $e===$r)];
         }
         $result['issues'] = array_values(array_unique($result['issues'])); return $result;
     }
@@ -155,7 +159,8 @@ final class ApiServiceDiagnostics
         try {
             $db = $this->open($this->cachePath); $this->requireColumns($db,'services',['id']);
             $columns = $this->columns($db,'services'); $fields = [];
-            foreach (['id','clientId','device','username','mac','hotspot','duid','iaid','status','planId','last'] as $field)
+            foreach (['id','clientId','device','username','mac','hotspot','duid','iaid','status','planId','last',
+                'uploadSpeed','downloadSpeed','trafficShapingOverrideEnabled','uploadSpeedOverride','downloadSpeedOverride'] as $field)
                 $fields[] = isset($columns[$field]) ? $field : 'NULL AS '.$field;
             $rows = $this->query($db,'SELECT '.implode(',',$fields).' FROM services WHERE id=? LIMIT 2',[$sid]);
             if (count($rows)!==1) return null; $row = $rows[0];
@@ -229,13 +234,24 @@ final class ApiServiceDiagnostics
             'address'=>self::address($snapshot['address'] ?? ($snapshot['network']['address'] ?? null)),
             'address6'=>self::address($snapshot['address6'] ?? ($snapshot['network']['address6'] ?? null)),
             'profile'=>null,'plan_id'=>self::id($snapshot['planId'] ?? null),'status'=>self::status($snapshot['status'] ?? null),
-            'ownership'=>$sid!==null && $cid!==null ? $cid.':'.$sid : null];
+            'ownership'=>$sid!==null && $cid!==null ? $cid.':'.$sid : null,
+            'base_speed'=>self::speedPair($snapshot['downloadSpeed'] ?? ($snapshot['_plan']['_sourceDownloadSpeed'] ?? null),
+                $snapshot['uploadSpeed'] ?? ($snapshot['_plan']['_sourceUploadSpeed'] ?? null)),
+            'speed_override'=>self::overridePair($snapshot),'speed'=>null,'rate_limit'=>null];
         foreach ($snapshot['_commands'] ?? [] as $command) {
             if (!is_array($command) || !in_array(trim((string)($command['path'] ?? ''),'/'),['ppp/secret','ip/hotspot/user'],true)
                 || ($command['action'] ?? 'set')==='remove' || ($command['name'] ?? null)!==$values['username']) continue;
             $values['profile'] = self::safe($command['profile'] ?? null);
             $ip = self::address($command['remote-address'] ?? ($command['address'] ?? null)); if ($ip!==null) $values['address'] = $ip;
         }
+        foreach ($snapshot['_commands'] ?? [] as $command) {
+            if (!is_array($command) || ($command['action'] ?? 'set')==='remove') continue;
+            $path = trim((string)($command['path'] ?? ''),'/');
+            if (in_array($path,['ppp/profile','ip/hotspot/user/profile'],true) && ($command['name'] ?? null)===$values['profile'])
+                $values['rate_limit'] = self::safe($command['rate-limit'] ?? null);
+            elseif ($path==='queue/simple' && self::ownedQueue($command,$snapshot)) $values['rate_limit'] = self::queueLimits($command);
+        }
+        $values['speed'] = self::limitsSpeed($values['rate_limit']);
         return $values;
     }
 
@@ -265,6 +281,26 @@ final class ApiServiceDiagnostics
                 $values['ownership'] = $match[1].':'.$match[2];
         }
         $v6Present = null; $reason = $rows ? null : 'account_absent';
+        if ($rows) {
+            try {
+                if (in_array($path,['ppp/secret','ip/hotspot/user'],true) && self::text($values['profile'],256) && $values['profile']!=='') {
+                    $profilePath = $path==='ppp/secret' ? 'ppp/profile' : 'ip/hotspot/user/profile';
+                    $profiles = $this->observedRows($device,$profilePath,['name'=>$values['profile']],['.id','name','rate-limit']);
+                    if (!$profiles) throw new RuntimeException('shaping_unavailable');
+                    $values['rate_limit'] = self::safe($profiles[0]['rate-limit'] ?? null);
+                } elseif (in_array($path,['ip/dhcp-server/lease','ipv6/dhcp-server/binding'],true)) {
+                    foreach ($snapshot['_commands'] ?? [] as $command) {
+                        if (!is_array($command) || trim((string)($command['path'] ?? ''),'/')!=='queue/simple'
+                            || ($command['action'] ?? 'set')==='remove' || !self::ownedQueue($command,$snapshot)) continue;
+                        $queues = $this->observedRows($device,'queue/simple',['name'=>$command['name']],
+                            ['.id','name','comment','max-limit','burst-limit','burst-threshold','burst-time','priority','limit-at']);
+                        if (count($queues)!==1 || !self::ownedQueue($queues[0],$snapshot)) throw new RuntimeException('shaping_unavailable');
+                        $values['rate_limit'] = self::queueLimits($queues[0]); break;
+                    }
+                }
+                $values['speed'] = self::limitsSpeed($values['rate_limit']);
+            } catch (Throwable $ignored) { $values['speed']=null; $values['rate_limit']=null; $reason='shaping_unavailable'; }
+        }
         if ($path!=='ipv6/dhcp-server/binding' && $v6Filter!==null && $this->expectsV6($snapshot)) {
             try {
                 $v6Rows = $this->observedRows($device,'ipv6/dhcp-server/binding',$v6Filter,$fields);
@@ -292,6 +328,75 @@ final class ApiServiceDiagnostics
             }
         }
         return $rows;
+    }
+
+    /** Speeds are always download/upload in Mbps; an explicit zero represents unlimited. */
+    public static function serviceQosValues(array $service): array
+    {
+        $base=self::speedPair($service['downloadSpeed'] ?? null,$service['uploadSpeed'] ?? null);
+        $override=self::overridePair($service);
+        return ['base_speed'=>$base,'speed_override'=>$override,'speed'=>$override==='disabled' ? $base : $override];
+    }
+    private static function speedPair($download,$upload): ?string
+    {
+        $result=[];
+        foreach ([$download,$upload] as $speed) {
+            if ((!is_int($speed) && !is_float($speed) && !is_string($speed)) || !is_numeric($speed)
+                || !is_finite((float)$speed) || (float)$speed<0 || !is_finite((float)$speed*1000000)) return null;
+            $result[] = self::decimal((float)$speed);
+        }
+        return implode('/',$result);
+    }
+    private static function decimal(float $number): string { return rtrim(rtrim(sprintf('%.9F',$number),'0'),'.') ?: '0'; }
+    private static function overridePair(array $service): ?string
+    {
+        $flag = $service['trafficShapingOverrideEnabled'] ?? null;
+        if (in_array($flag,[false,0,'0'],true)) return 'disabled';
+        if (!in_array($flag,[true,1,'1'],true) || !array_key_exists('downloadSpeedOverride',$service)
+            || !array_key_exists('uploadSpeedOverride',$service)) return null;
+        return self::speedPair($service['downloadSpeedOverride'] ?? 0,$service['uploadSpeedOverride'] ?? 0);
+    }
+    private static function ownedQueue(array $command,array $snapshot): bool
+    {
+        return self::text($command['name'] ?? null,512) && ($command['name'] ?? '')!==''
+            && is_string($command['comment'] ?? null) && preg_match('/^([1-9][0-9]*) - .+ - ([1-9][0-9]*)$/D',$command['comment'],$match)
+            && self::id($snapshot['clientId'] ?? null)===(int)$match[1] && self::id($snapshot['id'] ?? null)===(int)$match[2];
+    }
+    private static function queueLimits(array $queue): ?string
+    {
+        $values=[];
+        foreach (['max-limit','burst-limit','burst-threshold','burst-time','priority','limit-at'] as $field) {
+            $value=self::safe($queue[$field] ?? null); if ($value===null) return null; $values[]=$value;
+        }
+        return implode(' ',$values);
+    }
+    private static function limitsSpeed(?string $limits): ?string
+    {
+        if ($limits===null) return null;
+        $pair=explode('/',explode(' ',trim($limits),2)[0]); if (count($pair)!==2) return null;
+        $speeds=[];
+        foreach ($pair as $part) {
+            $number=self::rateNumber($part); if ($number===null) return null; $speeds[]=$number/1000000;
+        }
+        return self::speedPair($speeds[1],$speeds[0]);
+    }
+    private static function rateNumber(string $value): ?float
+    {
+        if (!preg_match('/^([0-9]+(?:\.[0-9]+)?)([kKmMgG]?)$/D',$value,$match)) return null;
+        $rate=(float)$match[1]*[''=>1,'k'=>1000,'m'=>1000000,'g'=>1000000000][strtolower($match[2])];
+        return is_finite($rate) ? $rate : null;
+    }
+    private static function normalizedLimits(string $limits): array
+    {
+        $parts=preg_split('/\s+/',trim($limits));
+        foreach ($parts as $index=>&$part) {
+            $values=explode('/',$part);
+            if (in_array($index,[0,1,2,5],true)) foreach ($values as &$value) {
+                $number=self::rateNumber($value); if ($number!==null) $value=self::decimal($number);
+            }
+            unset($value); $part=implode('/',$values);
+        }
+        unset($part); return $parts;
     }
     private function v6Selector(array $snapshot): ?array
     {

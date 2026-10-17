@@ -63,6 +63,7 @@ class MT {
     public static int $noopResets = 0;
     public static int $writes = 0;
     public static int $durableEscalations = 0;
+    public static array $profileRetirements = [];
     private array $errors = [];
     public function do_batch($device, $commands, $beforeWrite = null): int {
         $this->errors = [];
@@ -136,6 +137,13 @@ class MT {
                 }
                 self::$cuts[$name] = (self::$cuts[$name] ?? 0) + 1;
             } elseif (($command['action'] ?? '') === 'remove') {
+                if (in_array($path, ['ppp/profile','ip/hotspot/user/profile'], true)
+                    && str_starts_with($command['_owner'] ?? '', 'uisp-ros-plugin:service-profile:')) {
+                    $accountPath = $path === 'ppp/profile' ? 'ppp/secret' : 'ip/hotspot/user';
+                    foreach (self::$catalogue[$accountPath] ?? [] as $account)
+                        checkReconnect(($account['profile'] ?? '') !== $name, 'A private profile was retired before its account moved');
+                    self::$profileRetirements[] = ['path' => $path, 'name' => $name, 'cuts' => self::$cuts];
+                }
                 unset(self::$catalogue[$path][$name]);
             } else {
                 self::$catalogue[$path][$name] = $command;
@@ -433,6 +441,100 @@ try {
     checkReconnect((new Batch())->set_accounts([92]) && reconnectFlags(MT::$batches)['fixture-92'] === [true],
         'An incomplete historical applied snapshot suppressed the required reconnect');
 
+    // Service-specific shaping must never rewrite the common plan or reset its other members.
+    $sharedName = 'Renamed shared fixture plan [UISP#1]';
+    $ordinaryPppRate = MT::$catalogue['ppp/profile'][$sharedName]['rate-limit'];
+    $ordinaryHotspotRate = MT::$catalogue['ip/hotspot/user/profile'][$sharedName]['rate-limit'];
+    foreach ([91, 93] as $id) $apiSqliteCache->edit(['id' => $id, 'trafficShapingOverrideEnabled' => 1,
+        'uploadSpeedOverride' => 10, 'downloadSpeedOverride' => 35,
+        'trafficShapingOverrideEnd' => '2099-01-01T00:00:00+00:00'], 'services');
+    $beforeOverrides = MT::$cuts; MT::$batches = [];
+    checkReconnect((new Batch())->set_accounts([91, 92, 93])
+        && reconnectFlags(MT::$batches) === ['fixture-91' => [true], 'fixture-92' => [false], 'fixture-93' => [true]]
+        && MT::$cuts['fixture-92'] === $beforeOverrides['fixture-92'],
+        'An override did not reconnect its PPP/Hotspot service or reset an unrelated common-plan subscriber');
+    foreach ([91 => 'ppp', 93 => 'hotspot'] as $id => $kind) {
+        $profilePath = $kind === 'ppp' ? 'ppp/profile' : 'ip/hotspot/user/profile';
+        $accountPath = $kind === 'ppp' ? 'ppp/secret' : 'ip/hotspot/user';
+        $privateName = 'uisp-service-' . $id . '-profile';
+        checkReconnect(MT::$catalogue[$accountPath]['fixture-' . $id]['profile'] === $privateName
+            && str_starts_with(MT::$catalogue[$profilePath][$privateName]['rate-limit'], '10M/35M ')
+            && MT::$catalogue[$profilePath][$privateName]['_owner'] === 'uisp-ros-plugin:service-profile:' . $id,
+            'Actual PPP/Hotspot account or profile lost its isolated service override');
+        $appliedOverride = $apiJobQueue->appliedSnapshot($id);
+        checkReconnect($appliedOverride['_plan']['id'] === 1 && ApiServiceQos::isOverridden($appliedOverride['_plan'])
+            && (int) $appliedOverride['uploadSpeedOverride'] === 10 && (int) $appliedOverride['downloadSpeedOverride'] === 35,
+            'Applied state lost the real plan identity or service override evidence');
+    }
+    checkReconnect(MT::$catalogue['ppp/profile'][$sharedName]['rate-limit'] === $ordinaryPppRate
+        && MT::$catalogue['ip/hotspot/user/profile'][$sharedName]['rate-limit'] === $ordinaryHotspotRate,
+        'A private override changed the common RouterOS plan profile');
+    MT::$batches = []; $stableOverrides = MT::$cuts;
+    checkReconnect((new Batch())->set_accounts([91, 92, 93]) && MT::$cuts === $stableOverrides
+        && reconnectFlags(MT::$batches) === ['fixture-91' => [false], 'fixture-92' => [false], 'fixture-93' => [false]],
+        'An unchanged private service profile disconnected its subscribers again');
+
+    // NULL is UISP's unlimited override for this direction, rather than its base speed.
+    $apiSqliteCache->edit(['id' => 91, 'uploadSpeedOverride' => null], 'services');
+    MT::$batches = []; $beforeUnlimited = MT::$cuts;
+    checkReconnect((new Batch())->set_accounts([91, 92, 93])
+        && reconnectFlags(MT::$batches) === ['fixture-91' => [true], 'fixture-92' => [false], 'fixture-93' => [false]]
+        && str_starts_with(MT::$catalogue['ppp/profile']['uisp-service-91-profile']['rate-limit'], '0/35M ')
+        && MT::$cuts['fixture-92'] === $beforeUnlimited['fixture-92'] && MT::$cuts['fixture-93'] === $beforeUnlimited['fixture-93'],
+        'A directional unlimited override inherited the base rate or reconnected other services');
+
+    // A partial rate update keeps its private profile, frozen credentials and reset across retry.
+    $apiSqliteCache->edit(['id' => 91, 'uploadSpeedOverride' => 11, 'downloadSpeedOverride' => 37], 'services');
+    MT::$failResetUser = 'fixture-91'; MT::$batches = []; $beforePrivateRetry = MT::$cuts;
+    checkReconnect(!(new Batch())->set_accounts([91]), 'The simulated partial private-profile update was reported complete');
+    $privatePending = [];
+    foreach ($apiJobQueue->list() as $key => $job) if ((int) $job['id'] === 91) $privatePending[] = $key;
+    checkReconnect(count($privatePending) === 1, 'A partial override update lost its retry');
+    $frozenPrivate = reconnectSnapshot($privatePending[0]);
+    $frozenPrivateAccount = array_values(array_filter($frozenPrivate['_commands'], static fn($command) => trim($command['path'], '/') === 'ppp/secret'))[0];
+    checkReconnect($frozenPrivateAccount['profile'] === 'uisp-service-91-profile'
+        && ApiServiceQos::isOverridden($frozenPrivate['_plan'])
+        && reconnectCommands($frozenPrivate['_commands'])[0]['_reconnect_required'] === true
+        && MT::$cuts === $beforePrivateRetry, 'Partial private update lost its durable profile, policy or reconnect intent');
+    $apiSqliteCache->edit(['id' => 91, 'uploadSpeedOverride' => 12, 'downloadSpeedOverride' => 39,
+        'password' => 'newer unrelated fixture credential'], 'services');
+    $apiJobQueue->close(); $apiJobQueue = new ApiJobQueue('data/jobs.db');
+    $GLOBALS['reconnectQueueOverride'] = $apiJobQueue; MT::$batches = [];
+    $apiJobQueue->run($privatePending);
+    checkReconnect($apiJobQueue->completed($privatePending)
+        && reconnectFlags(MT::$batches)['fixture-91'] === [true]
+        && MT::$cuts['fixture-91'] === $beforePrivateRetry['fixture-91'] + 1
+        && MT::$catalogue['ppp/secret']['fixture-91']['profile'] === 'uisp-service-91-profile'
+        && MT::$catalogue['ppp/secret']['fixture-91']['password'] === $frozenPrivateAccount['password']
+        && str_starts_with(MT::$catalogue['ppp/profile']['uisp-service-91-profile']['rate-limit'], '11M/37M '),
+        'Restart retry thawed private service rates/credentials or restored a shared profile');
+    MT::$batches = []; $afterPrivateRetry = MT::$cuts;
+    checkReconnect((new Batch())->set_accounts([91, 92, 93])
+        && reconnectFlags(MT::$batches) === ['fixture-91' => [true], 'fixture-92' => [false], 'fixture-93' => [false]]
+        && str_starts_with(MT::$catalogue['ppp/profile']['uisp-service-91-profile']['rate-limit'], '12M/39M ')
+        && MT::$cuts['fixture-92'] === $afterPrivateRetry['fixture-92'] && MT::$cuts['fixture-93'] === $afterPrivateRetry['fixture-93'],
+        'A later current override did not update its service independently after partial retry recovery');
+
+    // Disabling the flag ignores saved custom values and removes only the unused private profile.
+    foreach ([91, 93] as $id) $apiSqliteCache->edit(['id' => $id, 'trafficShapingOverrideEnabled' => 0], 'services');
+    MT::$batches = []; $beforeOverrideRemoval = MT::$cuts;
+    checkReconnect((new Batch())->set_accounts([91, 92, 93])
+        && reconnectFlags(MT::$batches) === ['fixture-91' => [true], 'fixture-92' => [false], 'fixture-93' => [true]]
+        && MT::$catalogue['ppp/secret']['fixture-91']['profile'] === $sharedName
+        && MT::$catalogue['ip/hotspot/user']['fixture-93']['profile'] === $sharedName
+        && !isset(MT::$catalogue['ppp/profile']['uisp-service-91-profile'])
+        && !isset(MT::$catalogue['ip/hotspot/user/profile']['uisp-service-93-profile'])
+        && MT::$catalogue['ppp/profile'][$sharedName]['rate-limit'] === $ordinaryPppRate
+        && MT::$catalogue['ip/hotspot/user/profile'][$sharedName]['rate-limit'] === $ordinaryHotspotRate,
+        'Disabling an override did not restore the shared rate/profile or safely remove its private resources');
+    checkReconnect(count(MT::$profileRetirements) === 2
+        && MT::$profileRetirements[0]['cuts']['fixture-91'] === $beforeOverrideRemoval['fixture-91'] + 1
+        && MT::$profileRetirements[1]['cuts']['fixture-93'] === $beforeOverrideRemoval['fixture-93'] + 1,
+        'A private profile was removed before the affected account session reconnected');
+    MT::$batches = []; $afterOverrideRemoval = MT::$cuts;
+    checkReconnect((new Batch())->set_accounts([91, 92, 93]) && MT::$cuts === $afterOverrideRemoval,
+        'A removed override caused repeated reconnects on later ordinary synchronization');
+
     // Deletion must override false copied from the most recent successful no-op snapshot.
     MT::$batches = [];
     $beforeDelete = MT::$cuts;
@@ -443,7 +545,7 @@ try {
     checkReconnect(MT::$catalogue['ppp/secret']['external-account'] === $foreign
         && MT::$catalogue['ppp/profile']['external-profile'] === $foreignProfile && !isset(MT::$cuts['external-account']),
         'Reconciliation or deletion changed an unrelated account/profile');
-    echo "Reconnect regression passed: unchanged PPP/Hotspot sessions, explicit manual/billing reconnection, ownership failure and restart recovery, harmless metadata/profile renames, effective changes, shared repair revisions, durable drift retries and forced deletion cleanup.\n";
+    echo "Reconnect regression passed: unchanged PPP/Hotspot sessions, explicit manual/billing reconnection, ownership failure and restart recovery, harmless metadata/profile renames, effective changes, shared repair revisions, durable drift retries, isolated service overrides/unlimited rates/private retry/retirement and forced deletion cleanup.\n";
 } finally {
     if (isset($apiJobQueue)) $apiJobQueue->close();
     unset($GLOBALS['reconnectQueueOverride']);

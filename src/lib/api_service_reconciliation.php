@@ -6,7 +6,7 @@ final class ApiServiceReconciliation
 {
     private const LIMIT = 100;
     private const BYTES = 131072;
-    private const FIELDS = ['username','site','address','address6','profile','plan_id','status','ownership'];
+    private const FIELDS = ['username','site','address','address6','profile','plan_id','status','ownership','base_speed','speed_override','speed','rate_limit'];
     private const REASONS = ['differences_observed','correction_queued','inspection_unavailable','identity_unverified','account_absent',
         'identity_changed','terminal_requires_review','service_busy','state_changed','queue_unavailable','configuration_unavailable',
         'automatic_correction_disabled','correction_unavailable','observation_limit','plan_metadata_unavailable','foreign_site_address'];
@@ -118,16 +118,26 @@ final class ApiServiceReconciliation
         // The initial automatic path updates already-owned PPP/Hotspot principals only. Other modes remain visible for review.
         if (!in_array($baseline['principal_type'],['ppp/secret','ip/hotspot/user'],true))
             return $this->entry($sid,$did,'unknown','identity_unverified',[]);
-        $fields=[]; $observed=0;
+        $fields=[]; $observed=0; $qosUnknown=false;
         foreach ($report['comparisons']??[] as $comparison) {
             if (!is_array($comparison) || !in_array($comparison['field']??null,self::FIELDS,true)) continue;
+            $field=$comparison['field'];
+            if (in_array($field,['base_speed','speed_override','speed','rate_limit'],true)) {
+                $uisp=$comparison['uisp']??null; $expected=$comparison['expected']??null; $router=$comparison['router']??null;
+                // A missing profile/queue read cannot prove that the current shaping is correct.
+                if (in_array($field,['speed','rate_limit'],true) && ($expected===null || $router===null)
+                    || $field==='speed_override' && $uisp===null) $qosUnknown=true;
+                foreach (['matches_uisp'=>[$uisp,$expected],'matches_router'=>[$expected,$router]] as $flag=>$pair)
+                    if (($comparison[$flag]??null)===false && (!is_string($pair[0]) || !is_string($pair[1])
+                        || $pair[0]==='' || $pair[1]==='' || $pair[0]===$pair[1])) $qosUnknown=true;
+            }
             if (is_bool($comparison['matches_uisp']??null) || is_bool($comparison['matches_router']??null)) $observed++;
             if (($comparison['matches_uisp']??null)===false || ($comparison['matches_router']??null)===false) $fields[]=$comparison['field'];
         }
         $fields=array_values(array_unique($fields));
-        if (($report['router']['reason']??null)!==null || $observed<3) return $this->entry($sid,$did,'unknown','inspection_unavailable',$fields);
+        if (($report['router']['reason']??null)!==null || $observed<3 || $qosUnknown) return $this->entry($sid,$did,'unknown','inspection_unavailable',$fields);
         if (!$fields) return null;
-        if (array_diff($fields,['address','address6','profile','plan_id','status'])) return $this->entry($sid,$did,'differences','identity_changed',$fields);
+        if (array_diff($fields,['address','address6','profile','plan_id','status','base_speed','speed_override','speed','rate_limit'])) return $this->entry($sid,$did,'differences','identity_changed',$fields);
         return $this->entry($sid,$did,'differences','differences_observed',$fields);
     }
 
@@ -145,6 +155,10 @@ final class ApiServiceReconciliation
                 || !in_array($client['isArchived']??null,[false,0,'0'],true) || !is_array($fresh['attributes']??null)) throw new RuntimeException('identity_unverified');
             if (($fresh['status']??null)!==($diagnostic['uisp']['values']['status']??null)
                 || ($fresh['servicePlanId']??null)!==($diagnostic['uisp']['values']['plan_id']??null)) throw new RuntimeException('state_changed');
+            $qos=ApiServiceDiagnostics::serviceQosValues($fresh);
+            foreach (['base_speed','speed_override','speed'] as $field)
+                if (array_key_exists($field,$diagnostic['uisp']['values']) && $qos[$field]!==$diagnostic['uisp']['values'][$field])
+                    throw new RuntimeException('state_changed');
             $configuration=$baseline['configuration'];
             foreach (['site'=>'device_name_attr','username'=>'pppoe_user_attr','address'=>'ip_addr_attr','address6'=>'ip_addr6_attr'] as $field=>$key) {
                 if (!is_string($configuration[$key]??null) || $configuration[$key]==='') {
@@ -155,7 +169,7 @@ final class ApiServiceReconciliation
             }
             require_once __DIR__.'/api_attributes.php';
             $attributes=(new ApiAttributes())->extract(json_decode(json_encode($fresh['attributes'],JSON_THROW_ON_ERROR)));
-            $entity=array_replace($attributes,array_intersect_key($fresh,array_fill_keys(['id','clientId','status','uploadSpeed','downloadSpeed','price','totalPrice','currencyCode'],true)));
+            $entity=array_replace($attributes,array_intersect_key($fresh,array_fill_keys(['id','clientId','status','uploadSpeed','downloadSpeed','uploadSpeedOverride','downloadSpeedOverride','trafficShapingOverrideEnd','trafficShapingOverrideEnabled','price','totalPrice','currencyCode'],true)));
             $entity['planId']=$fresh['servicePlanId']??null;
             if (($entity['device']??null)!==$baseline['device_id'] || ($entity['username']??null)!==$baseline['principal']
                 || !is_string($entity['password']??null) || $entity['password']==='' || filter_var($entity['mac']??'',FILTER_VALIDATE_MAC)
@@ -313,7 +327,7 @@ final class ApiServiceReconciliation
     }
     private function freshFingerprint(array $service): string
     {
-        $safe=array_intersect_key($service,array_fill_keys(['id','clientId','status','servicePlanId','attributes','uploadSpeed','downloadSpeed'],true));
+        $safe=array_intersect_key($service,array_fill_keys(['id','clientId','status','servicePlanId','attributes','uploadSpeed','downloadSpeed','uploadSpeedOverride','downloadSpeedOverride','trafficShapingOverrideEnd','trafficShapingOverrideEnabled'],true));
         if (is_array($safe['attributes']??null)) usort($safe['attributes'],static fn($a,$b):int=>strcmp(json_encode($a),json_encode($b)));
         return hash('sha256',json_encode($safe,JSON_THROW_ON_ERROR));
     }

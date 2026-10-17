@@ -160,6 +160,62 @@ try {
     flowCheck($noop->result()['provisioning']==='already_applied' && $noop->result()['jobCounts']['known']===0,
         'An unchanged edit was incorrectly described as a new router application');
 
+    // UISP service override fields are distinct from the ordinary base speeds.
+    // Toggling the enabled flag must be effective even with the same base plan/rates.
+    $incomplete = $request(1420,'edit',1,1);
+    $incomplete->extraData->entity->trafficShapingOverrideEnabled = true;
+    $incomplete->extraData->entity->downloadSpeedOverride = 35;
+    $beforeIncomplete = count(MT::$writes); $rejectedIncomplete = false;
+    try { $execute($incomplete); }
+    catch (InvalidArgumentException $error) { $rejectedIncomplete = $error->getMessage() === 'incomplete_service_shaping_override'; }
+    flowCheck($rejectedIncomplete && count(MT::$writes) === $beforeIncomplete,
+        'A malformed enabled override with an omitted direction became an unlimited router policy');
+    $overrideRequest = $request(1420,'edit',1,1);
+    $overrideRequest->extraData->entity->trafficShapingOverrideEnabled = true;
+    $overrideRequest->extraData->entity->uploadSpeedOverride = 10;
+    $overrideRequest->extraData->entity->downloadSpeedOverride = 35;
+    $overrideRequest->extraData->entity->trafficShapingOverrideEnd = '2030-01-01T00:00:00+0000';
+    $overrideAction = $execute($overrideRequest); $assertApplied($overrideAction,1);
+    $overrideApplied = $queue->appliedSnapshot(1420);
+    flowCheck($overrideApplied['trafficShapingOverrideEnabled'] === 1
+        && $overrideApplied['uploadSpeedOverride'] === 10 && $overrideApplied['downloadSpeedOverride'] === 35
+        && $overrideApplied['trafficShapingOverrideEnd'] === '2030-01-01T00:00:00+0000'
+        && $overrideApplied['_plan']['id'] === 35 && $overrideApplied['_plan']['uploadSpeed'] === 10
+        && $overrideApplied['_plan']['downloadSpeed'] === 35
+        && $secret(MT::$writes)['profile'] === 'uisp-service-1420-profile',
+        'The fresh UISP override did not survive normalization/cache/queue/private-profile application');
+    $cachedOverride = $apiSqliteCache->singleQuery('SELECT * FROM services WHERE id=1420',true);
+    flowCheck($cachedOverride['trafficShapingOverrideEnabled'] === 1
+        && (float)$cachedOverride['uploadSpeedOverride'] === 10.0
+        && (float)$cachedOverride['downloadSpeed'] === 25.0,
+        'The cache conflated base and customized rates');
+    $writes = count(MT::$writes);
+    $overrideRepeat = $execute($request(1420,'edit',1,1));
+    flowCheck($overrideRepeat->result()['provisioning'] === 'applied'
+        && $secret(MT::$writes)['profile'] === 'Fixture 25/5 [UISP#35]'
+        && count(MT::$writes) > $writes,
+        'An authoritative fresh service without an override inherited a stale enabled override from cache');
+    $overrideRequest = $request(1420,'edit',1,1);
+    $overrideRequest->extraData->entity->trafficShapingOverrideEnabled = true;
+    $overrideRequest->extraData->entity->uploadSpeedOverride = null;
+    $overrideRequest->extraData->entity->downloadSpeedOverride = 35;
+    $assertApplied($execute($overrideRequest),1);
+    flowCheck($queue->appliedSnapshot(1420)['_plan']['uploadSpeed'] === 0
+        && $queue->appliedSnapshot(1420)['_plan']['downloadSpeed'] === 35,
+        'UISP NULL override did not retain its documented unlimited meaning');
+    $disabledRequest = $request(1420,'edit',1,1);
+    $disabledRequest->extraData->entity->trafficShapingOverrideEnabled = false;
+    $disabledRequest->extraData->entity->uploadSpeedOverride = null;
+    $disabledRequest->extraData->entity->downloadSpeedOverride = 35;
+    $assertApplied($execute($disabledRequest),1);
+    flowCheck($secret(MT::$writes)['profile'] === 'Fixture 25/5 [UISP#35]'
+        && !ApiServiceQos::isOverridden($queue->appliedSnapshot(1420)['_plan']),
+        'Disabling an override retained the customized service profile');
+    $writes = count(MT::$writes);
+    $disabledRepeat = $execute($disabledRequest);
+    flowCheck($disabledRepeat->result()['provisioning'] === 'duplicate_completed' && count(MT::$writes) === $writes,
+        'A duplicate completed override delivery repeated the writes');
+
     MT::$fail = true;
     $pendingRequest = $request(1420,'edit',3,1);
     $pending = $execute($pendingRequest); $result = $pending->result();
