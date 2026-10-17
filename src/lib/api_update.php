@@ -88,18 +88,25 @@ class ApiUpdate
         if (isset($data['disabled_profile']) && preg_match('/(?:^uisp-(?:plan-\d+|service-\d+-profile)$|\[UISP#\d+\]$)/D', (string) $data['disabled_profile'])) {
             throw new InvalidArgumentException('Usa un perfil de suspensión propio; ese nombre está reservado para los planes del plugin.');
         }
-        $conf = $this->db()->readConfig() ;
-        foreach (array_keys($data) as $k){ if(!property_exists($conf,$k) && $k !== 'plugin_language'){
-            fail('invalid_config_key',$this->data); }}
         require_once __DIR__ . '/api_configuration_apply.php';
-        $saved = $this->db()->transaction(function () use ($data, $conf): bool {
+        $applyRequested = false;
+        $saved = $this->db()->transaction(function () use ($data, &$applyRequested): bool {
+            // Compare the state actually updated under the write lock. A
+            // concurrent network save must not turn an exclusions-only edit
+            // into an unrelated service-wide reapplication.
+            $conf = $this->db()->readConfig();
+            foreach (array_keys($data) as $key) {
+                if (!property_exists($conf, $key) && $key !== 'plugin_language') fail('invalid_config_key', $this->data);
+            }
             if (!$this->db()->saveConfig($data)) return false;
-            ApiConfigurationApply::request((array) $conf, (array) $this->db()->readConfig());
+            $applyRequested = ApiConfigurationApply::request((array) $conf, (array) $this->db()->readConfig());
             return true;
         });
         if($saved){
             MyLog()->Append('config_edit_success');
-            $scheduled = ApiConfigurationApply::drain();
+            // Saving allocator-only/UI settings must not drain work left by
+            // earlier network edits. The scheduled worker owns that backlog.
+            $scheduled = $applyRequested ? ApiConfigurationApply::drain() : ['queued'=>0, 'remaining'=>0];
             return ['scheduled' => $scheduled['queued'], 'remaining' => $scheduled['remaining'],
                 'message' => $scheduled['queued'] || $scheduled['remaining']
                     ? 'Configuración guardada. Los cambios de red se aplicarán automáticamente; puedes ver el avance en Trabajos.'

@@ -6,6 +6,14 @@ Esta revisión reúne las modificaciones de [dhanielsnieto en el PR #89](https:/
 
 El plugin comunica UISP CRM con los MikroTik mediante la **API nativa de RouterOS**. Los puertos habituales son `8728` para API y `8729` para API con TLS. El panel permite administrar esa integración; no cambia el transporte a SSH, WinBox o REST.
 
+## Candidato 2.4.46 — exclusiones para futuras asignaciones
+
+Guardar únicamente las IP omitidas del pool deja de solicitar la reaplicación de todos los servicios. Tampoco drena las solicitudes pendientes de cambios de red anteriores: devuelve cero trabajos generados por ese guardado. Las exclusiones se usan al elegir nuevas direcciones automáticas; las IP actuales, las asignaciones manuales y las reservas existentes conservan su tratamiento. El guardado no ejecuta acciones en RouterOS ni cambia atributos de UISP por editar esa lista.
+
+La comparación de la configuración anterior y posterior se realiza dentro de la misma transacción de escritura, evitando que otro guardado concurrente convierta una edición de exclusiones en una reaplicación ajena. Si se cambian simultáneamente parámetros que sí requieren aplicar configuración a servicios, como la duración de concesión o el límite de suspensión, esas solicitudes se mantienen. Los trabajos ya creados no se cancelan ni se reescriben: el proceso automático continúa su ejecución normal.
+
+Validación 2.4.46 aprobada: **70 suites aisladas**, sintaxis de **70 archivos PHP propios**, 385 entradas del instalador, 152 archivos propios y 13 dependencias fijadas. Informe: `dist/verification-2.4.46.json`. SHA-256: `92ad725203ac30f714121f2017b7dec06806ba51cf77e1c0db41eef6362386c4`. La nueva regresión verifica el guardado real del panel, concurrencia, cola previa intacta, reservas IPv4/IPv6, nuevas asignaciones y cambios mixtos. No se modificaron UISP ni RouterOS de producción.
+
 ## Candidato 2.4.45 — overrides de velocidad por servicio
 
 Los overrides de traffic shaping de UISP se aplican con un perfil privado estable por servicio en PPPoE y Hotspot, o con la cola propia de DHCP. El plan comercial y el perfil compartido de otros clientes conservan su identidad. La política efectiva usa los campos oficiales `uploadSpeedOverride` y `downloadSpeedOverride` cuando `trafficShapingOverrideEnabled` está habilitado; un valor nulo significa sin límite. Al deshabilitarlo en UISP se vuelve al perfil base, incluso si quedaron velocidades personalizadas guardadas. UISP controla la fecha de finalización; el plugin recoge su estado vigente mediante webhook, sincronización y revisión automática habilitada.
@@ -573,7 +581,7 @@ La evidencia real posterior identificó tokens ausentes y una URL pegada como se
 
 ## Preparación para instalar y validar
 
-La versión actual es 2.4.45; su validación se indica al principio. La confirmación de planes archivados de 2.4.19 conserva su alcance histórico. La revisión del estado actual retira intenciones de servicios dados de baja y programa la limpieza física necesaria antes de liberar direcciones; una identidad o consulta sin comprobar conserva la incidencia correspondiente. Revisar limpieza mantiene su alcance local independiente y sus respaldos. El modo consulta de una migración pausada conserva sus protecciones hasta resolver las asignaciones y recargar. La [guía de pruebas reales](PRUEBAS_REALES.md) contiene 289 escenarios; sus resultados de laboratorio no acreditan la instalación de producción.
+La versión actual es 2.4.46; su validación se indica al principio. La confirmación de planes archivados de 2.4.19 conserva su alcance histórico. La revisión del estado actual retira intenciones de servicios dados de baja y programa la limpieza física necesaria antes de liberar direcciones; una identidad o consulta sin comprobar conserva la incidencia correspondiente. Revisar limpieza mantiene su alcance local independiente y sus respaldos. El modo consulta de una migración pausada conserva sus protecciones hasta resolver las asignaciones y recargar. La [guía de pruebas reales](PRUEBAS_REALES.md) contiene 293 escenarios; sus resultados de laboratorio no acreditan la instalación de producción.
 
 ### Resultado histórico de 2.4.17
 

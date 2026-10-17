@@ -6,15 +6,16 @@ require_once __DIR__ . '/api_job_queue.php';
 final class ApiConfigurationApply
 {
     private const FIELDS = ['disable_contention','active_list','disabled_list','disabled_profile','disabled_rate',
-        'lease_time','ppp_pool','router_ppp_pool','excl_addr'];
+        'lease_time','ppp_pool','router_ppp_pool'];
 
-    public static function request(array $before, array $after): void
+    /** Pool exclusions govern future allocations; they never request reapplication of existing services. */
+    public static function request(array $before, array $after): bool
     {
         $changed = false;
         foreach (self::FIELDS as $field) {
             if (($before[$field] ?? null) !== ($after[$field] ?? null)) { $changed = true; break; }
         }
-        if (!$changed) return;
+        if (!$changed) return false;
         $db = mySqlite();
         $ids = [];
         foreach ([$db, myCache()] as $source) {
@@ -23,6 +24,7 @@ final class ApiConfigurationApply
             }
         }
         self::requestServices(array_keys($ids));
+        return true;
     }
 
     public static function requestPlan(int $planId): void

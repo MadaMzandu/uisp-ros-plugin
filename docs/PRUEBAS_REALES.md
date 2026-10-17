@@ -1,6 +1,12 @@
-# Pruebas reales del candidato 2.4.45
+# Pruebas reales del candidato 2.4.46
 
 Las pruebas automatizadas usan bases temporales, transportes simulados y sockets locales. Esta lista comprueba la integración **UISP → plugin → API nativa de RouterOS** en una copia de UISP y un CHR/router con clientes de prueba. Registrar versiones de UISP, PHP y RouterOS, así como ID del servicio, plan, trabajo, estado e IP/prefijo en cada caso.
+
+## Comprobar exclusiones sin reaplicación masiva en 2.4.46
+
+Los casos 290–293 verifican que editar sólo las IP omitidas afecta a futuras asignaciones automáticas. Instalar el paquete sin reconstruir todos los servicios. Registrar las IP actuales, la cola y las solicitudes pendientes antes de guardar. Los trabajos que ya existían conservan su ejecución habitual y pueden avanzar por el proceso automático, independientemente del guardado.
+
+Validación 2.4.46 aprobada: **70 suites aisladas**, sintaxis de **70 archivos PHP propios**, 385 entradas del instalador, 152 archivos propios y 13 dependencias fijadas. Informe: `dist/verification-2.4.46.json`. SHA-256: `92ad725203ac30f714121f2017b7dec06806ba51cf77e1c0db41eef6362386c4`. La nueva regresión verifica el guardado real del panel, concurrencia, cola previa intacta, reservas IPv4/IPv6, nuevas asignaciones y cambios mixtos. No se modificaron UISP ni RouterOS de producción. Registrar los resultados de la instalación por separado de los datos sintéticos.
 
 ## Comprobar overrides por servicio en 2.4.45
 
@@ -601,3 +607,7 @@ Si el piloto falla, pausar worker/webhook y conservar datos/errores sin credenci
 | 287 | Cortar la API durante la aplicación, cambiar después el override en UISP y recuperar el acceso. | El reintento conserva su configuración preparada e identidad; la revisión del estado vigente aplica la edición posterior, sin afectar a otros clientes. |
 | 288 | Revisar diferencias y aplicar al habilitar/quitar un override; repetir tras el vencimiento definido en UISP sin webhook recibido. | La vista previa coincide con la política aplicable. La revisión automática habilitada detecta el estado nuevo y encola una corrección comprobada; muestra diagnóstico de base, override, velocidad y límites reales. |
 | 289 | Repetir con Hotspot y DHCP, suspender/reactivar y actualizar desde 2.4.44 con trabajos pendientes. | Respeta cada tipo de cuenta y la suspensión; conserva credenciales, cola y reservas durante la migración, y verifica los recursos aplicados. |
+| 290 | Guardar sólo IP omitidas, incluyendo una IP de prueba que ya esté asignada, con solicitudes anteriores pendientes. | Guarda la lista y genera cero trabajos nuevos; no drena solicitudes anteriores por ese guardado ni modifica IP, atributos o recursos actuales. El worker puede continuar su trabajo previo de forma independiente. |
+| 291 | Asignar automáticamente IPv4 e IPv6 a servicios nuevos después del guardado. | Selecciona direcciones fuera de las exclusiones; los servicios existentes conservan sus direcciones. La exclusión no prohíbe asignar una IP manual explícita. |
+| 292 | Repetir el guardado sin cambios y modificar una preferencia del panel sin cambiar ajustes de red. | No solicita ni drena reaplicaciones. Los payloads, intentos, reservas y estado aplicado de los trabajos anteriores no se alteran por guardar. |
+| 293 | Guardar exclusiones junto con un cambio real de duración de concesión o límite de suspensión; repetir con guardados concurrentes de campos distintos. | El cambio de red conserva su aplicación normal. La edición exclusiva de exclusiones compara dentro de su transacción y no atribuye a sí misma el cambio de otro guardado. |

@@ -2,6 +2,14 @@
 
 [Complete English changelog](docs/CHANGELOG_EN.md) · [Texto completo para el PR](docs/PR_DESCRIPTION.md) · [Webhook setup and rationale](docs/WEBHOOK_SETUP_EN.md) · [Mejoras en español](docs/MEJORAS.md)
 
+## Candidato 2.4.46 — exclusiones para futuras asignaciones
+
+Guardar únicamente las IP omitidas del pool deja de solicitar la reaplicación de todos los servicios. Tampoco drena las solicitudes pendientes de cambios de red anteriores: devuelve cero trabajos generados por ese guardado. Las exclusiones se usan al elegir nuevas direcciones automáticas; las IP actuales, las asignaciones manuales y las reservas existentes conservan su tratamiento. El guardado no ejecuta acciones en RouterOS ni cambia atributos de UISP por editar esa lista.
+
+La comparación de la configuración anterior y posterior se realiza dentro de la misma transacción de escritura, evitando que otro guardado concurrente convierta una edición de exclusiones en una reaplicación ajena. Si se cambian simultáneamente parámetros que sí requieren aplicar configuración a servicios, como la duración de concesión o el límite de suspensión, esas solicitudes se mantienen. Los trabajos ya creados no se cancelan ni se reescriben: el proceso automático continúa su ejecución normal.
+
+Validación 2.4.46 aprobada: **70 suites aisladas**, sintaxis de **70 archivos PHP propios**, 385 entradas del instalador, 152 archivos propios y 13 dependencias fijadas. Informe: `dist/verification-2.4.46.json`. SHA-256: `92ad725203ac30f714121f2017b7dec06806ba51cf77e1c0db41eef6362386c4`. La nueva regresión verifica el guardado real del panel, concurrencia, cola previa intacta, reservas IPv4/IPv6, nuevas asignaciones y cambios mixtos. No se modificaron UISP ni RouterOS de producción.
+
 ## Candidato 2.4.45 — overrides de velocidad por servicio
 
 Los overrides de traffic shaping de UISP se aplican con un perfil privado estable por servicio en PPPoE y Hotspot, o con la cola propia de DHCP. El plan comercial y el perfil compartido de otros clientes conservan su identidad. La política efectiva usa los campos oficiales `uploadSpeedOverride` y `downloadSpeedOverride` cuando `trafficShapingOverrideEnabled` está habilitado; un valor nulo significa sin límite. Al deshabilitarlo en UISP se vuelve al perfil base, incluso si quedaron velocidades personalizadas guardadas. UISP controla la fecha de finalización; el plugin recoge su estado vigente mediante webhook, sincronización y revisión automática habilitada.

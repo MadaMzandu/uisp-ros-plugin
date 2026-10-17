@@ -1,1 +1,1 @@
-Apply per-service UISP speed overrides with burst and contention
+Harden UISP provisioning and recovery with a compact operations panel
