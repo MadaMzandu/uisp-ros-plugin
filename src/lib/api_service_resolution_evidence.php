@@ -196,12 +196,16 @@ final class ApiServiceResolutionEvidence
         if(in_array($status,[2,5,8],true)){$proof['state']='retired';$proof['safe']=true;$proof['reason']=null;return$this->owners[$sid]=$proof;}
         $client=$this->client($cid);$proof['clientFingerprint']=$client['fingerprint'];
         if($client['isArchived']){$proof['state']='retired';$proof['safe']=true;$proof['reason']=null;return$this->owners[$sid]=$proof;}
-        $raw=$this->serviceValue($raw,$sid);
-        $normalized=$this->normalize($raw);$other=$this->device($normalized);[$otherPath,$otherSelector]=$this->principal($normalized);
-        $proof['principal']=['path'=>$otherPath,'selector'=>$otherSelector];$proof['endpoint']=$this->endpoint($other);
-        if($otherPath!==$path||$otherSelector!==$selector||$this->endpoint($other)!==$this->endpoint($device)){
-            $proof['state']='disjoint';$proof['safe']=true;$proof['reason']=null;
+        $raw=$this->serviceValue($raw,$sid);$this->targetMappings($raw);
+        // Exact, complete current attributes can detach an obsolete principal even
+        // when its Site was cleared too. Frozen local state is not current ownership.
+        // A matching principal still requires its configured physical endpoint.
+        $principal=$this->rawPrincipal($raw);$proof['principal']=$principal===null?null:['path'=>$principal[0],'selector'=>$principal[1]];
+        if($principal===null||$principal[0]!==$path||$principal[1]!==$selector){
+            $proof['state']='disjoint';$proof['safe']=true;$proof['reason']=null;return$this->owners[$sid]=$proof;
         }
+        $normalized=$this->normalize($raw);$other=$this->device($normalized);$proof['endpoint']=$this->endpoint($other);
+        if($this->endpoint($other)!==$this->endpoint($device)){$proof['state']='disjoint';$proof['safe']=true;$proof['reason']=null;}
         return$this->owners[$sid]=$proof;
     }
 
@@ -265,6 +269,8 @@ final class ApiServiceResolutionEvidence
         $this->fail('resolution_identity_unverified');
     }
     private function rawPrincipalMatches(array$raw,string$path,array$selector):bool
+    {try{$principal=$this->rawPrincipal($raw);return$principal!==null&&$principal[0]===$path&&$principal[1]===$selector;}catch(Throwable$ignored){return false;}}
+    private function rawPrincipal(array$raw):?array
     {
         $values=[];foreach($raw['attributes']as$attribute){$attribute=(array)$attribute;$values[$attribute['key']]=$attribute['value'];}
         // Match the ordinary attribute reader: routing fields are trimmed while
@@ -275,7 +281,10 @@ final class ApiServiceResolutionEvidence
             if($value!==null)$value=$field==='username'?(string)$value:trim((string)$value);
             $service[$field]=$value===''?null:$value;
         }
-        try{[$peerPath,$peerSelector]=$this->principal($service);return$peerPath===$path&&$peerSelector===$selector;}catch(Throwable$ignored){return false;}
+        // An explicitly complete empty identity differs from malformed identity
+        // data. Keep malformed nonempty values blocked rather than calling them cleared.
+        if($service['username']===null&&$service['mac']===null&&$service['duid']===null)return null;
+        return$this->principal($service);
     }
     private function matches(array$row,array$selector):bool
     {foreach($selector as$key=>$value){$actual=$row[$key]??null;if($key==='duid'){$actual=$this->duid($actual);}elseif($key==='iaid'){$actual=$this->iaid($actual);}elseif($key==='mac-address'){if(!is_string($actual))return false;$actual=strtoupper($actual);}if((string)$actual!==(string)$value)return false;}return true;}
@@ -329,7 +338,7 @@ final class ApiServiceResolutionEvidence
         'resolution_configuration_changed','resolution_configuration_unavailable','resolution_derived_ownership_unverified','resolution_derived_unverified',
         'resolution_dhcp_server_ambiguous','resolution_duplicates_unreviewed','resolution_identity_unverified','resolution_local_claim','resolution_manual_confirmation',
         'resolution_mapping_unverified','resolution_marker_unverified','resolution_owner_active','resolution_queue_unverified','resolution_read_limit',
-        'resolution_router_ambiguous','resolution_row_invalid','resolution_select_account','resolution_service_inactive','resolution_service_unverified',
+        'resolution_router_ambiguous','resolution_router_unavailable','resolution_row_invalid','resolution_select_account','resolution_service_inactive','resolution_service_unverified',
         'resolution_site_unverified','resolution_target_changed','resolution_timeout','resolution_unavailable'],true)?$code:'resolution_unavailable';}
     private function fail(string$reason):void{throw new RuntimeException($reason);}
 }

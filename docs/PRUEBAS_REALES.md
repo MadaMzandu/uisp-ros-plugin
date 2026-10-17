@@ -1,6 +1,12 @@
-# Pruebas reales del candidato 2.4.41
+# Pruebas reales del candidato 2.4.42
 
 Las pruebas automatizadas usan bases temporales, transportes simulados y sockets locales. Esta lista comprueba la integración **UISP → plugin → API nativa de RouterOS** en una copia de UISP y un CHR/router con clientes de prueba. Registrar versiones de UISP, PHP y RouterOS, así como ID del servicio, plan, trabajo, estado e IP/prefijo en cada caso.
+
+## Comprobar cuentas ausentes y duplicados retirados en 2.4.42
+
+Los casos 263–268 cubren la respuesta nativa vacía de RouterOS y los identificadores retirados del servicio equivocado. Después de instalar, recargar el panel y volver a abrir Resolver para obtener una revisión nueva. Registrar el resultado real por separado de las pruebas sintéticas.
+
+Validación 2.4.42 aprobada: **68 suites aisladas**, sintaxis de **69 archivos PHP propios** y 384 entradas verificadas del instalador, con 151 archivos propios y 13 dependencias fijadas. Informe: `dist/verification-2.4.42.json`. SHA-256: `b68bad21531310fe071a1581c57716e0ca472f88ef5a2dd0ccd507d0a2aa4e3c`. Incluye protocolo binario de RouterOS en sockets locales y creación/verificación por la cola normal; no se modificaron UISP ni RouterOS de producción.
 
 ## Guardado del formulario en 2.4.41
 
@@ -547,3 +553,10 @@ Si el piloto falla, pausar worker/webhook y conservar datos/errores sin credenci
 
 | 261 | Guardar el dispositivo desde el panel con `type: mikrotik`, sin modificar QoS, y cambiar su pool. | Devuelve éxito sin `invalid_service_filter`; guarda el pool sin modificar cuentas, caché ni cola por esta acción. La sincronización posterior conserva la migración normal del rango. |
 | 262 | Cambiar QoS de un router con servicios en varios routers y enviar después `system.type=mikrotik`. | QoS sólo aplica al router seleccionado; los alcances válidos de sistema siguen funcionando y el tipo de tecnología se rechaza como filtro de sistema sin escrituras. |
+
+| 263 | En un RouterOS que responda `!empty` + `!done`, resolver un servicio vigente cuya cuenta no exista. | Reconoce ausencia y tramita su creación inmediata; sólo muestra Resuelto y verificado después de releer el resultado. |
+| 264 | Resolver una cuenta existente sin cola auxiliar de suspensión y cuya consulta de cola responda `!empty` + `!done`. | La cola ausente no bloquea la revisión ni se interpreta como fallo del router. |
+| 265 | Vaciar el identificador del servicio equivocado en UISP, también su Site, conservando instantáneas locales antiguas. | Consulta de nuevo los atributos completos y permite resolver la cuenta exclusiva del servicio correcto sin borrar pendientes ni historial ajenos. |
+| 266 | Repetir con otro servicio vigente que todavía conserva el mismo identificador en el mismo router. | Conserva el bloqueo de propiedad y no modifica su cuenta ni crea un duplicado. |
+| 267 | Dejar el mismo identificador en el otro servicio y vaciar sólo su Site; repetir con atributos incompletos o identidad no válida. | No presenta esos casos como retirada confirmada de la conexión ni autoriza apropiación. |
+| 268 | Cortar la respuesta nativa, recibir `!trap` o mezclar `!empty` con filas. | Resolver indica que no pudo consultar el router, conserva el botón bloqueado y no escribe. |

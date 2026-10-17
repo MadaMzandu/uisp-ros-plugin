@@ -2,9 +2,17 @@
 
 [Español](MEJORAS.md) · [PR description](PR_DESCRIPTION.md) · [Webhook setup and rationale](WEBHOOK_SETUP_EN.md)
 
-This revision combines [dhanielsnieto's changes in PR #89](https://github.com/MadaMzandu/uisp-ros-plugin/pull/89) with the subsequent fixes prepared in this repository. The comparison starts at `7ca8dc8`; the original PR ends at `056b89f`. The current candidate is **2.4.41**. The operator confirmed archived-plan speed recovery in their 2.4.19 installation. That confirmation covers this historical scenario; the remaining UISP and RouterOS integration scenarios still require their own checks before production readiness can be established.
+This revision combines [dhanielsnieto's changes in PR #89](https://github.com/MadaMzandu/uisp-ros-plugin/pull/89) with the subsequent fixes prepared in this repository. The comparison starts at `7ca8dc8`; the original PR ends at `056b89f`. The current candidate is **2.4.42**. The operator confirmed archived-plan speed recovery in their 2.4.19 installation. That confirmation covers this historical scenario; the remaining UISP and RouterOS integration scenarios still require their own checks before production readiness can be established.
 
 The plugin connects UISP CRM to MikroTik through the **native RouterOS API**, normally on port `8728`, or `8729` with TLS. The panel manages that integration; it does not switch the transport to SSH, WinBox, or REST.
+
+## Candidate 2.4.42: resolve absent accounts after removing a duplicate
+
+Fix a discrepancy between Diagnostics and Resolve: RouterOS can return `!empty` followed by `!done` when a query finds no records. Diagnostics already recognized this response, but Resolve rejected it and displayed a generic failure with its action disabled. The complete empty sequence now establishes absence for both the principal account and its auxiliary queue. An absent account can be created through normal immediate synchronization with subsequent readback. Incomplete responses, errors and contradictory sequences still cannot authorize changes. [MikroTik API documentation](https://help.mikrotik.com/docs/spaces/ROS/pages/47579160/API).
+
+Historical claims are also checked against the other service's complete current attributes. When an exact read confirms its connection identifier was removed, an old pending job, applied snapshot or recovery record no longer establishes current ownership of that account. A Site that was cleared as well need not remain configured. A still-matching principal requires endpoint verification; current competing owners, incomplete data and malformed identities remain protected. This check neither deletes other services' jobs nor indiscriminately releases their IPs. Router read failures retain their specific reason in Resolve.
+
+Validation for 2.4.42 passed: **68 isolated suites**, syntax checks for **69 first-party PHP files**, and 384 verified archive entries, with 151 first-party files and 13 locked dependencies. Report: `dist/verification-2.4.42.json`. SHA-256: `b68bad21531310fe071a1581c57716e0ca472f88ef5a2dd0ccd507d0a2aa4e3c`. Coverage includes binary RouterOS replies over local sockets and account creation/readback through the normal queue; no production UISP or RouterOS changes were performed.
 
 ## Candidate 2.4.41: separate device technology from service filtering
 

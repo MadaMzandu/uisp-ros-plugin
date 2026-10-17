@@ -74,7 +74,49 @@ try{
     $services[43]=$entity(43,99,2);$stale=$api->inspect(42);evidenceCheck($stale['eligible']&&in_array(43,$stale['retiredServiceIds'],true),'Retired local frozen claim permanently blocked reuse');
     $services[43]=$entity(43,99,1);evidenceCheck(!$api->inspect(42)['eligible'],'Active foreign local claim was ignored');
     $services[43]=$entity(43,99,1,'Other','different-account');evidenceCheck($api->inspect(42)['eligible'],'Canonically disjoint old job was mistaken for a current claim');
-    $jobs->exec('DELETE FROM jobs');$jobs->close();$jobs=null;unlink('data/jobs.db');
+    // Clearing a mistaken live account is current evidence; frozen queue history must not restore its claim.
+    $oldRows=$rows;$rows=[];$localSnapshot=json_encode(['id'=>43,'clientId'=>99,'device'=>1,'username'=>'fixture-user']);
+    foreach(['jobs','cancellation_cleanups','service_versions']as$table){
+        $jobs->exec('DELETE FROM jobs;DELETE FROM cancellation_cleanups;DELETE FROM service_versions');
+        if($table==='jobs')$statement=$jobs->prepare("INSERT INTO jobs(service_id,status,payload) VALUES(43,'pending',?)");
+        elseif($table==='cancellation_cleanups')$statement=$jobs->prepare('INSERT INTO cancellation_cleanups(service_id,payload) VALUES(43,?)');
+        else$statement=$jobs->prepare('INSERT INTO service_versions(service_id,applied_payload) VALUES(43,?)');
+        $statement->bindValue(1,$localSnapshot);$statement->execute()->finalize();$statement->close();
+        $cleared=$entity(43,99,1);foreach($cleared['attributes']as&$attribute)if($attribute['key']==='account')$attribute['value']=null;
+        unset($attribute);$services[43]=$cleared;$catalog=[$target,$cleared];$detached=$api->inspect(42);
+        evidenceCheck($detached['eligible']&&$detached['autoApply'],'Clearing only the mistaken username retained a frozen '.$table.' claim');
+        foreach(['removed','null','empty']as$clearing){
+            $cleared=$entity(43,99,1);
+            if($clearing==='removed')$cleared['attributes']=[];
+            else foreach($cleared['attributes']as&$attribute)$attribute['value']=$clearing==='null'?null:'';
+            unset($attribute);$services[43]=$cleared;$catalog=[$target,$cleared];$detached=$api->inspect(42);
+            evidenceCheck($detached['eligible']&&$detached['autoApply']&&$detached['mode']==='reconcile'
+                &&($detached['referencedOwners'][43]['state']??null)==='disjoint',
+                'Cleared canonical principal remained blocked by '.$table.' '.$clearing.': '.json_encode($detached['public']));
+        }
+    }
+    // Omitted or invalid canonical data does not establish that an old identity was cleared.
+    $cleared=$entity(43,99,1);unset($cleared['attributes']);$services[43]=$cleared;$catalog=[$target];
+    evidenceCheck(!$api->inspect(42)['eligible'],'Partial old owner payload was mistaken for an intentionally cleared identity');
+    $cleared=$entity(43,99,1);$cleared['attributes']=[['key'=>'account','value'=>['fixture-user']]];$services[43]=$cleared;
+    evidenceCheck(!$api->inspect(42)['eligible'],'Malformed old owner principal was mistaken for a cleared identity');
+    $cleared=$entity(43,99,1);$cleared['attributes']=array_values(array_filter($cleared['attributes'],static fn($attribute)=>$attribute['key']!=='site'));
+    $services[43]=$cleared;$catalog=[$target,$cleared];evidenceCheck(!$api->inspect(42)['eligible'],'Removing only the Site erased a still-matching current username claim');
+    $cleared=$entity(43,99,1);foreach($cleared['attributes']as&$attribute)if($attribute['key']==='account')$attribute['value']="invalid\naccount";
+    unset($attribute);$services[43]=$cleared;$catalog=[$target];evidenceCheck(!$api->inspect(42)['eligible'],'Nonempty invalid username was classified as an intentionally cleared account');
+    $cleared=$entity(43,99,1);$cleared['attributes']=array_values(array_filter($cleared['attributes'],static fn($attribute)=>$attribute['key']!=='account'));
+    $cleared['attributes'][]=['key'=>'mac','value'=>'invalid-mac','customAttributeId'=>4];$services[43]=$cleared;
+    evidenceCheck(!$api->inspect(42)['eligible'],'Malformed nonempty connection identity was classified as cleared');
+    $cleared=$entity(43,99,1);$cleared['attributes']=[];$cleared['attributes'][]=['key'=>'duid','value'=>null,'customAttributeId'=>5];$services[43]=$cleared;$attributes[4]['attributeType']='client';
+    $mapping=$api->inspect(42);evidenceCheck(!$mapping['eligible']&&$mapping['reason']==='resolution_mapping_unverified','Non-service old identity mapping authorized detached ownership');$attributes[4]['attributeType']='service';
+    $services[43]=evidenceHttp(500);$catalog=[$target];evidenceCheck(!$api->inspect(42)['eligible'],'Unreadable canonical owner authorized reuse of its local account snapshot');
+    $jobs->exec('DELETE FROM jobs;DELETE FROM cancellation_cleanups;DELETE FROM service_versions');$jobs->close();$jobs=null;unlink('data/jobs.db');
+    $cleared=$entity(43,99,1);$cleared['attributes']=[];$services[43]=$cleared;$catalog=[$target,$cleared];
+    $rows=[['.id'=>'*C','name'=>'fixture-user','comment'=>'99 - Former customer - 43','remote-address'=>'192.0.2.143']];$detachedMarker=$api->inspect(42);
+    evidenceCheck($detachedMarker['eligible']&&$detachedMarker['autoApply']&&$detachedMarker['referencedOwners'][43]['state']==='disjoint','Cleared exact owner did not release its obsolete RouterOS marker');
+    $hook=static function():void{throw new RuntimeException('resolution_router_unavailable');};$routerFailure=$api->inspect(42);$hook=null;
+    evidenceCheck(!$routerFailure['eligible']&&$routerFailure['reason']==='resolution_router_unavailable','Router read failure was collapsed into a generic resolution failure');
+    $rows=$oldRows;$catalog=[$target];
     // Full catalog pagination discovers competing services beyond page1, even for an uncached installation.
     $catalog=[$target];for($sid=1000;$sid<1499;$sid++)$catalog[]=$entity($sid,99,2,'Other','irrelevant');$catalog[]=$entity(2000,99,1);
     $services[2000]=$catalog[500];$paged=$api->inspect(42);evidenceCheck(!$paged['eligible'],'Late catalog page active claimant was omitted');
@@ -124,5 +166,5 @@ try{
     $clients[17]['isArchived']=true;evidenceCheck(!$api->inspect(42)['eligible'],'Archived target client received new provisioning');$clients[17]['isArchived']=false;
     $services[42]['status']=3;$catalog=[$services[42]];evidenceCheck($api->inspect(42)['eligible'],'Suspended target could not be reconciled without reactivation');
     $emptyRows=$rows;$rows=[];evidenceCheck($api->inspect(42)['autoApply'],'Absent account did not use ordinary immediate reconciliation');$rows=$emptyRows;
-    echo "Service resolution evidence passed: fresh exact target/client, exclusive complete catalog, changed IP/CID markers, retired/disjoint old claims, explicit row selection, protected DHCP servers/queue duplicates, private fingerprints and read-only bounded observation.\n";
+    echo "Service resolution evidence passed: fresh exact target/client, exclusive complete catalog, changed IP/CID markers, retired/disjoint/cleared old claims, explicit row selection, protected DHCP servers/queue duplicates, private fingerprints and read-only bounded observation.\n";
 }finally{if($jobs instanceof SQLite3)$jobs->close();if($db instanceof ApiSqlite)$db->close();chdir($original);set_include_path($oldInclude);evidenceRemove($directory);}

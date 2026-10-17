@@ -2,6 +2,14 @@
 
 [Complete English changelog](docs/CHANGELOG_EN.md) · [Texto completo para el PR](docs/PR_DESCRIPTION.md) · [Webhook setup and rationale](docs/WEBHOOK_SETUP_EN.md) · [Mejoras en español](docs/MEJORAS.md)
 
+## Candidato 2.4.42 — resolver cuentas ausentes después de quitar un duplicado
+
+Se corrige una discrepancia entre Diagnóstico y Resolver: RouterOS puede responder `!empty` seguido de `!done` cuando una consulta no encuentra registros. Diagnóstico ya reconocía esa respuesta; Resolver la rechazaba y mostraba un error genérico con el botón bloqueado. Ahora la secuencia completa se interpreta como ausencia comprobada, tanto para la cuenta principal como para su cola auxiliar. Una cuenta ausente puede crearse mediante la sincronización inmediata normal, con confirmación posterior. Las respuestas incompletas, errores y secuencias contradictorias continúan sin autorizar cambios. [Documentación de la API de MikroTik](https://help.mikrotik.com/docs/spaces/ROS/pages/47579160/API).
+
+También se comprueban las asociaciones históricas contra los atributos completos actuales del otro servicio. Si una consulta exacta confirma que se retiró su identificador de conexión, un trabajo, estado aplicado o recuperación antiguos dejan de considerarse su propiedad vigente de esa cuenta. No se exige conservar un Site que también se vació. Un identificador aún coincidente requiere comprobar su router; un propietario vigente, datos incompletos o una identidad no válida siguen impidiendo la apropiación. Esta comprobación no borra trabajos de otros servicios ni libera indiscriminadamente sus IP. Los fallos de lectura del router conservan su motivo específico en Resolver.
+
+Validación 2.4.42 aprobada: **68 suites aisladas**, sintaxis de **69 archivos PHP propios** y 384 entradas verificadas del instalador, con 151 archivos propios y 13 dependencias fijadas. Informe: `dist/verification-2.4.42.json`. SHA-256: `b68bad21531310fe071a1581c57716e0ca472f88ef5a2dd0ccd507d0a2aa4e3c`. Incluye protocolo binario de RouterOS en sockets locales y creación/verificación por la cola normal; no se modificaron UISP ni RouterOS de producción.
+
 ## Candidato 2.4.41 — guardar dispositivos sin confundir el tipo y el filtro
 
 Se corrige `invalid_service_filter` al guardar el formulario de un router. El panel envía `type: mikrotik` como tecnología del dispositivo; ese valor se estaba interpretando después como alcance de una búsqueda de servicios. El fallo ocurría después de persistir los datos y podía mostrar error aunque el pool ya estuviera guardado. Ahora guardar sin cambios de QoS termina antes de buscar servicios o ejecutar aprovisionamiento. Los cambios reales de QoS usan explícitamente el alcance del dispositivo seleccionado. Los filtros de operaciones de sistema (`device`, `plan`, `service`, `all`) conservan su validación; `mikrotik` no se acepta como filtro de sincronización.

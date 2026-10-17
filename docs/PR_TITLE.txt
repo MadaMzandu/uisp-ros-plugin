@@ -1,1 +1,1 @@
-Fix saving MikroTik devices without an invalid service filter
+Fix resolving absent RouterOS accounts after clearing duplicate ownership

@@ -32,7 +32,7 @@ def main() -> int:
     suites = [
         'backend', 'jobs', 'router', 'burst', 'runtime', 'stability', 'client_queue', 'automatic_reconciliation',
         'locale', 'second_audit', 'ownership', 'shared_resources', 'shared_pool', 'pool_reset', 'ip_attribute_export', 'site_address_policy', 'site_address_retry', 'router_ownership', 'provisioning_verification', 'provisioning_verification_retry', 'service_diagnostics', 'automation_health',
-        'sync_preview', 'device_sync', 'service_resolution_evidence', 'service_resolution', 'service_reconciliation', 'service_lifecycle', 'webhook_freshness', 'full_backup', 'pool_capacity', 'job_context',
+        'sync_preview', 'device_sync', 'service_resolution_evidence', 'service_resolution', 'service_resolution_native', 'service_reconciliation', 'service_lifecycle', 'webhook_freshness', 'full_backup', 'pool_capacity', 'job_context',
         'nonfinite', 'profile_names', 'unmanaged', 'reconnect', 'reconnect_router', 'webhook_auth', 'webhook_flow', 'billing_router', 'job_diagnostics', 'job_actions', 'jobs_status', 'job_recovery', 'job_recovery_observation', 'job_retained_resources', 'cancelled_recovery', 'archived_plans', 'migration_conflicts', 'recovery_reads', 'network_diagnostics', 'network_cleanup', 'network_repair', 'network_repair_batch', 'crm_network_monitor', 'crm_network_resolution', 'reserved_networks',
     ]
     commands = [('regression_' + name, php_tests + ['tests/regression_' + name + '.php']) for name in suites]

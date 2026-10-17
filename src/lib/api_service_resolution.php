@@ -276,6 +276,7 @@ final class ApiServiceResolution
         foreach($filter as$key=>$value)$api->write('?'.$key.'='.$value,false);$api->finishSentence();$words=$api->read(false);
         if(!is_array($words)||count($words)>8192||!$words||end($words)!=='!done'||count(array_keys($words,'!done',true))!==1)
             throw new RuntimeException('resolution_router_unavailable');
+        if($words===['!empty','!done'])return[];
         $rows=[];$row=null;
         foreach($words as$word){
             if($word==='!re'){if($row!==null)$rows[]=$row;$row=[];continue;}

@@ -63,15 +63,16 @@ try{
         ['key'=>'site','value'=>'Fixture Site'],['key'=>'account','value'=>'fixture-account'],['key'=>'pass','value'=>'PRIVATE-UISP-SECRET'],['key'=>'manualIp','value'=>'192.0.2.42']]];
     $client=['id'=>17,'isArchived'=>false,'firstName'=>'Fixture','lastName'=>'Customer'];
     $catalog=[];foreach(['site','account','pass','manualIp']as$i=>$key)$catalog[]=['id'=>$i+1,'key'=>$key,'attributeType'=>'service'];
-    $peers=[];$calls=[];$writes=[];$applies=0;$writeFailure=false;$verify=true;$now=time();$readHook=null;
+    $peers=[];$otherClients=[];$calls=[];$writes=[];$applies=0;$writeFailure=false;$verify=true;$now=time();$readHook=null;
     $base=['.id'=>'*A1','name'=>'fixture-account','comment'=>'17 - Fixture Customer - 42','profile'=>'Fixture Profile','remote-address'=>'192.0.2.42','password'=>'PRIVATE-ACCOUNT-PASSWORD','disabled'=>'false'];
     $router=['ppp/secret'=>[$base],'queue/simple'=>[]];
     $GLOBALS['resolutionRouter']=&$router;$GLOBALS['resolutionNativeWrites']=[];$GLOBALS['resolutionRouterSequence']=256;
-    $request=static function(string$path,array$parameters=[])use(&$raw,&$client,&$catalog,&$peers,&$calls){
+    $request=static function(string$path,array$parameters=[])use(&$raw,&$client,&$catalog,&$peers,&$otherClients,&$calls){
         $calls[]=$path;
         if($path==='custom-attributes')return$catalog;
         if($path==='clients/services/42')return$raw;
         if($path==='clients/17')return$client;
+        if(preg_match('#^clients/([1-9][0-9]*)$#D',$path,$m)&&isset($otherClients[(int)$m[1]]))return$otherClients[(int)$m[1]];
         if($path==='clients/services')return array_slice(array_merge([$raw],array_values($peers)),(int)($parameters['offset']??0),(int)($parameters['limit']??500));
         if(preg_match('#^clients/services/([1-9][0-9]*)$#D',$path,$m)&&isset($peers[(int)$m[1]]))return$peers[(int)$m[1]];
         throw new RuntimeException('PRIVATE-HTTP-ERROR');
@@ -195,6 +196,46 @@ try{
     foreach($queue->selectionStatus($oldKeys)as$old)resolutionCheck(in_array($old['state'],['cancelled','cleaned'],true)&&$old['attempts']===0,'Real repair executed a stale prepared update');
     $native=array_slice($GLOBALS['resolutionNativeWrites'],$nativeStart);resolutionCheck((bool)array_filter($native,static fn($row)=>$row[0]==='ppp/secret'&&in_array($row[1],['set','add'],true)), 'Default repair never reached real MT account writes');
     resolutionCheck($queue->completed($result['jobKeys']),'Default repair left its normal queue job incomplete');
+    // Clearing a mistaken connection in a still-current service must release
+    // its historical identity claim without applying or deleting that service.
+    // The absent router account is recreated through the ordinary action,
+    // durable queue, MT writer and current provisioning receipt.
+    $otherClients[33]=['id'=>33,'isArchived'=>false,'firstName'=>'Former','lastName'=>'Fixture'];
+    $peers[41]=$raw;$peers[41]['id']=41;$peers[41]['clientId']=33;
+    $former=$snapshot;$former['id']=41;$former['clientId']=33;$former['network']=['address'=>'192.0.2.21','address6'=>null];
+    $former['firstName']='Former';$former['lastName']='Fixture';$formerKey=$queue->enqueue($former);
+    $queue->runSelected([$formerKey],static fn()=>true);
+    resolutionCheck($queue->completed([$formerKey])&&$queue->appliedSnapshot(41)['username']==='fixture-account','Historical former-owner state was not recorded');
+    $formerApplied=$queue->appliedSnapshot(41);$formerStatus=$queue->selectionStatus([$formerKey]);
+    $formerDelete=$queue->enqueue($former,'delete');$formerDeleteStatus=$queue->selectionStatus([$formerDelete]);
+    $router['ppp/secret']=[];$router['ppp/active']=[];
+    $blockedStart=count($GLOBALS['resolutionNativeWrites']);$blockedRepairs=count($writes);
+    $preview=$real->preview(42);
+    resolutionCheck(!$preview['eligible']&&$preview['previewToken']===null&&$preview['reason']==='resolution_owner_active'
+        &&count($GLOBALS['resolutionNativeWrites'])===$blockedStart&&count($writes)===$blockedRepairs,
+        'Missing account let an actual current duplicate bypass ownership protection: '.json_encode($preview));
+    $peers[41]['attributes']=[];
+    $preview=$real->preview(42);$nativeStart=count($GLOBALS['resolutionNativeWrites']);$repairStart=count($writes);
+    resolutionCheck($preview['eligible']&&$preview['autoApply']&&$preview['mode']==='reconcile'&&$preview['candidates']===[],
+        'Cleared duplicate history prevented missing-account reconciliation: '.json_encode($preview));
+    $result=$real->apply($preview['previewToken']);
+    resolutionCheck($result['state']==='resolved'&&$result['verificationState']==='verified'&&$queue->completed($result['jobKeys'])
+        &&count($router['ppp/secret'])===1&&$router['ppp/secret'][0]['name']==='fixture-account'
+        &&$router['ppp/secret'][0]['comment']==='17 - Fixture Customer - 42'&&$router['ppp/secret'][0]['remote-address']==='192.0.2.42',
+        'Fresh missing-account action did not create and verify its target: '.json_encode([$result,$queue->selectionStatus($result['jobKeys'])]));
+    $receipt=(new ApiProvisioningVerification())->read(42);
+    resolutionCheck(($receipt['current']??false)===true&&($receipt['state']??null)==='verified'
+        &&in_array($receipt['job_id']??null,$result['jobKeys'],true),'Missing-account result reused an earlier verification receipt');
+    $created=array_slice($GLOBALS['resolutionNativeWrites'],$nativeStart);
+    resolutionCheck((bool)array_filter($created,static fn($write)=>$write[0]==='ppp/secret'&&$write[1]==='add')
+        &&count($writes)===$repairStart&&$queue->appliedSnapshot(41)===$formerApplied&&$queue->selectionStatus([$formerKey])===$formerStatus
+        &&$queue->selectionStatus([$formerDelete])===$formerDeleteStatus,
+        'Missing-account reconciliation altered former-owner history or used a direct repair write instead of normal account creation');
+    $newAccount=$router['ppp/secret'];$nativeStart=count($GLOBALS['resolutionNativeWrites']);
+    $queue->runSelected([$formerDelete]);
+    resolutionCheck(!$queue->completed([$formerDelete])&&$queue->selectionStatus([$formerDelete])[$formerDelete]['state']==='pending'
+        &&count($GLOBALS['resolutionNativeWrites'])===$nativeStart&&$router['ppp/secret']===$newAccount,
+        'A deferred former-owner cleanup erased or changed the newly assigned current account');
     $delete=$queue->enqueue($snapshot,'delete');$preview=$make()->preview(42);$count=count($writes);$result=$make()->apply($preview['previewToken']);
     resolutionCheck($result['state']==='blocked'&&$result['reason']==='resolution_pending_cleanup'&&count($writes)===$count,'A cleanup barrier was cancelled or bypassed');$queue->delete([$delete]);
     $preview=$make()->preview(42);$now+=601;resolutionReject(fn()=>$make()->apply($preview['previewToken']),'Expired repair accepted');$now-=601;
