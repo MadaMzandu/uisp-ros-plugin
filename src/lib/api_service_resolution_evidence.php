@@ -92,19 +92,24 @@ final class ApiServiceResolutionEvidence
                     'comment'=>self::display($row['comment']??null,512),'ownerServiceId'=>$marker['serviceId']??null,'ownerClientId'=>$marker['clientId']??null,
                     'address'=>self::text($row['remote-address']??($row['address']??null),256),'profile'=>self::text($row['profile']??null,256),
                     'disabled'=>$this->flag($row['disabled']??null),'dynamic'=>$this->flag($row['dynamic']??null),'server'=>self::text($row['server']??null,256),
-                    'selectable'=>false,'reason'=>$proof['reason']];
+                    'selectable'=>false,'reason'=>$proof['reason'],'removeRowIds'=>[],'manualDuplicateRowIds'=>[]];
             }
             foreach($result['rows']as$index=>$row){
-                $proof=$rowProof[$row['.id']];$extras=[];$extrasSafe=true;
+                $proof=$rowProof[$row['.id']];$extras=[];$manualExtras=[];$extrasSafe=true;
                 foreach($result['rows']as$other)if($other['.id']!==$row['.id']){
-                    if(!$rowProof[$other['.id']]['safe'])$extrasSafe=false;else$extras[]=$other['.id'];
+                    if($rowProof[$other['.id']]['safe'])$extras[]=$other['.id'];
+                    elseif($rowProof[$other['.id']]['manual']&&$this->manualPppDuplicate($path,$row,$other,$sid,$cid)){
+                        $extras[]=$other['.id'];$manualExtras[]=$other['.id'];
+                    }else$extrasSafe=false;
                 }
                 $selectable=($proof['safe']||$proof['manual'])&&$extrasSafe&&!$serverAmbiguous;
                 $reason=$serverAmbiguous?'resolution_dhcp_server_ambiguous':(!$extrasSafe?'resolution_duplicates_unreviewed':$proof['reason']);
                 $auto=$selectable&&$proof['safe']&&count($result['rows'])===1;
                 $result['choices'][]=['rowId'=>$row['.id'],'selectable'=>$selectable,'autoApply'=>$auto,'reason'=>$selectable&&$proof['safe']?null:$reason,
-                    'removeRowIds'=>$selectable?$extras:[]];
+                    'removeRowIds'=>$selectable?$extras:[],'manualDuplicateRowIds'=>$selectable?$manualExtras:[]];
                 $result['public']['candidates'][$index]['selectable']=$selectable;$result['public']['candidates'][$index]['reason']=$selectable&&$proof['safe']?null:$reason;
+                $result['public']['candidates'][$index]['removeRowIds']=$selectable?$extras:[];
+                $result['public']['candidates'][$index]['manualDuplicateRowIds']=$selectable?$manualExtras:[];
             }
             if(!$result['rows']){$result['mode']='reconcile';$result['eligible']=true;$result['autoApply']=true;$result['reason']=null;}
             else{
@@ -123,7 +128,7 @@ final class ApiServiceResolutionEvidence
             $result['fingerprint']=$this->hash([$result['configurationHash'],$result['intentHash'],$client,$result['rows'],$result['derivedRepairs'],$this->owners,$this->localClaims]);
             $result['public']['changes']=$this->changes($result);
         }catch(Throwable$error){$result['mode']='blocked';$result['eligible']=false;$result['autoApply']=false;$result['defaultRowId']=null;$result['reason']=$this->reason($error);$result['choices']=[];
-            foreach($result['public']['candidates']as&$candidate){$candidate['selectable']=false;$candidate['reason']=$result['reason'];}unset($candidate);}
+            foreach($result['public']['candidates']as&$candidate){$candidate['selectable']=false;$candidate['reason']=$result['reason'];$candidate['removeRowIds']=[];$candidate['manualDuplicateRowIds']=[];}unset($candidate);}
         foreach(['mode','eligible','autoApply','reason']as$field)$result['public'][$field]=$result[$field];
         return$result;
     }
@@ -267,6 +272,23 @@ final class ApiServiceResolutionEvidence
         $duid=$this->duid($service['duid']??null);$iaid=$this->iaid($service['iaid']??1);
         if($duid!==null&&$iaid!==null)return['ipv6/dhcp-server/binding',['duid'=>$duid,'iaid'=>$iaid]];
         $this->fail('resolution_identity_unverified');
+    }
+    private function manualPppDuplicate(string$path,array$selected,array$extra,int$sid,int$cid):bool
+    {
+        if($path!=='ppp/secret'||$this->marker($selected['comment']??null)!==['clientId'=>$cid,'serviceId'=>$sid]
+            ||!is_string($selected['name']??null)||($selected['name']??null)!==($extra['name']??null))return false;
+        // A reviewed manual extra can be retired only alongside the exact current
+        // owned account, with matching concrete IPv4 identity. Pool names are not IPs.
+        $addresses=[];
+        foreach([$selected,$extra]as$row){$address=$row['remote-address']??null;
+            if(!is_string($address)||$address==='')return false;$parts=explode('/',$address);
+            if(count($parts)>2||(isset($parts[1])&&$parts[1]!=='32')||!filter_var($parts[0],FILTER_VALIDATE_IP,FILTER_FLAG_IPV4))return false;
+            $addresses[]=inet_ntop(inet_pton($parts[0]));}
+        if($addresses[0]!==$addresses[1])return false;
+        foreach(['caller-id','remote-ipv6-prefix']as$field){$left=$selected[$field]??null;$right=$extra[$field]??null;
+            if($left!==null&&$left!==''&&$right!==null&&$right!==''&&(string)$left!==(string)$right)return false;}
+        $left=strtolower(trim((string)($selected['service']??'')));$right=strtolower(trim((string)($extra['service']??'')));
+        return$left===''||$left==='any'||$right===''||$right==='any'||$left===$right;
     }
     private function rawPrincipalMatches(array$raw,string$path,array$selector):bool
     {try{$principal=$this->rawPrincipal($raw);return$principal!==null&&$principal[0]===$path&&$principal[1]===$selector;}catch(Throwable$ignored){return false;}}

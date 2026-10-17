@@ -1,6 +1,12 @@
-# Pruebas reales del candidato 2.4.42
+# Pruebas reales del candidato 2.4.43
 
 Las pruebas automatizadas usan bases temporales, transportes simulados y sockets locales. Esta lista comprueba la integración **UISP → plugin → API nativa de RouterOS** en una copia de UISP y un CHR/router con clientes de prueba. Registrar versiones de UISP, PHP y RouterOS, así como ID del servicio, plan, trabajo, estado e IP/prefijo en cada caso.
+
+## Comprobar selección de duplicados PPP en 2.4.43
+
+Los casos 269–273 cubren conservar la cuenta vinculada y revisar el duplicado manual del mismo usuario e IP. Instalar el paquete, recargar el panel y abrir una revisión nueva. Registrar los resultados de la instalación por separado de las regresiones sintéticas.
+
+Validación 2.4.43 aprobada: **68 suites aisladas**, sintaxis de **69 archivos PHP propios**, 384 entradas del instalador, 151 archivos propios y 13 dependencias fijadas. Informe: `dist/verification-2.4.43.json`. SHA-256: `d3a4d920e00202099b08936cee956c56d19d985b319a0f45b70e93236e970987`. El informe conserva el fallo inicial de una comprobación que esperaba la revisión anterior de recursos y su revalidación contra el mismo ZIP. Revisión visual sintética en escritorio/móvil, español/inglés y temas claro/oscuro; no se modificaron UISP ni RouterOS de producción.
 
 ## Comprobar cuentas ausentes y duplicados retirados en 2.4.42
 
@@ -560,3 +566,9 @@ Si el piloto falla, pausar worker/webhook y conservar datos/errores sin credenci
 | 266 | Repetir con otro servicio vigente que todavía conserva el mismo identificador en el mismo router. | Conserva el bloqueo de propiedad y no modifica su cuenta ni crea un duplicado. |
 | 267 | Dejar el mismo identificador en el otro servicio y vaciar sólo su Site; repetir con atributos incompletos o identidad no válida. | No presenta esos casos como retirada confirmada de la conexión ni autoriza apropiación. |
 | 268 | Cortar la respuesta nativa, recibir `!trap` o mezclar `!empty` con filas. | Resolver indica que no pudo consultar el router, conserva el botón bloqueado y no escribe. |
+
+| 269 | Revisar dos cuentas PPP del mismo usuario e IPv4, una con cliente/servicio actuales y otra con comentario manual y perfil antiguo. | Permite seleccionar la vinculada; ninguna está preseleccionada. Al elegirla, muestra conservar su ID y retirar sólo el duplicado manual. |
+| 270 | Confirmar esa selección y repetir con la contraseña del duplicado no disponible para el respaldo. | Respalda ambas configuraciones, retira sólo la fila revisada y sincroniza/verifica la conservada. Sin contraseña respaldable, no elimina ninguna. |
+| 271 | Cambiar la fila manual después de revisar y antes de confirmar. | Invalida la revisión y evita respaldar/aplicar la decisión anterior. |
+| 272 | Repetir con IP distinta o no concreta, Caller ID contradictorio, tipo PPP incompatible, IPv6 contradictoria, propietario vigente ajeno, DHCP o dos registros totalmente manuales. | No amplía a esos casos el permiso de retirar un duplicado sin vínculo. |
+| 273 | Alternar las dos opciones en español/inglés, escritorio/móvil, y confirmar una revisión válida. | Actualiza los ID que se conservarán y retirarán, mantiene accesible el pie del modal y explica que el plan vigente de UISP determina el perfil final. |

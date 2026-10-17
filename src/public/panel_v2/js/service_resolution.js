@@ -59,7 +59,7 @@
     let api, notify, navigate, reviewJob, onApplied, mounted = false;
     let opened = false, loading = false, applying = false, requiresReload = false, mutations = 0, epoch = 0, sequence = 0;
     let serviceId = null, preview = null, selected = null, outcome = null, feedback = '', manualOnly = false, ownMutationExpected = false;
-    let previousFocus = null;
+    let previousFocus = null, selectionPlan = null;
     const locked = () => requiresReload || api?.reloadRequired === true || api?.recovery?.readOnly === true || mutations > 0;
     const reason = code => t(reasons[code] || reasons.resolution_unavailable);
     const accepted = response => {
@@ -83,7 +83,8 @@
             || value.clientId !== null && !positive(value.clientId) || value.deviceId !== null && !positive(value.deviceId)
             || value.eligible && (!token(value.previewToken) || typeof value.expiresAt !== 'string' || !Number.isFinite(Date.parse(value.expiresAt)) || Date.parse(value.expiresAt) <= Date.now())
             || value.mode === 'blocked' && value.eligible) throw new Error('resolution_unavailable');
-        const seen = new Set();
+        const seen = new Set(), rowIds = new Set(value.candidates.map(item => item?.rowId));
+        if (rowIds.size !== value.candidates.length) throw new Error('resolution_unavailable');
         const paths = new Set(['ppp/secret', 'ip/hotspot/user', 'ip/dhcp-server/lease', 'ipv6/dhcp-server/binding', 'queue/simple']);
         for (const item of value.candidates) {
             if (!item || typeof item.selectable !== 'boolean' || !choice(item.candidateId) && (item.selectable || item.candidateId != null)
@@ -92,8 +93,27 @@
                 || typeof item.path !== 'string' || !paths.has(item.path.replace(/^\//, ''))
                 || item.ownerServiceId !== null && !positive(item.ownerServiceId) || item.ownerClientId !== null && !positive(item.ownerClientId)) throw new Error('resolution_unavailable');
             if (choice(item.candidateId)) seen.add(item.candidateId);
+            for (const field of ['removeRowIds', 'manualDuplicateRowIds']) if (item[field] !== undefined
+                && (!Array.isArray(item[field]) || item[field].length > 19 || new Set(item[field]).size !== item[field].length
+                    || item[field].some(id => id === item.rowId || !rowIds.has(id)) || !item.selectable && item[field].length)) throw new Error('resolution_unavailable');
+            if (item.manualDuplicateRowIds?.some(id => !item.removeRowIds?.includes(id))) throw new Error('resolution_unavailable');
         }
         return value;
+    }
+    function renderSelectionPlan() {
+        if (!selectionPlan) return;
+        selectionPlan.replaceChildren();
+        const keep = preview?.candidates.find(item => item.candidateId === selected && item.selectable);
+        if (!keep || !Array.isArray(keep.removeRowIds)) return;
+        selectionPlan.appendChild(element('p', t('Se conservará el registro {id}.', { id: keep.rowId })));
+        if (!keep.removeRowIds.length) return;
+        selectionPlan.appendChild(element('strong', t('Se retirarán estos registros:')));
+        for (const id of keep.removeRowIds) {
+            const row = preview.candidates.find(item => item.rowId === id);
+            const label = [id, safe(row?.profile), keep.manualDuplicateRowIds?.includes(id) ? t('Duplicado sin vínculo de servicio') : ''].filter(Boolean).join(' · ');
+            selectionPlan.appendChild(element('p', label));
+        }
+        selectionPlan.appendChild(element('p', t('Se guardará un respaldo antes de retirarlos.')));
     }
     function controls() {
         const needsChoice = requiresSelection();
@@ -101,21 +121,25 @@
             || needsChoice && !preview.candidates.some(item => item.candidateId === selected && item.selectable)
             || preview?.eligible && Date.parse(preview.expiresAt) <= Date.now();
         if (node('service-resolution-refresh')) node('service-resolution-refresh').disabled = locked() || loading || applying;
-        for (const radio of node('service-resolution-candidates')?.querySelectorAll('input') || []) radio.disabled = locked() || loading || applying || radio.dataset.selectable !== 'true';
+        for (const radio of node('service-resolution-candidates')?.querySelectorAll('input') || []) {
+            radio.disabled = locked() || loading || applying || radio.dataset.selectable !== 'true';
+            radio.checked = radio.value === selected;
+        }
     }
     function render() {
         if (!opened) return;
         node('service-resolution-heading').textContent = t('Resolver servicio #{id}', { id: serviceId });
         node('service-resolution-status').textContent = loading ? t('Revisando UISP y la cuenta del router…') : applying ? t('Corrigiendo vínculo y sincronizando…') : feedback;
         const summary = node('service-resolution-summary'), candidates = node('service-resolution-candidates'), changes = node('service-resolution-changes'), result = node('service-resolution-result');
-        summary.replaceChildren(); candidates.replaceChildren(); changes.replaceChildren(); result.replaceChildren();
+        summary.replaceChildren(); candidates.replaceChildren(); changes.replaceChildren(); result.replaceChildren(); selectionPlan = null;
         if (preview) {
             const links = element('p', undefined, 'resolution-identity'); links.appendChild(crmLink('Servicio #{id}', 'service', serviceId));
             if (positive(preview.clientId)) links.appendChild(crmLink('Cliente #{id}', 'client', preview.clientId));
             summary.appendChild(links);
             const label = [safe(preview.clientName), safe(preview.site), positive(preview.deviceId) ? t('Router #{id}', { id: preview.deviceId }) : ''].filter(Boolean).join(' · ');
             if (label) summary.appendChild(element('p', label, 'form-note'));
-            if (preview.reason) summary.appendChild(element('p', reason(preview.reason), 'form-note'));
+            if (preview.reason && !(requiresSelection() && ['resolution_select_account', 'resolution_manual_confirmation'].includes(preview.reason)))
+                summary.appendChild(element('p', reason(preview.reason), 'form-note'));
             if (preview.willReconnect === true) summary.appendChild(element('p', t('Se reconectarán las sesiones de esta cuenta.'), 'form-note'));
             for (const change of preview.changes) {
                 if (!change || !Object.hasOwn(fields, change.field)) continue;
@@ -124,7 +148,7 @@
                 line.appendChild(element('span', (safe(change.before) || t('Sin comprobar')) + ' → ' + (after || t('Sin comprobar')))); changes.appendChild(line);
             }
             if (requiresSelection()) {
-                candidates.appendChild(element('p', t('Selecciona la cuenta que corresponde a este servicio.'), 'form-note'));
+                candidates.appendChild(element('p', t('Elige la cuenta que se conservará. El perfil se aplicará según el plan vigente en UISP.'), 'form-note'));
                 if (preview.candidates.length > 1) candidates.appendChild(element('p', t('Se conservará la cuenta seleccionada y se retirarán las demás cuentas duplicadas mostradas.'), 'form-note'));
             }
             for (const item of preview.candidates) {
@@ -133,7 +157,7 @@
                     const radio = element('input'); radio.type = 'radio'; radio.name = 'service-resolution-account'; radio.value = item.candidateId;
                     radio.dataset.selectable = String(item.selectable); radio.checked = selected === item.candidateId;
                     radio.disabled = locked() || loading || applying || !item.selectable;
-                    radio.addEventListener('change', () => { if (preview?.candidates.includes(item) && item.selectable && !locked() && !applying) { selected = item.candidateId; controls(); } }); card.appendChild(radio);
+                    radio.addEventListener('change', () => { if (preview?.candidates.includes(item) && item.selectable && !locked() && !applying) { selected = item.candidateId; controls(); renderSelectionPlan(); } }); card.appendChild(radio);
                 }
                 const body = element('span', undefined, 'resolution-candidate-body');
                 body.appendChild(element('strong', [safe(item.username), item.rowId].filter(Boolean).join(' · ')));
@@ -142,12 +166,17 @@
                     typeof item.disabled === 'boolean' ? t(item.disabled ? 'Deshabilitado' : 'Habilitado') : '',
                     typeof item.dynamic === 'boolean' ? t(item.dynamic ? 'Dinámico' : 'Estático') : ''].filter(Boolean);
                 if (details.length) body.appendChild(element('small', details.join(' · ')));
+                if (requiresSelection()) {
+                    if (item.ownerServiceId === serviceId && item.ownerClientId === preview.clientId) body.appendChild(element('small', t('Vinculada a este servicio')));
+                    else if (item.ownerServiceId === null && item.ownerClientId === null) body.appendChild(element('small', t('Sin vínculo de servicio en el comentario')));
+                }
                 if (safe(item.comment)) body.appendChild(element('small', safe(item.comment)));
                 if (positive(item.ownerServiceId)) body.appendChild(crmLink('Servicio #{id}', 'service', item.ownerServiceId));
                 if (positive(item.ownerClientId)) body.appendChild(crmLink('Cliente #{id}', 'client', item.ownerClientId));
                 if (item.reason) body.appendChild(element('small', reason(item.reason)));
                 card.appendChild(body); candidates.appendChild(card);
             }
+            if (requiresSelection()) { selectionPlan = element('div', undefined, 'form-note'); candidates.appendChild(selectionPlan); renderSelectionPlan(); }
         }
         if (outcome) {
             const text = outcome.state === 'resolved' ? t('Resuelto y verificado') : outcome.state === 'pending' ? t('Pendiente; revisa el trabajo del servicio.')

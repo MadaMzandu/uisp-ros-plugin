@@ -53,12 +53,42 @@ try{
     $services[41]=evidenceHttp(404);$catalog=[$target];evidenceCheck($api->inspect(42)['eligible'],'Authenticated exact404 did not allow obsolete marker repair');
     foreach([403,429,500]as$status){$services[41]=evidenceHttp($status);evidenceCheck(!$api->inspect(42)['eligible'],'Unknown old service API status permitted stealing');}
     $services[41]=new RuntimeException('404 PRIVATE-TEXT');evidenceCheck(!$api->inspect(42)['eligible'],'Text404 was accepted as authenticated absence');$services[41]=$entity(41,99,2);
-    // A manual single row needs explicit selection; a manual duplicate is never automatically removed.
+    // A manual singleton needs selection. Manual extras require a reviewed exact current owner and matching PPP identity.
     $rows[0]['comment']='Manually created';$manual=$api->inspect(42);
     evidenceCheck($manual['eligible']&&!$manual['autoApply']&&$manual['mode']==='select_account'&&$manual['choices'][0]['selectable'],'Manual singleton did not require explicit account selection');
     $rows[]=['.id'=>'*B','name'=>'fixture-user','comment'=>'17 - Fresh Customer - 42','remote-address'=>'192.0.2.7'];
     $mixed=$api->inspect(42);evidenceCheck($mixed['choices'][0]['selectable']&&$mixed['choices'][0]['removeRowIds']===['*B']&&!$mixed['choices'][1]['selectable'],
         'Manual duplicate was removed as an extra or safe selected/manual plan was lost');
+    $mixedRows=$rows;$rows[0]['remote-address']='192.0.2.7/32';$reviewed=$api->inspect(42);
+    evidenceCheck($reviewed['mode']==='select_account'&&!$reviewed['autoApply']&&$reviewed['defaultRowId']===null
+        &&$reviewed['choices'][1]['selectable']&&$reviewed['choices'][1]['removeRowIds']===['*A']
+        &&$reviewed['choices'][1]['manualDuplicateRowIds']===['*A'],
+        'The exact current owned PPP account could not retain its matching manual duplicate for reviewed removal');
+    $publicOwned=$reviewed['public']['candidates'][1];
+    evidenceCheck($publicOwned['removeRowIds']===['*A']&&$publicOwned['manualDuplicateRowIds']===['*A']
+        &&$reviewed['public']['candidates'][0]['removeRowIds']===['*B']&&$reviewed['public']['candidates'][0]['manualDuplicateRowIds']===[],
+        'The public candidate did not identify the exact reviewed removal plan');
+    foreach(['','pool-name','192.0.2.8','192.0.2.7/24']as$invalidAddress){
+        $rows[0]['remote-address']=$invalidAddress;$blocked=$api->inspect(42);
+        evidenceCheck(!$blocked['choices'][1]['selectable']&&$blocked['choices'][1]['removeRowIds']===[]
+            &&$blocked['choices'][1]['manualDuplicateRowIds']===[]&&$blocked['public']['candidates'][1]['removeRowIds']===[],
+            'A manual PPP extra with differing or unverified IPv4 was approved for removal');
+    }
+    $rows[0]['remote-address']='192.0.2.7';
+    foreach([['caller-id','02:00:00:00:00:41','02:00:00:00:00:42'],['service','pptp','pppoe'],
+        ['remote-ipv6-prefix','2001:db8:41::/64','2001:db8:42::/64']]as[$field,$manualValue,$ownedValue]){
+        $rows[0][$field]=$manualValue;$rows[1][$field]=$ownedValue;$blocked=$api->inspect(42);
+        evidenceCheck(!$blocked['choices'][1]['selectable'],'A conflicting '.$field.' authorized manual PPP duplicate removal');
+        unset($rows[0][$field],$rows[1][$field]);
+    }
+    $rows[0]['service']='any';$rows[1]['service']='pppoe';$rows[1]['caller-id']='02:00:00:00:00:42';
+    evidenceCheck($api->inspect(42)['choices'][1]['selectable'],'A wildcard PPP service or missing caller constraint falsely contradicted its owned account');
+    unset($rows[0]['service'],$rows[1]['service'],$rows[1]['caller-id']);
+    $rows[1]['comment']='99 - Former customer - 41';
+    evidenceCheck(!$api->inspect(42)['choices'][1]['selectable'],'A retired/disjoint owner marker authorized removal of a manual extra');
+    $rows[1]['comment']='17 - Fresh Customer - 42';$rows[0]['comment']='99 - Another current customer - 41';$services[41]=$entity(41,99,1);
+    evidenceCheck(!$api->inspect(42)['eligible'],'A live foreign owner was reclassified as a removable manual PPP duplicate');$services[41]=$entity(41,99,2);
+    $rows=$mixedRows;
     $rows[0]['comment']='17 - Fresh Customer - 42';$duplicates=$api->inspect(42);
     evidenceCheck($duplicates['mode']==='select_account'&&!$duplicates['autoApply']&&count(array_filter($duplicates['choices'],static fn($choice)=>$choice['selectable']))===2,
         'Duplicate owned rows were silently reduced to the first match');
@@ -133,6 +163,9 @@ try{
         ['.id'=>'*B','mac-address'=>'02:00:00:00:00:42','comment'=>'17 - Fresh Customer - 42','server'=>'lan-b','address'=>'192.0.2.8']];
     $servers=$api->inspect(42);evidenceCheck(!$servers['eligible']&&$servers['reason']==='resolution_dhcp_server_ambiguous','Different DHCP servers were merged into one identity');
     $rows[1]['server']='lan-a';evidenceCheck($api->inspect(42)['eligible'],'Exact same-server owned DHCP duplicates could not be reviewed');
+    $ownedDhcpRows=$rows;$rows[1]['comment']='Manual DHCP';$rows[1]['address']=$rows[0]['address'];$manualDhcp=$api->inspect(42);
+    evidenceCheck(!$manualDhcp['choices'][0]['selectable']&&$manualDhcp['choices'][0]['removeRowIds']===[]
+        &&$manualDhcp['choices'][0]['manualDuplicateRowIds']===[],'PPP manual duplicate approval was extended to DHCP');$rows=$ownedDhcpRows;
     $rows=array_slice($rows,0,1);$queueRows=[['.id'=>'*C','name'=>'Fresh Customer - 42','comment'=>'17 - Fresh Customer - 42','target'=>'192.0.2.7/32'],
         ['.id'=>'*D','name'=>'Fresh Customer - 42','comment'=>'17 - Fresh Customer - 42','target'=>'192.0.2.8/32']];
     $queues=$api->inspect(42);evidenceCheck($queues['eligible']&&$queues['derivedRepairs'][0]['removeRowIds']===['*D']&&$queues['derivedRepairs'][0]['keepRowId']==='*C',

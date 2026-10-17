@@ -196,6 +196,47 @@ try{
     foreach($queue->selectionStatus($oldKeys)as$old)resolutionCheck(in_array($old['state'],['cancelled','cleaned'],true)&&$old['attempts']===0,'Real repair executed a stale prepared update');
     $native=array_slice($GLOBALS['resolutionNativeWrites'],$nativeStart);resolutionCheck((bool)array_filter($native,static fn($row)=>$row[0]==='ppp/secret'&&in_array($row[1],['set','add'],true)), 'Default repair never reached real MT account writes');
     resolutionCheck($queue->completed($result['jobKeys']),'Default repair left its normal queue job incomplete');
+    // An exact-principal manual duplicate must not force the administrator to
+    // discard the account that already has the correct current owner.
+    $owned=$router['ppp/secret'][0];$manual=array_replace($owned,['.id'=>'*A3','comment'=>'','profile'=>'Manual Fixture Profile','password'=>'PRIVATE-MANUAL-PASSWORD']);
+    $router['ppp/secret'][]=$manual;$preview=$real->preview(42);
+    $ownedCandidate=array_values(array_filter($preview['candidates'],static fn($candidate)=>$candidate['rowId']===$owned['.id']))[0];
+    resolutionCheck($preview['eligible']&&$preview['mode']==='select_account'&&!$preview['autoApply']&&$ownedCandidate['selectable']
+        &&$ownedCandidate['removeRowIds']===['*A3']&&$ownedCandidate['manualDuplicateRowIds']===['*A3'],
+        'A manual duplicate prevented selecting the correctly owned account: '.json_encode($preview));
+    $beforeRows=$router['ppp/secret'];$nativeStart=count($GLOBALS['resolutionNativeWrites']);$repairStart=count($writes);$backupStart=count(glob('data/router-resolution-*.json'));
+    $result=$real->apply($preview['previewToken']);
+    resolutionCheck($result['state']==='blocked'&&$result['reason']==='resolution_selection_required'&&$router['ppp/secret']===$beforeRows
+        &&count($GLOBALS['resolutionNativeWrites'])===$nativeStart&&count($writes)===$repairStart&&count(glob('data/router-resolution-*.json'))===$backupStart,
+        'Manual duplicate removal ran without an explicit account choice');
+    $preview=$real->preview(42);$ownedCandidate=array_values(array_filter($preview['candidates'],static fn($candidate)=>$candidate['rowId']===$owned['.id']))[0];
+    $router['ppp/secret'][1]['profile']='Changed After Review';$changedRows=$router['ppp/secret'];
+    $result=$real->apply($preview['previewToken'],[$ownedCandidate['candidateId']]);
+    resolutionCheck($result['state']==='blocked'&&$result['reason']==='resolution_changed'&&$router['ppp/secret']===$changedRows
+        &&count($GLOBALS['resolutionNativeWrites'])===$nativeStart&&count($writes)===$repairStart&&count(glob('data/router-resolution-*.json'))===$backupStart,
+        'A stale review deleted or changed a subsequently edited manual duplicate');
+    $router['ppp/secret'][1]=$manual;unset($router['ppp/secret'][1]['password']);
+    $preview=$real->preview(42);$ownedCandidate=array_values(array_filter($preview['candidates'],static fn($candidate)=>$candidate['rowId']===$owned['.id']))[0];
+    $result=$real->apply($preview['previewToken'],[$ownedCandidate['candidateId']]);
+    resolutionCheck($result['state']==='blocked'&&$result['reason']==='resolution_backup_unavailable'&&count($router['ppp/secret'])===2
+        &&count($GLOBALS['resolutionNativeWrites'])===$nativeStart&&count($writes)===$repairStart&&count(glob('data/router-resolution-*.json'))===$backupStart,
+        'An unreadable manual duplicate secret bypassed the restorable-backup requirement');
+    $router['ppp/secret'][1]=$manual;$preview=$real->preview(42);
+    $ownedCandidate=array_values(array_filter($preview['candidates'],static fn($candidate)=>$candidate['rowId']===$owned['.id']))[0];
+    $result=$real->apply($preview['previewToken'],[$ownedCandidate['candidateId']]);
+    resolutionCheck($result['state']==='resolved'&&$result['verificationState']==='verified'&&$queue->completed($result['jobKeys'])
+        &&count($router['ppp/secret'])===1&&$router['ppp/secret'][0]['.id']===$owned['.id']
+        &&$router['ppp/secret'][0]['comment']==='17 - Fixture Customer - 42'&&$router['ppp/secret'][0]['password']===$owned['password'],
+        'Explicit manual-duplicate removal did not retain and verify the correctly owned account: '.json_encode($result));
+    resolutionCheck(array_slice($writes,$repairStart)===[['ppp/secret','remove','*A3',[]]],
+        'Manual duplicate resolution edited the retained account or removed an unexpected row');
+    $backup=json_decode(file_get_contents('data/'.$result['backupName']),true);
+    resolutionCheck($backup['selectedRowId']===$owned['.id']&&$backup['removedRowIds']===['*A3']&&count($backup['rows'])===2
+        &&$backup['rows'][0]['password']===$owned['password']&&$backup['rows'][1]['password']==='PRIVATE-MANUAL-PASSWORD'
+        &&$backup['rows'][1]['comment']===''&&$backup['rows'][1]['profile']==='Manual Fixture Profile',
+        'Manual duplicate removal did not preserve both complete prior account configurations privately');
+    resolutionCheck(strpos(json_encode($preview),'PRIVATE')===false&&strpos(json_encode($result),'PRIVATE')===false,
+        'Manual duplicate review or outcome disclosed private credentials');
     // Clearing a mistaken connection in a still-current service must release
     // its historical identity claim without applying or deleting that service.
     // The absent router account is recreated through the ordinary action,

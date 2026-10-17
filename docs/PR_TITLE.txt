@@ -1,1 +1,1 @@
-Fix resolving absent RouterOS accounts after clearing duplicate ownership
+Fix keeping the linked PPP account when resolving manual duplicates

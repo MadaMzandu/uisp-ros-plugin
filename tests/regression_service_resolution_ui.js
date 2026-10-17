@@ -32,7 +32,7 @@ function fixture() {
     const document = { documentElement: {}, getElementById(id) { if (!nodes.has(id)) nodes.set(id, new Element()); return nodes.get(id); },
         querySelectorAll() { return []; }, createElement(tag) { return new Element(tag); },
         addEventListener(name, work) { if (!events.has(name)) events.set(name, []); events.get(name).push(work); } };
-    const context = vm.createContext({ document, URL, Date, window: { location: { href: 'https://fixture.invalid/crm/_plugins/ros-plugin/public.php?page=panel' } },
+    const context = vm.createContext({ document, URL, Date, location: { href: 'https://fixture.invalid/crm/_plugins/ros-plugin/public.php?page=panel' },
         localStorage: { getItem() { return null; } },
         async fetch(endpoint, options) {
             const payload = JSON.parse(options.body); requests.push(payload);
@@ -40,14 +40,47 @@ function fixture() {
             const response = await work(payload.data, payload);
             return { ok: true, status: 200, json: async () => response };
         } });
+    context.window = context;
     for (const file of ['i18n.js', 'api.js', 'service_resolution.js']) vm.runInContext(fs.readFileSync(path.join(panel, file), 'utf8'), context);
     const api = vm.runInContext('api', context), ui = context.PanelServiceResolution;
     ui.mount({ api, notify(...args) { notifications.push(args); }, navigate(...args) { navigated.push(args); }, reviewJob(...args) { reviewed.push(args); }, onApplied(value) { applied.push(value); } });
     routes.set('service_resolution/preview', () => envelope(preview())); routes.set('service_resolution/apply', () => envelope(outcome()));
-    return { api, ui, nodes, requests, routes, notifications, applied, navigated, reviewed,
+    return { api, ui, i18n: context.PanelI18n, nodes, requests, routes, notifications, applied, navigated, reviewed,
         node: id => document.getElementById(id),
         async mutation(active) { for (const callback of api.mutationListeners) callback(active); await settle(); },
         async escape() { for (const callback of events.get('keydown') || []) callback({ key: 'Escape' }); await settle(); } };
+}
+async function ownedAccountWithManualDuplicate() {
+    const ui = fixture();
+    const current = candidate({ profile: 'Current plan', removeRowIds: ['*2'], manualDuplicateRowIds: ['*2'] });
+    const manual = candidate({ candidateId: otherId, rowId: '*2', ownerServiceId: null, ownerClientId: null,
+        profile: 'Former plan', comment: attack, removeRowIds: ['*1'], manualDuplicateRowIds: [] });
+    ui.routes.set('service_resolution/preview', () => envelope(preview({ mode: 'select_account', autoApply: false,
+        reason: 'resolution_select_account', candidates: [current, manual] })));
+    await ui.ui.resolveService(42);
+    const candidates = ui.node('service-resolution-candidates');
+    let radios = candidates.querySelectorAll('input');
+    assert.equal(ui.requests.length, 1, 'Owned/manual duplicates were applied without review');
+    assert(radios.every(item => !item.checked && !item.disabled), 'The current owned account could not be explicitly selected');
+    assert(candidates.textContent.includes('plan vigente en UISP') && candidates.textContent.includes('Vinculada a este servicio')
+        && candidates.textContent.includes('Sin vínculo de servicio en el comentario'), 'Record ownership and final plan were not explained');
+    await radios[0].emit('change');
+    let plan = candidates.children.at(-1).textContent;
+    assert(plan.includes('Se conservará el registro *1.') && plan.includes('*2 · Former plan · Duplicado sin vínculo de servicio')
+        && plan.includes('respaldo'), 'Keeping the owned account did not show the exact manual duplicate to remove');
+    assert(radios[0].checked && !radios[1].checked && !ui.node('service-resolution-apply').disabled);
+    await radios[1].emit('change');
+    plan = candidates.children.at(-1).textContent;
+    assert(plan.includes('Se conservará el registro *2.') && plan.includes('*1 · Current plan') && !plan.includes('Duplicado sin vínculo'),
+        'Changing the survivor left the former removal plan on screen');
+    ui.i18n.setLanguage('en');
+    assert(candidates.children.at(-1).textContent.includes('Record *2 will be kept.'), 'Language change lost or mistranslated the selected plan');
+    radios = candidates.querySelectorAll('input'); await radios[0].emit('change');
+    ui.routes.set('service_resolution/apply', data => {
+        assert.deepEqual(JSON.parse(JSON.stringify(data.selection)), [candidateId]); return envelope(outcome());
+    });
+    await ui.node('service-resolution-apply').emit('click');
+    assert.equal(ui.requests.filter(item => item.action === 'apply').length, 1);
 }
 async function automaticAndManualResolution() {
     const direct = fixture(), backupName = 'router-resolution-20261016T010000Z-' + 'd'.repeat(16) + '.json';
@@ -120,7 +153,10 @@ async function staleReadsAndUncertainWrites() {
 async function validationAndGuards() {
     for (const overrides of [{ serviceId: 99 }, { previewToken: attack }, { expiresAt: 'invalid' }, { expiresAt: '2020-01-01T00:00:00Z' },
         { candidates: [candidate({ candidateId: attack })] }, { candidates: [candidate({ rowId: 'all' })] }, { candidates: [candidate({ path: '/system/reset-configuration' })] },
-        { candidates: [candidate(), candidate()] }, { mode: 'blocked', eligible: true }]) {
+        { candidates: [candidate(), candidate()] }, { mode: 'blocked', eligible: true },
+        { candidates: [candidate({ removeRowIds: ['*9'] })] }, { candidates: [candidate({ removeRowIds: ['*1'] })] },
+        { candidates: [candidate({ removeRowIds: [], manualDuplicateRowIds: ['*2'] }), candidate({ candidateId: otherId, rowId: '*2' })] },
+        { candidates: [candidate({ removeRowIds: ['*2', '*2'] }), candidate({ candidateId: otherId, rowId: '*2' })] }]) {
         const ui = fixture(); ui.routes.set('service_resolution/preview', () => envelope(preview(overrides))); await ui.ui.resolveService(42);
         assert.equal(ui.requests.filter(item => item.action === 'apply').length, 0, 'A malformed preview could apply');
     }
@@ -146,6 +182,6 @@ async function validationAndGuards() {
     assert.equal(blocked.node('service-resolution-apply').disabled, true);
 }
 (async () => {
-    await automaticAndManualResolution(); await staleReadsAndUncertainWrites(); await validationAndGuards();
+    await automaticAndManualResolution(); await ownedAccountWithManualDuplicate(); await staleReadsAndUncertainWrites(); await validationAndGuards();
     console.log('Service resolution UI passed: one-click proven repair, explicit ambiguous selection, protected owners, safe text, no credential display, consumed uncertain writes, fresh manual retries, races and recovery/restore guards.');
 })().catch(error => { console.error(error); process.exitCode = 1; });

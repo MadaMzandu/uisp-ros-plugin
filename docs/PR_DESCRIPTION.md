@@ -1,10 +1,18 @@
 ## Summary
 
-Candidate **2.4.42** fixes Resolve rejecting RouterOS empty-query responses after an account was removed. A verified absent account can be recreated through immediate synchronization. Freshly cleared connection attributes also supersede historical ownership claims, while current duplicate owners and unverified evidence remain protected.
+Candidate **2.4.43** fixes duplicate resolution forcing the operator to keep an unlinked manual PPP row instead of the correctly linked account. The linked row is now selectable for an exact same-user/same-IPv4 manual duplicate, with explicit keep/remove IDs, full backups, fresh checks and normal verified provisioning. Conflicting current owners and ambiguous identities remain protected.
 
 The cumulative changes include the panel work from [PR #89](https://github.com/MadaMzandu/uisp-ros-plugin/pull/89), durable provisioning, webhook handling and recovery tools. Provisioning uses the native RouterOS API with optional TLS.
 
 **The full English changelog and webhook setup guide are included below, not only linked.** Historical entries identify behavior superseded by later revisions; the summary describes the current implementation.
+
+## Candidate 2.4.43: keep the linked account when resolving PPP duplicates
+
+Fix an asymmetric Resolve rule: with an account linked to the current service and another without a service identifier in its comment, only the latter could be kept because the former had proven removable ownership. The linked account can now also be retained while removing the manual duplicate when both PPP records have the exact same username and concrete IPv4 address. The retained row must identify the current client and service in its comment; the complete current catalog, local claims and exact router rows are rechecked. Different profiles do not prevent reviewing the duplicate. Contradictory IP, Caller ID, PPP service type or IPv6 values, a different current owner, DHCP duplicates and entirely manual duplicates retain their protections.
+
+No account is selected automatically. The panel distinguishes linked and unlinked records, shows the exact row IDs to keep and remove as the selection changes, and explains that the final profile follows the current UISP plan. Selecting a record does not choose its old package as desired configuration. Both full configurations are backed up before removal and the exact extra row is reread; a missing password in the backup or changed review prevents deletion. Normal provisioning and real verification follow the repair. UI copy covers all six panel languages and asset versions prevent reusing the previous JavaScript.
+
+Validation for 2.4.43 passed: **68 isolated suites**, syntax checks for **69 first-party PHP files**, 384 archive entries, 151 first-party files and 13 locked dependencies. Report: `dist/verification-2.4.43.json`. SHA-256: `d3a4d920e00202099b08936cee956c56d19d985b319a0f45b70e93236e970987`. The report preserves the initial assertion expecting the previous asset revision and its revalidation against the identical ZIP. Synthetic visual checks cover desktop/mobile, Spanish/English and light/dark themes; no production UISP or RouterOS changes were performed.
 
 ## Candidate 2.4.42: resolve absent accounts after removing a duplicate
 
@@ -310,6 +318,8 @@ An explicit **Allow webhooks without a secret (compatibility)** checkbox preserv
 
 ## Validation and scope
 
+Validation for 2.4.43 passed: **68 isolated suites**, syntax checks for **69 first-party PHP files**, 384 archive entries, 151 first-party files and 13 locked dependencies. Report: `dist/verification-2.4.43.json`. SHA-256: `d3a4d920e00202099b08936cee956c56d19d985b319a0f45b70e93236e970987`. The report preserves the initial assertion expecting the previous asset revision and its revalidation against the identical ZIP. Synthetic visual checks cover desktop/mobile, Spanish/English and light/dark themes; no production UISP or RouterOS changes were performed.
+
 Validation for 2.4.42 passed: **68 isolated suites**, syntax checks for **69 first-party PHP files**, and 384 verified archive entries, with 151 first-party files and 13 locked dependencies. Report: `dist/verification-2.4.42.json`. SHA-256: `b68bad21531310fe071a1581c57716e0ca472f88ef5a2dd0ccd507d0a2aa4e3c`. Coverage includes binary RouterOS replies over local sockets and account creation/readback through the normal queue; no production UISP or RouterOS changes were performed.
 
 Validation for 2.4.41 passed: **67 isolated suites**, syntax checks for **69 first-party PHP files**, and 384 verified archive entries. Report: `dist/verification-2.4.41.json`. SHA-256: `4d1c0aa46a22609ee5724b3d031cc3bfee84492a86f9ecc224ab5bc98b0501ae`. Tests use synthetic data; no production UISP or RouterOS changes were performed.
@@ -476,9 +486,17 @@ Check the relevant RouterOS logging topics and the actual profile/session state.
 
 [Español](docs/MEJORAS.md) · [PR description](docs/PR_DESCRIPTION.md) · [Webhook setup and rationale](docs/WEBHOOK_SETUP_EN.md)
 
-This revision combines [dhanielsnieto's changes in PR #89](https://github.com/MadaMzandu/uisp-ros-plugin/pull/89) with the subsequent fixes prepared in this repository. The comparison starts at `7ca8dc8`; the original PR ends at `056b89f`. The current candidate is **2.4.42**. The operator confirmed archived-plan speed recovery in their 2.4.19 installation. That confirmation covers this historical scenario; the remaining UISP and RouterOS integration scenarios still require their own checks before production readiness can be established.
+This revision combines [dhanielsnieto's changes in PR #89](https://github.com/MadaMzandu/uisp-ros-plugin/pull/89) with the subsequent fixes prepared in this repository. The comparison starts at `7ca8dc8`; the original PR ends at `056b89f`. The current candidate is **2.4.43**. The operator confirmed archived-plan speed recovery in their 2.4.19 installation. That confirmation covers this historical scenario; the remaining UISP and RouterOS integration scenarios still require their own checks before production readiness can be established.
 
 The plugin connects UISP CRM to MikroTik through the **native RouterOS API**, normally on port `8728`, or `8729` with TLS. The panel manages that integration; it does not switch the transport to SSH, WinBox, or REST.
+
+## Candidate 2.4.43: keep the linked account when resolving PPP duplicates
+
+Fix an asymmetric Resolve rule: with an account linked to the current service and another without a service identifier in its comment, only the latter could be kept because the former had proven removable ownership. The linked account can now also be retained while removing the manual duplicate when both PPP records have the exact same username and concrete IPv4 address. The retained row must identify the current client and service in its comment; the complete current catalog, local claims and exact router rows are rechecked. Different profiles do not prevent reviewing the duplicate. Contradictory IP, Caller ID, PPP service type or IPv6 values, a different current owner, DHCP duplicates and entirely manual duplicates retain their protections.
+
+No account is selected automatically. The panel distinguishes linked and unlinked records, shows the exact row IDs to keep and remove as the selection changes, and explains that the final profile follows the current UISP plan. Selecting a record does not choose its old package as desired configuration. Both full configurations are backed up before removal and the exact extra row is reread; a missing password in the backup or changed review prevents deletion. Normal provisioning and real verification follow the repair. UI copy covers all six panel languages and asset versions prevent reusing the previous JavaScript.
+
+Validation for 2.4.43 passed: **68 isolated suites**, syntax checks for **69 first-party PHP files**, 384 archive entries, 151 first-party files and 13 locked dependencies. Report: `dist/verification-2.4.43.json`. SHA-256: `d3a4d920e00202099b08936cee956c56d19d985b319a0f45b70e93236e970987`. The report preserves the initial assertion expecting the previous asset revision and its revalidation against the identical ZIP. Synthetic visual checks cover desktop/mobile, Spanish/English and light/dark themes; no production UISP or RouterOS changes were performed.
 
 ## Candidate 2.4.42: resolve absent accounts after removing a duplicate
 

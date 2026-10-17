@@ -4,6 +4,13 @@
     const codes = ['es', 'en', 'pt', 'fr', 'de', 'it'];
     const names = { es: 'Español', en: 'English', pt: 'Português', fr: 'Français', de: 'Deutsch', it: 'Italiano' };
     const entries = [
+        ['Elige la cuenta que se conservará. El perfil se aplicará según el plan vigente en UISP.', 'Choose the account to keep. Its profile will follow the current plan in UISP.', 'Escolha a conta a manter. O perfil seguirá o plano atual no UISP.', 'Choisissez le compte à conserver. Son profil suivra le forfait actuel dans UISP.', 'Wählen Sie das Konto, das erhalten bleibt. Sein Profil folgt dem aktuellen Tarif in UISP.', 'Scegli l’account da conservare. Il profilo seguirà il piano attuale in UISP.'],
+        ['Vinculada a este servicio', 'Linked to this service', 'Vinculada a este serviço', 'Lié à ce service', 'Mit diesem Dienst verknüpft', 'Collegato a questo servizio'],
+        ['Sin vínculo de servicio en el comentario', 'No service link in the comment', 'Sem vínculo de serviço no comentário', 'Aucun lien de service dans le commentaire', 'Keine Dienstzuordnung im Kommentar', 'Nessun collegamento al servizio nel commento'],
+        ['Se conservará el registro {id}.', 'Record {id} will be kept.', 'O registro {id} será mantido.', 'L’enregistrement {id} sera conservé.', 'Datensatz {id} bleibt erhalten.', 'Il record {id} verrà conservato.'],
+        ['Se retirarán estos registros:', 'These records will be removed:', 'Estes registros serão removidos:', 'Ces enregistrements seront supprimés :', 'Diese Datensätze werden entfernt:', 'Questi record verranno rimossi:'],
+        ['Duplicado sin vínculo de servicio', 'Duplicate without a service link', 'Duplicado sem vínculo de serviço', 'Doublon sans lien de service', 'Duplikat ohne Dienstzuordnung', 'Duplicato senza collegamento al servizio'],
+        ['Se guardará un respaldo antes de retirarlos.', 'A backup will be saved before removing them.', 'Um backup será salvo antes da remoção.', 'Une sauvegarde sera enregistrée avant leur suppression.', 'Vor dem Entfernen wird eine Sicherung gespeichert.', 'Verrà salvato un backup prima di rimuoverli.'],
         ['Resolver', 'Resolve', 'Resolver', 'Résoudre', 'Beheben', 'Risolvi'],
         ['Resolver y sincronizar', 'Resolve and synchronize', 'Resolver e sincronizar', 'Résoudre et synchroniser', 'Beheben und synchronisieren', 'Risolvi e sincronizza'],
         ['Actualizar revisión', 'Refresh review', 'Atualizar revisão', 'Actualiser la vérification', 'Prüfung aktualisieren', 'Aggiorna verifica'],
