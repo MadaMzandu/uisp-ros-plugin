@@ -80,12 +80,30 @@ try {
     // Managed profiles may survive a display rename under an ownership selector.
     $changed=$snapshot; $changed['_commands'][]=['path'=>'/ppp/profile','name'=>'fixture-profile','_owner'=>'uisp-ros-plugin:plan:5'];
     $profileReader=static function(array $router,string $path,array $filter) use($reader):array {
-        if ($path==='ppp/profile' && isset($filter['comment'])) return [['.id'=>'*C']+$filter];
+        if (in_array($path,['ppp/profile','ip/hotspot/user/profile'],true) && isset($filter['comment'])) return [['.id'=>'*C']+$filter];
         return $reader($router,$path,$filter);
     };
     $result=(new ApiJobRecoveryObservation($data,$profileReader,$clock))->inspect([$changed]);
     recoveryObservationCheck(!$result['safe'] && $result['reason']==='router_resources_present'
         && in_array('owner',array_column($result['checks'],'selector_type'),true),'A renamed shared profile was inferred absent');
+    // A service override has a friendly display name, but recovery keeps the
+    // exact frozen name and both exact ownership selectors as independent checks.
+    foreach (['ppp/profile','ip/hotspot/user/profile'] as $profilePath) {
+        foreach (['Residential [Override S#701]','uisp-service-701-profile'] as $profileName) {
+            $changed=$snapshot;
+            $changed['_commands'][]=['path'=>'/'.$profilePath,'name'=>$profileName,
+                '_owner'=>'uisp-ros-plugin:service-profile:701'];
+            $calls=[];$result=$observer->inspect([$changed]);
+            recoveryObservationCheck($result['safe'] && array_slice($calls,-3) === [
+                [7,$profilePath,['name'=>$profileName]],
+                [7,$profilePath,['comment'=>'uisp-ros-plugin:service-profile:701']],
+                [7,$profilePath,['comment'=>'Servicio #701']],
+            ],'A friendly or historical private profile was broadened or redirected during observation');
+            $result=(new ApiJobRecoveryObservation($data,$profileReader,$clock))->inspect([$changed]);
+            recoveryObservationCheck(!$result['safe'] && $result['reason']==='router_resources_present',
+                'A private profile found by its exact ownership was inferred absent after a display rename');
+        }
+    }
     $changed=$snapshot; $changed['username']='fixture-hotspot'; $changed['_commands']=[['path'=>'/ip/hotspot/user','name'=>'fixture-hotspot']];
     $calls=[]; $result=$observer->inspect([$changed]);
     recoveryObservationCheck($result['safe'] && $calls[1][2]===['user'=>'fixture-hotspot'],'Hotspot active used the wrong exact field');

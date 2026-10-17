@@ -1,6 +1,6 @@
 ## Summary
 
-This PR brings the panel contributed in [PR #89](https://github.com/MadaMzandu/uisp-ros-plugin/pull/89) together with the provisioning, recovery and operational improvements developed since that baseline. Candidate **2.4.46** uses the native RouterOS API, with optional TLS, and makes service changes observable and recoverable through the same queue and ownership checks.
+This PR brings the panel contributed in [PR #89](https://github.com/MadaMzandu/uisp-ros-plugin/pull/89) together with the provisioning, recovery and operational improvements developed since that baseline. Candidate **2.4.47** uses the native RouterOS API, with optional TLS, and makes service changes observable and recoverable through the same queue and ownership checks.
 
 ## Resulting behavior
 
@@ -8,26 +8,36 @@ This PR brings the panel contributed in [PR #89](https://github.com/MadaMzandu/u
 - **Durable work and current billing state.** Persistent SQLite jobs retain deduplication, ordered per-service recovery, bounded retries, versions and maintenance exclusion. New webhooks read current UISP state rather than restoring an old event snapshot. Cancellation stops retries while retaining potentially applied resources until reviewed cleanup.
 - **Service diagnostics and explicit repair.** Search by service, client, username or IP, then compare UISP, expected policy and observed RouterOS state with job history. Resolve can repair a proven obsolete account marker, create an absent account or consolidate reviewed duplicates. Exact identities, current competing owners, fresh evidence, private backups and single-use permissions guard changes; ambiguous cases retain a specific explanation.
 - **Address lifecycle and Site changes.** Freshly confirmed ended services and archived clients retire obsolete intent and schedule guarded cleanup; addresses remain protected while physical resources might still exist. Suspension preserves assignments. Site pool replacement and cross-router moves prepare replacement capacity before cleanup, retain stable allocations across retries and preserve unrelated current owners.
-- **Per-service shaping.** UISP overrides use isolated PPP/Hotspot profiles or individual DHCP queues without changing the commercial plan or other subscribers. Burst, thresholds, guarantees and mixed-rate contention use effective service speeds, including unlimited directions. Removing an override restores the base profile and retires the unused owned private profile after reassignment.
+- **Per-service shaping.** UISP overrides use isolated PPP/Hotspot profiles or individual DHCP queues without changing the commercial plan or other subscribers. Customized profiles retain the base plan name with `[Override S#serviceId]`; verified legacy profiles are renamed in place, with no automatic reconnect for a display-only rename. Burst, thresholds, guarantees and mixed-rate contention use effective service speeds, including unlimited directions. Removing an override restores the base profile and retires the unused owned private profile after reassignment.
 - **Allocation-only IP exclusions.** Saving omitted IPv4/IPv6 addresses changes future automatic allocation without bulk provisioning, cache rebuilding or changes to existing assignments. This save preserves work already in the queue. Saves that also change per-service network settings retain their normal application behavior.
 - **Operational visibility and backups.** Automation health reports scheduled activity, webhook acceptance, retries and oldest pending work. Gradual difference review corrects only proven cases and leaves ambiguity on the affected service. Pool capacity separates free, assigned, retained and excluded space. Complete private backups include the queue and supported operational state, with reviewed restoration and a pre-restore copy.
 - **Compact daily operations.** Responsive Devices, Plans, Settings, Jobs, System and Diagnostics views share search, sorting, six languages and light/dark/system appearance. A notification center holds global notices and recent activity. Resolve shows its real phase, animation and elapsed time while retaining the account context.
 
 ## Validation and deployment
 
-Validation for 2.4.46 passed: **70 isolated suites**, syntax checks for **70 first-party PHP files**, 385 archive entries, 152 first-party files and 13 locked dependencies. Report: `dist/verification-2.4.46.json`. SHA-256: `92ad725203ac30f714121f2017b7dec06806ba51cf77e1c0db41eef6362386c4`. The new regression exercises the real panel save route, concurrent writers, unchanged prior work, IPv4/IPv6 reservations, future allocations and mixed settings. No production UISP or RouterOS changes were performed. The real-environment guide contains **293 cases**. Automated checks use synthetic data and simulated or local transports; they do not establish production validation.
+Validation for 2.4.47 passed: **70 isolated suites**, syntax checks for **70 first-party PHP files**, 385 archive entries, 152 first-party files and 13 locked dependencies. Report: `dist/verification-2.4.47.json`. SHA-256: `ce2dd9d9be4438346f051f2e1cc40958d1e815a192d1601d74cf400246599d59`. Coverage includes PPP/Hotspot, same-ID renames, historical retries, exact cleanup, no presentation-only reconnection and protection of manual profiles. No production UISP or RouterOS changes were performed. The real-environment guide contains **297 cases**. Synthetic results do not establish production integration.
 
 The package does not start a router-wide rebuild when installed. Existing overrides can be applied through explicit synchronization or enabled gradual review; subsequent override edits follow normal webhook processing. Existing pending jobs keep their own state rather than being cancelled by an exclusion-only save. Configuration confirmation establishes observed RouterOS properties, not subscriber Internet reachability. Remaining integration checks are documented in the real-environment guide.
 
-Administrative access and webhook authentication remain separate. Webhooks require a shared secret by default; compatibility without that extra secret check is an explicit option. The full setup guide follows the changelog.
+Administrative access and webhook authentication remain separate. Webhooks require a shared secret by default; compatibility without that extra secret check is an explicit option. Setup instructions and the complete history follow below.
 
-**The complete English changelog and webhook setup guide are included below.** Historical entries identify behavior superseded by later revisions.
+**The complete English changelog and webhook setup guide are included below.**
 
 ## Full English changelog
 
-This revision combines [dhanielsnieto's changes in PR #89](https://github.com/MadaMzandu/uisp-ros-plugin/pull/89) with the subsequent fixes prepared in this repository. The comparison starts at `7ca8dc8`; the original PR ends at `056b89f`. The current candidate is **2.4.46**. The operator confirmed archived-plan speed recovery in their 2.4.19 installation. That confirmation covers this historical scenario; the remaining UISP and RouterOS integration scenarios still require their own checks before production readiness can be established.
+This revision combines [dhanielsnieto's changes in PR #89](https://github.com/MadaMzandu/uisp-ros-plugin/pull/89) with the subsequent fixes prepared in this repository. The comparison starts at `7ca8dc8`; the original PR ends at `056b89f`. The current candidate is **2.4.47**. The operator confirmed archived-plan speed recovery in their 2.4.19 installation. That confirmation covers this historical scenario; the remaining UISP and RouterOS integration scenarios still require their own checks before production readiness can be established.
 
 The plugin connects UISP CRM to MikroTik through the **native RouterOS API**, normally on port `8728`, or `8729` with TLS. The panel manages that integration; it does not switch the transport to SSH, WinBox, or REST.
+
+## Candidate 2.4.47: override profiles retain the base plan name
+
+Customized PPP/Hotspot profiles retain the primary plan name with a visible override and service marker: `Residential [20Mb] [Override S#11389]`. Internal ownership remains service-specific. Shared plan profiles keep their current format, and historical snapshots without a plan name retain a stable fallback.
+
+Migration renames the same verified owned RouterOS object rather than creating a duplicate or retiring its previous display name as a separate resource. A base-plan display rename alone does not add an automatic reconnection. Effective rates, burst, contention and addresses retain their policy. Legacy names remain recognized for prepared retries, previews and recovery. Historical removals keep their exact frozen name and cannot redirect to a renamed object; turning off the override can retire the new readable profile name, subject to actual dependencies.
+
+Profile comments keep their existing `Plan #…` and `Servicio #…` labels independently of the panel language. Plan names come from UISP. Foreign profiles, reserved-name collisions, malformed service markers and ambiguous owners remain protected.
+
+Validation for 2.4.47 passed: **70 isolated suites**, syntax checks for **70 first-party PHP files**, 385 archive entries, 152 first-party files and 13 locked dependencies. Report: `dist/verification-2.4.47.json`. SHA-256: `ce2dd9d9be4438346f051f2e1cc40958d1e815a192d1601d74cf400246599d59`. Coverage includes PPP/Hotspot, same-ID renames, historical retries, exact cleanup, no presentation-only reconnection and protection of manual profiles. No production UISP or RouterOS changes were performed.
 
 ## Candidate 2.4.46: exclusions affect future allocations only
 
@@ -604,7 +614,7 @@ Later production evidence identified missing tokens and a URL pasted as the secr
 
 ## Installation and validation readiness
 
-The current version is 2.4.46. Its validation status appears at the beginning of this changelog. Archived-plan recovery confirmation belongs to 2.4.19 and retains its historical scope. Fresh lifecycle evidence retires obsolete intent and queues guarded removal before releasing physically owned addresses. Unknown evidence remains an incident for that service. The separate local-cleanup review retains its limited scope and private backup. A duplicate-reservation migration barrier still requires resolving stored assignments and reloading. Backups remain downloadable from System. The [real-environment test guide](docs/PRUEBAS_REALES.md) contains 293 scenarios and does not claim production validation.
+The current version is 2.4.47. Its validation status appears at the beginning of this changelog. Archived-plan recovery confirmation belongs to 2.4.19 and retains its historical scope. Fresh lifecycle evidence retires obsolete intent and queues guarded removal before releasing physically owned addresses. Unknown evidence remains an incident for that service. The separate local-cleanup review retains its limited scope and private backup. A duplicate-reservation migration barrier still requires resolving stored assignments and reloading. Backups remain downloadable from System. The [real-environment test guide](docs/PRUEBAS_REALES.md) contains 297 scenarios and does not claim production validation.
 
 ### Historical 2.4.17 result
 

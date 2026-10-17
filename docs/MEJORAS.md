@@ -6,6 +6,16 @@ Esta revisión reúne las modificaciones de [dhanielsnieto en el PR #89](https:/
 
 El plugin comunica UISP CRM con los MikroTik mediante la **API nativa de RouterOS**. Los puertos habituales son `8728` para API y `8729` para API con TLS. El panel permite administrar esa integración; no cambia el transporte a SSH, WinBox o REST.
 
+## Candidato 2.4.47 — perfiles de override con el nombre del plan
+
+Los perfiles PPPoE y Hotspot personalizados conservan el nombre del plan principal y añaden un indicador y el ID del servicio: `Plan Residencial [20Mb] [Override S#11389]`. La identificación interna sigue siendo exclusiva del servicio. Los perfiles de planes compartidos mantienen su formato actual y los snapshots históricos sin un nombre de plan conservan su alternativa estable.
+
+Al actualizar un perfil existente se renombra el mismo objeto de RouterOS después de comprobar su propiedad; no se crea un segundo perfil ni se retira el anterior como si fuera otro recurso. Cambiar sólo el nombre del plan no añade una reconexión automática por diferencias de presentación. Las velocidades, burst, contención y direcciones conservan su política efectiva. Los nombres antiguos siguen reconocidos en reintentos, revisiones y recuperaciones; una eliminación histórica conserva su nombre exacto y no se redirige al objeto renombrado. Al quitar el override se puede retirar el perfil personalizado con su nombre nuevo, sujeto a las dependencias reales.
+
+Las etiquetas de comentario de perfiles `Plan #…` y `Servicio #…` conservan su formato actual y no dependen del idioma del panel. El nombre del plan procede de UISP. Los perfiles manuales, las colisiones de nombre y los propietarios ambiguos mantienen sus protecciones.
+
+Validación 2.4.47 aprobada: **70 suites aisladas**, sintaxis de **70 archivos PHP propios**, 385 entradas del instalador, 152 archivos propios y 13 dependencias fijadas. Informe: `dist/verification-2.4.47.json`. SHA-256: `ce2dd9d9be4438346f051f2e1cc40958d1e815a192d1601d74cf400246599d59`. Las pruebas cubren PPP/Hotspot, renombrado con el mismo ID, reintentos históricos, limpieza exacta, ausencia de reconexiones por presentación y protección de perfiles manuales. No se modificaron UISP ni RouterOS de producción.
+
 ## Candidato 2.4.46 — exclusiones para futuras asignaciones
 
 Guardar únicamente las IP omitidas del pool deja de solicitar la reaplicación de todos los servicios. Tampoco drena las solicitudes pendientes de cambios de red anteriores: devuelve cero trabajos generados por ese guardado. Las exclusiones se usan al elegir nuevas direcciones automáticas; las IP actuales, las asignaciones manuales y las reservas existentes conservan su tratamiento. El guardado no ejecuta acciones en RouterOS ni cambia atributos de UISP por editar esa lista.
@@ -581,7 +591,7 @@ La evidencia real posterior identificó tokens ausentes y una URL pegada como se
 
 ## Preparación para instalar y validar
 
-La versión actual es 2.4.46; su validación se indica al principio. La confirmación de planes archivados de 2.4.19 conserva su alcance histórico. La revisión del estado actual retira intenciones de servicios dados de baja y programa la limpieza física necesaria antes de liberar direcciones; una identidad o consulta sin comprobar conserva la incidencia correspondiente. Revisar limpieza mantiene su alcance local independiente y sus respaldos. El modo consulta de una migración pausada conserva sus protecciones hasta resolver las asignaciones y recargar. La [guía de pruebas reales](PRUEBAS_REALES.md) contiene 293 escenarios; sus resultados de laboratorio no acreditan la instalación de producción.
+La versión actual es 2.4.47; su validación se indica al principio. La confirmación de planes archivados de 2.4.19 conserva su alcance histórico. La revisión del estado actual retira intenciones de servicios dados de baja y programa la limpieza física necesaria antes de liberar direcciones; una identidad o consulta sin comprobar conserva la incidencia correspondiente. Revisar limpieza mantiene su alcance local independiente y sus respaldos. El modo consulta de una migración pausada conserva sus protecciones hasta resolver las asignaciones y recargar. La [guía de pruebas reales](PRUEBAS_REALES.md) contiene 297 escenarios; sus resultados de laboratorio no acreditan la instalación de producción.
 
 ### Resultado histórico de 2.4.17
 

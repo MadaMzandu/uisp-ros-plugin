@@ -182,7 +182,7 @@ try {
         && $overrideApplied['trafficShapingOverrideEnd'] === '2030-01-01T00:00:00+0000'
         && $overrideApplied['_plan']['id'] === 35 && $overrideApplied['_plan']['uploadSpeed'] === 10
         && $overrideApplied['_plan']['downloadSpeed'] === 35
-        && $secret(MT::$writes)['profile'] === 'uisp-service-1420-profile',
+        && $secret(MT::$writes)['profile'] === 'Fixture 25/5 [Override S#1420]',
         'The fresh UISP override did not survive normalization/cache/queue/private-profile application');
     $cachedOverride = $apiSqliteCache->singleQuery('SELECT * FROM services WHERE id=1420',true);
     flowCheck($cachedOverride['trafficShapingOverrideEnabled'] === 1

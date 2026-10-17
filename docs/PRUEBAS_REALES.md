@@ -1,6 +1,12 @@
-# Pruebas reales del candidato 2.4.46
+# Pruebas reales del candidato 2.4.47
 
 Las pruebas automatizadas usan bases temporales, transportes simulados y sockets locales. Esta lista comprueba la integración **UISP → plugin → API nativa de RouterOS** en una copia de UISP y un CHR/router con clientes de prueba. Registrar versiones de UISP, PHP y RouterOS, así como ID del servicio, plan, trabajo, estado e IP/prefijo en cada caso.
+
+## Comprobar perfiles legibles de override en 2.4.47
+
+Los casos 294–297 comprueban conservar el nombre del plan principal con el indicador de override y el ID del servicio. Instalar y sincronizar el servicio/router de prueba para actualizar su perfil; el botón de sincronización inmediata conserva la reconexión forzada solicitada por el operador. Las revisiones por cambios de presentación no añaden por sí mismas esa reconexión.
+
+Validación 2.4.47 aprobada: **70 suites aisladas**, sintaxis de **70 archivos PHP propios**, 385 entradas del instalador, 152 archivos propios y 13 dependencias fijadas. Informe: `dist/verification-2.4.47.json`. SHA-256: `ce2dd9d9be4438346f051f2e1cc40958d1e815a192d1601d74cf400246599d59`. Las pruebas cubren PPP/Hotspot, renombrado con el mismo ID, reintentos históricos, limpieza exacta, ausencia de reconexiones por presentación y protección de perfiles manuales. No se modificaron UISP ni RouterOS de producción. Registrar los resultados de la instalación por separado de las pruebas sintéticas.
 
 ## Comprobar exclusiones sin reaplicación masiva en 2.4.46
 
@@ -611,3 +617,7 @@ Si el piloto falla, pausar worker/webhook y conservar datos/errores sin credenci
 | 291 | Asignar automáticamente IPv4 e IPv6 a servicios nuevos después del guardado. | Selecciona direcciones fuera de las exclusiones; los servicios existentes conservan sus direcciones. La exclusión no prohíbe asignar una IP manual explícita. |
 | 292 | Repetir el guardado sin cambios y modificar una preferencia del panel sin cambiar ajustes de red. | No solicita ni drena reaplicaciones. Los payloads, intentos, reservas y estado aplicado de los trabajos anteriores no se alteran por guardar. |
 | 293 | Guardar exclusiones junto con un cambio real de duración de concesión o límite de suspensión; repetir con guardados concurrentes de campos distintos. | El cambio de red conserva su aplicación normal. La edición exclusiva de exclusiones compara dentro de su transacción y no atribuye a sí misma el cambio de otro guardado. |
+| 294 | Con un override ya aplicado y perfil `uisp-service-ID-profile`, registrar el ID interno de RouterOS y sincronizar. | Renombra el mismo perfil al nombre del plan con `[Override S#ID]`; no duplica perfiles ni cambia la IP o velocidades. Las cuentas siguen apuntando al perfil correcto. |
+| 295 | Cambiar sólo el nombre del plan principal y permitir su reaplicación ordinaria a PPP y Hotspot. | Conserva el ID interno y añade el mismo indicador al nombre nuevo. El renombrado por sí mismo no fuerza una reconexión; sincronizar con reconexión explícita mantiene esa solicitud. |
+| 296 | Revisar diferencias, reintentar un trabajo antiguo y consultar una recuperación con nombres nuevos/antiguos. Probar un nombre ocupado por un perfil manual o marcador de otro servicio. | Reconoce ambos formatos válidos y conserva comandos históricos de eliminación exactos. No adopta perfiles manuales ni propietarios ambiguos. Los comentarios de perfil siguen su formato fijo, independientemente del idioma del panel. |
+| 297 | Quitar el override después del renombrado y repetir con una cuenta ajena todavía referenciando el perfil. | Vuelve al perfil compartido y retira el perfil personalizado legible sólo si quedó sin dependencias. Los demás servicios y perfiles conservan su identidad y velocidades. |

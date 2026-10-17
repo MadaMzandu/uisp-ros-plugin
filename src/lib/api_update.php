@@ -85,7 +85,7 @@ class ApiUpdate
     private function edit_config()
     {
         $data = json_decode(json_encode($this->data->data),true);
-        if (isset($data['disabled_profile']) && preg_match('/(?:^uisp-(?:plan-\d+|service-\d+-profile)$|\[UISP#\d+\]$)/D', (string) $data['disabled_profile'])) {
+        if (isset($data['disabled_profile']) && preg_match('/(?:^uisp-(?:plan-\d+|service-\d+-profile)$|\[UISP#\d+\]$|\[Override S#[1-9][0-9]*\]$)/D', (string) $data['disabled_profile'])) {
             throw new InvalidArgumentException('Usa un perfil de suspensión propio; ese nombre está reservado para los planes del plugin.');
         }
         require_once __DIR__ . '/api_configuration_apply.php';

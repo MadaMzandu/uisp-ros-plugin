@@ -2,9 +2,19 @@
 
 [Español](MEJORAS.md) · [PR description](PR_DESCRIPTION.md) · [Full PR reference](PR_DESCRIPTION_FULL.md) · [Webhook setup and rationale](WEBHOOK_SETUP_EN.md)
 
-This revision combines [dhanielsnieto's changes in PR #89](https://github.com/MadaMzandu/uisp-ros-plugin/pull/89) with the subsequent fixes prepared in this repository. The comparison starts at `7ca8dc8`; the original PR ends at `056b89f`. The current candidate is **2.4.46**. The operator confirmed archived-plan speed recovery in their 2.4.19 installation. That confirmation covers this historical scenario; the remaining UISP and RouterOS integration scenarios still require their own checks before production readiness can be established.
+This revision combines [dhanielsnieto's changes in PR #89](https://github.com/MadaMzandu/uisp-ros-plugin/pull/89) with the subsequent fixes prepared in this repository. The comparison starts at `7ca8dc8`; the original PR ends at `056b89f`. The current candidate is **2.4.47**. The operator confirmed archived-plan speed recovery in their 2.4.19 installation. That confirmation covers this historical scenario; the remaining UISP and RouterOS integration scenarios still require their own checks before production readiness can be established.
 
 The plugin connects UISP CRM to MikroTik through the **native RouterOS API**, normally on port `8728`, or `8729` with TLS. The panel manages that integration; it does not switch the transport to SSH, WinBox, or REST.
+
+## Candidate 2.4.47: override profiles retain the base plan name
+
+Customized PPP/Hotspot profiles retain the primary plan name with a visible override and service marker: `Residential [20Mb] [Override S#11389]`. Internal ownership remains service-specific. Shared plan profiles keep their current format, and historical snapshots without a plan name retain a stable fallback.
+
+Migration renames the same verified owned RouterOS object rather than creating a duplicate or retiring its previous display name as a separate resource. A base-plan display rename alone does not add an automatic reconnection. Effective rates, burst, contention and addresses retain their policy. Legacy names remain recognized for prepared retries, previews and recovery. Historical removals keep their exact frozen name and cannot redirect to a renamed object; turning off the override can retire the new readable profile name, subject to actual dependencies.
+
+Profile comments keep their existing `Plan #…` and `Servicio #…` labels independently of the panel language. Plan names come from UISP. Foreign profiles, reserved-name collisions, malformed service markers and ambiguous owners remain protected.
+
+Validation for 2.4.47 passed: **70 isolated suites**, syntax checks for **70 first-party PHP files**, 385 archive entries, 152 first-party files and 13 locked dependencies. Report: `dist/verification-2.4.47.json`. SHA-256: `ce2dd9d9be4438346f051f2e1cc40958d1e815a192d1601d74cf400246599d59`. Coverage includes PPP/Hotspot, same-ID renames, historical retries, exact cleanup, no presentation-only reconnection and protection of manual profiles. No production UISP or RouterOS changes were performed.
 
 ## Candidate 2.4.46: exclusions affect future allocations only
 
@@ -581,7 +591,7 @@ Later production evidence identified missing tokens and a URL pasted as the secr
 
 ## Installation and validation readiness
 
-The current version is 2.4.46. Its validation status appears at the beginning of this changelog. Archived-plan recovery confirmation belongs to 2.4.19 and retains its historical scope. Fresh lifecycle evidence retires obsolete intent and queues guarded removal before releasing physically owned addresses. Unknown evidence remains an incident for that service. The separate local-cleanup review retains its limited scope and private backup. A duplicate-reservation migration barrier still requires resolving stored assignments and reloading. Backups remain downloadable from System. The [real-environment test guide](PRUEBAS_REALES.md) contains 293 scenarios and does not claim production validation.
+The current version is 2.4.47. Its validation status appears at the beginning of this changelog. Archived-plan recovery confirmation belongs to 2.4.19 and retains its historical scope. Fresh lifecycle evidence retires obsolete intent and queues guarded removal before releasing physically owned addresses. Unknown evidence remains an incident for that service. The separate local-cleanup review retains its limited scope and private backup. A duplicate-reservation migration barrier still requires resolving stored assignments and reloading. Backups remain downloadable from System. The [real-environment test guide](PRUEBAS_REALES.md) contains 297 scenarios and does not claim production validation.
 
 ### Historical 2.4.17 result
 

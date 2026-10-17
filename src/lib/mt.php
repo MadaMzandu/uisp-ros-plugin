@@ -186,7 +186,8 @@ class MT extends Device
             return ($row['name'] ?? '') === 'uisp-plan-' . $match[1]
                 || preg_match('/\\[UISP#' . $match[1] . '\\]$/D', $row['name'] ?? '') === 1;
         }
-        return ($row['name'] ?? '') === 'uisp-service-' . substr($owner, strrpos($owner, ':') + 1) . '-profile';
+        require_once __DIR__ . '/mt_data.php';
+        return MtData::serviceProfileNameMatches($row['name'] ?? '', (int) substr($owner, strrpos($owner, ':') + 1));
     }
 
     /** Locate the same owned object when its display name changes; never adopt an external profile. */

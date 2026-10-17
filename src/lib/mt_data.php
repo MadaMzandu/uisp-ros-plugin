@@ -31,7 +31,7 @@ class MtData extends Data
             if (($applied[$field] ?? null) != ($service[$field] ?? null)) return $commands;
         foreach (['ip','port'] as $field)
             if (($applied['_device'][$field] ?? null) != ($service['_device'][$field] ?? null)) return $commands;
-        $used = []; $seen = [];
+        $used = []; $usedOwners = []; $seen = [];
         foreach ($commands as $command) {
             $path = trim($command['path'] ?? '', '/');
             $identity = $path . ':' . ($command['name'] ?? '');
@@ -39,13 +39,23 @@ class MtData extends Data
             if (in_array($path, ['ppp/secret','ip/hotspot/user'], true))
                 $used[($path === 'ppp/secret' ? 'ppp/profile' : 'ip/hotspot/user/profile') . ':' . ($command['profile'] ?? '')] = true;
         }
+        foreach ($commands as $command) {
+            $path = trim($command['path'] ?? '', '/');
+            if (in_array($path, ['ppp/profile','ip/hotspot/user/profile'], true)
+                && ($command['action'] ?? '') !== 'remove'
+                && ($command['_owner'] ?? '') === 'uisp-ros-plugin:service-profile:' . $sid
+                && isset($used[$path . ':' . ($command['name'] ?? '')])) $usedOwners[$path . ':' . $command['_owner']] = true;
+        }
         foreach ($applied['_commands'] ?? [] as $command) {
             $path = trim($command['path'] ?? '', '/');
             $identity = $path . ':' . ($command['name'] ?? '');
             if (!in_array($path, ['ppp/profile','ip/hotspot/user/profile'], true)
                 || ($command['action'] ?? '') === 'remove'
                 || ($command['_owner'] ?? '') !== 'uisp-ros-plugin:service-profile:' . $sid
-                || ($command['name'] ?? '') !== 'uisp-service-' . $sid . '-profile'
+                || !self::serviceProfileNameMatches($command['name'] ?? null, $sid)
+                // A display rename reuses the same owned RouterOS object.
+                // Retire it only when the service stops using that profile.
+                || isset($usedOwners[$path . ':' . $command['_owner']])
                 || isset($used[$identity]) || isset($seen[$identity])) continue;
             $seen[$identity] = true;
             $commands[] = ['path' => '/' . $path, 'name' => $command['name'], '_owner' => $command['_owner'],
@@ -408,16 +418,30 @@ class MtData extends Data
 
     public static function managedProfileName($planId,?int $serviceId=null,?string $planName=null,bool $serviceOverride=false): string
     {
+        $name=$planName===null ? '' : preg_replace('/[\x00-\x20\x7F]+/u',' ',trim($planName));
         if($serviceOverride || !ctype_digit((string)$planId) || (int)$planId<1){
-            if($serviceId!==null && $serviceId>0) return 'uisp-service-'.$serviceId.'-profile';
+            if($serviceId!==null && $serviceId>0) {
+                if ($serviceOverride && $name!==null && trim($name)!=='') return trim($name).' [Override S#'.$serviceId.']';
+                return 'uisp-service-'.$serviceId.'-profile';
+            }
             throw new InvalidArgumentException('A valid plan or service ID is required for a managed RouterOS profile');
         }
         // The immutable plan ID remains part of both the visible name and its
         // ownership marker, so plans with equal labels cannot share a profile.
         // Keep the historical ID-only fallback for old jobs without a plan name.
-        $name=$planName===null ? '' : preg_replace('/[\x00-\x20\x7F]+/u',' ',trim($planName));
         if($name===null || trim($name)==='') return 'uisp-plan-'.(int)$planId;
         return trim($name).' [UISP#'.(int)$planId.']';
+    }
+
+    /** A visible service marker is ownership evidence only inside its exact reserved name format. */
+    public static function serviceProfileNameMatches($name, int $serviceId): bool
+    {
+        if ($serviceId<1 || !is_string($name) || preg_match('//u',$name)!==1
+            || preg_match('/[\x00-\x1F\x7F]/',$name)===1) return false;
+        if ($name==='uisp-service-'.$serviceId.'-profile') return true;
+        $suffix=' [Override S#'.$serviceId.']';
+        return strlen($name)>strlen($suffix) && substr($name,-strlen($suffix))===$suffix
+            && trim(substr($name,0,-strlen($suffix)))!=='';
     }
 
     private static function profileOwner($planId,int $serviceId,bool $serviceOverride=false): string

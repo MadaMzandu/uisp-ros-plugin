@@ -170,7 +170,8 @@ try {
         'uploadSpeed'=>5,'downloadSpeed'=>20,'uploadSpeedOverride'=>10,'downloadSpeedOverride'=>35,'trafficShapingOverrideEnabled'=>1],'services');
     $apiSqliteCache->insert(['id'=>110,'address'=>'198.51.100.110'],'network');
     checkShared((new Batch())->set_accounts([110]),'Service override failed to apply');
-    $private=MT::$profiles['uisp-service-110-profile'];
+    $privateName='Override Fixture [Override S#110]';
+    $private=MT::$profiles[$privateName];
     checkShared(strpos($private['rate-limit'],'10M/35M 15000000/52500000 ')===0,'Private override did not retain its own speeds and proportional burst');
     $overrideParent=MT::$parents['uisp-plan-2-parent'];
     checkShared($overrideParent['limit-at']==='10M/35M' && $overrideParent['max-limit']==='15M/52.5M',
@@ -182,7 +183,7 @@ try {
     checkShared((new Batch())->set_accounts([111]),'Ordinary member of the override plan failed');
     $base=MT::$profiles['Override Fixture [UISP#2]'];
     checkShared(strpos($base['rate-limit'],'5M/20M 7500000/30000000 ')===0,'A service override changed the shared base profile');
-    checkShared(MT::$profiles['uisp-service-110-profile']===$private,'An ordinary service refresh overwrote the private profile');
+    checkShared(MT::$profiles[$privateName]===$private,'An ordinary service refresh overwrote the private profile');
     $mixedParent=MT::$parents['uisp-plan-2-parent'];
     checkShared($mixedParent['limit-at']==='10M/35M' && $mixedParent['max-limit']==='15M/52.5M',
         'Mixed ordinary/override members did not retain the largest normal and burst rates');
@@ -196,13 +197,16 @@ try {
     $overrideKey=null;
     foreach($apiJobQueue->list() as $key=>$job) if((int)$job['id']===110) $overrideKey=$key;
     checkShared($overrideKey!==null,'Missing frozen override retry');
-    $apiSqlite->edit(['id'=>2,'uploadOverride'=>7,'downloadOverride'=>25,'burstUpload'=>100,'burstDownload'=>100],'plans');
+    $apiSqlite->edit(['id'=>2,'name'=>'Renamed Override Fixture','uploadOverride'=>7,'downloadOverride'=>25,'burstUpload'=>100,'burstDownload'=>100],'plans');
+    $privateName='Renamed Override Fixture [Override S#110]';
     $apiJobQueue->run([$overrideKey]);
-    $refreshedPrivate=MT::$profiles['uisp-service-110-profile'];
+    $refreshedPrivate=MT::$profiles[$privateName];
     checkShared(strpos($refreshedPrivate['rate-limit'],'10M/35M 20000000/70000000 ')===0,
         'A current plan refresh replaced private override speeds or failed to recompute its burst');
     $retryAccount=array_values(array_filter(snapshotShared($overrideKey)['_commands'],static fn(array $command): bool=>trim($command['path'],'/')==='ppp/secret'))[0];
-    checkShared($retryAccount['profile']==='uisp-service-110-profile','A frozen retry reverted to the shared plan profile');
+    checkShared($retryAccount['profile']===$privateName
+        && $refreshedPrivate['_owner']==='uisp-ros-plugin:service-profile:110',
+        'A frozen retry lost its private identity or failed to use the current readable base plan name');
     $apiSqliteCache->edit(['id'=>110,'trafficShapingOverrideEnabled'=>0],'services');
     MT::$failedAccount=null;
     checkShared((new Batch())->set_accounts([110]),'Removing the override failed to apply');
@@ -211,7 +215,7 @@ try {
         'Returning the current override to the plan retained its obsolete normal/burst capacity');
     $lastCommands=MT::$batches[count(MT::$batches)-1];
     $returnedAccount=array_values(array_filter($lastCommands,static fn(array $command): bool=>trim($command['path'],'/')==='ppp/secret' && ($command['action'] ?? '')!=='remove'))[0];
-    checkShared($returnedAccount['profile']==='Override Fixture [UISP#2]','Removing an override did not return to the real base plan');
+    checkShared($returnedAccount['profile']==='Renamed Override Fixture [UISP#2]','Removing an override did not return to the real base plan');
     $accountIndex=$reconnectIndex=$retiredIndex=null;
     foreach($lastCommands as $index=>$command) {
         $path=trim($command['path'],'/');
@@ -219,7 +223,7 @@ try {
         if($path==='ppp/active') $reconnectIndex=$index;
         if($path==='ppp/profile' && ($command['action'] ?? '')==='remove') {
             checkShared(($command['_owner'] ?? '')==='uisp-ros-plugin:service-profile:110'
-                && $command['name']==='uisp-service-110-profile','Override removal tried to retire a shared or unowned profile');
+                && $command['name']===$privateName,'Override removal tried to retire a shared or unowned profile');
             $retiredIndex=$index;
         }
     }
@@ -231,8 +235,8 @@ try {
     $unlimitedParent=MT::$parents['uisp-plan-2-parent'];
     checkShared($unlimitedParent['limit-at']==='0M/35M' && $unlimitedParent['max-limit']==='0M/70M',
         'A finite parent throttled an unlimited override direction');
-    checkShared(strpos(MT::$profiles['uisp-service-110-profile']['rate-limit'],'0/35M 0/70000000 ')===0,
-        'Unlimited service override did not retain its RouterOS zero rate and zero burst: '.MT::$profiles['uisp-service-110-profile']['rate-limit']);
+    checkShared(strpos(MT::$profiles[$privateName]['rate-limit'],'0/35M 0/70000000 ')===0,
+        'Unlimited service override did not retain its RouterOS zero rate and zero burst: '.MT::$profiles[$privateName]['rate-limit']);
     $apiSqliteCache->edit(['id'=>110,'trafficShapingOverrideEnabled'=>0],'services');
     checkShared((new Batch())->set_accounts([110]),'Returning an unlimited override to the plan failed');
     checkShared(MT::$parents['uisp-plan-2-parent']['max-limit']==='14M/50M',

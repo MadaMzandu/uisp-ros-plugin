@@ -86,7 +86,7 @@ foreach ([-1, 'broken', INF, NAN, 1.0e308] as $invalid) {
 
 $builder = new ServiceQosBuilder(); $builder->set_data($service, $base);
 $profile = $builder->profile(); $account = $builder->account();
-checkServiceQos($profile['name'] === 'uisp-service-71-profile' && $account['profile'] === $profile['name']
+checkServiceQos($profile['name'] === 'Fixture Plan [Override S#71]' && $account['profile'] === $profile['name']
     && $profile['_owner'] === 'uisp-ros-plugin:service-profile:71', 'Override profile was not isolated by service');
 checkServiceQos($profile['rate-limit'] === '10M/35M 20000000/52500000 8000000/21000000 8/10 4 5000000/26250000',
     'Actual PPP profile did not include effective normal/burst/threshold/time/priority/guaranteed rates');
@@ -96,14 +96,56 @@ $retryProfile = array_values(array_filter($prepared, static fn($row) => trim($ro
 $retryAccount = array_values(array_filter($prepared, static fn($row) => trim($row['path'], '/') === 'ppp/secret'))[0];
 checkServiceQos($retryProfile['name'] === $profile['name'] && $retryAccount['profile'] === $profile['name']
     && $retryProfile['_owner'] === $profile['_owner'], 'Retry migration restored a shared profile over a private one');
+$oldProfile = array_replace($profile, ['name' => 'uisp-service-71-profile']);
+$oldAccount = array_replace($account, ['profile' => $oldProfile['name']]);
+$legacyPrepared = MtData::safePreparedCommands($snapshot, [$oldProfile, $oldAccount]);
+$migratedProfile = array_values(array_filter($legacyPrepared, static fn($row) => trim($row['path'], '/') === 'ppp/profile'))[0];
+$migratedAccount = array_values(array_filter($legacyPrepared, static fn($row) => trim($row['path'], '/') === 'ppp/secret'))[0];
+checkServiceQos($migratedProfile['name'] === $profile['name'] && $migratedAccount['profile'] === $profile['name']
+    && $migratedProfile['_owner'] === $oldProfile['_owner']
+    && $migratedProfile['rate-limit'] === $oldProfile['rate-limit'],
+    'An old private-profile retry lost frozen rates or failed to adopt its readable service name');
+$legacyCleanup = MtData::safePreparedCommands($snapshot, [array_replace($oldProfile, ['action' => 'remove']),
+    array_replace($oldAccount, ['action' => 'remove'])], 'delete');
+$legacyCleanupProfile = array_values(array_filter($legacyCleanup, static fn($row) => trim($row['path'], '/') === 'ppp/profile'))[0];
+$legacyCleanupAccount = array_values(array_filter($legacyCleanup, static fn($row) => trim($row['path'], '/') === 'ppp/secret'))[0];
+checkServiceQos($legacyCleanupProfile['name'] === 'uisp-service-71-profile'
+    && $legacyCleanupAccount['profile'] === 'uisp-service-71-profile',
+    'Legacy cleanup rewrote an exact stored profile receipt to the new display name');
+checkServiceQos(MtData::serviceProfileNameMatches('uisp-service-71-profile', 71)
+    && MtData::serviceProfileNameMatches('Fixture Plan [Override S#71]', 71)
+    && !MtData::serviceProfileNameMatches('Fixture Plan [Override S#72]', 71)
+    && !MtData::serviceProfileNameMatches('Fixture Plan [Override S#71] extra', 71),
+    'Readable or legacy private profile matching accepted a different service or trailing text');
+$identity = $snapshot + ['device' => 10, '_device' => ['ip' => '192.0.2.10', 'port' => 8728]];
+$legacyApplied = array_replace($identity, ['_commands' => [$oldProfile, $oldAccount]]);
+$migrated = MtData::retireUnusedServiceProfiles($identity, [$profile, $account], $legacyApplied);
+checkServiceQos($migrated === [$profile, $account],
+    'Readable migration tried to delete the same owned profile that RouterOS renames in place');
+$foreignApplied = array_replace($legacyApplied, ['_commands' => [array_replace($oldProfile,
+    ['name' => 'Another Plan [Override S#72]'])]]);
+checkServiceQos(MtData::retireUnusedServiceProfiles($identity, [$profile, $account], $foreignApplied) === [$profile, $account],
+    'Private migration accepted a friendly profile name for another service');
 $builder->set_data(array_replace($service, ['id' => 72]), $base);
-checkServiceQos($builder->profile()['name'] === 'uisp-service-72-profile', 'Services with equal overrides shared mutable profile identity');
+checkServiceQos($builder->profile()['name'] === 'Fixture Plan [Override S#72]', 'Services with equal overrides shared mutable profile identity');
 $builder->set_data(array_replace($service, ['trafficShapingOverrideEnabled' => false]), $effective);
 checkServiceQos($builder->profile()['name'] === 'Fixture Plan [UISP#9]'
     && str_starts_with($builder->profile()['rate-limit'], '5M/20M '), 'Disabling override did not return actual commands to the normal shared profile');
+$ordinaryCommands = [$builder->profile(), $builder->account()];
+$legacyRetired = MtData::retireUnusedServiceProfiles($identity, $ordinaryCommands, $legacyApplied);
+checkServiceQos(count($legacyRetired) === 3 && $legacyRetired[2]['name'] === 'uisp-service-71-profile'
+    && $legacyRetired[2]['action'] === 'remove' && $legacyRetired[2]['_owner'] === $oldProfile['_owner'],
+    'Removing a legacy override did not retire its exact stored private-profile receipt');
+$friendlyApplied = array_replace($identity, ['_commands' => [$profile, $account]]);
+$friendlyRetired = MtData::retireUnusedServiceProfiles($identity, $ordinaryCommands, $friendlyApplied);
+checkServiceQos(count($friendlyRetired) === 3 && $friendlyRetired[2]['name'] === $profile['name']
+    && $friendlyRetired[2]['action'] === 'remove' && $friendlyRetired[2]['_owner'] === $profile['_owner'],
+    'Removing a readable override did not retire its exact stored private-profile receipt');
+checkServiceQos(MtData::retireUnusedServiceProfiles($identity, $ordinaryCommands, $foreignApplied) === $ordinaryCommands,
+    'Override removal trusted an owner marker paired with a different service display name');
 $builder->set_data(array_replace($service, ['hotspot' => true]), $base);
 checkServiceQos($builder->profile()['path'] === '/ip/hotspot/user/profile/'
-    && $builder->account()['profile'] === 'uisp-service-71-profile', 'Hotspot did not use the service override');
+    && $builder->account()['profile'] === 'Fixture Plan [Override S#71]', 'Hotspot did not use the service override');
 $builder->set_data(array_replace($service, ['mac' => '02:00:00:00:00:71']), $base);
 $queue = $builder->queue();
 checkServiceQos($builder->profile() === null && $queue['max-limit'] === '10M/35M'

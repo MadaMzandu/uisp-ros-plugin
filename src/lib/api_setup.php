@@ -1,5 +1,5 @@
 <?php
-const MY_VERSION = '2.4.46';
+const MY_VERSION = '2.4.47';
 const MAX_BACKUPS = 6 ;
 
 include_once 'api_sqlite.php';

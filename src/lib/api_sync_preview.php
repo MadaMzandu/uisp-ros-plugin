@@ -294,7 +294,8 @@ final class ApiSyncPreview
             if (hash_equals((string)$command['_owner'],$comment)) return true;
             if (preg_match('/^uisp-ros-plugin:plan:([1-9][0-9]*)$/D',$command['_owner'],$m)) return $comment==='Plan #'.$m[1]
                 && (($row['name']??'')==='uisp-plan-'.$m[1] || preg_match('/\[UISP#'.$m[1].'\]$/D',$row['name']??'')===1);
-            if (preg_match('/^uisp-ros-plugin:service-profile:([1-9][0-9]*)$/D',$command['_owner'],$m)) return $comment==='Servicio #'.$m[1] && ($row['name']??'')==='uisp-service-'.$m[1].'-profile';
+            if (preg_match('/^uisp-ros-plugin:service-profile:([1-9][0-9]*)$/D',$command['_owner'],$m)) return $comment==='Servicio #'.$m[1]
+                && MtData::serviceProfileNameMatches($row['name']??null,(int)$m[1]);
             return false;
         }
         return preg_match('/^([1-9][0-9]*)\s+-\s+.+\s+-\s+([1-9][0-9]*)$/D',$comment,$m)===1

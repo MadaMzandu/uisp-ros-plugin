@@ -143,5 +143,109 @@ foreach (['ppp/profile', 'ip/hotspot/user/profile'] as $path) {
         && !in_array($accountPath . '/add', $unverified->recording->words, true), 'An unverified profile rename was marked successful or used by an account');
 }
 
-echo "Profile naming regression passed: complete names, IDs, frozen retries, in-place owned migration, repeated renames, external collisions and historical deletes.\n";
+$privateService = $service;
+$privateService['_plan']['_serviceQos'] = ['enabled' => true, 'serviceId' => 1353];
+$privateOwner = 'uisp-ros-plugin:service-profile:1353';
+$legacyPrivate = 'uisp-service-1353-profile';
+$friendlyPrivate = $planName . ' [Override S#1353]';
+$renamedPrivate = 'Plan Comercial - Fibra 35M [Override S#1353]';
+checkProfileNames(MtData::managedProfileName(35, 1353, $planName, true) === $friendlyPrivate,
+    'The service override did not keep its base plan label and immutable service marker');
+foreach ([$legacyPrivate, $friendlyPrivate, $renamedPrivate] as $name)
+    checkProfileNames(MtData::serviceProfileNameMatches($name, 1353), 'An owned private profile name was not recognized');
+foreach (['Manual profile', ' [Override S#1353]', 'Other [Override S#1354]',
+    $friendlyPrivate . ' suffix', "Unsafe\nPlan [Override S#1353]"] as $name)
+    checkProfileNames(!MtData::serviceProfileNameMatches($name, 1353), 'An unrelated or unsafe profile name was accepted');
+$frozenPrivate = [['path' => '/ppp/profile', 'name' => $legacyPrivate, 'rate-limit' => '10M/35M',
+    'comment' => $privateOwner, '_owner' => $privateOwner],
+    ['path' => '/ppp/secret', 'name' => 'private-client', 'profile' => $legacyPrivate,
+        'remote-address' => '192.0.2.53', 'comment' => '42 - Test Client - 1353']];
+$upgradedPrivate = MtData::safePreparedCommands($privateService, $frozenPrivate);
+$upgradedProfile = array_values(array_filter($upgradedPrivate, static fn($item) => trim($item['path'], '/') === 'ppp/profile'))[0];
+$upgradedAccount = array_values(array_filter($upgradedPrivate, static fn($item) => trim($item['path'], '/') === 'ppp/secret'))[0];
+checkProfileNames($upgradedProfile['name'] === $friendlyPrivate && $upgradedAccount['profile'] === $friendlyPrivate
+    && $upgradedProfile['rate-limit'] === '10M/35M' && $upgradedAccount['remote-address'] === '192.0.2.53'
+    && $upgradedProfile['_owner'] === $privateOwner,
+    'Readable private-profile migration changed frozen rates, addresses or ownership');
+foreach ($frozenPrivate as &$command) $command['action'] = 'remove';
+unset($command);
+$deletedPrivate = MtData::safePreparedCommands($privateService, $frozenPrivate, 'delete');
+$deletedProfile = array_values(array_filter($deletedPrivate, static fn($item) => trim($item['path'], '/') === 'ppp/profile'))[0];
+$deletedAccount = array_values(array_filter($deletedPrivate, static fn($item) => trim($item['path'], '/') === 'ppp/secret'))[0];
+checkProfileNames($deletedProfile['name'] === $legacyPrivate && $deletedAccount['profile'] === $legacyPrivate,
+    'A historical private-profile deletion was redirected to the friendly replacement');
+
+foreach (['ppp/profile', 'ip/hotspot/user/profile'] as $path) {
+    $accountPath = $path === 'ppp/profile' ? 'ppp/secret' : 'ip/hotspot/user';
+    foreach ([$privateOwner, 'Servicio #1353'] as $legacyComment) {
+        $router = new ProfileNamesMT();
+        $router->catalogue[$path] = [['.id' => '*private', 'name' => $legacyPrivate, 'comment' => $legacyComment,
+            'rate-limit' => '10M/35M']];
+        $command = ['path' => '/' . $path, 'name' => $friendlyPrivate, 'rate-limit' => '10M/35M',
+            'comment' => $privateOwner, '_owner' => $privateOwner, '_internalFixture' => 'must-not-leak'];
+        $router->execute($command);
+        checkProfileNames(count($router->catalogue[$path]) === 1 && $router->catalogue[$path][0]['.id'] === '*private'
+            && $router->catalogue[$path][0]['name'] === $friendlyPrivate
+            && $router->catalogue[$path][0]['comment'] === 'Servicio #1353'
+            && $router->catalogue[$path][0]['rate-limit'] === '10M/35M',
+            'The owned private profile was duplicated, reidentified or relabelled during migration: ' . $path);
+        $router->execute($command);
+        $command['name'] = $renamedPrivate;
+        $router->execute($command);
+        checkProfileNames(count($router->catalogue[$path]) === 1 && $router->catalogue[$path][0]['.id'] === '*private'
+            && $router->catalogue[$path][0]['name'] === $renamedPrivate
+            && !in_array('/' . $path . '/add', $router->recording->words, true),
+            'A private-profile retry or base plan rename created a different RouterOS identity: ' . $path);
+        foreach ($router->recording->words as $word)
+            checkProfileNames(preg_match('/^=_/', $word) !== 1, 'Internal private-profile metadata reached RouterOS');
+        $router->recording->words = [];
+        foreach ([$legacyPrivate, $friendlyPrivate] as $historicalName) {
+            $router->execute(['path' => '/' . $path, 'name' => $historicalName, 'action' => 'remove', '_owner' => $privateOwner]);
+        }
+        checkProfileNames($router->recording->words === [] && count($router->catalogue[$path]) === 1,
+            'A frozen private-profile deletion followed an owner to its renamed profile: ' . $path);
+        $router->catalogue[$accountPath] = [['.id' => '*subscriber', 'name' => 'private-client', 'profile' => $renamedPrivate]];
+        $remove = ['path' => '/' . $path, 'name' => $renamedPrivate, 'action' => 'remove', '_owner' => $privateOwner];
+        $router->execute($remove);
+        checkProfileNames(count($router->catalogue[$path]) === 1 && $router->recording->words === [],
+            'A private profile was removed while an account still referenced it: ' . $path);
+        $router->catalogue[$accountPath] = [];
+        $router->execute($remove);
+        checkProfileNames($router->catalogue[$path] === [] && in_array('/' . $path . '/remove', $router->recording->words, true),
+            'An unused, exactly named friendly private profile could not be retired: ' . $path);
+    }
+
+    $router = new ProfileNamesMT();
+    $command = ['path' => '/' . $path, 'name' => $friendlyPrivate, 'rate-limit' => '10M/35M',
+        'comment' => $privateOwner, '_owner' => $privateOwner];
+    $router->catalogue[$path] = [['.id' => '*private', 'name' => $legacyPrivate, 'comment' => 'Servicio #1353'],
+        ['.id' => '*foreign', 'name' => $friendlyPrivate, 'comment' => 'administrator profile']];
+    $rejected = false;
+    try { $router->execute($command); } catch (Throwable $error) { $rejected = true; }
+    checkProfileNames($rejected && $router->recording->words === [] && $router->catalogue[$path][1]['comment'] === 'administrator profile',
+        'A foreign profile at the friendly destination was adopted or overwritten: ' . $path);
+    $router->catalogue[$path] = [['.id' => '*private1', 'name' => $legacyPrivate, 'comment' => $privateOwner],
+        ['.id' => '*private2', 'name' => $renamedPrivate, 'comment' => 'Servicio #1353']];
+    $rejected = false;
+    try { $router->execute($command); } catch (Throwable $error) { $rejected = true; }
+    checkProfileNames($rejected && $router->recording->words === [],
+        'Mixed legacy and friendly private-profile owners selected an arbitrary row: ' . $path);
+    $router->catalogue[$path] = [['.id' => '*manual', 'name' => 'Manual private profile', 'comment' => 'Servicio #1353']];
+    $router->execute($command);
+    checkProfileNames(count($router->catalogue[$path]) === 2 && $router->catalogue[$path][0]['.id'] === '*manual'
+        && $router->catalogue[$path][0]['name'] === 'Manual private profile',
+        'A manual profile with the same display comment was adopted without a reserved identity: ' . $path);
+
+    $unverified = new ProfileNamesMT();
+    $unverified->catalogue[$path] = [['.id' => '*private', 'name' => $legacyPrivate, 'comment' => 'Servicio #1353']];
+    $unverified->recording->afterRead = static function ($words): void {};
+    $command['batch'] = 'service-1353';
+    $next = ['path' => '/' . $accountPath, 'name' => 'private-client', 'profile' => $friendlyPrivate,
+        'comment' => '42 - Test Client - 1353', '_service_id' => 1353, '_client_id' => 42, 'batch' => 'service-1353'];
+    checkProfileNames($unverified->do_batch((object) [], [$command, $next]) === 0
+        && isset($unverified->failed()['service-1353']) && !in_array('/' . $accountPath . '/add', $unverified->recording->words, true),
+        'A private-profile rename without readback confirmation was used by an account: ' . $path);
+}
+
+echo "Profile naming regression passed: readable plan and service names, frozen retries, in-place owned migration, repeated renames, external collisions, dependencies and historical deletes.\n";
 $apiSqlite->close();

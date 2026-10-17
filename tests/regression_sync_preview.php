@@ -156,12 +156,29 @@ try {
     $queue->runSelected($overrideApply['jobKeys'],static fn()=>true);
     $privateSnapshot=$queue->appliedSnapshot(42);
     $privateProfile=array_values(array_filter($privateSnapshot['_commands'],static fn($c)=>trim($c['path'],'/')==='ppp/profile'&&($c['action']??'')!=='remove'))[0];
-    previewCheck($privateProfile['name']==='uisp-service-42-profile'&&str_starts_with($privateProfile['rate-limit'],'10M/35M'),
+    previewCheck($privateProfile['name']==='Residential [Override S#42]'&&str_starts_with($privateProfile['rate-limit'],'10M/35M'),
         'Reviewed override did not freeze customized profile rates');
     $router['ppp/secret'][0]['profile']='uisp-service-42-profile';
     $router['ppp/profile'][]=['.id'=>'*D','name'=>'uisp-service-42-profile','comment'=>'Servicio #42',
         'rate-limit'=>$privateProfile['rate-limit'],'parent-queue'=>$privateProfile['parent-queue'],
         'local-address'=>'192.0.2.1','address-list'=>$privateProfile['address-list']];
+    $begin=$api->begin(1);$api->step($begin['previewToken']);$review=$api->step($begin['previewToken']);
+    $profileNames=array_values(array_filter($review['items'][0]['fields'],static fn($f)=>$f['path']==='/ppp/profile'&&$f['field']==='name'));
+    previewCheck($review['items'][0]['state']==='changes'&&$review['items'][0]['reason']===null
+        &&count(array_filter($profileNames,static fn($f)=>$f['expected']==='Residential [Override S#42]'
+            &&$f['observed']==='uisp-service-42-profile'&&$f['state']==='mismatch'))===1,
+        'A correctly owned legacy private profile was blocked instead of proposing its friendly rename: '.json_encode($review));
+    $router['ppp/profile'][count($router['ppp/profile'])-1]['name']='Residential [Override S#42]';
+    $begin=$api->begin(1);$api->step($begin['previewToken']);$review=$api->step($begin['previewToken']);
+    previewCheck($review['items'][0]['state']!=='blocked'
+        &&count(array_filter($review['items'][0]['fields'],static fn($f)=>$f['path']==='/ppp/profile'&&$f['field']==='name'
+            &&$f['expected']==='Residential [Override S#42]'&&$f['observed']===$f['expected']&&$f['state']==='verified'))===1,
+        'A friendly private profile with its exact service ownership was not recognized');
+    $router['ppp/profile'][count($router['ppp/profile'])-1]['name']='Unrelated [Override S#43]';
+    $begin=$api->begin(1);$api->step($begin['previewToken']);$review=$api->step($begin['previewToken']);
+    previewCheck($review['items'][0]['state']==='blocked'&&$review['items'][0]['reason']==='sync_preview_ownership_unconfirmed',
+        'A mismatched private-profile suffix was accepted on a human-readable comment alone');
+    $router['ppp/profile'][count($router['ppp/profile'])-1]['name']='Residential [Override S#42]';
     $raw->trafficShapingOverrideEnabled=false;
     $begin=$api->begin(1);$api->step($begin['previewToken']);$review=$api->step($begin['previewToken']);
     previewCheck($review['items'][0]['state']==='changes','Returning to the base plan was absent from preview');
@@ -171,7 +188,7 @@ try {
     $queue->runSelected($baseApply['jobKeys'],static fn()=>true);
     $baseSnapshot=$queue->appliedSnapshot(42);
     previewCheck(count(array_filter($baseSnapshot['_commands'],static fn($c)=>trim($c['path'],'/')==='ppp/profile'
-        && ($c['action']??'')==='remove' && $c['name']==='uisp-service-42-profile'))===1,
+        && ($c['action']??'')==='remove' && $c['name']==='Residential [Override S#42]'))===1,
         'Returning to base lost the explicitly reviewed private-profile cleanup');
     $raw=$savedRaw; $router=$savedRouter;
     // A migration also observes the old account; uncertain source ownership cannot retire a different account.
