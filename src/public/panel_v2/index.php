@@ -13,8 +13,8 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     
     <!-- Custom CSS -->
-    <script src="js/theme.js?v=2.0.56"></script>
-    <link rel="stylesheet" href="css/style.css?v=2.0.56">
+    <script src="js/theme.js?v=2.0.57"></script>
+    <link rel="stylesheet" href="css/style.css?v=2.0.57">
 </head>
 <body>
 
@@ -83,15 +83,27 @@
         <main class="main-content">
             <header class="topbar">
                 <h1 id="page-title" data-i18n="Dispositivos administrados">Dispositivos administrados</h1>
+                <div class="topbar-controls">
                 <div class="topbar-actions" id="topbar-actions">
                     <!-- Dynamic actions like Add Device will go here -->
                 </div>
+                <button type="button" class="btn btn-secondary notification-trigger" id="notifications-toggle" aria-label="Notificaciones" title="Notificaciones" aria-haspopup="dialog" aria-expanded="false" aria-controls="notification-center" data-i18n-aria-label="Notificaciones" data-i18n-title="Notificaciones">
+                    <svg class="notification-bell" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4"/></svg>
+                    <span class="notification-count" id="notification-count" style="display: none;" aria-hidden="true"></span>
+                </button>
+                </div>
             </header>
 
+            <div class="notification-center-shade" id="notification-center-shade" style="display: none;" hidden aria-hidden="true"></div>
+            <section class="notification-center" id="notification-center" role="dialog" aria-modal="true" aria-labelledby="notification-center-heading" style="display: none;" hidden tabindex="-1">
+            <div class="notification-center-header"><div><h2 id="notification-center-heading" data-i18n="Notificaciones">Notificaciones</h2><p class="notification-center-summary" id="notification-center-summary"></p></div><button type="button" class="warning-dismiss" id="close-notification-center" aria-label="Cerrar notificaciones" title="Cerrar notificaciones" data-i18n-aria-label="Cerrar notificaciones" data-i18n-title="Cerrar notificaciones"><i data-feather="x"></i></button></div>
+            <div class="notification-center-body">
+            <p class="notification-empty" id="notification-empty" data-i18n="No hay notificaciones pendientes." style="display: none;">No hay notificaciones pendientes.</p>
             <div class="warning-controls" id="warning-controls" style="display: none;">
                 <button type="button" class="btn btn-secondary" id="restore-warnings" data-i18n="Mostrar avisos">Mostrar avisos</button>
             </div>
 
+            <div class="notification-issues">
             <aside class="network-warning" id="network-warning" role="status" style="display: none;">
                 <i data-feather="alert-triangle"></i>
                 <div class="network-warning-copy">
@@ -122,6 +134,14 @@
                 <button type="button" class="btn btn-secondary" id="btn-view-pending-jobs" data-i18n="Revisar">Revisar</button>
                 <button type="button" class="warning-dismiss" id="dismiss-jobs-pending-warning" aria-label="Cerrar aviso" title="Cerrar aviso" data-i18n-aria-label="Cerrar aviso" data-i18n-title="Cerrar aviso"><i data-feather="x"></i></button>
             </aside>
+            </div>
+            <section class="notification-history" id="notification-history" style="display: none;">
+                <div class="notification-history-heading"><h3 data-i18n="Actividad reciente">Actividad reciente</h3><button type="button" class="btn btn-secondary" id="clear-notification-history" data-i18n="Limpiar actividad">Limpiar actividad</button></div>
+                <p class="form-note" data-i18n="Sólo se guarda durante esta sesión del panel.">Sólo se guarda durante esta sesión del panel.</p>
+                <div id="notification-history-list"></div>
+            </section>
+            </div>
+            </section>
             
             <div class="content-area" id="content-area">
                 <!-- Loader -->
@@ -355,6 +375,7 @@
 
         <!-- View System -->
         <section id="view-system" class="view-section" style="display: none;">
+            <div class="system-dashboard">
             <section class="system-panel system-workflow" aria-labelledby="service-reconciliation-heading">
                 <div class="conflicts-heading"><div><h3 id="service-reconciliation-heading" data-i18n="Revisión automática de diferencias">Revisión automática de diferencias</h3><p class="form-note" data-i18n="Revisa servicios gradualmente. Las correcciones comprobadas pasan a la cola; los casos ambiguos quedan para revisión individual.">Revisa servicios gradualmente. Las correcciones comprobadas pasan a la cola; los casos ambiguos quedan para revisión individual.</p></div><button type="button" class="btn btn-secondary" id="refresh-service-reconciliation" data-i18n="Refrescar">Refrescar</button></div>
                 <div class="operations-actions"><label><input type="checkbox" id="service-reconciliation-enabled"><span data-i18n="Revisión automática">Revisión automática</span></label><label><input type="checkbox" id="service-reconciliation-auto"><span data-i18n="Corregir casos comprobados">Corregir casos comprobados</span></label><button type="button" class="btn btn-secondary" id="save-service-reconciliation" data-i18n="Guardar cambios">Guardar cambios</button></div>
@@ -373,19 +394,19 @@
                     <div id="backups-grid" class="backups-grid" aria-label="Copias anteriores y de limpieza (SQLite)" data-i18n-aria-label="Copias anteriores y de limpieza (SQLite)"><!-- Contenido dinámico --></div>
                 </details>
             </section>
-            <section class="system-panel system-workflow" aria-labelledby="automation-health-title">
+            <section class="system-panel system-workflow system-health" aria-labelledby="automation-health-title">
                 <div class="conflicts-heading"><div><h2 id="automation-health-title" data-i18n="Salud de la automatización">Salud de la automatización</h2><p class="form-note" data-i18n="Actividad observada del proceso automático, webhooks y cola. Una ejecución manual no cuenta como ejecución programada.">Actividad observada del proceso automático, webhooks y cola. Una ejecución manual no cuenta como ejecución programada.</p></div><button type="button" id="refresh-automation-health" class="btn btn-secondary" data-i18n="Refrescar">Refrescar</button></div>
                 <p id="automation-health-status" class="form-note" role="status" aria-live="polite"></p>
                 <div id="automation-health-content" class="automation-health-grid"></div>
             </section>
-            <div class="system-panel">
+            <div class="system-panel system-overview">
                 <h4 class="section-title" data-i18n="Información del sistema">Información del sistema</h4>
                 <div id="system-info-container" class="system-grid">
                     <!-- Injected via JS -->
                 </div>
             </div>
 
-            <div class="system-panel">
+            <div class="system-panel system-tools">
                 <h4 class="section-title" data-i18n="Utilidades del sistema">Utilidades del sistema</h4>
                 <div class="system-utilities">
                     <div class="utility-card">
@@ -413,6 +434,7 @@
                     </div>
 
                 </div>
+            </div>
             </div>
         </section>
 
@@ -783,11 +805,11 @@
     </div>
 
     <!-- Scripts -->
-    <script src="js/i18n.js?v=2.0.56"></script>
-    <script src="js/api.js?v=2.0.56"></script>
-    <script src="js/operations.js?v=2.0.56"></script>
-    <script src="js/workflows.js?v=2.0.56"></script>
-    <script src="js/service_resolution.js?v=2.0.56"></script>
-    <script src="js/app.js?v=2.0.56"></script>
+    <script src="js/i18n.js?v=2.0.57"></script>
+    <script src="js/api.js?v=2.0.57"></script>
+    <script src="js/operations.js?v=2.0.57"></script>
+    <script src="js/workflows.js?v=2.0.57"></script>
+    <script src="js/service_resolution.js?v=2.0.57"></script>
+    <script src="js/app.js?v=2.0.57"></script>
 </body>
 </html>

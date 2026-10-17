@@ -10,11 +10,13 @@ const settle = async () => { for (let i = 0; i < 30; i++) await Promise.resolve(
 const deferred = () => { let resolve; const promise = new Promise(done => { resolve = done; }); return { promise, resolve }; };
 const all = node => [node, ...node.children.flatMap(all)];
 class Element {
-    constructor(tag = 'div') { this.tagName = tag.toUpperCase(); this.children = []; this.events = new Map(); this.style = {}; this.dataset = {}; this.disabled = false; this.checked = false; this._text = ''; }
+    constructor(tag = 'div') { this.tagName = tag.toUpperCase(); this.children = []; this.events = new Map(); this.attributes = new Map(); this.style = {}; this.dataset = {}; this.disabled = false; this.checked = false; this._text = ''; }
     set textContent(value) { this._text = String(value); this.children = []; }
     get textContent() { return this._text + this.children.map(child => child.textContent).join(''); }
     appendChild(child) { this.children.push(child); return child; }
     replaceChildren(...children) { this._text = ''; this.children = children; }
+    setAttribute(name, value) { this.attributes.set(name, String(value)); }
+    getAttribute(name) { return this.attributes.get(name) ?? null; }
     addEventListener(name, work) { if (!this.events.has(name)) this.events.set(name, []); this.events.get(name).push(work); }
     querySelectorAll(selector) { return selector === 'input' ? all(this).filter(item => item.tagName === 'INPUT') : []; }
     async emit(name, event = {}) { for (const work of this.events.get(name) || []) await work(event); }
@@ -29,10 +31,23 @@ function preview(overrides = {}) { return { serviceId: 42, clientId: 17, deviceI
 function outcome(overrides = {}) { return { serviceId: 42, state: 'resolved', reason: null, jobKeys: ['Q7'], verificationState: 'verified', ...overrides }; }
 function fixture() {
     const nodes = new Map(), events = new Map(), requests = [], routes = new Map(), notifications = [], applied = [], navigated = [], reviewed = [];
+    const timers = new Map(); let currentTime = Date.now(), nextTimer = 0;
+    class ClockDate extends Date { constructor(...args) { super(...(args.length ? args : [currentTime])); } static now() { return currentTime; } }
+    const clock = { now: () => currentTime, count: () => timers.size, advance(milliseconds) {
+        const until = currentTime + milliseconds;
+        for (;;) {
+            const due = [...timers].filter(([, timer]) => timer.next <= until).sort((a, b) => a[1].next - b[1].next)[0];
+            if (!due) break;
+            currentTime = due[1].next; due[1].next += due[1].delay; due[1].work();
+        }
+        currentTime = until;
+    } };
     const document = { documentElement: {}, getElementById(id) { if (!nodes.has(id)) nodes.set(id, new Element()); return nodes.get(id); },
         querySelectorAll() { return []; }, createElement(tag) { return new Element(tag); },
         addEventListener(name, work) { if (!events.has(name)) events.set(name, []); events.get(name).push(work); } };
-    const context = vm.createContext({ document, URL, Date, location: { href: 'https://fixture.invalid/crm/_plugins/ros-plugin/public.php?page=panel' },
+    const context = vm.createContext({ document, URL, Date: ClockDate, location: { href: 'https://fixture.invalid/crm/_plugins/ros-plugin/public.php?page=panel' },
+        setInterval(work, delay) { const id = ++nextTimer; timers.set(id, { work, delay, next: currentTime + delay }); return id; },
+        clearInterval(id) { timers.delete(id); },
         localStorage: { getItem() { return null; } },
         async fetch(endpoint, options) {
             const payload = JSON.parse(options.body); requests.push(payload);
@@ -45,7 +60,7 @@ function fixture() {
     const api = vm.runInContext('api', context), ui = context.PanelServiceResolution;
     ui.mount({ api, notify(...args) { notifications.push(args); }, navigate(...args) { navigated.push(args); }, reviewJob(...args) { reviewed.push(args); }, onApplied(value) { applied.push(value); } });
     routes.set('service_resolution/preview', () => envelope(preview())); routes.set('service_resolution/apply', () => envelope(outcome()));
-    return { api, ui, i18n: context.PanelI18n, nodes, requests, routes, notifications, applied, navigated, reviewed,
+    return { api, ui, i18n: context.PanelI18n, nodes, requests, routes, notifications, applied, navigated, reviewed, clock,
         node: id => document.getElementById(id),
         async mutation(active) { for (const callback of api.mutationListeners) callback(active); await settle(); },
         async escape() { for (const callback of events.get('keydown') || []) callback({ key: 'Escape' }); await settle(); } };
@@ -81,6 +96,74 @@ async function ownedAccountWithManualDuplicate() {
     });
     await ui.node('service-resolution-apply').emit('click');
     assert.equal(ui.requests.filter(item => item.action === 'apply').length, 1);
+}
+async function pendingProgressAndTimerLifecycle() {
+    const ui = fixture(), waiting = deferred(), mutation = deferred();
+    ui.routes.set('service_resolution/preview', () => waiting.promise);
+    const reading = ui.ui.resolveService(42); await settle();
+    const status = ui.node('service-resolution-status');
+    const phase = all(status).find(item => item.className === 'resolution-busy-phase');
+    const elapsed = all(status).find(item => item.className === 'resolution-busy-elapsed');
+    assert.equal(phase.textContent, 'Revisando UISP y RouterOS…');
+    assert.equal(status.getAttribute('role'), 'status'); assert.equal(status.getAttribute('aria-live'), 'polite');
+    assert.equal(elapsed.getAttribute('aria-hidden'), 'true', 'Elapsed seconds would be announced on every tick');
+    assert.equal(all(status).find(item => item.className === 'resolution-spinner').getAttribute('aria-hidden'), 'true');
+    assert.equal(ui.node('service-resolution-summary').getAttribute('aria-busy'), 'true');
+    assert(ui.node('service-resolution-summary').textContent.includes('Servicio #42'), 'Pending review lost its service context');
+    assert.equal(ui.clock.count(), 1); ui.clock.advance(5000);
+    assert(elapsed.textContent.includes('5 s')); assert.equal(all(status).find(item => item.className === 'resolution-busy-phase'), phase,
+        'Elapsed ticks rebuilt the live phase announcement');
+    ui.clock.advance(10000);
+    assert(status.textContent.includes('La revisión sigue en curso') && !status.textContent.includes('%'), 'A slow review had no truthful waiting guidance');
+    await ui.node('service-resolution-refresh').emit('click'); await ui.node('service-resolution-apply').emit('click');
+    assert.equal(ui.requests.length, 1, 'Busy controls repeated a pending operation');
+    const kept = candidate({ removeRowIds: ['*2'], manualDuplicateRowIds: ['*2'] });
+    const removed = candidate({ candidateId: otherId, rowId: '*2', ownerServiceId: null, ownerClientId: null, removeRowIds: ['*1'], manualDuplicateRowIds: [] });
+    waiting.resolve(envelope(preview({ mode: 'select_account', autoApply: false, candidates: [kept, removed] }))); await reading;
+    assert.equal(ui.clock.count(), 0); assert.equal(ui.node('service-resolution-summary').getAttribute('aria-busy'), 'false');
+    await ui.node('service-resolution-candidates').querySelectorAll('input')[0].emit('change');
+    ui.routes.set('service_resolution/apply', () => mutation.promise);
+    const applying = ui.node('service-resolution-apply').emit('click'); await settle();
+    assert(status.textContent.includes('Aplicando cambios y sincronizando…') && status.textContent.includes('0 s'), 'Applying did not start its own real request phase');
+    const summary = ui.node('service-resolution-summary').textContent;
+    assert(summary.includes('Cliente #17') && summary.includes('Fixture') && summary.includes('Se conservará el registro *1.')
+        && summary.includes('Se retirarán estos registros: *2'), 'Consumed preview left the pending mutation context empty');
+    ui.clock.advance(21000);
+    assert(status.textContent.includes('21 s') && status.textContent.includes('revisa Trabajos antes de reintentar'), 'Slow application lost its waiting guidance');
+    await ui.node('service-resolution-refresh').emit('click'); await ui.node('service-resolution-apply').emit('click');
+    assert.equal(ui.requests.filter(item => item.action === 'apply').length, 1, 'Waiting UI replayed a consumed mutation');
+    mutation.resolve(envelope(outcome({ state: 'pending', verificationState: null }))); await applying;
+    assert.equal(ui.clock.count(), 0); assert(!all(status).some(item => item.className === 'resolution-spinner'));
+    assert(ui.node('service-resolution-result').textContent.includes('Pendiente'));
+
+    const closed = fixture(), slow = deferred(); closed.routes.set('service_resolution/preview', () => slow.promise);
+    const canceled = closed.ui.resolveService(42); await settle(); assert.equal(closed.clock.count(), 1);
+    closed.ui.close(); assert.equal(closed.clock.count(), 0); assert.equal(closed.node('service-resolution-status').textContent, ''); closed.clock.advance(20000);
+    slow.resolve(envelope(preview())); await canceled;
+    assert.equal(closed.clock.count(), 0); assert.equal(closed.requests.length, 1, 'A late closed preview restarted work');
+
+    const closedApply = fixture(), late = deferred(); closedApply.routes.set('service_resolution/apply', () => late.promise);
+    const lateApply = closedApply.ui.resolveService(42); await settle(); assert.equal(closedApply.clock.count(), 1);
+    closedApply.ui.close(); assert.equal(closedApply.clock.count(), 0); closedApply.clock.advance(20000);
+    late.resolve(envelope(outcome({ state: 'unconfirmed', verificationState: null }))); await lateApply;
+    assert.equal(closedApply.clock.count(), 0); assert.equal(closedApply.requests.filter(item => item.action === 'apply').length, 1);
+
+    const switched = fixture(), first = deferred(), second = deferred();
+    switched.routes.set('service_resolution/preview', data => data.serviceId === 42 ? first.promise : second.promise);
+    const firstRead = switched.ui.resolveService(42); switched.clock.advance(6000); const secondRead = switched.ui.resolveService(43);
+    assert.equal(switched.clock.count(), 1); first.resolve(envelope(preview())); await firstRead;
+    assert.equal(switched.clock.count(), 1, 'An obsolete read stopped the current request timer'); switched.clock.advance(3000);
+    assert.equal(switched.node('service-resolution-heading').textContent, 'Resolver servicio #43');
+    assert(switched.node('service-resolution-status').textContent.includes('3 s'));
+    second.resolve(envelope(preview({ serviceId: 43, autoApply: false, candidates: [] }))); await secondRead;
+    assert.equal(switched.clock.count(), 0);
+
+    const expired = fixture(); expired.routes.set('service_resolution/preview', () => envelope(preview({ autoApply: false,
+        expiresAt: new Date(expired.clock.now() + 1500).toISOString() })));
+    await expired.ui.resolveService(42); await expired.node('service-resolution-candidates').querySelectorAll('input')[0].emit('change');
+    expired.clock.advance(2000); await expired.node('service-resolution-apply').emit('click');
+    assert.equal(expired.clock.count(), 0); assert.equal(expired.requests.length, 1, 'An expired review started a mutation or timer');
+    assert(expired.node('service-resolution-status').textContent.includes('caducó'));
 }
 async function automaticAndManualResolution() {
     const direct = fixture(), backupName = 'router-resolution-20261016T010000Z-' + 'd'.repeat(16) + '.json';
@@ -137,7 +220,7 @@ async function staleReadsAndUncertainWrites() {
     const uncertain = fixture(); let writes = 0;
     uncertain.routes.set('service_resolution/apply', () => { writes++; throw new Error('PRIVATE-TRANSPORT-ERROR'); });
     await uncertain.ui.resolveService(42);
-    assert.equal(writes, 1); assert.equal(uncertain.applied.length, 0);
+    assert.equal(writes, 1); assert.equal(uncertain.applied.length, 0); assert.equal(uncertain.clock.count(), 0, 'A failed mutation leaked its progress timer');
     assert(uncertain.node('service-resolution-result').textContent.includes('No se pudo confirmar'));
     assert(!uncertain.node('service-resolution-result').textContent.includes('PRIVATE-TRANSPORT-ERROR'));
     await uncertain.node('service-resolution-apply').emit('click'); assert.equal(writes, 1, 'Uncertain write was replayed from a stale button');
@@ -159,6 +242,7 @@ async function validationAndGuards() {
         { candidates: [candidate({ removeRowIds: ['*2', '*2'] }), candidate({ candidateId: otherId, rowId: '*2' })] }]) {
         const ui = fixture(); ui.routes.set('service_resolution/preview', () => envelope(preview(overrides))); await ui.ui.resolveService(42);
         assert.equal(ui.requests.filter(item => item.action === 'apply').length, 0, 'A malformed preview could apply');
+        assert.equal(ui.clock.count(), 0, 'A rejected preview leaked its progress timer');
     }
     const unverified = fixture(); unverified.routes.set('service_resolution/apply', () => envelope(outcome({ verificationState: 'mismatch' })));
     await unverified.ui.resolveService(42); assert.equal(unverified.notifications.length, 0); assert.equal(unverified.applied.length, 0);
@@ -182,6 +266,6 @@ async function validationAndGuards() {
     assert.equal(blocked.node('service-resolution-apply').disabled, true);
 }
 (async () => {
-    await automaticAndManualResolution(); await ownedAccountWithManualDuplicate(); await staleReadsAndUncertainWrites(); await validationAndGuards();
-    console.log('Service resolution UI passed: one-click proven repair, explicit ambiguous selection, protected owners, safe text, no credential display, consumed uncertain writes, fresh manual retries, races and recovery/restore guards.');
+    await automaticAndManualResolution(); await ownedAccountWithManualDuplicate(); await pendingProgressAndTimerLifecycle(); await staleReadsAndUncertainWrites(); await validationAndGuards();
+    console.log('Service resolution UI passed: reviewed repairs, protected owners, safe text, truthful request progress, accessible elapsed time, clean timer lifecycle, no mutation replay, fresh retries, races and recovery/restore guards.');
 })().catch(error => { console.error(error); process.exitCode = 1; });

@@ -59,7 +59,8 @@
     let api, notify, navigate, reviewJob, onApplied, mounted = false;
     let opened = false, loading = false, applying = false, requiresReload = false, mutations = 0, epoch = 0, sequence = 0;
     let serviceId = null, preview = null, selected = null, outcome = null, feedback = '', manualOnly = false, ownMutationExpected = false;
-    let previousFocus = null, selectionPlan = null;
+    let previousFocus = null, selectionPlan = null, displayContext = null;
+    let busyTimer = null, busyPhase = null, busyStarted = 0, busyElapsed = null, busyHint = null, busyWaitShown = false;
     const locked = () => requiresReload || api?.reloadRequired === true || api?.recovery?.readOnly === true || mutations > 0;
     const reason = code => t(reasons[code] || reasons.resolution_unavailable);
     const accepted = response => {
@@ -75,6 +76,42 @@
     function crmLink(label, kind, id) {
         const result = element('a', t(label, { id })); result.href = '/crm/client/' + (kind === 'service' ? 'service/' : '') + id;
         result.target = '_blank'; result.rel = 'noopener noreferrer'; return result;
+    }
+    function stopBusy() {
+        if (busyTimer !== null) root.clearInterval(busyTimer);
+        busyTimer = null; busyPhase = null; busyElapsed = null; busyHint = null; busyWaitShown = false;
+    }
+    function updateBusy() {
+        if (!opened || !(loading || applying)) { stopBusy(); return; }
+        const seconds = Math.max(0, Math.floor((Date.now() - busyStarted) / 1000));
+        if (busyElapsed) busyElapsed.textContent = t('Tiempo transcurrido: {seconds} s', { seconds });
+        if (busyHint && seconds >= 15 && !busyWaitShown) {
+            busyWaitShown = true;
+            busyHint.textContent = t(busyPhase === 'apply'
+                ? 'La operación sigue en curso. Espera el resultado y revisa Trabajos antes de reintentar.'
+                : 'La revisión sigue en curso. Espera el resultado antes de volver a consultar.');
+        }
+    }
+    function renderStatus() {
+        const status = node('service-resolution-status'), active = loading || applying;
+        status.setAttribute('role', 'status'); status.setAttribute('aria-live', 'polite'); status.setAttribute('aria-atomic', 'false');
+        for (const id of ['service-resolution-summary', 'service-resolution-candidates', 'service-resolution-changes'])
+            node(id).setAttribute('aria-busy', String(active));
+        status.className = active ? 'form-note resolution-busy' : 'form-note';
+        if (!active) { stopBusy(); status.textContent = feedback; return; }
+        const phase = applying ? 'apply' : 'preview';
+        if (phase !== busyPhase) { stopBusy(); busyPhase = phase; busyStarted = Date.now(); }
+        const spinner = element('span', undefined, 'resolution-spinner'); spinner.setAttribute('aria-hidden', 'true');
+        const copy = element('span', undefined, 'resolution-busy-copy');
+        copy.appendChild(element('span', t(phase === 'apply' ? 'Aplicando cambios y sincronizando…' : 'Revisando UISP y RouterOS…'), 'resolution-busy-phase'));
+        busyElapsed = element('span', undefined, 'resolution-busy-elapsed'); busyElapsed.setAttribute('aria-hidden', 'true'); copy.appendChild(busyElapsed);
+        busyHint = element('small', undefined, 'resolution-busy-hint'); copy.appendChild(busyHint);
+        status.replaceChildren(spinner, copy); busyWaitShown = false; updateBusy();
+        if (busyTimer === null) busyTimer = root.setInterval(updateBusy, 1000);
+    }
+    function context(value, chosen = null) {
+        return { clientId: value.clientId, clientName: safe(value.clientName), site: safe(value.site), deviceId: value.deviceId,
+            keepRowId: chosen?.rowId ?? null, removeRowIds: [...(chosen?.removeRowIds || [])] };
     }
     function requiresSelection() { return preview?.mode === 'select_account' || preview?.autoApply === false && preview.candidates.some(item => item.selectable); }
     function validPreview(value) {
@@ -129,15 +166,20 @@
     function render() {
         if (!opened) return;
         node('service-resolution-heading').textContent = t('Resolver servicio #{id}', { id: serviceId });
-        node('service-resolution-status').textContent = loading ? t('Revisando UISP y la cuenta del router…') : applying ? t('Corrigiendo vínculo y sincronizando…') : feedback;
+        renderStatus();
         const summary = node('service-resolution-summary'), candidates = node('service-resolution-candidates'), changes = node('service-resolution-changes'), result = node('service-resolution-result');
         summary.replaceChildren(); candidates.replaceChildren(); changes.replaceChildren(); result.replaceChildren(); selectionPlan = null;
+        const identity = preview || displayContext;
+        const links = element('p', undefined, 'resolution-identity'); links.appendChild(crmLink('Servicio #{id}', 'service', serviceId));
+        if (positive(identity?.clientId)) links.appendChild(crmLink('Cliente #{id}', 'client', identity.clientId));
+        summary.appendChild(links);
+        const label = [safe(identity?.clientName), safe(identity?.site), positive(identity?.deviceId) ? t('Router #{id}', { id: identity.deviceId }) : ''].filter(Boolean).join(' · ');
+        if (label) summary.appendChild(element('p', label, 'form-note'));
+        if (applying && displayContext?.keepRowId) {
+            summary.appendChild(element('p', t('Se conservará el registro {id}.', { id: displayContext.keepRowId }), 'form-note'));
+            if (displayContext.removeRowIds.length) summary.appendChild(element('p', t('Se retirarán estos registros:') + ' ' + displayContext.removeRowIds.join(', '), 'form-note'));
+        }
         if (preview) {
-            const links = element('p', undefined, 'resolution-identity'); links.appendChild(crmLink('Servicio #{id}', 'service', serviceId));
-            if (positive(preview.clientId)) links.appendChild(crmLink('Cliente #{id}', 'client', preview.clientId));
-            summary.appendChild(links);
-            const label = [safe(preview.clientName), safe(preview.site), positive(preview.deviceId) ? t('Router #{id}', { id: preview.deviceId }) : ''].filter(Boolean).join(' · ');
-            if (label) summary.appendChild(element('p', label, 'form-note'));
             if (preview.reason && !(requiresSelection() && ['resolution_select_account', 'resolution_manual_confirmation'].includes(preview.reason)))
                 summary.appendChild(element('p', reason(preview.reason), 'form-note'));
             if (preview.willReconnect === true) summary.appendChild(element('p', t('Se reconectarán las sesiones de esta cuenta.'), 'form-note'));
@@ -193,7 +235,9 @@
     }
     async function read(allowAuto) {
         if (!opened || loading || applying || locked()) return;
-        const sid = serviceId, started = ++sequence, observedEpoch = epoch; loading = true; preview = null; selected = null; outcome = null; feedback = ''; render();
+        const sid = serviceId, started = ++sequence, observedEpoch = epoch;
+        if (preview) displayContext = context(preview);
+        loading = true; preview = null; selected = null; outcome = null; feedback = ''; render();
         try {
             const value = accepted(await api.previewServiceResolution(sid));
             if (!opened || sequence !== started || serviceId !== sid) return;
@@ -209,6 +253,8 @@
         const selection = requiresSelection() ? [selected] : [];
         if (selection.some(key => !choice(key) || !preview.candidates.some(item => item.candidateId === key && item.selectable))) return;
         const sid = serviceId, started = sequence, observedEpoch = epoch, previewToken = preview.previewToken;
+        displayContext = context(preview, preview.candidates.find(item => item.candidateId === selected)
+            || (preview.candidates.length === 1 ? preview.candidates[0] : null));
         preview = null; selected = null; applying = true; manualOnly = true; ownMutationExpected = true; feedback = ''; render();
         try {
             const value = accepted(await api.applyServiceResolution(previewToken, selection));
@@ -226,14 +272,17 @@
     function resolveService(sid) {
         if (!mounted || !positive(sid) || applying || locked()) return;
         if (!opened) previousFocus = root.document.activeElement;
-        sequence++; loading = false;
-        serviceId = sid; opened = true; manualOnly = false; outcome = null; preview = null; feedback = ''; selected = null;
+        stopBusy(); sequence++; loading = false;
+        serviceId = sid; opened = true; manualOnly = false; outcome = null; preview = null; feedback = ''; selected = null; displayContext = null;
         node('service-resolution-modal').style.display = 'flex';
         node('service-resolution-heading').focus?.({ preventScroll: true }); return read(true);
     }
     function close() {
         const restoreFocus = opened;
-        opened = false; sequence++; loading = false; preview = null; selected = null; outcome = null;
+        stopBusy(); opened = false; sequence++; loading = false; preview = null; selected = null; outcome = null; displayContext = null;
+        for (const id of ['service-resolution-summary', 'service-resolution-candidates', 'service-resolution-changes'])
+            node(id)?.setAttribute('aria-busy', 'false');
+        const status = node('service-resolution-status'); if (status) { status.replaceChildren(); status.className = 'form-note'; }
         if (node('service-resolution-modal')) node('service-resolution-modal').style.display = 'none';
         if (restoreFocus) previousFocus?.focus?.({ preventScroll: true });
     }

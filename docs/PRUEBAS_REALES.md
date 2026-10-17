@@ -1,6 +1,12 @@
-# Pruebas reales del candidato 2.4.43
+# Pruebas reales del candidato 2.4.44
 
 Las pruebas automatizadas usan bases temporales, transportes simulados y sockets locales. Esta lista comprueba la integración **UISP → plugin → API nativa de RouterOS** en una copia de UISP y un CHR/router con clientes de prueba. Registrar versiones de UISP, PHP y RouterOS, así como ID del servicio, plan, trabajo, estado e IP/prefijo en cada caso.
+
+## Comprobar el panel compacto y su actividad en 2.4.44
+
+Los casos 274–281 cubren el centro de notificaciones, la distribución adaptable y el indicador de Resolver. Instalar, recargar el panel y comprobar con los permisos habituales; no confundir ocultar un aviso con resolver una incidencia. Registrar el resultado real por separado de las pruebas sintéticas.
+
+Validación 2.4.44 aprobada: **68 suites aisladas**, sintaxis de **69 archivos PHP propios**, 384 entradas del instalador, 151 archivos propios y 13 dependencias fijadas. Informe: `dist/verification-2.4.44.json`. SHA-256: `a9c033653d891fd15e38f117212506818cced73dd8490a69ce92b71f06ee2734`. Revisión visual sintética en escritorio y móvil de 390/360 px, español/inglés y temas claro/oscuro, incluido Resolver después de quince segundos. Las pruebas de teclado, foco, límites de actividad, temporizadores y respuestas tardías están cubiertas. No se modificaron UISP ni RouterOS de producción.
 
 ## Comprobar selección de duplicados PPP en 2.4.43
 
@@ -572,3 +578,12 @@ Si el piloto falla, pausar worker/webhook y conservar datos/errores sin credenci
 | 271 | Cambiar la fila manual después de revisar y antes de confirmar. | Invalida la revisión y evita respaldar/aplicar la decisión anterior. |
 | 272 | Repetir con IP distinta o no concreta, Caller ID contradictorio, tipo PPP incompatible, IPv6 contradictoria, propietario vigente ajeno, DHCP o dos registros totalmente manuales. | No amplía a esos casos el permiso de retirar un duplicado sin vínculo. |
 | 273 | Alternar las dos opciones en español/inglés, escritorio/móvil, y confirmar una revisión válida. | Actualiza los ID que se conservarán y retirarán, mantiene accesible el pie del modal y explica que el plan vigente de UISP determina el perfil final. |
+
+| 274 | Recorrer las seis vistas con datos en escritorio y móvil, incluidos nombres y errores largos. | La distribución es compacta, conserva todas las acciones y contiene el desplazamiento de tablas sin ensanchar el documento. |
+| 275 | Entrar con conflictos de IP y trabajos pendientes; abrir la campana. | Los avisos globales aparecen en el centro lateral, con contador por grupos activos y acceso a la revisión; no se abre solo ni ocupa franjas sobre el contenido. |
+| 276 | Ocultar un aviso, restaurarlo y limpiar actividad. | Ocultar mantiene el contador de incidencias y permite restaurar; limpiar sólo vacía los mensajes de esa sesión, sin cancelar trabajos ni liberar IP. |
+| 277 | Generar más de veinte mensajes de operación, con tres visibles y texto remoto con etiquetas HTML. | Mantiene veinte en actividad y hasta tres flotantes; trata el contenido como texto y no persiste la lista al recargar el panel. |
+| 278 | Abrir/cerrar notificaciones con teclado, Escape y clic exterior; usar Revisar y actualizar estados desde el sondeo. | Controla y devuelve el foco, navega a la incidencia y nunca abre el centro ni roba foco por una actualización automática. |
+| 279 | Abrir Resolver con una consulta lenta y confirmar una aplicación de más de quince segundos. | Muestra animación, fase conocida, segundos y orientación de espera; conserva el contexto durante la aplicación y evita porcentajes ficticios. |
+| 280 | Cerrar durante la espera, cambiar de servicio, recibir una respuesta tardía o una respuesta fallida. | Limpia el temporizador de la vista anterior, conserva las protecciones de resultados inciertos y no repite automáticamente la aplicación. |
+| 281 | Repetir en seis idiomas, claro/oscuro, móvil y movimiento reducido, incluyendo formularios inválidos. | Mantiene navegación, contraste, controles y errores de campo accesibles; en movimiento reducido conserva la indicación estática y el tiempo. |

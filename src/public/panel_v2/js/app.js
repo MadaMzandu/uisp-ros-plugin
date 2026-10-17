@@ -163,6 +163,81 @@ document.addEventListener('DOMContentLoaded', () => {
     const warningStorageKey = 'ros-panel-warning-dismissals-v1:' + navigationScope;
     const dismissedWarnings = new Map();
     const warningStates = new Map();
+    const recentNotifications = [];
+    let notificationCenterOpen = false;
+    function renderNotificationCenter() {
+        const active = [...warningStates.values()].filter(state => state.active).length;
+        const badge = byId('notification-count');
+        if (badge) { badge.textContent = String(active); badge.style.display = active ? 'inline-flex' : 'none'; }
+        const trigger = byId('notifications-toggle');
+        if (trigger) {
+            trigger.dataset.hasWarnings = String(active > 0);
+            trigger.setAttribute('aria-label', active ? t(active === 1 ? 'Notificaciones: {count} aviso activo' : 'Notificaciones: {count} avisos activos', { count: active }) : t('Notificaciones'));
+            trigger.title = trigger.getAttribute('aria-label');
+        }
+        if (byId('notification-center-summary')) translatedText(byId('notification-center-summary'), active ? active === 1 ? '{count} aviso activo' : '{count} avisos activos' : 'Sin avisos activos.', { count: active });
+        if (byId('notification-empty')) byId('notification-empty').style.display = !active && !recentNotifications.length ? 'block' : 'none';
+        if (byId('notification-history')) byId('notification-history').style.display = recentNotifications.length ? 'block' : 'none';
+        const list = byId('notification-history-list');
+        if (list) {
+            list.replaceChildren();
+            for (const entry of recentNotifications) {
+                const row = document.createElement('article'); row.className = 'notification-entry notification-entry-' + entry.kind;
+                const text = document.createElement('p'); text.textContent = entry.text;
+                const time = document.createElement('time'); time.dateTime = entry.date; time.dataset.date = entry.date; time.textContent = formatDate(entry.date);
+                row.append(text, time); list.appendChild(row);
+            }
+        }
+    }
+    function closeNotificationCenter(restoreFocus = true) {
+        if (!notificationCenterOpen) return;
+        notificationCenterOpen = false;
+        document.body.classList.toggle('notification-center-open', false);
+        for (const id of ['notification-center', 'notification-center-shade']) {
+            const node = byId(id); if (node) { node.hidden = true; node.style.display = 'none'; }
+        }
+        byId('notifications-toggle')?.setAttribute('aria-expanded', 'false');
+        if (restoreFocus) byId('notifications-toggle')?.focus({ preventScroll: true });
+    }
+    byId('notifications-toggle')?.addEventListener('click', () => {
+        if (notificationCenterOpen) { closeNotificationCenter(); return; }
+        if (!byId('notification-center')) return;
+        notificationCenterOpen = true; renderNotificationCenter();
+        document.body.classList.toggle('notification-center-open', true);
+        for (const id of ['notification-center', 'notification-center-shade']) {
+            const node = byId(id); if (node) { node.hidden = false; node.style.display = id === 'notification-center' ? 'flex' : 'block'; }
+        }
+        byId('notifications-toggle').setAttribute('aria-expanded', 'true');
+        byId('close-notification-center')?.focus({ preventScroll: true });
+    });
+    byId('close-notification-center')?.addEventListener('click', () => closeNotificationCenter());
+    byId('notification-center-shade')?.addEventListener('click', () => closeNotificationCenter());
+    byId('clear-notification-history')?.addEventListener('click', () => {
+        recentNotifications.length = 0; renderNotificationCenter();
+        byId('close-notification-center')?.focus({ preventScroll: true });
+    });
+    document.addEventListener('pointerdown', event => {
+        if (notificationCenterOpen && !byId('notification-center')?.contains?.(event.target)
+            && !byId('notifications-toggle')?.contains?.(event.target)) closeNotificationCenter(event.target === byId('notification-center-shade'));
+    });
+    document.addEventListener('keydown', event => {
+        if (!notificationCenterOpen) return;
+        if (event.key === 'Escape') {
+            event.preventDefault?.(); event.stopImmediatePropagation?.(); closeNotificationCenter(); return;
+        }
+        if (event.key !== 'Tab') return;
+        const focusable = [...(byId('notification-center')?.querySelectorAll?.('button, a[href], input, select, textarea, [tabindex]') || [])]
+            .filter(node => !node.disabled && !node.hidden && node.tabIndex !== -1
+                && (typeof node.getClientRects !== 'function' || node.getClientRects().length > 0));
+        const first = focusable[0] || byId('close-notification-center'), last = focusable.at(-1) || first;
+        if (!first) return;
+        if (event.shiftKey && (document.activeElement === first || !focusable.includes(document.activeElement))) {
+            event.preventDefault?.(); last.focus({ preventScroll: true });
+        } else if (!event.shiftKey && (document.activeElement === last || !focusable.includes(document.activeElement))) {
+            event.preventDefault?.(); first.focus({ preventScroll: true });
+        }
+    });
+    globalThis.window?.addEventListener?.('pagehide', () => closeNotificationCenter(false));
     try {
         const saved = navigationStorage()?.getItem(warningStorageKey);
         if (typeof saved === 'string' && saved.length <= 1024) {
@@ -186,6 +261,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         if (byId('warning-controls')) byId('warning-controls').style.display = hidden ? 'block' : 'none';
         translatedText(byId('restore-warnings'), 'Mostrar avisos ({count})', { count: hidden });
+        renderNotificationCenter();
     }
     function setTopWarning(id, active, values, observed = true) {
         const signature = values.join(',');
@@ -1763,6 +1839,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function notify(message, kind = 'success') {
+        const textValue = t(String(message ?? ''));
+        recentNotifications.unshift({ text: textValue.slice(0, 4000), kind: ['success', 'error', 'warning', 'info'].includes(kind) ? kind : 'info', date: new Date().toISOString() });
+        recentNotifications.length = Math.min(recentNotifications.length, 20); renderNotificationCenter();
         if (!notificationRegion) {
             notificationRegion = document.createElement('div');
             notificationRegion.id = 'notifications';
@@ -1781,7 +1860,7 @@ document.addEventListener('DOMContentLoaded', () => {
         toast.setAttribute('aria-atomic', 'true');
         const text = document.createElement('p');
         text.className = 'toast-message';
-        text.textContent = t(String(message ?? ''));
+        text.textContent = textValue;
         const close = document.createElement('button');
         close.type = 'button';
         close.className = 'toast-close';
@@ -1802,6 +1881,7 @@ document.addEventListener('DOMContentLoaded', () => {
         close.addEventListener('click', dismiss);
         toast.append(text, close);
         region.appendChild(toast);
+        while (region.children.length > 3) region.firstElementChild.remove();
         if (kind !== 'error' && typeof setTimeout === 'function') {
             timer = setTimeout(dismiss, 6000);
             timer?.unref?.();
@@ -1949,6 +2029,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function switchView(view, title) {
         if (!navigationViews.has(view)) return;
+        closeNotificationCenter();
         rememberPosition();
         navigationReady = false;
         const generation = ++navigationGeneration;
@@ -3629,6 +3710,7 @@ document.addEventListener('DOMContentLoaded', () => {
         renderCrmMonitor();
         renderCrmEditResult();
         renderJobsStatus();
+        renderNotificationCenter();
         renderJobRecoveries();
         renderInvalidReservations();
         for (const direction of ['upload', 'download']) if (planNumericDraft.has(direction + 'Speed'))

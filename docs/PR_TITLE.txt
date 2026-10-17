@@ -1,1 +1,1 @@
-Fix keeping the linked PPP account when resolving manual duplicates
+Compact the panel and add notifications and visible resolution activity

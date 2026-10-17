@@ -153,6 +153,7 @@ class Element {
     get firstElementChild() { return this.children[0]; }
     get lastElementChild() { return this.children.at(-1); }
     get childElementCount() { return this.children.length; }
+    contains(node) { return node === this || this.children.some(child => child.contains(node)); }
 }
 const elements = new Map(Array.from(markup.matchAll(/\bid="([^"]+)"/g), match => [match[1], new Element(match[1])]));
 elements.get('tab-general').classes.add('active');
@@ -471,9 +472,12 @@ async function checkJobsRefresh() {
 async function checkLegacyPlanEditor({ missingBurstMarkup, missingBurstHelpers }) {
     // Simulate a UISP frame that retains its old HTML while its JavaScript assets update.
     // Missing IDs must return null, as in the browser; never invent the burst nodes.
+    const priorWarnings = markup.match(/<div class="warning-controls"[\s\S]*?<\/div>/)[0]
+        + [...markup.matchAll(/<aside class="network-warning[\s\S]*?<\/aside>/g)].map(match => match[0]).join('');
     const legacyMarkup = (missingBurstMarkup
         ? markup.replace(/<section\b[^>]*class="burst-templates"[\s\S]*?<\/section>/, '')
         : markup).replace(/<div\b[^>]*id="notifications"[^>]*>[\s\S]*?<\/div>/, '')
+        .replace(/<div class="notification-center-shade"[\s\S]*?(?=<div class="content-area")/, priorWarnings)
         .replace(/<p\b[^>]*id="plan-ratio-help"[^>]*>[\s\S]*?<\/p>/, '');
     const legacyElements = new Map(Array.from(legacyMarkup.matchAll(/\bid="([^"]+)"/g), match => [match[1], new Element(match[1])]));
     const legacyBody = new Element();
@@ -729,6 +733,19 @@ function recoveryPanelFixture({ bootstrap, details, storage, storageBlocked = fa
         }
     };
     localDocument.activeElement = localDocument.body;
+    for (const node of nodes.values()) node.focus = options => { node.focusOptions = options; localDocument.activeElement = node; };
+    const notificationCenter = nodes.get('notification-center');
+    for (const id of ['close-notification-center', 'warning-controls', 'network-warning', 'crm-network-warning', 'jobs-pending-warning', 'notification-history'])
+        notificationCenter.appendChild(nodes.get(id));
+    nodes.get('warning-controls').appendChild(nodes.get('restore-warnings'));
+    nodes.get('notification-history').appendChild(nodes.get('clear-notification-history'));
+    for (const [warning, review] of [['network-warning', 'btn-view-conflicts'], ['crm-network-warning', 'btn-view-crm-conflicts'], ['jobs-pending-warning', 'btn-view-pending-jobs']]) {
+        nodes.get(warning).appendChild(nodes.get(review)); nodes.get(warning).appendChild(nodes.get('dismiss-' + warning));
+    }
+    notificationCenter.querySelectorAll = () => [...nodes.values()].filter(node => notificationCenter.contains(node)
+        && (node.id === 'close-notification-center' || node.id === 'restore-warnings' || node.id === 'clear-notification-history' || /^btn-view-|^dismiss-/.test(node.id)))
+        .filter(node => { for (let ancestor = node; ancestor && ancestor !== notificationCenter; ancestor = ancestor.parentNode)
+            if (ancestor.hidden || ancestor.style.display === 'none') return false; return true; });
     for (const surface of [nodes.get('content-area'), localDocument.scrollingElement]) {
         surface.scrollTop = 0; surface.scrollHeight = 10000; surface.clientHeight = 500;
         surface.getBoundingClientRect = () => ({ top: 100, bottom: 600, height: 500 });
@@ -1099,6 +1116,7 @@ async function checkWarningDismissals() {
     const storage = new Map();
     const fixture = recoveryPanelFixture({ storage, initialReplies: replies() }); await flush();
     assert.equal(fixture.nodes.get('jobs-pending-warning').style.display, 'flex');
+    assert.equal(fixture.nodes.get('notification-count').textContent, '2', 'The bell counts active warning groups, not affected services');
     const before = fixture.calls.length;
     for (const id of ['jobs-pending-warning', 'crm-network-warning']) {
         await fixture.nodes.get('dismiss-' + id).fire('click');
@@ -1107,6 +1125,7 @@ async function checkWarningDismissals() {
     assert.equal(fixture.calls.length, before, 'Closing top warnings must not call any business API');
     assert.equal(fixture.nodes.get('jobs-pending-count').textContent, '2', 'Sidebar counts remain visible after dismissing the large banner');
     assert.equal(fixture.nodes.get('restore-warnings').textContent, 'Mostrar avisos (2)');
+    assert.equal(fixture.nodes.get('notification-count').textContent, '2', 'Dismissing presentation must not erase unresolved warning counts');
     assert.equal(fixture.nodes.get('warning-controls').style.display, 'block');
     const dismissalKey = [...storage.keys()].find(key => key.startsWith('ros-panel-warning-dismissals-v1:'));
     assert(dismissalKey); assert(storage.get(dismissalKey).length < 1024);
@@ -1144,6 +1163,68 @@ async function checkWarningDismissals() {
     await migration.nodes.get('restore-warnings').fire('click');
     assert.equal(migration.nodes.get('network-warning').style.display, 'flex');
     assert(markup.includes('id="dismiss-jobs-pending-warning" aria-label="Cerrar aviso" title="Cerrar aviso"'));
+}
+
+async function checkNotificationCenter() {
+    const envelope = data => ({ status: 'ok', error: false, data });
+    const summary = (extra = {}) => ({ available: true, pending: 0, failed: 0, running: 0, recovery: 0,
+        total: 0, checked_at: '2026-10-14T13:00:00Z', source: 'sqlite', reason: null, ...extra });
+    let bridge;
+    const storage = new Map();
+    const fixture = recoveryPanelFixture({ storage, workflows: { mount(options) { bridge = options; }, onView() {} },
+        initialReplies: new Map([['list/jobs_status', envelope(summary())]]) }); await flush();
+    const center = fixture.nodes.get('notification-center'), trigger = fixture.nodes.get('notifications-toggle');
+    const close = fixture.nodes.get('close-notification-center'), clear = fixture.nodes.get('clear-notification-history');
+    const centerMarkup = markup.slice(markup.indexOf('id="notification-center"'), markup.indexOf('id="content-area"'));
+    for (const id of ['network-warning', 'crm-network-warning', 'jobs-pending-warning', 'restore-warnings'])
+        assert(centerMarkup.includes('id="' + id + '"'), 'Global warning content must be housed inside Notifications: ' + id);
+    const dynamicActions = markup.slice(markup.indexOf('id="topbar-actions"'), markup.indexOf('id="notifications-toggle"'));
+    assert(dynamicActions.includes('</div>'), 'The notification trigger must survive dynamic action replacement');
+    assert(markup.includes('class="system-dashboard"') && markup.includes('system-health') && markup.includes('system-overview') && markup.includes('system-tools'));
+    assert.equal(fixture.nodes.get('notification-count').style.display, 'none');
+    assert.equal(fixture.nodes.get('notification-empty').style.display, 'block');
+    assert.notEqual(center.style.display, 'flex', 'Status reads must not open Notifications automatically');
+    const callsBefore = fixture.calls.length;
+    await trigger.fire('click');
+    assert.equal(center.style.display, 'flex'); assert.equal(center.hidden, false); assert.equal(trigger['aria-expanded'], 'true');
+    assert.equal(fixture.document.activeElement, close); assert(fixture.document.body.classList.contains('notification-center-open'));
+    await fixture.documentEvent('pointerdown', { target: close }); assert.equal(center.style.display, 'flex');
+    await close.fire('click');
+    assert.equal(center.hidden, true); assert.equal(trigger['aria-expanded'], 'false'); assert.equal(fixture.document.activeElement, trigger);
+    assert.equal(fixture.calls.length, callsBefore, 'Opening and closing notifications must be purely local');
+
+    bridge.notify(attack, 'error');
+    assert.equal(fixture.nodes.get('notification-history-list').children[0].children[0].textContent, attack);
+    assert(!renderedMarkup(fixture.nodes.get('notification-history-list')).includes('<img'), 'Recent operation content must remain literal text');
+    for (let index = 1; index <= 23; index++) bridge.notify('Fixture operation ' + index, index % 2 ? 'success' : 'error');
+    const history = fixture.nodes.get('notification-history-list');
+    assert.equal(history.children.length, 20); assert.equal(history.children[0].children[0].textContent, 'Fixture operation 23');
+    assert.equal(history.children.at(-1).children[0].textContent, 'Fixture operation 4');
+    assert.equal(fixture.nodes.get('notifications').children.length, 3, 'Immediate feedback uses a compact three-toast stack');
+    assert([...storage.values()].every(value => !value.includes('Fixture operation') && !value.includes(attack)), 'Recent activity must never be written to browser storage');
+    await trigger.fire('click'); clear.focus(); let prevented = 0;
+    await fixture.documentEvent('keydown', { key: 'Tab', preventDefault() { prevented++; } });
+    assert.equal(fixture.document.activeElement, close, 'Tab must remain inside the notification dialog');
+    await fixture.documentEvent('keydown', { key: 'Tab', shiftKey: true, preventDefault() { prevented++; } });
+    assert.equal(fixture.document.activeElement, clear, 'Reverse Tab returns to the final visible action'); assert.equal(prevented, 2);
+    await fixture.documentEvent('keydown', { key: 'Escape', preventDefault() {}, stopImmediatePropagation() {} });
+    assert.equal(center.hidden, true); assert.equal(fixture.document.activeElement, trigger);
+    assert(!fixture.document.body.classList.contains('notification-center-open'));
+    await trigger.fire('click');
+    const outside = fixture.nodes.get('search-devices'); outside.focus();
+    await fixture.documentEvent('pointerdown', { target: outside });
+    assert.equal(center.hidden, true); assert.equal(fixture.document.activeElement, outside, 'An outside click must preserve its destination focus');
+    await trigger.fire('click'); await clear.fire('click');
+    assert.equal(history.children.length, 0); assert.equal(fixture.nodes.get('notification-history').style.display, 'none');
+    assert.equal(fixture.nodes.get('notification-empty').style.display, 'block');
+    await fixture.event('pagehide'); assert.equal(center.hidden, true); await fixture.event('pageshow');
+    const priorFocus = fixture.document.activeElement;
+    fixture.reply('list/jobs_status', envelope(summary({ pending: 1, failed: 1, total: 1, checked_at: '2026-10-14T13:01:00Z' })));
+    await fixture.tick(30000);
+    assert.equal(fixture.nodes.get('notification-count').textContent, '1'); assert.equal(center.hidden, true);
+    assert.equal(fixture.document.activeElement, priorFocus, 'Background warnings must not steal focus');
+    await trigger.fire('click'); await fixture.nodes.get('btn-view-pending-jobs').fire('click');
+    assert.equal(center.hidden, true); assert.equal(fixture.nodes.get('view-jobs').style.display, 'block', 'Reviewing a notification must keep normal navigation available');
 }
 
 async function checkJobRecoveryResolutionPanel() {
@@ -2472,7 +2553,7 @@ async function checkNetworkRecoveryPanel() {
     assert.deepEqual(plain(healthy.diagnostics()[0].data), {}, 'Reactive recovery reads must not request live CRM verification');
     const malformed = recoveryPanelFixture({ bootstrap: '{', details }); await flush();
     assert.equal(malformed.nodes.get('btn-cache').disabled, false, 'An invalid optional bootstrap must not break normal navigation');
-    assert.equal((markup.match(/(?:src|href)="(?:js|css)\/[^"?]+\?v=2\.0\.56"/g) || []).length, 8, 'Every panel asset must use the new revision to invalidate UISP browser caches');
+    assert.equal((markup.match(/(?:src|href)="(?:js|css)\/[^"?]+\?v=2\.0\.57"/g) || []).length, 8, 'Every panel asset must use the new revision to invalidate UISP browser caches');
     assert(!markup.includes('v=2.0.45'));
     assert(apiSource.includes("'alert-triangle':"), 'The conflict warning must have its own local warning icon');
 }
@@ -3545,7 +3626,7 @@ async function checkLanguagePresentation() {
     assert.equal(elements.get('save-plan-btn').disabled, false);
     responders.set('update/plans/edit', normalPlanUpdate);
     responders.set('list/plans/list', normalPlanList);
-    assert.equal(elements.get('notifications').children.length, planNotificationsBefore + 1, 'A successful plan save must show one notification');
+    assert.equal(elements.get('notifications').children.length, Math.min(3, planNotificationsBefore + 1), 'A successful plan save must show one notification within the compact stack');
     assert.equal(elements.get('notifications').lastElementChild.role, 'status');
     assert.match(elements.get('notifications').lastElementChild.children[0].textContent, /^Plan guardado\..*Trabajos/);
     const saved = requests.findLast(request => request.payload?.target === 'plans' && request.payload?.action === 'edit');
@@ -3606,7 +3687,7 @@ async function checkLanguagePresentation() {
     });
     const acceptedPlanNotificationsBefore = elements.get('notifications').children.length;
     await elements.get('save-plan-btn').fire('click');
-    assert.equal(elements.get('notifications').children.length, acceptedPlanNotificationsBefore + 1, 'An accepted plan save must not duplicate notifications');
+    assert.equal(elements.get('notifications').children.length, Math.min(3, acceptedPlanNotificationsBefore + 1), 'An accepted plan save must not duplicate notifications');
     assert(elements.get('notifications').lastElementChild.className.includes('toast-info'));
     assert(elements.get('notifications').lastElementChild.children[0].textContent.includes('Solicitud aceptada.'));
     responders.set('update/plans/edit', normalPlanResponder);
@@ -4156,7 +4237,7 @@ async function checkLanguagePresentation() {
     responders.set('update/system/cache', { status: 'failed', error: true, message: 'cache fixture failed ' + attack });
     const notificationsBefore = elements.get('notifications').children.length;
     await elements.get('btn-cache').fire('click');
-    assert.equal(elements.get('notifications').children.length, notificationsBefore + 1);
+    assert.equal(elements.get('notifications').children.length, Math.min(3, notificationsBefore + 1));
     const errorToast = elements.get('notifications').lastElementChild;
     assert.equal(errorToast.role, 'alert');
     assert.equal(errorToast.children[0].textContent, 'Error: cache fixture failed ' + attack, 'Untrusted error text must stay literal text');
@@ -4175,8 +4256,9 @@ async function checkLanguagePresentation() {
     }
     assert(elements.get('notifications').children.every(toast => toast.role === 'alert'), 'Only persistent errors should remain after successful-notification timers');
     assert(elements.get('notifications').children.includes(errorToast), 'Errors must remain visible until dismissed');
-    assert(elements.get('notifications').children.includes(partialToast)
-        && elements.get('notifications').children.includes(maliciousFieldToast), 'Partial provisioning notices must remain visible until dismissed');
+    const recentMessages = elements.get('notification-history-list').children.map(item => item.children[0].textContent);
+    assert(recentMessages.includes(partialToast.children[0].textContent) && recentMessages.includes(maliciousFieldToast.children[0].textContent),
+        'Provisioning notices evicted from the compact toast stack remain in recent activity');
     const errorsBeforeDismiss = elements.get('notifications').children.length;
     await errorToast.children[1].fire('click');
     assert.equal(elements.get('notifications').children.length, errorsBeforeDismiss - 1);
@@ -4199,6 +4281,7 @@ async function checkLanguagePresentation() {
     await checkJobServiceResolutionEntry();
     await checkPendingJobsIndicator();
     await checkWarningDismissals();
+    await checkNotificationCenter();
     await checkJobRecoveryResolutionPanel();
     await checkRecoveryObservationPanel();
     await checkRetainedRecoveryPanel();
